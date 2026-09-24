@@ -68,6 +68,9 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # Empty is inert: hub nets are not built until the user supplies their own geographies. No
     # country is encoded in the default, so the acquisition feature is neutral across tenants.
     "Settings.lane_search_hubs": (),
+    # Empty is inert: no list is fetched until the user names their own. Which lists fit is a
+    # field and seniority choice, so no repo is encoded in the default (DESIGN-T183 E2).
+    "Settings.lane_github_lists": (),
     "Settings.lane_hub_combos_per_run": 12,
     "Settings.lane_hub_distance_miles": 25,
     # Per-company LinkedIn search cells per run. 0 is the neutral default on both counts this
@@ -198,6 +201,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.lane_posting_budget": "operational",
     "Settings.lane_search_pages": "operational",
     "Settings.lane_search_hubs": "preference",
+    "Settings.lane_github_lists": "preference",
     "Settings.lane_hub_combos_per_run": "operational",
     "Settings.lane_company_combos_per_run": "operational",
     "Settings.lane_hub_distance_miles": "operational",

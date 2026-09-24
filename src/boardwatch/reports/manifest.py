@@ -111,6 +111,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "lane_posting_budget",
         "lane_search_pages",
         "lane_search_hubs",
+        "lane_github_lists",
         "lane_hub_combos_per_run",
         "lane_hub_distance_miles",
         # OUT for the same reason the seven above are: it decides how much corpus arrives, never
@@ -351,6 +352,7 @@ _ROUTING_IRRELEVANT: frozenset[str] = frozenset(
         "lane_posting_budget",
         "lane_search_pages",
         "lane_search_hubs",
+        "lane_github_lists",
         "lane_hub_combos_per_run",
         "lane_hub_distance_miles",
         "lane_company_combos_per_run",

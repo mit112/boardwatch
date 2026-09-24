@@ -154,6 +154,8 @@ class _Admits:
 
 # The two list URLs the discovery half fetches. Mocked empty by default: a test about the drain
 # must not depend on the public lists, and an unmocked request would raise rather than pass.
+#: The two lists the discovery half was pinned against; `lane_github_lists` names them for a tenant.
+LISTS = ("SimplifyJobs/New-Grad-Positions", "vanshb03/New-Grad-2027")
 _LIST_URL_RE = re.compile(r"https://raw\.githubusercontent\.com/.*/listings\.json")
 
 
@@ -520,7 +522,7 @@ def test_the_snapshot_is_always_partial(respx_mock: respx.Router, tmp_path: Path
     them all."""
     _mock_lists(respx_mock)
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
-    lane = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),)))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL),)))
     result = lane.collect(_fetcher(tmp_path), _Admits())
     assert [s.snapshot.status for s in result.snapshots] == ["partial"]
     assert result.snapshots[0].snapshot.listed_ids == frozenset()
@@ -542,7 +544,7 @@ def test_an_admission_never_asks_for_its_board_to_be_watched(
     _mock_lists(respx_mock)
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
 
-    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
 
     assert result.snapshots
     assert all(s.watch is False for s in result.snapshots)
@@ -577,7 +579,7 @@ def test_admits_is_asked_once_per_company_before_any_body_is_fetched(
             return super().__call__(provider, slug)
 
     admits = _Recording()
-    lane = JsonLdLane(_Reader((_seed(HIREOLOGY_URL, 1), _seed(second, 2), _seed(JAZZHR_URL, 3))))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL, 1), _seed(second, 2), _seed(JAZZHR_URL, 3))))
     lane.collect(_fetcher(tmp_path), admits)
 
     assert admits.calls == [("hireology", "exampletenant"), ("jazzhr", "exampletenant")]
@@ -598,7 +600,7 @@ def test_a_refused_company_costs_no_request_and_no_attempt(respx_mock: respx.Rou
     route = respx_mock.get(HIREOLOGY_URL).mock(
         return_value=httpx.Response(200, text=HIREOLOGY_PAGE)
     )
-    lane = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),)))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL),)))
     result = lane.collect(_fetcher(tmp_path), _Admits(allow=False))
     assert not route.called
     assert result.seed_attempts == ()
@@ -626,7 +628,7 @@ def test_an_out_of_catalog_seed_is_charged_but_costs_no_request(
     _mock_lists(respx_mock)
     declined = "https://career-schwab.icims.com/jobs/125797/java-engineer/job"
     claimed_host_no_posting = "https://careers.garmin.com/search"
-    lane = JsonLdLane(_Reader((_seed(declined, 42), _seed(claimed_host_no_posting, 43))))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(declined, 42), _seed(claimed_host_no_posting, 43))))
     result = lane.collect(_fetcher(tmp_path), _Admits())
     assert result.seed_attempts == ((42, False), (43, False))
     assert result.tally.counts["not_attemptable"] == 2
@@ -643,7 +645,8 @@ def test_the_request_budget_bounds_the_gets_and_unspent_seeds_are_uncharged(
     for url in urls:
         respx_mock.get(url).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
     lane = JsonLdLane(
-        _Reader(tuple(_seed(url, n) for n, url in enumerate(urls, start=1))), request_budget=2
+        _Reader(tuple(_seed(url, n) for n, url in enumerate(urls, start=1))), request_budget=2,
+        list_repos=LISTS,
     )
     result = lane.collect(_fetcher(tmp_path), _Admits())
     assert [call.request.url.path for call in respx_mock.calls if "hireology" in str(call.request.url)]
@@ -661,7 +664,7 @@ def test_a_resolved_seed_reports_resolved_and_a_failed_one_does_not(
     gone = "https://careers.hireology.com/exampletenant/2855999/description"
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
     respx_mock.get(gone).mock(return_value=httpx.Response(404))
-    lane = JsonLdLane(_Reader((_seed(HIREOLOGY_URL, 1), _seed(gone, 2))))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL, 1), _seed(gone, 2))))
     result = lane.collect(_fetcher(tmp_path), _Admits())
     assert dict(result.seed_attempts) == {1: True, 2: False}
     assert result.tally.counts["fetch_gone"] == 1
@@ -677,7 +680,7 @@ def test_a_login_wall_is_rejected_and_never_stored(respx_mock: respx.Router, tmp
     """
     _mock_lists(respx_mock)
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=LOGIN_WALL_PAGE))
-    lane = JsonLdLane(_Reader((_seed(HIREOLOGY_URL, 5),)))
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL, 5),)))
     result = lane.collect(_fetcher(tmp_path), _Admits())
     assert result.snapshots == ()
     assert result.seed_attempts == ((5, False),)
@@ -691,7 +694,7 @@ def test_the_outcome_is_body_fetched_not_body_inline(respx_mock: respx.Router, t
     would understate this lane's per-posting cost in the one report that exists to show it."""
     _mock_lists(respx_mock)
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
-    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
     assert result.tally.counts["body_fetched"] == 1
     assert result.tally.counts["body_inline"] == 0
 
@@ -706,7 +709,7 @@ def test_a_transport_refusal_and_a_gone_posting_are_different_outcomes(
     gone = "https://careers.hireology.com/exampletenant/2855902/description"
     respx_mock.get(refused).mock(return_value=httpx.Response(403))
     respx_mock.get(gone).mock(return_value=httpx.Response(410))
-    result = JsonLdLane(_Reader((_seed(refused, 1), _seed(gone, 2)))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(refused, 1), _seed(gone, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     assert result.tally.counts["fetch_refused"] == 1
@@ -727,7 +730,7 @@ def test_the_seed_read_is_filtered_to_this_lanes_own_hosts(respx_mock: respx.Rou
     """
     _mock_lists(respx_mock)
     reader = _Reader(())
-    JsonLdLane(reader).collect(_fetcher(tmp_path), _Admits())
+    JsonLdLane(reader, list_repos=LISTS).collect(_fetcher(tmp_path), _Admits())
     assert reader.calls == [
         {
             "hosts": frozenset({"careers.hireology.com", "careers.garmin.com"}),
@@ -746,7 +749,7 @@ def test_a_company_whose_every_body_was_refused_yields_no_snapshot(
     postings, and the refusal is already counted in the tally."""
     _mock_lists(respx_mock)
     respx_mock.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=NO_LD_PAGE))
-    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL),))).collect(_fetcher(tmp_path), _Admits())
     assert result.snapshots == ()
     assert result.tally.counts["extracted_empty"] == 1
 
@@ -778,7 +781,7 @@ def test_discovery_seeds_only_active_catalog_matching_urls(respx_mock: respx.Rou
         "]"
     )
     _mock_lists(respx_mock, payload)
-    result = JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader(())).collect(_fetcher(tmp_path), _Admits())
     # Deduplicated, in first-seen order: a caller reporting discovery must not count one twice.
     assert result.discovered_seeds == (HIREOLOGY_URL,)
     # The CONTROL that keeps the malformed-seed note from becoming noise: the icims / greenhouse /
@@ -815,7 +818,7 @@ def test_discovery_to_persistence_refuses_unseedable_urls_but_keeps_valid_ones(
     ]
     _mock_lists(respx_mock, json.dumps(rows))
 
-    result = JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader(())).collect(_fetcher(tmp_path), _Admits())
     # `_discover` filters the four malformed shapes BEFORE `match_vendor`, so they never become
     # discovered seeds; the two valid ones survive, in first-seen order.
     assert result.discovered_seeds == (valid_port, valid_rootdot)
@@ -853,7 +856,7 @@ def test_a_list_failure_propagates_rather_than_reading_as_an_empty_day(
     this cheap: an undrained seed keeps its row, UNCHARGED, and is first in line next run."""
     respx_mock.get(url__regex=_LIST_URL_RE).mock(return_value=httpx.Response(503))
     with pytest.raises(Exception, match="(?i)fetch|503"):
-        JsonLdLane(_Reader(())).collect(_fetcher(tmp_path), _Admits())
+        JsonLdLane(list_repos=LISTS, seeds=_Reader(())).collect(_fetcher(tmp_path), _Admits())
 
 
 # --------------------------------------------------------------------------------------------
@@ -979,7 +982,7 @@ def test_an_alias_is_closed_without_a_request_when_its_twin_resolves(
     alias = "https://careers.garmin.com/careers-home/jobs/19732"
     second = respx_mock.get(alias).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
 
-    result = JsonLdLane(_Reader((_seed(ICIMS_URL, 1), _seed(alias, 2)))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(ICIMS_URL, 1), _seed(alias, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     ids = [p.provider_posting_id for s in result.snapshots for p in s.snapshot.postings]
@@ -1008,7 +1011,7 @@ def test_a_dead_alias_does_not_discard_its_live_twin(
     respx_mock.get(dead).mock(return_value=httpx.Response(404))
     respx_mock.get(live).mock(return_value=httpx.Response(200, text=ICIMS_PAGE))
 
-    result = JsonLdLane(_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     ids = [p.provider_posting_id for s in result.snapshots for p in s.snapshot.postings]
@@ -1030,7 +1033,7 @@ def test_the_snapshot_url_is_one_that_actually_resolved(
     live = HIREOLOGY_URL
     respx_mock.get(dead).mock(return_value=httpx.Response(404))
     respx_mock.get(live).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
-    result = JsonLdLane(_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(dead, 1), _seed(live, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     assert [s.snapshot.url for s in result.snapshots] == [live]
@@ -1054,7 +1057,7 @@ def test_mixed_real_and_escaped_markup_is_never_stored_as_a_jd(
     respx_mock.get(HIREOLOGY_URL).mock(
         return_value=httpx.Response(200, text=MIXED_MARKUP_PAGE)
     )
-    result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL, 9),))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(HIREOLOGY_URL, 9),))).collect(
         _fetcher(tmp_path), _Admits()
     )
     assert result.snapshots == (), "markup reached the store as a job description"
@@ -1092,7 +1095,7 @@ def test_a_page_that_crashes_the_parser_does_not_discard_the_runs_charges(
         return real(page_html)
 
     monkeypatch.setattr(jsonld, "job_posting", _explode)
-    result = JsonLdLane(_Reader((_seed(good, 1), _seed(bad, 2)))).collect(
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(good, 1), _seed(bad, 2)))).collect(
         _fetcher(tmp_path), _Admits()
     )
     assert dict(result.seed_attempts) == {1: True, 2: False}
@@ -1132,7 +1135,7 @@ def test_a_fetcher_crash_is_isolated_like_a_read_crash_and_preserves_other_attem
         return real_get(url, *args, **kwargs)  # type: ignore[arg-type]
 
     fetcher.get = _crashing_get  # type: ignore[method-assign]
-    result = JsonLdLane(_Reader((_seed(good, 1), _seed(bad, 2)))).collect(fetcher, _Admits())
+    result = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(good, 1), _seed(bad, 2)))).collect(fetcher, _Admits())
 
     assert dict(result.seed_attempts) == {1: True, 2: False}, (
         "the crashing seed is still charged, and the earlier good seed's attempt survives"
@@ -1173,7 +1176,7 @@ def test_a_declared_crawl_delay_reaches_the_fetcher_for_every_physical_attempt(
         return real_get(url, *args, **kwargs)  # type: ignore[arg-type]
 
     fetcher.get = _record  # type: ignore[method-assign]
-    JsonLdLane(_Reader((_seed(ICIMS_URL, 1), _seed(HIREOLOGY_URL, 2)))).collect(fetcher, _Admits())
+    JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(ICIMS_URL, 1), _seed(HIREOLOGY_URL, 2)))).collect(fetcher, _Admits())
     assert (ICIMS_URL, 5.0) in seen, "the declared crawl-delay must reach the fetcher"
     assert (HIREOLOGY_URL, None) in seen, "a host declaring nothing must not be slowed"
 

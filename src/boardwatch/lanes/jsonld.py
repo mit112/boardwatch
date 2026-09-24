@@ -35,7 +35,8 @@ per-posting cost in the one report that exists to show it.
 An adapter is only half a lane; the other half is where the tenant comes from. This lane reads
 two seed sources and owns neither:
 
-* **The two GitHub new-grad lists**, via `github_lists.fetch_listings` unchanged. That module
+* **The public GitHub lists in `lane_github_lists`** (none by default, reported `no_lists`), via
+  `github_lists.fetch_listings`. That module
   fetches them, parses `(provider, slug)` COMPANIES out of them and **throws the posting URLs
   away** -- its docstring says so, because for the six real providers a posting URL is a company
   discovery problem. For a tier-D vendor it is not: there is no board to scan, so the posting URL
@@ -234,7 +235,7 @@ from __future__ import annotations
 import html
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -681,10 +682,15 @@ class JsonLdLane:
         request_budget: int = SEED_REQUEST_BUDGET,
         max_attempts: int = SEED_MAX_ATTEMPTS,
         scan_limit: int = SEED_SCAN_LIMIT,
+        *,
+        list_repos: Sequence[str],
     ) -> None:
         # Injected rather than reached for, the rule every lane here follows: the reader needs a
         # store connection and a lane must not open one of its own.
         self._seeds = seeds
+        # `lane_github_lists`. No default, for the reason `IndeedLane` takes its countries without
+        # one: empty is a real, inert configuration and must be the caller's choice.
+        self._list_repos = tuple(list_repos)
         # Clamped rather than trusted, as `hiringcafe` clamps `search_pages`: a lane constructed
         # with 0 would make no request at all and report the resulting silence as a quiet day.
         self._request_budget = max(1, request_budget)
@@ -826,6 +832,7 @@ class JsonLdLane:
             seed_attempts=tuple(attempts),
             uncharged_resolved=tuple(uncharged),
             resolver_errors=tuple(resolver_errors),
+            not_attemptable=None if self._list_repos else "no_lists",
         )
 
     def _resolve_aliases(
@@ -891,7 +898,7 @@ class JsonLdLane:
         found: list[str] = []
         refused: list[str] = []
         seen: set[str] = set()
-        for rows in fetch_listings(fetcher).values():
+        for rows in fetch_listings(fetcher, self._list_repos).values():
             for row in rows:
                 if row.get("active") is not True:
                     continue

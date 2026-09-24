@@ -42,16 +42,19 @@ from github_lists_shape import (
 from boardwatch.lanes import github_lists
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.github_lists import (
-    LIST_URLS,
     PROVIDER_PRIORITY,
     ListPayloadError,
     candidate_document,
     discover,
     fetch_listings,
+    list_urls,
     read_listings,
     select,
 )
 from boardwatch.registry.validate import CompanyEntry, validate_entries
+
+#: The two repos the contract was pinned on; a tenant names them in `lane_github_lists`.
+LISTS = (S1_REPO, S2_REPO)
 
 # The four providers that serve a JD body with the listing, cheapest first; then the two that
 # spend `detail_fetch_budget` on a per-posting GET. Written out rather than imported: this IS the
@@ -239,10 +242,10 @@ def test_a_payload_that_is_not_an_array_raises_rather_than_reading_empty(payload
         read_listings(payload)
 
 
-def test_the_two_in_scope_repos_are_the_only_ones_read():
-    """The owner's ruling is the new-grad pair. The internship lists are out of scope."""
-    assert [repo for repo, _ in LIST_URLS] == [S1_REPO, S2_REPO]
-    for repo, url in LIST_URLS:
+def test_each_configured_repo_is_read_at_its_listings_url():
+    """Which repos is `lane_github_lists` (T188); the URL each is read at is the contract's."""
+    assert [repo for repo, _ in list_urls(LISTS)] == [S1_REPO, S2_REPO]
+    for repo, url in list_urls(LISTS):
         assert url == (
             f"https://raw.githubusercontent.com/{repo}/dev/.github/scripts/listings.json"
         )
@@ -254,16 +257,16 @@ def test_one_get_per_repo_and_a_failure_is_not_a_quiet_empty_day(tmp_path):
 
     routes = [
         respx.get(url).mock(return_value=httpx.Response(200, json=listings(shape)))
-        for (_, url), shape in zip(LIST_URLS, ("S1", "S2"), strict=True)
+        for (_, url), shape in zip(list_urls(LISTS), ("S1", "S2"), strict=True)
     ]
-    sources = fetch_listings(_fetcher(tmp_path))
+    sources = fetch_listings(_fetcher(tmp_path), LISTS)
     assert [route.call_count for route in routes] == [1, 1]
     assert sorted(sources) == sorted([S1_REPO, S2_REPO])
 
     respx.reset()
-    respx.get(LIST_URLS[0][1]).mock(return_value=httpx.Response(500))
+    respx.get(list_urls(LISTS)[0][1]).mock(return_value=httpx.Response(500))
     with pytest.raises(FetchFailure):
-        fetch_listings(_fetcher(tmp_path))
+        fetch_listings(_fetcher(tmp_path), LISTS)
 
 
 def _fetcher(tmp_path: Path):
@@ -488,7 +491,9 @@ def test_the_budget_and_the_selection_agree_about_both_sides():
 def _document(limit: int = 10) -> str:
     result = discover(_sources())
     selection = select(result, is_known=_never_known, budget=CompanyBudget(limit))
-    return candidate_document(selection, census=result.census, generated_on=date(2026, 8, 24))
+    return candidate_document(
+        selection, census=result.census, generated_on=date(2026, 8, 24), repos=LISTS
+    )
 
 
 def test_the_emitted_document_is_accepted_by_the_registry_validator():
@@ -557,6 +562,7 @@ def test_a_yaml_hostile_slug_survives_the_round_trip():
         Selection(admitted=hostile, refused=(), already_known=()),
         census=RecordCensus(records=10, matched=10),
         generated_on=date(2026, 8, 24),
+        repos=LISTS,
     )
     rows = yaml.safe_load(document)["companies"]
     assert [row["slug"] for row in rows] == [c.slug for c in hostile]
@@ -592,6 +598,7 @@ def test_untrusted_text_cannot_forge_a_line_in_the_review_header():
         select(result, is_known=_never_known, budget=CompanyBudget(10)),
         census=result.census,
         generated_on=date(2026, 8, 24),
+        repos=LISTS,
     )
 
     loaded = yaml.safe_load(document)
@@ -616,6 +623,7 @@ def test_a_control_character_in_a_slug_cannot_break_the_document():
         select(result, is_known=_never_known, budget=CompanyBudget(10)),
         census=result.census,
         generated_on=date(2026, 8, 24),
+        repos=LISTS,
     )
     assert yaml.safe_load(document)["companies"][0]["slug"] == "ac\x00me"
 

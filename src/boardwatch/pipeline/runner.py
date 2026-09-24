@@ -359,7 +359,9 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     # one request here buys exactly one body, so the same number would mean a different cost.
     # Its three bounds are module constants sized against a measured per-posting cost, and
     # `lanes/jsonld.py` states what each is sized against.
-    JsonLdLane.name: lambda ctx: JsonLdLane(ctx.pending_seeds),
+    JsonLdLane.name: lambda ctx: JsonLdLane(
+        ctx.pending_seeds, list_repos=ctx.settings.lane_github_lists
+    ),
 }
 
 # The UA the lane fetcher sends by default. Not boardwatch's identifying UA, and NOT app

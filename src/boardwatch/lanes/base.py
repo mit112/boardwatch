@@ -107,6 +107,8 @@ class LaneCompanySnapshot:
 LaneNotAttemptable = Literal[
     # The profile declares no `target_countries`, so a country-scoped search has no country.
     "no_target_countries",
+    # `lane_github_lists` is empty, so there is no public list to discover seeds from.
+    "no_lists",
 ]
 
 

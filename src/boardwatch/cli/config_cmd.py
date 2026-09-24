@@ -137,6 +137,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         'JSON array of LinkedIn search hubs, e.g. \'["Austin, TX", "Boston, MA"]\'; '
         "blank disables hub nets",
     ),
+    "lane_github_lists": (
+        _lane_names,
+        "next run",
+        "comma-separated owner/repo GitHub job lists, e.g. "
+        "SimplifyJobs/New-Grad-Positions,vanshb03/New-Grad-2027; blank reads none",
+    ),
     "lane_new_companies_per_run": (
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),

@@ -1,10 +1,13 @@
-"""Company discovery from the two public GitHub new-grad lists (D-291).
+"""Company discovery from public GitHub job lists (D-291).
 
 Contract pinned 2026-08-24 in `docs/superpowers/research/2026-08-24-github-lists-contract.md`.
-Two requests, and no others:
+One request per `lane_github_lists` repo, and no others:
 
-    GET https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/.github/scripts/listings.json
-    GET https://raw.githubusercontent.com/vanshb03/New-Grad-2027/dev/.github/scripts/listings.json
+    GET https://raw.githubusercontent.com/<owner/repo>/dev/.github/scripts/listings.json
+
+WHICH LISTS IS TENANT DATA (DESIGN-T183 E2). The contract was pinned on two new-grad software lists,
+`SimplifyJobs/New-Grad-Positions` and `vanshb03/New-Grad-2027`, which fit one persona; they are the
+documented example, not a default. With the setting empty nothing is fetched.
 
 No token, no key, no cookie, no TLS bypass, no app impersonation.
 
@@ -65,14 +68,11 @@ SOURCE_NAME = "github_lists"
 
 _LISTINGS_URL = "https://raw.githubusercontent.com/{repo}/dev/.github/scripts/listings.json"
 
-# The owner's ruling is the NEW-GRAD pair. The two internship lists in the same family
-# (`SimplifyJobs/Summer2026-Internships`, `vanshb03/Summer2027-Internships`) are 15,003 further
-# records and 366 further boards, and widening to them is a separate decision, not a flag.
-LIST_REPOS: tuple[str, ...] = ("SimplifyJobs/New-Grad-Positions", "vanshb03/New-Grad-2027")
 
-LIST_URLS: tuple[tuple[str, str], ...] = tuple(
-    (repo, _LISTINGS_URL.format(repo=repo)) for repo in LIST_REPOS
-)
+def list_urls(repos: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    """`(repo, listings URL)` for each configured `lane_github_lists` repo, in order."""
+    return tuple((repo, _LISTINGS_URL.format(repo=repo)) for repo in repos)
+
 
 # COST TIERS, cheapest first, and the tier boundaries are what the ramp is about. A tier is a set
 # of providers whose first-exposure cost is the same order of magnitude, so ordering WITHIN one is
@@ -235,14 +235,16 @@ def read_listings(content: bytes) -> list[dict[str, Any]]:
     return [record for record in payload if isinstance(record, dict)]
 
 
-def fetch_listings(fetcher: Fetcher) -> dict[str, list[dict[str, Any]]]:
-    """One GET per in-scope repo, keyed by repo so a census can name its source.
+def fetch_listings(
+    fetcher: Fetcher, repos: Sequence[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """One GET per configured repo, keyed by repo so a census can name its source.
 
     A failure propagates. This is a human-invoked command, not an additive pipeline stage, so a
     half-read corpus must not be reported as a smaller list -- the difference between "the list
     shrank" and "one request failed" is the whole diagnostic value.
     """
-    return {repo: read_listings(fetcher.get(url).content) for repo, url in LIST_URLS}
+    return {repo: read_listings(fetcher.get(url).content) for repo, url in list_urls(repos)}
 
 
 def discover(sources: Mapping[str, Sequence[Mapping[str, Any]]]) -> Discovery:
@@ -351,7 +353,7 @@ def select(
 
 
 def candidate_document(
-    selection: Selection, *, census: RecordCensus, generated_on: date
+    selection: Selection, *, census: RecordCensus, generated_on: date, repos: Sequence[str]
 ) -> str:
     """The registry-format file `companies import` accepts, behind a reviewable header.
 
@@ -371,18 +373,20 @@ def candidate_document(
     # named `no`, `123` or `~` survives the round trip through `safe_load`. `allow_unicode` keeps
     # an accented employer name legible instead of escaped; the parsed value is the same either way.
     body: str = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-    return _header(selection, census, generated_on) + body
+    return _header(selection, census, generated_on, repos) + body
 
 
-def _header(selection: Selection, census: RecordCensus, generated_on: date) -> str:
+def _header(
+    selection: Selection, census: RecordCensus, generated_on: date, repos: Sequence[str]
+) -> str:
     total = len(selection.admitted) + len(selection.refused) + len(selection.already_known)
     lines = [
         "# boardwatch companies discover - candidate company boards, for review before import",
         "#",
-        f"# generated {generated_on.isoformat()} from two public lists, read but not "
+        f"# generated {generated_on.isoformat()} from {len(repos)} public list(s), read but not "
         "redistributed:",
     ]
-    lines += [f"#   {repo}  {url}" for repo, url in LIST_URLS]
+    lines += [f"#   {repo}  {url}" for repo, url in list_urls(repos)]
     lines += [
         "#",
         f"# records read {census.records} | inactive {census.inactive} "

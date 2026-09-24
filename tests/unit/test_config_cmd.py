@@ -376,3 +376,18 @@ def test_every_gate_field_is_printed_by_config_show() -> None:
     from boardwatch.core.settings import GateTier
 
     assert set(_GATE_KEYS) == set(GateTier.model_fields)
+
+
+def test_set_lane_github_lists_round_trips_and_refuses_a_non_pair(cfg) -> None:
+    """T188: the fourth registration site of `lane_github_lists`, through the CLI and back."""
+    lists = "SimplifyJobs/New-Grad-Positions,vanshb03/New-Grad-2027"
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "lane_github_lists", lists])
+
+    assert result.exit_code == 0, result.output
+    assert load_settings(data_dir=cfg / "data").lane_github_lists == (
+        "SimplifyJobs/New-Grad-Positions", "vanshb03/New-Grad-2027",
+    )
+    before = (cfg / "config.toml").read_text()
+    refused = runner.invoke(app, [*_base(cfg), "config", "set", "lane_github_lists", "a/b/c"])
+    assert refused.exit_code == 1
+    assert (cfg / "config.toml").read_text() == before

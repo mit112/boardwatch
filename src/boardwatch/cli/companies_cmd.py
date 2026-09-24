@@ -603,7 +603,7 @@ def discover_(
         typer.Option("--out", help="Write the candidate file here instead of stdout."),
     ] = None,
 ) -> None:
-    """Propose company boards from the two public GitHub new-grad lists, for review.
+    """Propose company boards from the public GitHub lists in `lane_github_lists`, for review.
 
     Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise. Review
     it, delete any row whose evidence URL is not an employer board, then `companies import` it.
@@ -615,8 +615,17 @@ def discover_(
     # whose own docstring promises no store write would silently upgrade a 1.4 GB production
     # database as a side effect of being asked what boards exist (D-279).
     app_ctx = build_context(ctx.obj, ensure=False)
+    repos = app_ctx.settings.lane_github_lists
+    if not repos:
+        # Inert, not a failure of the lists: which lists fit is tenant data (DESIGN-T183 E2).
+        console.print(
+            "github_lists: not attemptable (no_lists) — set lane_github_lists in config.toml; "
+            "nothing was fetched",
+            markup=False, highlight=False, soft_wrap=True,
+        )
+        raise typer.Exit(code=1)
     cap = app_ctx.settings.lane_new_companies_per_run if limit is None else limit
-    result = discover(fetch_listings(Fetcher(app_ctx.settings)))
+    result = discover(fetch_listings(Fetcher(app_ctx.settings), repos))
     if not inspect(app_ctx.engine).has_table("companies"):
         # Nothing stored, so every candidate is new. `ensure=False` deliberately does not create
         # the schema here; `companies import` does, which is the write half of this workflow and
@@ -638,7 +647,7 @@ def discover_(
                 budget=CompanyBudget(cap),
             )
     document = candidate_document(
-        selection, census=result.census, generated_on=utcnow().date()
+        selection, census=result.census, generated_on=utcnow().date(), repos=repos
     )
     if out is None:
         # Plain stdout, not `console.print`: the document is YAML a human pipes into a file, and
