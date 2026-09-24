@@ -344,6 +344,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A host that trickles bytes is bounded by the fetch and board deadlines (2026-09-24, T209).** The
+  `Fetcher`'s client runs on its own `httpx.BaseTransport` over a public `httpcore.ConnectionPool` whose
+  network backend clamps every connect, read, write and TLS step to the seconds left on the request's
+  deadline, so a header or body trickle — and a reused pooled connection — ends at the deadline with the
+  same non-retried failure the deadline checks raise; request bodies are written in bounded slices. The
+  client no longer trusts environment proxies (`trust_env=False`), because an env proxy would mount httpx's
+  own transport underneath the bound. The TLS-handshake trickle stays a known limit.
+
 - **A lane capture is credited only to the lane that landed it (2026-09-24, T199).** `board_scans`
   now records the lane that wrote each lane row, and the funnel's per-lane recount groups on it, so a
   company two lanes admitted and one landed no longer counts for both (run 475's hiring.cafe 9-vs-10). A
