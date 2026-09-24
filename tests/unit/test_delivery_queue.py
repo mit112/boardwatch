@@ -3198,10 +3198,13 @@ def test_a_lane_copy_drains_when_the_employer_board_twin_is_standing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
+    # Grouped AFTER the first sync, which is how the standing population got its folders: a lane
+    # copy grouped before it is ever synced gets no folder at all (the test below this one).
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     assert len(_folders(root)) == 2
 
     with engine.connect() as conn:
@@ -3247,10 +3250,11 @@ def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
     with engine.begin() as conn:
         board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 1
@@ -3265,6 +3269,73 @@ def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
     assert len(_folders(root)) == 1
 
 
+def test_a_lane_copy_stays_drained_across_refresh_queue(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F1, through `refresh_queue` -- the run's and the server start's path -- rather than
+    `reconcile_queue` alone, which is what let the drain ship dead. The sync half used to pull the
+    folder straight back out of `_lane_copy/`: the tell is `moved`, not `created`, and a second
+    refresh must change nothing at all. The re-entry path is pinned through the same entry point.
+    """
+    with engine.begin() as conn:
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+
+    (lane_folder,) = [
+        name for name in _folders(root)
+        if _details(root / name)["posting_id"] == lane_id
+    ]
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, drained.failed, synced.failures) == (1, 0, ())
+    assert _folders(root / LANE_COPY_DIR) == [lane_folder]
+    # The ONE move is the board twin's, and it is `_plan`'s ordinary rule rather than the drain's:
+    # its lane-copy sibling left the plan, so its disambiguating suffix is no longer needed.
+    assert synced.moved == 1
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved, synced.created, synced.updated) == (0, 0, 0, 0)
+    assert _snapshot(root) == before
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=board_job, at=NOW)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_queue, synced.failures) == (1, ())
+    assert _folders(root / LANE_COPY_DIR) == []
+    assert len(_folders(root)) == 1
+
+
+def test_a_lane_copy_grouped_before_its_first_sync_gets_no_folder_until_the_twin_stops_holding(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F1's other side: `standing_queue_rows` leaves a lane copy out, so `sync_queue` never
+    creates one -- exactly as it never creates an `ineligible` lead's -- and creates it once the
+    board twin stops holding, which is the drain's re-entry path for a lead that never had a
+    folder."""
+    with engine.begin() as conn:
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+        lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.created, synced.failures) == (0, 1, ())
+    assert len(_folders(root)) == 1
+    assert _folders(root / LANE_COPY_DIR) == []
+
+    with engine.begin() as conn:
+        mark_job_skipped(conn, job_id=board_job, at=NOW)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (synced.created, synced.failures) == (1, ())
+    assert len(_folders(root)) == 1
+    assert len(_folders(root / SKIPPED_DIR)) == 1
+
+
 def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -3275,10 +3346,11 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps", body=INELIGIBLE_JD)
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
     with engine.begin() as conn:
         _make_ineligible(conn, lane_id)
     with engine.connect() as conn:
@@ -3314,10 +3386,11 @@ def test_a_group_held_only_at_a_RETIRED_generation_drains_nothing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
-            _cross_host(conn, posting_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3334,10 +3407,11 @@ def test_a_board_twin_at_a_RETIRED_generation_holds_nothing(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job", version=RETIRED)
-        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job", version=RETIRED)
+        _cross_host(conn, lane_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3353,10 +3427,11 @@ def test_a_lane_twin_at_a_RETIRED_generation_is_not_matched_to_a_CURRENT_holder(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        _cross_host(conn, board_id, "same-job")
-        _cross_host(conn, lane_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job", version=RETIRED)
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 0
@@ -3373,10 +3448,11 @@ def test_the_control_a_group_held_at_the_CURRENT_generation_still_drains(
     with engine.begin() as conn:
         board_id, _ = _deliver(conn, apps, "board", provider="greenhouse")
         lane_id, _ = _deliver(conn, apps, "lane", provider="jobapps")
-        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
-            _cross_host(conn, posting_id, "same-job")
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        for posting_id in ((board_id, lane_id) if board_first else (lane_id, board_id)):
+            _cross_host(conn, posting_id, "same-job")
     with engine.connect() as conn:
         drained = reconcile_queue(conn, root=root)
     assert drained.to_lane_copy == 1

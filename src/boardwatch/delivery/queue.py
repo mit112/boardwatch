@@ -341,14 +341,15 @@ def refresh_queue(
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     """Every lead the queue holds a folder for: delivered, unapplied, not skipped or reported,
-    and not `ineligible`. `_sync_locked` files exactly these, and T113's gate refresh re-judges
-    from exactly these, so the population is defined once — why each exclusion is there is
-    `_sync_locked`'s comment."""
+    not `ineligible`, and not a lane copy. `_sync_locked` files exactly these, and T113's gate
+    refresh re-judges from exactly these, so the population is defined once — why each exclusion
+    is there is `_sync_locked`'s comment."""
     withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    lane_copy = lane_copy_job_ids(conn, skipped=withheld)
     return [
         row
         for row in delivered_unapplied(conn, skipped=withheld)
-        if row.verdict != "ineligible"
+        if row.verdict != "ineligible" and row.job_id not in lane_copy
     ]
 
 
@@ -474,6 +475,8 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # the lead the owner reported would be in the apply queue again every run while the reconcile
     # count read a healthy 1. The tell is `moved`, not `created`: nothing is ever created here, so
     # a test asserting `created == 0` passes against the broken version and pins nothing.
+    # A LANE COPY is excluded for the same reason and had the same bug (T189): `refresh_queue`'s
+    # reconcile filed it under `_lane_copy/` and this pass moved it straight back out, every run.
     rows = standing_queue_rows(conn)
     # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
     # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
