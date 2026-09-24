@@ -649,3 +649,45 @@ def test_a_two_word_a_plus_still_hedges_the_bar(catalog, body: str) -> None:  # 
     assert not any(row[1] == "required" for row in _rows(result))
     assert result.verdict in ("eligible", "uncertain")
 
+
+# T197: an aside that names its OWN head noun qualifies that noun, not the bar before it, so its hedge
+# does not hedge the bar (T173's measurement). A bare aside -- `(preferred)` -- still does.
+@pytest.mark.parametrize(
+    ("body", "rule"),
+    [
+        pytest.param(
+            "5-10 years of experience in related field (Abbott Instruments Experience is an "
+            "advantage)",
+            "scoped_range_years_minimum", id="aside-names-a-product-experience",  # pv 225434
+        ),
+        pytest.param(
+            "3+ years of experience with HVAC maintenance (commercial preferred).",
+            "scoped_years_minimum", id="aside-names-a-modifier",  # pv 311120
+        ),
+    ],
+)
+def test_an_aside_about_another_noun_keeps_the_bar(catalog, body: str, rule: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert [f"experience_years:{rule}", "required", "unmet"] in _rows(result)
+    assert result.verdict == "ineligible"
+
+
+# CONTROLS for T197: a BARE aside is the bar's own hedge wherever it sits, so a mid-sentence one --
+# which the sentence-final tail predicate cannot reach -- still demotes the bar in its clause.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("5 years of experience (preferred) in accounting.", id="bare"),
+        pytest.param(
+            "5+ years of experience (strongly preferred) in public accounting.", id="intensified"
+        ),
+        pytest.param(
+            "3+ years of experience (preferred but not required) with Python and SQL.",
+            id="negated-bar-restated",
+        ),
+    ],
+)
+def test_a_bare_aside_mid_sentence_still_hedges_the_bar(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == _PREFERRED
+    assert result.verdict == "eligible"

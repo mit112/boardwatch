@@ -88,12 +88,20 @@ _NEGATED_ASIDE_GAP = re.compile(
 # keep suppressing, because a stated preference read as a hard floor is the worst wrong
 # verdict this engine can produce. The duration is what says the aside has a bar of its own
 # for the hedge to belong to.
+#
+# So does any word in the aside that is not the hedge's own predicate (T197): "(Abbott Instruments
+# Experience is an advantage)", "(commercial preferred)" and "(AWS preferred)" name the noun their
+# hedge qualifies, and the bar before them stays required. Only a BARE aside -- the whole of it the
+# sentence-final predicate `_tail_predicate` reads, "(preferred)", "(strongly preferred)",
+# "(preferred but not required)" -- is the sentence's hedge.
 _ASIDE = re.compile(r"\(([^()]*)\)")
 _ASIDE_DURATION = re.compile(r"\d\s*\+?\s*(?:years?|yrs?|months?|mos?)\b", re.IGNORECASE)
 
 
-def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) -> bool:
-    """Does the hedge at [mlo, mhi) belong to a parenthetical bar rather than to the span?
+def _hedge_owned_by_an_aside(
+    unit: str, lo: int, hi: int, mlo: int, mhi: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
+    """Does the hedge at [mlo, mhi) belong to a parenthetical aside rather than to the span?
 
     False whenever the span sits in the same aside: there the hedge is the span's own.
     """
@@ -102,7 +110,10 @@ def _hedge_owned_by_an_aside(unit: str, lo: int, hi: int, mlo: int, mhi: int) ->
             continue
         if aside.start() <= lo and hi <= aside.end():
             return False
-        return _ASIDE_DURATION.search(aside.group(1)) is not None
+        return (
+            _ASIDE_DURATION.search(aside.group(1)) is not None
+            or _tail_predicate(hedges).match(aside.group(1)) is None
+        )
     return False
 
 
@@ -785,14 +796,14 @@ def _suppressed(
     `inside_span` is for `abstain_by` alone (finding 45): an abstention is not a
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
-    `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical bar of
+    `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
     its own has claimed (`_hedge_owned_by_an_aside`).
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
             if aside_owned and _hedge_owned_by_an_aside(
-                text, lo, hi, match.start(), match.end()
+                text, lo, hi, match.start(), match.end(), suppressors
             ):
                 continue
             inside = clo <= match.start() and match.end() <= chi
