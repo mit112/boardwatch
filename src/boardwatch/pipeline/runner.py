@@ -129,6 +129,7 @@ from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingE
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     CodeProvenance,
+    CrossCheck,
     DeathProbeReport,
     ExecutionProvenance,
     GateCounters,
@@ -585,6 +586,10 @@ class PipelineSummary:
     # as the funnel published them. Set by `_emit_funnel`, like `apply_lane`, so the alert and the
     # artifact report one answer; `None` when the funnel was not collected or drift not measured.
     identity_drift: tuple[str, ...] | None = None
+    # T203. The funnel's cross-checks whose two counts differ, as the funnel published them. Set by
+    # `_emit_funnel`, like `identity_drift`, so the alert and the artifact report one answer; `None`
+    # when the funnel was not collected.
+    cross_check_disagreements: tuple[CrossCheck, ...] | None = None
     # T185 (DESIGN-T183 A2). The ranker's and the review gate's tenant-assumption tallies, set
     # where each gate runs; `None` where it did not, which the funnel reports as unmeasured.
     tenant_ranker: TenantAssumptionTally | None = None
@@ -3593,6 +3598,27 @@ def _run_pipeline_leased(
                 append_run_error(engine, run_id, drift_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! identity drift alert not recorded: {exc}", markup=False)
+        # T203. THE FUNNEL COUNTED ONE QUANTITY TWICE AND GOT TWO ANSWERS. The funnel records every
+        # cross-check whose in-memory and from-store counts differ (run 475's
+        # `lane:hiringcafe:persisted_new`, 9 against 10), and until this nothing here alerted on
+        # one, so it reached only someone who opened the artifact. One alert per run, naming each
+        # check as `name in_memory/from_store` — the check's own name and two integers, never its
+        # note or anything a host sent.
+        #
+        # ABOVE `_emit_morning` like every soft alert here (D-477 point 7): below it the alert
+        # still fires and is still recorded, but is invisible in the one artifact an unattended
+        # owner reads. Guarded (T129) like every sibling.
+        try:
+            if summary.cross_check_disagreements:
+                cross_check_alert = "funnel cross-check disagreement: " + "; ".join(
+                    f"{check.name} {check.in_memory}/{check.from_store}"
+                    for check in summary.cross_check_disagreements
+                )
+                console.print(f"  ! {cross_check_alert}", markup=False)
+                summary.errors.append(cross_check_alert)
+                append_run_error(engine, run_id, cross_check_alert)
+        except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
+            console.print(f"  ! cross-check alert not recorded: {exc}", markup=False)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
         # renders `summary.errors` (P3 item 7) and is the only artifact here the owner reads
         # unattended. Every handler above appends its note to that list BEFORE this runs, so a
@@ -3983,6 +4009,8 @@ def _emit_funnel(
     summary.apply_lane = funnel.apply_lane
     # T137. Same placement, same reason: the drift alert reads the answer the funnel computed.
     summary.identity_drift = funnel.identity_drift
+    # T203. Same placement, same reason.
+    summary.cross_check_disagreements = funnel.disagreements
     return write_run_funnel(funnel, day_dir)
 
 
