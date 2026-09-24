@@ -337,6 +337,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The queue's drains keep what they hold and never discard the owner's files (2026-09-23, T189).** A
+  drained lane copy was pulled back out of `_lane_copy/` by the next refresh, so the drain never held in
+  production; it now stays held, and a second refresh changes nothing. Retiring a duplicate folder moved
+  boardwatch's artefacts and deleted everything else; the owner's own files now move into the surviving
+  folder, with a suffix on a name clash, and nothing is deleted if a move fails. A lead whose folder name
+  changes only by letter case was wedged forever on a case-insensitive filesystem; it is renamed through
+  a temporary name, and the occupant check T172 widened compares folded names. From the review: the drain
+  is keyed on the posting, never the job, so a board lead is never a copy of itself; the web queue
+  and the apply-lane cohort read the same held set as the folders, with lane copies counted apart;
+  an owner file whose name a rewrite needs is renamed aside, never deleted; a crashed case-rename's
+  temporary folder is filed under its recorded name, staging cleanup never deletes a file boardwatch did
+  not write, and the held lane-copy count shows on the queue page. Review 2026-09-23 (delivery), F1–F4.
+
 - **A contended queue refresh is retried and, if still held, recorded; the web server's writes take
   the lock at begin; a mid-run config edit reports as drift (2026-09-23, T190).** A run whose queue
   refresh lost the queue lock to the web server used to skip the whole sync silently; it now asks
