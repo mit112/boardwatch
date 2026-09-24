@@ -935,6 +935,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Third engine batch: spelled-number years bars, the `a plus` word boundary, and an aside about
+  another noun (2026-09-24, T193, T196, T197).** "five (5) years of experience" and the bare words one to
+  twenty now read as years bars on the experience patterns and in every duration guard, exactly as their
+  digit twins (the domain patterns stay digits-only because spelled numbers there are boilerplate; a spelled
+  range writes no row); `a plus` hedges only as a whole word, so "diploma plus a minimum of 8 years" keeps
+  its bar; a trailing aside that names its own noun ("… (Abbott Instruments experience is an advantage)")
+  no longer hedges the bar, while "(preferred)" still does. From the run-474 audit and T173's measurement.
+  `engine_version` and `rules_hash` move once; the two-arm reading is in the merge message.
+
 - **Second engine batch: the hedges, ceilings and clause bounds the 2026-09-23 reviews found, as one
   re-key (2026-09-24, T174, T175, T178, T180, T181, T182).** A preferred years twin stops at its bar's
   clause boundary, and an abstaining bar's clause and heading hedges are read only after its abstains,
