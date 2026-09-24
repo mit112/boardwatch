@@ -155,6 +155,10 @@ class Settings(BaseModel):
     # delay paces itself.
     pace_from_request_start: bool = False
     retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
+    # Wall-clock budget for ONE `Fetcher` request, every attempt and backoff included. httpx's
+    # own timeout is per OPERATION, so a host that trickles a byte every few seconds never trips
+    # it and holds its per-host lock for as long as it likes (T192).
+    fetch_deadline_seconds: float = Field(default=120.0, gt=0)
     busy_timeout_ms: int = 5000
     # A `running` row this old with no terminal status is a crashed/killed run, not one still
     # in flight (P3 slice 2, D-046). Age-based because `runs` carries no pid/heartbeat column.

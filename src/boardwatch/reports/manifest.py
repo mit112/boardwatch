@@ -80,6 +80,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "per_host_delay_seconds",  # throughput
         "pace_from_request_start",  # throughput: WHERE the same delay is measured from
         "retry_attempts",          # throughput
+        "fetch_deadline_seconds",  # throughput: how long one request may hold its host
         "busy_timeout_ms",         # throughput
         "scan_workers",            # throughput
         "detail_fetch_budget",     # throughput
@@ -330,6 +331,7 @@ _ROUTING_IRRELEVANT: frozenset[str] = frozenset(
         "per_host_delay_seconds",
         "pace_from_request_start",
         "retry_attempts",
+        "fetch_deadline_seconds",
         "busy_timeout_ms",
         "scan_workers",
         "detail_fetch_budget",

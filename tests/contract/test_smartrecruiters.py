@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -391,3 +393,28 @@ def test_a_cross_page_duplicate_is_counted_once_in_board_enumerated(tmp_path: Pa
     snap = provider.fetch_board(_fetcher(tmp_path), _request())
     assert snap.board_reported_total == 4
     assert snap.board_enumerated == 3  # 4 rows collected, 3 distinct ids
+
+
+def test_a_list_page_that_trickles_past_the_fetch_deadline_is_a_failed_board(
+    tmp_path: Path,
+) -> None:
+    """T192, run 473: `api.smartrecruiters.com` trickled a response for 55 minutes. The fetch
+    deadline must reach the provider as a `failed` board naming the deadline — never
+    `unchanged`, never an exception out of the scan."""
+
+    def trickle() -> Iterator[bytes]:
+        for _ in range(40):
+            time.sleep(0.1)
+            yield b" "
+
+    fetcher = Fetcher(
+        Settings(
+            data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1,
+            per_host_delay_seconds=0.25, fetch_deadline_seconds=0.5,
+        )
+    )
+    with respx.mock:
+        respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=trickle()))
+        snap = SmartRecruitersProvider().fetch_board(fetcher, _request())
+    assert snap.status == "failed"
+    assert snap.error is not None and "fetch deadline 0.5s exceeded" in snap.error

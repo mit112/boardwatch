@@ -1,6 +1,7 @@
 import json
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -542,3 +543,48 @@ def test_two_fetcher_instances_on_different_hosts_still_overlap(tmp_path: Path) 
 
     gap = starts[1] - starts[0]
     assert gap < 0.5, gap
+
+
+def _trickle(chunks: int, interval: float) -> Iterator[bytes]:
+    for _ in range(chunks):
+        time.sleep(interval)
+        yield b"x"
+
+
+def test_a_trickling_body_ends_at_the_fetch_deadline_and_is_not_retried(tmp_path: Path) -> None:
+    """T192. httpx's timeout is per operation, so a server that sends one byte every 0.1s never
+    trips it. Forty bytes is 4s of trickle — "forever" against a 0.5s deadline — kept finite so
+    a regression fails on its assertions instead of hanging the suite."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=_trickle(40, 0.1))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+        fetcher.get("https://trickle.example/x")
+    assert time.monotonic() - started < 1.5
+    assert info.value.status_code is None  # the transport-level shape -> UNREACHABLE
+    # Not retried: reconnecting to a host that trickled for the whole budget stalls again.
+    assert calls == [1]
+
+
+def test_a_chunked_body_that_finishes_in_time_is_returned_unchanged(tmp_path: Path) -> None:
+    """Control: streaming the body under the deadline must not change what a request returns."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=iter([b'{"a":', b" 1}"]), headers={"ETag": '"v1"'}
+        )
+
+    fetcher = Fetcher(
+        _settings(tmp_path), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    result = fetcher.get("https://quick.example/x")
+    assert result == politeness.FetchResult(
+        200, b'{"a": 1}', False, ResponseValidators(etag='"v1"', last_modified=None),
+        "https://quick.example/x",
+    )

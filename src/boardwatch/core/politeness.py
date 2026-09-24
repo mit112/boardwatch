@@ -148,6 +148,7 @@ class Fetcher:
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
         self._pace_from_start = settings.pace_from_request_start
         self._retry_attempts = settings.retry_attempts
+        self._deadline = settings.fetch_deadline_seconds
         self._pacing = pacing if pacing is not None else _PROCESS_PACING
 
     @property
@@ -266,6 +267,11 @@ class Fetcher:
         min_host_delay: float | None = None,
     ) -> FetchResult:
         floor = max(min_host_delay or 0.0, 0.0)
+        # ONE clock for the whole call, every attempt and backoff included (T192). The thing this
+        # bounds is how long the per-host lock is held, and `_dispatch` holds it across all of
+        # them; a per-attempt budget would multiply by `retry_attempts`, and a retry is exactly
+        # what reconnected to the trickling host and stalled again in run 473.
+        deadline = time.monotonic() + self._deadline
 
         def _wait(retry_state: RetryCallState) -> float:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
@@ -289,7 +295,9 @@ class Fetcher:
                 reraise=True,
             ):
                 with attempt:
-                    return self._send_once(method, url, validators, json_body, headers)
+                    return self._send_once(
+                        method, url, validators, json_body, headers, deadline
+                    )
         except _RetryableStatus as exc:
             raise FetchFailure(
                 f"HTTP {exc.status_code} after {self._retry_attempts} attempts for {url}",
@@ -314,14 +322,33 @@ class Fetcher:
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
         extra_headers: Mapping[str, str] | None,
+        deadline: float,
     ) -> FetchResult:
+        self._check_deadline(url, deadline)  # a backoff can spend the budget before an attempt
         headers: dict[str, str] = dict(extra_headers or {})
         if validators is not None:
             if validators.etag:
                 headers["If-None-Match"] = validators.etag
             if validators.last_modified:
                 headers["If-Modified-Since"] = validators.last_modified
-        response = self._client.request(method, url, headers=headers, json=json_body)
+        # Streamed so the body is read in a loop that can look at the clock. httpx has no total
+        # deadline — its timeout is per OPERATION, and a host trickling a byte every few seconds
+        # never trips it. Only a 200's body is read; every other branch below raises or returns
+        # without it, exactly as it did when the whole response was read eagerly.
+        with self._client.stream(method, url, headers=headers, json=json_body) as response:
+            return self._classify(response, url, deadline)
+
+    def _check_deadline(self, url: str, deadline: float) -> None:
+        # A `FetchFailure`, not an httpx timeout: the retry predicate does not match it, so it is
+        # never retried, and it is the one exception every provider already maps to `failed`.
+        # `status_code=None` is the transport-level shape `health_from_failure` reads as
+        # UNREACHABLE — which a host that trickled for the whole budget is.
+        if time.monotonic() >= deadline:
+            raise FetchFailure(
+                f"fetch deadline {self._deadline:g}s exceeded for {url}", status_code=None
+            )
+
+    def _classify(self, response: httpx.Response, url: str, deadline: float) -> FetchResult:
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:
@@ -355,7 +382,11 @@ class Fetcher:
             if etag or last_modified
             else None
         )
-        return FetchResult(200, response.content, False, observed, str(response.url))
+        chunks: list[bytes] = []
+        for chunk in response.iter_bytes():
+            chunks.append(chunk)
+            self._check_deadline(url, deadline)
+        return FetchResult(200, b"".join(chunks), False, observed, str(response.url))
 
 
 def _parse_retry_after(response: httpx.Response) -> float | None:
