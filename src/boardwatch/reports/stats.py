@@ -22,9 +22,9 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
@@ -114,7 +114,8 @@ def compute_stats(
     now = now or utcnow()
     # Read ONCE, outside the connection: the extraction join below keys on it, exactly as
     # `top`'s does, so the two surfaces read the same row for the same posting.
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -151,8 +152,8 @@ def compute_stats(
     # Loaded ONCE, outside the comprehension: `load_leveling` parses YAML on every call.
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
-    tier = leveling.fields["software"]
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    tier = field_tier(leveling, declared_field(role_taxonomy))
     target_band = cast(TargetBand, profile.target_seniority_band)
     stats: list[PostingStat] = []
     for row in rows:
@@ -163,13 +164,14 @@ def compute_stats(
         # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
         # gate that could not be reconciled.
         role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
-        non_swe = role == "not_swe"
+        non_swe = role == "out_of_field"
         # Between the two, exactly where the ranker `continue`s on it: an `uncertain` +
         # zero-skill + above-band posting is `hidden_zero_signal` in the funnel and must not
         # ALSO be `over_seniority` here, which is the same irreconcilable double-count the
         # comment above records for `non_swe`.
         zero_signal = not non_swe and zero_signal_verdict(
             role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )[0] == "veto"
         over_seniority = not non_swe and not zero_signal and seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,

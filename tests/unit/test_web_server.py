@@ -833,7 +833,7 @@ def test_off_target_carries_the_role_gates_own_matched_text_and_uncertain_is_not
     off-target to a human and that the gate deliberately does not reject.
 
     Both of those still hold, and the D-332 split is why they now MATTER. `off_target` is
-    `not_swe` ONLY, while `review_gate.lane` demotes anything not positively `swe` — so the
+    `out_of_field` ONLY, while `review_gate.lane` demotes anything not positively `in_field` — so the
     vetoed nurse and the uncertain CPA land in the SAME list and only one of them wears a badge.
     That is exactly why the review lane had to become its own list rather than a flag: the flag
     cannot describe the lane, and reading `off_target` as "this is a review lead" would miss
@@ -872,7 +872,7 @@ def test_every_review_row_names_which_reason_held_it_and_apply_rows_carry_none(
     """`review_reason` on the wire, one member per branch of `review_gate.classify`.
 
     Before it existed the only marker a review row could carry was `off_target`, which is
-    `not_swe` ALONE — so a lead held for a confirmed non-US location, and a lead held because the
+    `out_of_field` ALONE — so a lead held for a confirmed non-US location, and a lead held because the
     role gate would not positively call its title software, both rendered indistinguishable from a
     clean one. All three cases are asserted together here, because the defect was not any single
     missing string: it was that two of the three lanes' reasons had nowhere to travel.

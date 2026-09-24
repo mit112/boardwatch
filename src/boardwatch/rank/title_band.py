@@ -27,12 +27,14 @@ from typing import cast
 
 from boardwatch.core.settings import Settings
 from boardwatch.rank.leveling import (
-    DEFAULT_FIELD,
+    FieldTier,
     LevelingCatalog,
     LevelScheme,
+    field_tier,
     load_leveling,
     resolve_schemes,
 )
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 
 
@@ -45,6 +47,8 @@ class TitleBandReader:
     #: join supplies — so a company with its own ladder is read against THAT ladder.
     schemes: Mapping[tuple[str, str], LevelScheme]
     target_band: TargetBand
+    #: The user's field tier (`leveling.field_tier`); `None` makes every title abstain.
+    tier: FieldTier | None
 
     def above_band(self, title: str, company: tuple[str, str] | None) -> bool:
         """The ONE bit the delivery lane acts on: is this title above the operator's target band?
@@ -62,7 +66,7 @@ class TitleBandReader:
             title,
             None if company is None else self.schemes.get(company),
             self.target_band,
-            self.catalog.fields[DEFAULT_FIELD],
+            self.tier,
             self.catalog,
         )
         return band == "above_band"
@@ -78,7 +82,8 @@ def title_band_reader(settings: Settings, target_band: TargetBand) -> TitleBandR
     """
     catalog = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(catalog, settings.config_dir)
-    return TitleBandReader(catalog=catalog, schemes=schemes, target_band=target_band)
+    tier = field_tier(catalog, declared_field(load_role_taxonomy(settings.config_dir)))
+    return TitleBandReader(catalog=catalog, schemes=schemes, target_band=target_band, tier=tier)
 
 
 def profile_target_band(profile: object) -> TargetBand:

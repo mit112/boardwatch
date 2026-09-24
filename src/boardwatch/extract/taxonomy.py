@@ -26,6 +26,13 @@ from boardwatch.store.tables import extractions
 
 EXTRACTOR_REVISION = 1
 
+# The career field the BUNDLED taxonomy's terms describe (DESIGN-T183 R3): the zero-signal rule
+# counts these terms, so it may fire only for a user whose field this is. Declared here and not
+# in `taxonomy.yaml` because a new top-level key would move the bundled `version` and re-extract
+# every posting for a fact the extraction never reads. An override declares its own `field:`.
+BUNDLED_TAXONOMY_FIELD = "software"
+_FIELD = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
 
 class TaxonomyError(ValueError):
     pass
@@ -45,6 +52,8 @@ class Taxonomy:
     patterns: tuple[TaxonomyPattern, ...]
     version: str
     source: str  # "override" | "bundled"
+    # The career field the terms describe; `None` for an override that declares none.
+    field: str | None
 
     def extract(self, text: str) -> set[str]:
         return {p.name for p in self.patterns if p.regex.search(text)}
@@ -70,6 +79,11 @@ def load_taxonomy(config_dir: Path) -> Taxonomy:
     entries = (data or {}).get("patterns") if isinstance(data, dict) else None
     if not isinstance(entries, list) or not entries:
         raise TaxonomyError(f"{origin}: 'patterns' must be a non-empty list")
+    field = data.get("field") if source == "override" else BUNDLED_TAXONOMY_FIELD
+    if field is not None and not (isinstance(field, str) and _FIELD.fullmatch(field)):
+        raise TaxonomyError(
+            f"{origin}: field {field!r} must be a lowercase token (letters, digits, '_' or '-')"
+        )
     patterns: list[TaxonomyPattern] = []
     seen: set[str] = set()
     for entry in entries:
@@ -89,7 +103,9 @@ def load_taxonomy(config_dir: Path) -> Taxonomy:
         except re.error as exc:
             raise TaxonomyError(f"{origin}: pattern {name!r} does not compile: {exc}") from exc
         patterns.append(TaxonomyPattern(name, category, pattern, case_sensitive, regex))
-    return Taxonomy(patterns=tuple(patterns), version=_version_of(data), source=source)
+    return Taxonomy(
+        patterns=tuple(patterns), version=_version_of(data), source=source, field=field
+    )
 
 
 def _version_of(document: Any) -> str:

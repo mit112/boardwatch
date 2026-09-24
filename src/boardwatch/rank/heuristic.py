@@ -40,6 +40,7 @@ from boardwatch.core.settings import RankWeights
 from boardwatch.rank.foreign_ad_gate import ad_marker_countries
 from boardwatch.rank.location_data import BUNDLED_PACKS, CountryPack
 from boardwatch.rank.location_gate import location_target
+from boardwatch.rank.role_taxonomy import BUNDLED_FIELDS
 from boardwatch.rank.seniority_gate import mask_non_seniority_phrases
 
 
@@ -85,12 +86,14 @@ class Score:
     posting_skill_count: int
 
 
-# Filler tokens common to nearly every engineering title; a match on these alone
-# (e.g. "Field Service Engineer" vs "Software Engineer") is not a real title match.
-GENERIC_TITLE_TOKENS = frozenset(
+# Filler tokens: a match on these alone (e.g. "Field Service Engineer" vs "Software Engineer") is
+# not a real title match. Rank and level words are filler in a title of any field; `engineer` and
+# `developer` are filler only in the software field, where nearly every title carries one — in a
+# controls or civil title the same word IS the role (DESIGN-T183 R4). A field boardwatch ships no
+# role knowledge for gets the level words only (`generic_title_tokens_for`).
+_SOFTWARE_TITLE_TOKENS = frozenset({"engineer", "developer"})
+_LEVEL_TITLE_TOKENS = frozenset(
     {
-        "engineer",
-        "developer",
         "senior",
         "sr",
         "staff",
@@ -111,9 +114,17 @@ GENERIC_TITLE_TOKENS = frozenset(
         "4",
     }
 )
+GENERIC_TITLE_TOKENS = _SOFTWARE_TITLE_TOKENS | _LEVEL_TITLE_TOKENS
 
 
-def title_match(posting_title: str, target_titles: Sequence[str]) -> float | None:
+def generic_title_tokens_for(field: str | None) -> frozenset[str]:
+    """The title filler for the user's field (their role taxonomy's; `None` when they have none)."""
+    return GENERIC_TITLE_TOKENS if field in BUNDLED_FIELDS else _LEVEL_TITLE_TOKENS
+
+
+def title_match(
+    posting_title: str, target_titles: Sequence[str], generic_tokens: frozenset[str]
+) -> float | None:
     if not target_titles:
         return None  # undefined -> renormalize (consistent with the zero-skill rule)
     posting_tokens = set(default_process(posting_title).split())
@@ -123,7 +134,7 @@ def title_match(posting_title: str, target_titles: Sequence[str]) -> float | Non
         # Shares tokens with this target, but all of them are generic filler:
         # skip its (otherwise generous) token_set_ratio. Targets that share a
         # meaningful token, or share nothing at all, still score by fuzzy ratio.
-        if shared and not (shared - GENERIC_TITLE_TOKENS):
+        if shared and not (shared - generic_tokens):
             continue
         ratio = fuzz.token_set_ratio(posting_title, target, processor=default_process)
         best = max(best, ratio / 100.0)
@@ -323,6 +334,8 @@ def score_posting(
     half_life_days: float = 14.0,
     zero_skill_prior: float = 0.50,
     coverage_pseudo_count: float = 1.0,
+    *,
+    generic_title_tokens: frozenset[str],
 ) -> Score:
     coverage_value, covered, skill_count = skill_coverage(profile.skills, posting_skills)
     if coverage_value is not None:
@@ -370,7 +383,7 @@ def score_posting(
     else:
         # Profile-side emptiness keeps renormalizing, per §3.6's own wording.
         coverage_detail = "no recognized skills in your profile"
-    title_value = title_match(posting_title, profile.target_titles)
+    title_value = title_match(posting_title, profile.target_titles, generic_title_tokens)
     recency_value = recency(posted_at, now, half_life_days)
     location_value = location_fit(posting_locations, remote_policy, profile)
     components = {

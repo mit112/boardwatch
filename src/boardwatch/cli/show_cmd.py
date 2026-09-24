@@ -28,13 +28,14 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
 from boardwatch.rank.heuristic import (
+    generic_title_tokens_for,
     hard_filter_verdict,
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
@@ -161,7 +162,8 @@ def show(
                 out.print("no profile yet — run `boardwatch init` first")
                 raise typer.Exit(code=1)
             profile = profile_view_from_row(profile_row)
-            version = load_taxonomy(settings.config_dir).version
+            skill_taxonomy = load_taxonomy(settings.config_dir)
+            version = skill_taxonomy.version
             extraction = conn.execute(
                 select(extractions.c.json).where(
                     extractions.c.posting_id == row.id,
@@ -171,11 +173,13 @@ def show(
                 )
             ).scalar_one_or_none()
         skills = set((extraction or {}).get("skills", []))
+        role_taxonomy = load_role_taxonomy(settings.config_dir)
         score = score_posting(
             profile, skills, row.title, row.posted_at,
             list(row.locations_json or []), row.remote_policy,
             settings.weights, utcnow(), settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         table = Table(title=f"Score {score.total:.2f}")
         table.add_column("Component")
@@ -200,10 +204,10 @@ def show(
         # `show <id>` is the audit surface for the role gate: every posting says what the
         # gate made of its title, so a hidden row can always be looked up and checked.
         # Plain line, markup off — the matched text is arbitrary title text.
-        role, role_reason = taxonomy_role_verdict(
-            row.title, load_role_taxonomy(settings.config_dir)
+        role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
+        hidden_note = (
+            " — hidden from top unless --include-non-swe" if role == "out_of_field" else ""
         )
-        hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
         out.print(f"Role: {role_reason}{hidden_note}", markup=False)
         # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
         # already read above for the score, and it is the ROW (None when absent), not a
@@ -215,7 +219,8 @@ def show(
         # whitespace SQLite's `trim` does not — this surface has to agree with `top` about
         # which body is empty, or `show` would explain a row `top` did not hide.
         zero_signal, zero_signal_reason = zero_signal_verdict(
-            role, extraction, body_empty=not (row.body_text or "").strip(" \t\n\r\f\v")
+            role, extraction, body_empty=not (row.body_text or "").strip(" \t\n\r\f\v"),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )
         if zero_signal != "pass":
             signal_note = (
@@ -231,7 +236,7 @@ def show(
         band, band_reason = seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)),
             cast(TargetBand, profile.target_seniority_band),
-            leveling.fields["software"], leveling,
+            field_tier(leveling, declared_field(role_taxonomy)), leveling,
         )
         band_note = (
             " — hidden from top unless --include-over-seniority" if band == "above_band" else ""

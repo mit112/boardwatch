@@ -328,7 +328,7 @@ def test_ineligible_leads_are_not_placeable(monkeypatch: pytest.MonkeyPatch) -> 
             location=", ".join(locations), locations=locations,
             remote_policy="onsite", posted_days=2, first_seen=NOW, status="open",
             verdict=verdict, apply_url="https://boards.test/apply", delivered_run_id=7,
-            tex_uri="/out/t.typ", pdf_uri=None, target_flag=None, role="swe",
+            tex_uri="/out/t.typ", pdf_uri=None, target_flag=None, role="in_field",
             target_countries=("USA",),
         )
 

@@ -58,4 +58,4 @@ def test_version_is_nonempty_and_reflects_either_source() -> None:
 
 
 def load_taxonomy_stub(version: str = "taxonomy-1") -> Taxonomy:
-    return Taxonomy(patterns=(), version=version, source="bundled")
+    return Taxonomy(patterns=(), version=version, source="bundled", field="software")

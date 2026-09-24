@@ -1897,7 +1897,7 @@ def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_n
             provider="greenhouse", location=None, locations=("Remote",), remote_policy=None,
             posted_days=None, first_seen=utcnow(), status="open", verdict="eligible",
             apply_url=None, delivered_run_id=1, tex_uri="file:///t.tex", pdf_uri=None,
-            target_flag=None, role="swe",
+            target_flag=None, role="in_field",
         )
         built = replace(base, **kw)  # type: ignore[arg-type]
         # The bundled software user's role verdict for the row's title (T184b).

@@ -105,7 +105,7 @@ class TestTheRankerHardGate:
 
 def _review(locations: list[str], target: tuple[str, ...], **kw: object) -> LaneDecision:
     return _classify(  # type: ignore[arg-type]
-        verdict="uncertain", locations=locations, role="swe",
+        verdict="uncertain", locations=locations, role="in_field",
         experience_unconfirmed=False, eligibility_unconfirmed=False, no_requirement_rows=False,
         posting_closed=False, seniority_above_band=False, judge_verdict=None,
         judge_seniority_above_band=False, revised_since_build=False,
@@ -142,7 +142,7 @@ def test_the_report_grounds_both_location_gates_on_the_target(
     countries: tuple[str, ...], expected: str | None
 ) -> None:
     got = ungrounded_reasons(
-        career_field="software", target_seniority_band="entry", seniority_hold=True,
-        target_countries=countries,
+        field="software", taxonomy_field="software", field_tiers={"software"},
+        target_seniority_band="entry", seniority_hold=True, target_countries=countries,
     )
     assert got["location"] == got["foreign_ad"] == expected

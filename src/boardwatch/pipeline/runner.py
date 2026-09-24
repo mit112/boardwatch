@@ -114,6 +114,7 @@ from boardwatch.projection.run import (
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.tenant_assumptions import (
     TenantAssumptionReport,
     TenantAssumptionTally,
@@ -1634,7 +1635,9 @@ def _lead_lanes(
     # is still counted as considered by it, and not as fired.
     tenant = TenantAssumptionTally(
         ungrounded_reasons(
-            career_field=None if facts is None else facts.career_field,
+            field=declared_field(load_role_taxonomy(settings.config_dir)),
+            taxonomy_field=load_taxonomy(settings.config_dir).field,
+            field_tiers=band_reader.catalog.fields.keys(),
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
             target_countries=target_countries,

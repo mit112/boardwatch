@@ -78,6 +78,7 @@ def _taxonomy(skills: frozenset[str]) -> Taxonomy:
         ),
         version="agreement-test",
         source="bundled",
+        field="software",
     )
 
 

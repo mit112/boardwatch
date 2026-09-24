@@ -20,10 +20,15 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.heuristic import (
+    ProfileView,
+    generic_title_tokens_for,
+    passes_hard_filters,
+    score_posting,
+)
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import body_is_empty, current_posting_versions
@@ -88,7 +93,8 @@ def select_new_matches(
     new_ids, max_event_id = _new_ids_and_max(conn, since_event_id)
     if not new_ids:
         return NotifyResult(items=(), since_event_id=since_event_id, max_event_id=max_event_id)
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     base = (
         select(
             postings.c.id,
@@ -139,8 +145,8 @@ def select_new_matches(
     # per-row load would put a YAML parse inside the notify loop.
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
-    tier = leveling.fields["software"]
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    tier = field_tier(leveling, declared_field(role_taxonomy))
     target_band = cast(TargetBand, profile.target_seniority_band)
     items: list[NotifyItem] = []
     for row in rows:
@@ -154,7 +160,7 @@ def select_new_matches(
         role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
         # Same default as `top`: a non-software title is not a "new match" worth a push.
         # Suppressed rather than dropped — `top --include-non-swe` still shows it.
-        if not include_non_swe and role == "not_swe":
+        if not include_non_swe and role == "out_of_field":
             continue
         # Same default as `top`, and in the same ORDER (before the band gate): a posting whose
         # title carried no role signal and whose body yielded no recognised term is not a "new
@@ -163,7 +169,8 @@ def select_new_matches(
         # pushed: an abstain is never a suppression, exactly as `uncertain` band is.
         # Suppressed rather than dropped — `top --include-zero-signal` still shows it.
         if not include_zero_signal and zero_signal_verdict(
-            role, row.extraction_json, body_empty=bool(row.body_empty)
+            role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )[0] == "veto":
             continue
         # Same default as `top`: a title above the operator's target band is not a "new match"
@@ -179,6 +186,7 @@ def select_new_matches(
             list(row.locations_json or []), row.remote_policy,
             settings.weights, now, settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         items.append(NotifyItem(
             posting_id=int(row.id), title=row.title, company=row.company_name,

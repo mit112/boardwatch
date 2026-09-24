@@ -23,10 +23,6 @@ import yaml
 
 LEVELING_VERSION = 1
 
-# The one field tier every caller resolves today. Field-tier selection by the profile's
-# career_field is future work; until then this key is required rather than assumed.
-DEFAULT_FIELD = "software"
-
 SeniorityBand = Literal["entry", "mid", "senior", "staff_plus"]
 
 _BANDS: frozenset[str] = frozenset({"entry", "mid", "senior", "staff_plus"})
@@ -94,6 +90,13 @@ def _key(value: object, where: str) -> str:
     return value
 
 
+def field_tier(catalog: LevelingCatalog, field: str | None) -> FieldTier | None:
+    """The word tier for the user's field (their role taxonomy's), or `None` when the catalog
+    has none for it — the seniority gate then abstains rather than read another field's words
+    (DESIGN-T183 S1)."""
+    return None if field is None else catalog.fields.get(field)
+
+
 def load_leveling(config_dir: Path) -> LevelingCatalog:
     raw = yaml.safe_load(_text(config_dir)) or {}
     if not isinstance(raw, dict):
@@ -147,15 +150,6 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
             for k, v in ((body or {}).get("roman") or {}).items()
         }
         fields[fname] = FieldTier(words=words, roman=roman)
-
-    # A catalog with no `software` tier loads fine and then KeyErrors at four call sites, on
-    # the unattended run included. Out-of-catalog is a failure, never a silent bucket -- so it
-    # fails HERE, typed and naming the value, rather than as a bare KeyError later.
-    if DEFAULT_FIELD not in fields:
-        raise LevelingError(
-            f"leveling.yaml: no {DEFAULT_FIELD!r} entry under `fields`; declared: "
-            f"{', '.join(sorted(fields)) or '(none)'}"
-        )
 
     # Hash the PARSED document, not the file: the consumer reads the parsed object, so a
     # digest over raw bytes would move on a comment edit and miss a semantic one via override.

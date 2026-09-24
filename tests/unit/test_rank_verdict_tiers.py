@@ -5,7 +5,7 @@ Before this ticket `scored.sort(key=lambda r: r.score.total, reverse=True)` (top
 a decided lead could rank below one nobody has judged yet. The fix sorts on
 `(tier, -score.total)`: tier 0 is a decided `eligible` (the deterministic verdict on the
 row, OR a persisted final-gate `eligible` — same read `hidden_ineligible` already uses,
-`current_gate_verdicts` via `gate_verdicts`), tier 1 is `uncertain` + role `swe` (the
+`current_gate_verdicts` via `gate_verdicts`), tier 1 is `uncertain` + role `in_field` (the
 release population), tier 2 is everything else visible. Score still orders WITHIN a tier.
 
 Seeding mirrors test_rank_gate_filter.py: one company, SAFE_BODY postings (never flagged
@@ -114,8 +114,8 @@ def test_a_decided_eligible_lead_outranks_a_higher_scoring_uncertain_swe_lead(
     """A: `Data Engineer`, gate-marked `eligible`, LOWER score (title_match 0.0 against the
     lone target "Software Engineer"). B: `Software Engineer`, verdict `uncertain` (the
     deterministic engine's default on a body it never flags — see the module docstring),
-    role `swe`, and a HIGHER score (title_match 1.0, exact target match). Both are visible
-    (role `swe`, no hard filter, `--include-*` defaults untouched).
+    role `in_field`, and a HIGHER score (title_match 1.0, exact target match). Both are visible
+    (role `in_field`, no hard filter, `--include-*` defaults untouched).
 
     Against unchanged code (`scored.sort(key=lambda r: r.score.total, reverse=True)`) B
     ranks first — score is the only key. The fix must rank A first: a decided `eligible`
@@ -128,7 +128,7 @@ def test_a_decided_eligible_lead_outranks_a_higher_scoring_uncertain_swe_lead(
 
     results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
     by_id = {p.posting_id: p for p in results.visible}
-    assert by_id[b_id].role == "swe"
+    assert by_id[b_id].role == "in_field"
     assert by_id[b_id].verdict == "uncertain"
     # The scores must actually differ, and B's must be the higher one — otherwise a pass
     # below would be an accident of the fixture, not evidence the tiering fired.
@@ -163,7 +163,7 @@ def test_an_eligible_lead_with_no_role_signal_ranks_below_an_uncertain_swe_lead(
     them outranked every `uncertain` software lead, because tier 0 was "decided `eligible`"
     with no role term. Run 4 was 26 software titles of 40; run 5 was 10 of 30; and it worsens
     each run because `built` retires the software leads. A decided `eligible` earns tier 0
-    only for the release population, role `swe`; an `eligible` lead with no role signal is
+    only for the release population, role `in_field`; an `eligible` lead with no role signal is
     tier 2, below the undecided software leads it used to displace.
     """
     # The Ranger's body names one recognised skill, as the real ones did, so the zero-signal
@@ -179,7 +179,7 @@ def test_an_eligible_lead_with_no_role_signal_ranks_below_an_uncertain_swe_lead(
     results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
     by_id = {p.posting_id: p for p in results.visible}
     assert by_id[ranger_id].role == "uncertain", by_id[ranger_id].role_reason
-    assert by_id[swe_id].role == "swe"
+    assert by_id[swe_id].role == "in_field"
     assert by_id[swe_id].verdict == "uncertain"
 
     assert [p.posting_id for p in results.visible] == [swe_id, ranger_id]

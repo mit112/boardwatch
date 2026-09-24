@@ -27,6 +27,7 @@ def _taxonomy(*names: str) -> Taxonomy:
         ),
         version="test-1",
         source="bundled",
+        field="software",
     )
 
 

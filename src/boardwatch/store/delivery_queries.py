@@ -158,7 +158,7 @@ class QueueRow:
     #: T184b. The role gate's verdict on `title` against the USER's role taxonomy — the one `top`
     #: ranks on — computed ONCE per read by `_queue_row` from a taxonomy loaded once per read, so
     #: the ranker and every standing lane reader answer one question one way (D-332). Required,
-    #: not defaulted: no value is inert here (`unmeasured` holds, `swe` releases), so a fixture
+    #: not defaulted: no value is inert here (`unmeasured` holds, `in_field` releases), so a fixture
     #: has to say which user it stands in for.
     role: RoleVerdict
     #: What the CURRENT evaluation's requirement rows say: which kinds it left unconfirmed, and

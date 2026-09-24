@@ -41,12 +41,13 @@ from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
     HardFilterClause,
     Score,
+    generic_title_tokens_for,
     hard_filter_verdict,
     passes_hard_filters,
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.location_gate import LocationTarget, TargetClass, location_target
 from boardwatch.rank.role_gate import (
     RoleVerdict,
@@ -54,7 +55,7 @@ from boardwatch.rank.role_gate import (
     taxonomy_role_verdict,
     zero_signal_verdict,
 )
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import (
     SeniorityVerdict,
     TargetBand,
@@ -102,7 +103,7 @@ class RankedPosting:
     score: Score
     why: str
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
-    role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
+    role: RoleVerdict = "uncertain"  # title role gate; "out_of_field" is hidden unless asked for
     role_reason: str = ""
     # The zero-signal rule's own verdict, twin fields in the same shape as `band`/`band_reason`:
     # the verdict is a closed catalog for machines, the reason is the text that decided it for
@@ -502,7 +503,8 @@ def rank_open_postings(
     stats = run_eligibility(
         engine, settings, output_console, run_id=run_id
     )  # no-op on a null profile; before the check
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     # Loaded ONCE, beside the taxonomy, never per row: `role_verdict` is tuned to 0.30s over
     # 19,262 postings and the loop below runs ~27k times. `bindings` is user config keyed on
     # (provider, slug); resolving it to LevelScheme objects here means the loop does one dict
@@ -510,13 +512,12 @@ def rank_open_postings(
     # binding file is hand-edited, and a typo must not take the whole shortlist down.
     catalog = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(catalog, settings.config_dir)
-    # `software` is the only field tier shipped in leveling.yaml. Resolving the operator's own
-    # career field (and abstaining when it is unresolvable, which is what the catalog comment
-    # calls for) is future work — there is no profile field to resolve it from yet.
-    tier = catalog.fields["software"]
     # The user's own role taxonomy, loaded once like the leveling catalog. `None` (no file) makes
     # the role gate abstain on every row; a malformed file raises here, typed, never defaulted.
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    # The seniority word tier for the user's field; `None` (no tier shipped for it, or no
+    # taxonomy) makes every title abstain `uncertain` rather than read software words.
+    tier = field_tier(catalog, declared_field(role_taxonomy))
     now = now or utcnow()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -621,10 +622,14 @@ def rank_open_postings(
     # Built ONCE, and only when the gate is inert: on the `any` path the verdict short-circuits
     # before parsing, so this single alternation scan is the only way to tell the operator the
     # gate would have had something to say. `None` on every other path costs nothing.
-    token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
+    token_probe = (
+        build_token_probe(tier, catalog) if target_band == "any" and tier is not None else None
+    )
     tenant = TenantAssumptionTally(
         ungrounded_reasons(
-            career_field=facts.career_field,
+            field=declared_field(role_taxonomy),
+            taxonomy_field=skill_taxonomy.field,
+            field_tiers=catalog.fields.keys(),
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
             target_countries=profile.target_countries,
@@ -669,7 +674,7 @@ def rank_open_postings(
         role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
         tenant.observe(
             "role",
-            fired=role == "not_swe",
+            fired=role == "out_of_field",
             own_abstain=(
                 # No taxonomy file at all: the gate could not read this user's field (T184).
                 "missing_profile_field:role_taxonomy" if role == "unmeasured"
@@ -680,7 +685,7 @@ def rank_open_postings(
         if role == "unmeasured":
             # Counted, never dropped: the gate had no taxonomy to read (see `role_unmeasured`).
             role_unmeasured += 1
-        if role == "not_swe" and not include_non_swe:
+        if role == "out_of_field" and not include_non_swe:
             hidden_non_swe += 1
             continue
         # The zero-signal rule (see `role_gate.zero_signal_verdict`): the title abstained AND
@@ -692,7 +697,8 @@ def rank_open_postings(
         # boolean computed in SQLite by the same `select(...)`, so the emptiness check costs no
         # transfer of the body itself.
         zero_signal, zero_signal_reason = zero_signal_verdict(
-            role, row.extraction_json, body_empty=bool(row.body_empty)
+            role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )
         tenant.observe(
             "zero_signal",
@@ -736,6 +742,7 @@ def rank_open_postings(
             list(row.locations_json or []), row.remote_policy,
             settings.weights, now, settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         why = why_summary(score, row.posted_at, now)
         # A BODY-LESS posting is uncappable, and this guard is the difference between the cap
@@ -776,7 +783,7 @@ def rank_open_postings(
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
-            why=f"{why} · role: {role_reason}" if role == "not_swe" else why,
+            why=f"{why} · role: {role_reason}" if role == "out_of_field" else why,
             verdict=verdicts.get(int(row.id)),
             role=role, role_reason=role_reason,
             zero_signal=zero_signal, zero_signal_reason=zero_signal_reason,
@@ -787,22 +794,22 @@ def rank_open_postings(
     # Score alone used to be the whole key, so a decided lead could rank below one nobody
     # has judged yet. Tier first, score second (D-477): tier 0 is a DECIDED `eligible` — the
     # deterministic verdict on the row, or a persisted final-gate `eligible` read the same
-    # way the ineligible hide below reads `gate_verdicts` — AND role `swe`; tier 1 is
-    # `uncertain` + role `swe`; tier 2 is everything else still visible (any-verdict
+    # way the ineligible hide below reads `gate_verdicts` — AND role `in_field`; tier 1 is
+    # `uncertain` + role `in_field`; tier 2 is everything else still visible (any-verdict
     # non-swe or no-role-signal, unevaluated, ...). Role is a term of tier 0 since run 5
     # (2026-09-05, D-483): without it every `eligible` posting whose title carried no role
     # signal at all — park rangers, pulmonologists, wealth associates, all `eligible` because
     # the body flagged nothing — outranked every undecided software lead, 20 of 30 delivered,
     # worsening each run as `built` retired the software ones. The release population is
-    # role `swe` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
+    # role `in_field` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
     # tiers, it does not re-weigh the score.
     def _rank_tier(posting: RankedPosting) -> int:
         decided_eligible = (
             posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
         )
-        if decided_eligible and posting.role == "swe":
+        if decided_eligible and posting.role == "in_field":
             return 0
-        if posting.verdict == "uncertain" and posting.role == "swe":
+        if posting.verdict == "uncertain" and posting.role == "in_field":
             return 1
         return 2
 
@@ -1072,7 +1079,7 @@ def rank_open_postings(
             if (
                 job_id is not None
                 and posting.band != "above_band"
-                and posting.role != "not_swe"
+                and posting.role != "out_of_field"
                 and posting.zero_signal != "veto"
             ):
                 surfaced_job_ids.append(job_id)

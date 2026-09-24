@@ -78,12 +78,12 @@ CONTROL_TITLES = (
 )
 
 
-def _seed(data_dir: Path, titles: list[str]) -> Engine:
+def _seed(data_dir: Path, titles: list[str], target_titles: list[str] | None = None) -> Engine:
     engine = get_engine(data_dir)
     ensure_schema(engine)
     with engine.begin() as conn:
         save_profile(
-            conn, text="A profile.", target_titles=[], exclude_titles=[],
+            conn, text="A profile.", target_titles=target_titles or [], exclude_titles=[],
             locations=[], remote_only=False, skills=[], taxonomy_version="t",
             resume_max_pages=1,
         )
@@ -109,12 +109,12 @@ def _seed(data_dir: Path, titles: list[str]) -> Engine:
 
 def _rank(
     tmp_path: Path, titles: list[str], taxonomy: dict[str, Any] | None,
-    *, include_non_swe: bool = False,
+    *, include_non_swe: bool = False, target_titles: list[str] | None = None,
 ) -> RankedResults:
     data_dir = tmp_path / "data"
     if taxonomy is not None:
         write_role_taxonomy(data_dir, taxonomy)
-    engine = _seed(data_dir, titles)
+    engine = _seed(data_dir, titles, target_titles)
     return rank_open_postings(
         engine, Settings(data_dir=data_dir, config_dir=data_dir), limit=50, record_surfaced=False,
         include_non_swe=include_non_swe,
@@ -150,23 +150,74 @@ def test_a_gathered_taxonomy_ranks_its_own_field_and_not_software(tmp_path: Path
     )
     visible = {p.title: p for p in results.visible}
     assert set(visible) == {WIDGET_TITLE, "Widget Assembler II"}
-    assert visible[WIDGET_TITLE].role == "swe"
+    assert visible[WIDGET_TITLE].role == "in_field"
     assert "'inspection'" in visible[WIDGET_TITLE].role_reason
     assert results.hidden_non_swe == 1
     assert results.role_unmeasured == 0
 
 
+# A synthetic field where `engineer` is the job itself, not software filler (DESIGN-T183 R4).
+CONTROLS_FIELD: dict[str, Any] = {
+    "version": 1,
+    "field": "controls",
+    "role_families": [{"id": "controls", "title_words": ["control systems engineer"]}],
+}
+
+
+@pytest.mark.parametrize(
+    ("taxonomy", "matched"), [(CONTROLS_FIELD, True), (BUNDLED_SOFTWARE, False)]
+)
+def test_engineer_is_title_filler_only_in_the_software_field(
+    tmp_path: Path, taxonomy: dict[str, Any], matched: bool
+) -> None:
+    """T187 C1: sharing only `engineer` with a target is no title match for a SOFTWARE user
+    ("Field Service Engineer" vs "Software Engineer"), and the whole match for a controls one."""
+    results = _rank(
+        tmp_path, ["Control Systems Engineer"], taxonomy=taxonomy, include_non_swe=True,
+        target_titles=["Controls Engineer"],
+    )
+    (posting,) = results.visible
+    title = posting.score.components["title_match"].value
+    assert title is not None
+    assert (title > 0.5) is matched, title
+
+
+# The user's OWN pack for the one field boardwatch ships code for (DESIGN-T183 C3, the D24 rule
+# `taxonomy.yaml` follows: a user's file wins over what ships).
+SOFTWARE_OVERLAY: dict[str, Any] = {
+    "version": 1,
+    "field": "software",
+    "role_families": [{"id": "solutions", "title_words": ["account executive"]}],
+}
+
+
+def test_a_users_own_pack_for_the_software_field_wins_over_the_shipped_one(
+    tmp_path: Path,
+) -> None:
+    """T187 C3. The shipped software classifier is the `bundled: true` pack, and it is used only
+    when the user asks for it: their own families for `software` REPLACE it, not merge with it.
+    The shipped gate would veto the first title and rescue the second."""
+    assert role_verdict(DENIED_BY_SOFTWARE_GATE)[0] == "out_of_field"  # guard
+    assert role_verdict(SOFTWARE_TITLE)[0] == "in_field"  # guard
+    results = _rank(
+        tmp_path, [DENIED_BY_SOFTWARE_GATE, SOFTWARE_TITLE], taxonomy=SOFTWARE_OVERLAY
+    )
+    roles = {p.title: p.role for p in results.visible}
+    assert roles == {DENIED_BY_SOFTWARE_GATE: "in_field", SOFTWARE_TITLE: "uncertain"}
+    assert results.hidden_non_swe == 0
+
+
 def test_a_family_word_is_tried_before_any_exclude_word() -> None:
     taxonomy = parse_role_taxonomy(WIDGET_FIELD)
     # "engineer" is excluded, but a family hit decides first (the software gate's rescue order).
-    assert taxonomy_role_verdict("Widget Inspector Engineer", taxonomy)[0] == "swe"
-    assert taxonomy_role_verdict("Plant Engineer", taxonomy)[0] == "not_swe"
+    assert taxonomy_role_verdict("Widget Inspector Engineer", taxonomy)[0] == "in_field"
+    assert taxonomy_role_verdict("Plant Engineer", taxonomy)[0] == "out_of_field"
     assert taxonomy_role_verdict("Floor Coordinator", taxonomy)[0] == "uncertain"
 
 
 def test_title_words_match_whole_words_only() -> None:
     taxonomy = parse_role_taxonomy(WIDGET_FIELD)
-    assert taxonomy_role_verdict("Widget   Inspector", taxonomy)[0] == "swe"
+    assert taxonomy_role_verdict("Widget   Inspector", taxonomy)[0] == "in_field"
     assert taxonomy_role_verdict("Widget Inspectorate Clerk", taxonomy)[0] == "uncertain"
 
 
@@ -181,7 +232,7 @@ PUNCTUATED_FIELD: dict[str, Any] = {
 def test_a_word_that_starts_or_ends_in_punctuation_still_matches(title: str) -> None:
     # `\b` needs a word character beside it, so `\bc\+\+\b` could never match "C++ Developer".
     taxonomy = parse_role_taxonomy(PUNCTUATED_FIELD)
-    assert taxonomy_role_verdict(title, taxonomy)[0] == "swe"
+    assert taxonomy_role_verdict(title, taxonomy)[0] == "in_field"
 
 
 @pytest.mark.parametrize("title", ["Metac++ Tooling", "Abc# Lead", ".NETX Lead"])
@@ -201,7 +252,7 @@ def test_the_bundled_software_taxonomy_is_byte_identical_to_the_software_gate(ti
 
 def test_a_tech_user_ranks_exactly_as_before(tmp_path: Path) -> None:
     results = _rank(tmp_path, list(CONTROL_TITLES), taxonomy=BUNDLED_SOFTWARE)
-    expected_hidden = [t for t in CONTROL_TITLES if role_verdict(t)[0] == "not_swe"]
+    expected_hidden = [t for t in CONTROL_TITLES if role_verdict(t)[0] == "out_of_field"]
     assert results.hidden_non_swe == len(expected_hidden)
     assert results.role_unmeasured == 0
     for posting in results.visible:
@@ -268,7 +319,7 @@ def test_a_gathered_taxonomy_passes_its_own_field_through_the_lane_role_gate(
     assert reason not in role_reasons and pane_reason not in role_reasons
     # Past the role gate it is held only because the catalog found no requirement in `BODY`.
     assert (reason, pane_reason) == ("no_requirements_found", "no_requirements_found")
-    assert top_role == row_role == "swe"
+    assert top_role == row_role == "in_field"
 
 
 def test_a_tech_user_lane_still_vetoes_a_not_software_title(

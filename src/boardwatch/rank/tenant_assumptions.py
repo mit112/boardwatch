@@ -22,12 +22,12 @@ gate and per run, whether each decision was grounded in a profile field the gate
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from boardwatch.rank.leveling import DEFAULT_FIELD
 from boardwatch.rank.location_gate import location_target
+from boardwatch.rank.role_taxonomy import MISSING_ROLE_TAXONOMY
 
 TenantGate = Literal[
     "location", "foreign_ad", "role", "zero_signal", "seniority_field", "judge_seniority"
@@ -40,28 +40,36 @@ _JUDGE_QUESTION_BAND = "entry"
 
 def ungrounded_reasons(
     *,
-    career_field: str | None,
+    field: str | None,
+    taxonomy_field: str | None,
+    field_tiers: Collection[str],
     target_seniority_band: str,
     seniority_hold: bool,
     target_countries: Sequence[str],
 ) -> dict[TenantGate, str | None]:
     """Per gate, why it has no tenant data to decide on, or ``None`` when it does.
 
-    ``DEFAULT_FIELD`` is the field the role tables, the bundled taxonomy and the ranker's
-    leveling tier were all written for; a gate keyed to it is grounded only when the profile's
-    ``career_field`` names it.
+    ``field`` is the user's field as the ranker knows it, the one their role taxonomy declares
+    (``role_taxonomy.declared_field``) and the key every field-dependent ranker gate reads; it
+    is not ``Facts.career_field``, an eligibility input none of these gates reads. The role gate
+    is grounded whenever the user HAS a taxonomy, bundled or gathered (T184). The zero-signal
+    rule is grounded only when the skill taxonomy's declared field (``taxonomy_field``) is the
+    user's, and it abstains itself otherwise (T187 C2). The seniority gate is grounded only
+    when ``leveling.yaml`` has a word tier for the field (``field_tiers``, its field names), and
+    abstains itself otherwise (T187 C4).
     """
     role: str | None
     zero_signal: str | None
     seniority: str | None
-    if career_field is None:
-        role = zero_signal = seniority = "missing_profile_field:career_field"
-    elif career_field != DEFAULT_FIELD:
-        role = f"no_role_pack:{career_field}"
-        zero_signal = f"taxonomy_field:{DEFAULT_FIELD}!={career_field}"
-        seniority = f"field_tier:{DEFAULT_FIELD}!={career_field}"
+    if field is None:
+        role = zero_signal = seniority = MISSING_ROLE_TAXONOMY
     else:
-        role = zero_signal = seniority = None
+        role = None
+        zero_signal = (
+            None if taxonomy_field == field
+            else f"taxonomy_field:{taxonomy_field or 'undeclared'}!={field}"
+        )
+        seniority = None if field in field_tiers else f"missing_field_tier:{field}"
     if not seniority_hold:
         judge: str | None = "disarmed:gate.seniority_hold"
     elif target_seniority_band != _JUDGE_QUESTION_BAND:
