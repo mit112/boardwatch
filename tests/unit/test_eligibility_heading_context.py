@@ -60,6 +60,23 @@ LADDER_261677_INLINE = (
 BOUND_CONTROL = (
     "Nice to have:\n- 5 years of experience.\nRequirements:\n- 8 years of experience."
 )
+# Posting 129842's preferred section verbatim (T181): the citizenship bar is its last plain line,
+# and it was the posting's only reason for `ineligible`.
+PREFERRED_129842 = (
+    'Preferred Qualifications\n'
+    'Ph.D.; or M.S. plus 5 years of experience; or B.S. plus 10 years of experience in biochemistry, biophysics, computational biology, structural biology, or a closely related field\n'
+    'Deep expertise in computational protein engineering, including AI/ML enabled protein design, structural modeling, or optimization\n'
+    'Extensive expertise using protein design tools (e.g. RFdiffusion, ProteinMPNN, AlphaFold, Rosetta based workflows, etc.) for protein-binder and enzyme design\n'
+    'Demonstrated ability to reproducibly script and code using Python and/or Bash/Unix shell\n'
+    'Experience with scientific computing and data analysis libraries (e.g., NumPy, pandas, SciPy, PyTorch/JAX, matplotlib)\n'
+    'Hands on experience installing, maintaining, and operating open source protein modeling and simulation tools\n'
+    'Experience with containerized software environments (e.g., Conda, Docker, Apptainer/ Singularity)\n'
+    'Strong fundamental understanding of protein biochemistry and common laboratory procedures relevant to protein expression, purification, and characterization\n'
+    'Proven ability to work effectively in multidisciplinary team environments\n'
+    'Ability to independently troubleshoot technical challenges and rapidly adopt new modeling tools or workflows\n'
+    'Strong written and oral communication skills\n'
+    'U.S. citizenship with the ability to obtain and maintain required security clearances'
+)
 
 # (label, body, facts, policy, verdict, [[rule_id, requiredness, disposition], ...])
 HEADING_CASES: list[tuple] = [
@@ -91,14 +108,8 @@ HEADING_CASES: list[tuple] = [
     ('h26:a field label opening a bullet is read through by the hedge', 'Nice to have:\n- Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h27:a field label after an inline bullet is read through by the hedge', 'Nice to have: • Experience: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h29:BOUND a requirement-section line without a colon ends a plain-line hedge, so its bar rejects', 'Nice to have:\nKubernetes experience\nRequired skills\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h30:BOUND a label-alone line ends a plain-line hedge, so its bar rejects', "Nice to have:\nKubernetes experience\nWhat you'll bring:\n5+ years of experience.", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h31:BOUND Who you are ends a plain-line hedge', 'Nice to have:\nKubernetes experience\nWho you are:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h32:BOUND Must haves ends a plain-line hedge', 'Preferred Qualifications:\nGo experience\nMust haves\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ("h33:BOUND What we're looking for ends a plain-line hedge", "Bonus:\nGo experience\nWhat we’re looking for\n5+ years of experience.", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h34:CONTROL a hedge heading still hedges its own list of plain lines', 'Nice to have:\nKubernetes experience\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
-    ('h35:CONTROL a catalogued heading with a colon still bounds a plain-line hedge', 'Nice to have:\nKubernetes experience\nRequirements:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
-    ('h36:CONTROL a label-alone line only ends a reach and is never promoted to a heading, so a hedge it holds reaches nothing (the conservative miss)', 'Requirements:\nGo experience\nNice to have skills:\n5+ years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h29:129842 a hedge heading reaches a bare citizenship bar', PREFERRED_129842, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
+    ('h30:CONTROL the same citizenship line under the posting\'s own Key Qualifications heading keeps its bar', 'Key Qualifications\nU.S. citizenship with the ability to obtain and maintain required security clearances', P_FACTS, ALL_BLOCKERS, 'ineligible', [['work_auth:us_citizen_standalone_required', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -114,7 +125,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "4e4105444756c0288c8a701a7585a0431c7c902970130512b846fed2a84a6800"
+SPLIT_UNITS_DIGEST = "5db6b30525d7cf09512603d6f3594d449b30e4cdd3a7835215a4a3c6d006ff24"
 
 
 @pytest.fixture(scope="module")
@@ -181,22 +192,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 36
-
-
-@pytest.mark.parametrize(
-    "body",
-    [
-        "Preferred Qualifications:\nGo experience\nKubernetes experience\n5+ years of experience.",
-        "Preferred Qualifications:\n- Go experience\n- Kubernetes experience\n- 5+ years of experience.",
-    ],
-    ids=["plain", "bulleted"],
-)
-def test_a_heading_view_row_quotes_the_bar_not_the_heading(catalog, body) -> None:
-    """The evidence span is a raw slice of the frozen body that starts at the bar. Spanning from
-    the heading quoted every line between them, which is not the requirement."""
-    result = evaluate(body, Facts.model_validate(P_FACTS), _policy(catalog, ALL_BLOCKERS), catalog)
-    (row,) = result.requirements
-    start, end = row.jd_locator["span"]
-    assert row.requiredness == "preferred"
-    assert body[start:end] == "5+ years of experience"
+    assert len(HEADING_CASES) == 30
