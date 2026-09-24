@@ -350,3 +350,24 @@ def test_ids_file_and_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
     missing = _invoke(tmp_path, "--ids", "999999")
     assert "999999\tfailed\tno such posting" in missing.output
+
+
+def test_without_apply_the_store_is_not_migrated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Report-only never runs the schema migration: `build_context(ensure=True)` would migrate a
+    behind-schema store before the command reported anything (Codex on T210)."""
+    from boardwatch.cli import context as cli_context
+
+    engine, posting_id, _ = _seed(tmp_path)
+    _use(monkeypatch, FakeBoard(_board_posting()))
+
+    def refuse(_engine: object) -> None:
+        raise AssertionError("ensure_schema ran on a report-only refetch")
+
+    monkeypatch.setattr(cli_context, "ensure_schema", refuse)
+    before = _everything(engine)
+    result = _invoke(tmp_path, "--ids", str(posting_id))
+    assert result.exit_code == 0, result.output
+    assert "revised" in result.output
+    assert _everything(engine) == before
