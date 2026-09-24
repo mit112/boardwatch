@@ -611,8 +611,12 @@ families:
         # goes on to substitute SOMETHING ELSE ("10+ years of relevant experience (additional
         # experience may substitute for degree)", "...; internship experience may be counted").
         # Nor a sentence-scoped prefix: the bar usually opens its sentence, where a prefix is empty.
+        # T214. An EQUIVALENCE is the same rule: "1 year of experience equals 12 months of
+        # education", "Two years' relevant work experience is equivalent to one-year college" (8
+        # pinned bodies), "... is equal to", "... counts as". `equal`/`equivalent to` needs the
+        # copula, so "experience equivalent to the GS-11 level" and "at a level equal to" stay bars.
         suppressed_by_predicate:
-          - &credit_predicate "(?:\\s*\\([^()]*\\))?(?:\\s+(?!(?:and|or|but|nor|while|whereas|which|who|that|required|preferred|will|shall|may|maybe|can|could|would|is|are)(?!\\w))[\\w’'/&+#-]+){0,8}?\\s+(?:will|shall|may|maybe|can|could|would|is|are)\\s+(?:also\\s+|only\\s+)?(?:be\\s+)?(?:credited|counted|substituted?)(?!\\w)"
+          - &credit_predicate "(?:\\s*\\([^()]*\\))?(?:\\s+(?!(?:and|or|but|nor|while|whereas|which|who|that|required|preferred|will|shall|may|maybe|can|could|would|is|are)(?!\\w))[\\w’'/&+#-]+){0,8}?\\s+(?:(?:will|shall|may|maybe|can|could|would|is|are)\\s+(?:also\\s+|only\\s+)?(?:be\\s+)?(?:credited|counted|substituted?|(?:considered\\s+)?(?:equal|equivalent)\\s+to|count\\s+(?:as|toward|towards))|equals|counts\\s+(?:as|toward|towards))(?!\\w)"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."

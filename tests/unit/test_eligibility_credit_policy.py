@@ -117,3 +117,65 @@ def test_a_bar_followed_by_another_nouns_credit_rule_keeps_its_row(  # type: ign
     assert _years_rows(body, catalog) == (
         "ineligible", [(f"experience_years:{rule}", "required", "unmet")] * count
     )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "2 years of experience equals 24 months of education.", id="equals",
+        ),
+        pytest.param(
+            "Two years’ relevant work experience is equivalent to one-year college.",
+            id="is-equivalent-to",  # pv 197864
+        ),
+        pytest.param(
+            "2 years of experience is equal to 1 year of college.", id="is-equal-to",
+        ),
+        pytest.param(
+            "2 years of experience counts as one year of college.", id="counts-as",
+        ),
+    ],
+)
+def test_a_count_that_is_an_equivalence_rules_subject_writes_no_bar(  # type: ignore[no-untyped-def]
+    body: str, catalog
+) -> None:
+    """T214: an `equals … months` conversion is the same substitution rule as T201's forms."""
+    assert _years_rows(body, catalog) == ("uncertain", [])
+
+
+def test_the_one_year_equivalence_writes_no_met_row(catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _years_rows("1 year of experience equals 12 months of education.", catalog) == (
+        "uncertain", []
+    )
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        pytest.param(
+            "1 year of experience required.",
+            ("eligible", [("experience_years:total_years_minimum", "required", "met")]),
+            id="a-one-year-bar",
+        ),
+        pytest.param(
+            "Pay equals market rate; 3 years of experience required.",
+            ("ineligible", [("experience_years:total_years_minimum", "required", "unmet")]),
+            id="equals-in-an-earlier-clause",
+        ),
+        pytest.param(
+            "3 years of experience at a level equal to a Senior Engineer.",
+            ("ineligible", [("experience_years:total_years_minimum", "required", "unmet")]),
+            id="equal-to-without-a-copula",
+        ),
+        pytest.param(
+            "Two years of specialized experience equivalent to the GS-11 level is required.",
+            ("ineligible", [("experience_years:scoped_years_minimum", "required", "unmet")]),
+            id="federal-equivalent-to-a-grade",
+        ),
+    ],
+)
+def test_an_equivalence_word_that_is_not_the_bars_predicate_keeps_the_bar(  # type: ignore[no-untyped-def]
+    body: str, expected: tuple[str, list[tuple[str, str, str]]], catalog
+) -> None:
+    assert _years_rows(body, catalog) == expected
