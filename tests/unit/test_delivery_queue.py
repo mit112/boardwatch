@@ -4120,7 +4120,7 @@ def _run_lane(engine: Engine, row: QueueRow) -> tuple[str, int]:
     """(the lane the RUN's pre-tailor split gives this lead, its count of leads with NO readable
     gate reading — the funnel's `gate.readings_absent`), from `runner._lead_lanes` fed the
     deterministic verdict the ranker would carry for the lead, which is the row's own."""
-    lanes, absent = runner_mod._lead_lanes(
+    lanes, absent, _tenant = runner_mod._lead_lanes(
         engine, load_settings(),
         [SimpleNamespace(posting_id=row.posting_id, verdict=row.verdict, title=row.title)],  # type: ignore[list-item]
     )
@@ -4239,7 +4239,7 @@ def test_with_no_profile_no_reader_finds_a_gate_verdict(engine: Engine, apps: Pa
         detail = queue_detail(conn, judged)
     assert detail is not None
     assert (row.judge_verdict, detail.row.judge_verdict) == (None, None)
-    lanes, absent = runner_mod._lead_lanes(
+    lanes, absent, _tenant = runner_mod._lead_lanes(
         engine, load_settings(),
         [SimpleNamespace(posting_id=judged, verdict=None, title=row.title)],  # type: ignore[list-item]
     )

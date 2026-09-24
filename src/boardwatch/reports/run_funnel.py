@@ -51,6 +51,7 @@ from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.lanes.base import SearchOutcome
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.location_gate import LocationClass, classify_location
+from boardwatch.rank.tenant_assumptions import TenantAssumptionReport, tenant_assumptions_to_dict
 from boardwatch.reports.abstain import AbstainReport
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import (
@@ -238,6 +239,11 @@ _TOP_MISSING = 10
 # neither changing what any existing key MEANS — `manifest` publishes exactly the six values it
 # published before, from the same functions. A funnel written before this lacks both, which reads
 # as `null`: drift NOT MEASURED and provenance NOT RECORDED, never "stable" or "no code".
+#
+# **T185's `tenant_assumptions` does NOT bump it either**, on that same T137 / T110 precedent: a
+# new top-level key that supplies no denominator an existing block was read without, and changes
+# no existing key's MEANING — the shortlist stage's drops and the lane split count exactly what
+# they did. A funnel written before it lacks the key, which reads as `null`: NOT MEASURED.
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -1705,6 +1711,9 @@ class RunFunnel:
     identity_drift: tuple[str, ...] | None = None
     # T137. `None` means not recorded, never "no code" or "no flags".
     provenance: ExecutionProvenance | None = None
+    # T185 (DESIGN-T183 A2). `None` means NOT MEASURED — a funnel built outside `run_pipeline`,
+    # or a run whose ranker never ran — never a run whose gates all decided on tenant data.
+    tenant_assumptions: TenantAssumptionReport | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -1893,6 +1902,8 @@ def build_run_funnel(
     # say so — the same omission direction as `stage_durations` above.
     identity_drift: Sequence[str] | None = None,
     provenance: ExecutionProvenance | None = None,
+    # T185. Omitted means NOT MEASURED, and the section says so.
+    tenant_assumptions: TenantAssumptionReport | None = None,
     errors: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
@@ -2445,6 +2456,7 @@ def build_run_funnel(
         apply_lane=apply_lane,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
         identity_drift=None if identity_drift is None else tuple(identity_drift),
+        tenant_assumptions=tenant_assumptions,
         provenance=provenance,
     )
 
@@ -2628,6 +2640,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         ),
         # T137. Its own section, and folded into no hash in `manifest`.
         "provenance": provenance_to_dict(funnel.provenance),
+        # T185. Its own section: whether each ranker/review gate decided on the TENANT's data.
+        # It restates no count above; `stages[].drops` still say what the gates did.
+        "tenant_assumptions": tenant_assumptions_to_dict(funnel.tenant_assumptions),
         "liveness": {
             # All None when the shortlist was not probed. `instrumented` is emitted so a reader
             # never has to infer "unmeasured" from a null, the same way each stage does.

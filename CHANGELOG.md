@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Every ranker and review gate now reports whether it decided on the tenant's own data
+  (2026-09-23, T185).** The location, foreign-ad, role, zero-signal and seniority gates hard-code a US,
+  software, entry-level user and could never abstain, so a second tenant's silent fall-through looked
+  like a gate that fired. The run funnel now carries a `tenant_assumptions` report per gate: how many
+  postings it considered, how many it fired on, how many it fired on by the bundled default, and every
+  abstain by reason, counting only the gates a lead actually reached. No decision changes: a two-arm
+  read over the live store was byte-identical. The four gate modules join the generalization checker's
+  scoped set. DESIGN-T183 phases A1 and A2.
+
 - **A lead now says when the owner already applied to an identical job description at the same
   company (2026-09-22, T125).** Of the 970 standing leads, 37 link to an applied job under another job
   id, and most of them are one company posting the same body in many cities. The row JSON that the

@@ -47,6 +47,7 @@ from boardwatch.rank.heuristic import (
     score_posting,
 )
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import (
     RoleVerdict,
     ZeroSignalVerdict,
@@ -59,6 +60,7 @@ from boardwatch.rank.seniority_gate import (
     build_token_probe,
     seniority_verdict,
 )
+from boardwatch.rank.tenant_assumptions import TenantAssumptionTally, ungrounded_reasons
 from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
@@ -355,6 +357,10 @@ class RankedResults:
     # canonical jobs without recomputing dedup over the corpus a second time. Empty when
     # identities are incomplete, which is the same condition that leaves `hidden_duplicate` at 0.
     suppressions: tuple[Suppression, ...] = ()
+    # T185 (DESIGN-T183 A2): whether each ranker gate's decisions rested on the tenant's own
+    # profile data. Reported only, never read back into a decision. `None` from a caller that
+    # never ranked.
+    tenant_assumptions: TenantAssumptionTally | None = None
     # The canonical jobs this call put in front of the user, in rank order. Populated whether or
     # not the `seen` write actually happened, so a caller that ranked with `record_surfaced=False`
     # can record the decision at the point it genuinely takes one (the pipeline, after tailoring).
@@ -435,6 +441,15 @@ makes its byte-identical claim false; this cap makes no claim about the body at 
 body-less posting is an ordinary member of its company/title/place cluster.
 """
 
+
+
+def _location_class_memo(memo: dict[tuple[str, ...], str], locations: tuple[str, ...]) -> str:
+    """`classify_location` once per distinct location tuple within one ranking pass."""
+    got = memo.get(locations)
+    if got is None:
+        got = classify_location(list(locations))
+        memo[locations] = got
+    return got
 
 def rank_open_postings(
     engine: Engine,
@@ -551,10 +566,11 @@ def rank_open_postings(
         # rules-only re-key, for good. Read-only, fail-open by construction: it tiers a persisted
         # `eligible` and hides a persisted `ineligible` (below); a missing or `uncertain` row
         # changes nothing.
+        facts = parse_facts(profile_row.eligibility_facts_json)
         gate_verdicts = current_gate_verdicts(
             conn,
             [cv.posting_version_id for cv in versions.values()],
-            parse_facts(profile_row.eligibility_facts_json),
+            facts,
             load_rules(settings.config_dir),
             model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort),
@@ -593,6 +609,14 @@ def rank_open_postings(
     # before parsing, so this single alternation scan is the only way to tell the operator the
     # gate would have had something to say. `None` on every other path costs nothing.
     token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
+    tenant = TenantAssumptionTally(
+        ungrounded_reasons(
+            career_field=facts.career_field,
+            target_seniority_band=target_band,
+            seniority_hold=settings.gate.seniority_hold,
+        )
+    )
+    location_classes: dict[tuple[str, ...], str] = {}
     for row in rows:
         if new_ids is not None and int(row.id) not in new_ids:
             skipped_not_new += 1
@@ -604,6 +628,23 @@ def rank_open_postings(
             profile,
             settings.location_filter_mode,
         )
+        # The location clauses run only in `hard` mode and only after `excluded_title` and
+        # `remote_only` cleared, so a row either of those vetoed never reached them.
+        clause = None if veto is None else veto.clause
+        if settings.location_filter_mode == "hard" and clause in (
+            None, "non_us_location", "foreign_ad_marker"
+        ):
+            tenant.observe("location", fired=clause == "non_us_location")
+            # `hard_filter_verdict` puts the ad-marker check only to a posting whose location
+            # is NOT a confirmed US one, so a cleared US posting never reached it and is not
+            # counted as considered there (T185 review). Memoised per location tuple: the
+            # class was already computed once inside the veto, and most rows share a few.
+            if clause == "foreign_ad_marker" or (
+                clause is None and _location_class_memo(
+                    location_classes, tuple(row.locations_json or [])
+                ) != "us"
+            ):
+                tenant.observe("foreign_ad", fired=clause == "foreign_ad_marker")
         if veto is not None and not include_hard_filter:
             hidden_hard_filter += 1
             continue
@@ -611,6 +652,11 @@ def rank_open_postings(
         # no title fuzz can rescue a "Deal Strategist". It is counted and reportable, never
         # a silent drop — a veto you cannot see is how a real job disappears unnoticed.
         role, role_reason = role_verdict(row.title)
+        tenant.observe(
+            "role",
+            fired=role == "not_swe",
+            own_abstain="role_uncertain" if role == "uncertain" else None,
+        )
         if role == "not_swe" and not include_non_swe:
             hidden_non_swe += 1
             continue
@@ -625,6 +671,11 @@ def rank_open_postings(
         zero_signal, zero_signal_reason = zero_signal_verdict(
             role, row.extraction_json, body_empty=bool(row.body_empty)
         )
+        tenant.observe(
+            "zero_signal",
+            fired=zero_signal == "veto",
+            own_abstain="signal_unmeasured" if zero_signal == "unmeasured" else None,
+        )
         if zero_signal == "unmeasured":
             # Counted, never dropped, for the same reason `uncertain_band` is: the rule could
             # not fire on this row, and an unreported abstain is exactly the monitoring failure
@@ -636,6 +687,15 @@ def rank_open_postings(
         band, band_reason = seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)),
             target_band, tier, catalog,
+        )
+        tenant.observe(
+            "seniority_field",
+            fired=band == "above_band",
+            own_abstain=(
+                "uncertain_band" if band == "uncertain"
+                else "inert:target_seniority_band=any" if target_band == "any"
+                else None
+            ),
         )
         if token_probe is not None and token_probe(row.title):
             # Only built when the gate is inert; see build_token_probe.
@@ -1072,6 +1132,7 @@ def rank_open_postings(
         hidden_applied_this_run=hidden_applied_this_run,
         hidden_duplicate_this_run=hidden_duplicate_this_run,
         suppressions=tuple(suppressions.values()),
+        tenant_assumptions=tenant,
     )
 
 

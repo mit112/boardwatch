@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 from tools.generalization import snapshots as snap
 from tools.generalization.defaults import (
     HEURISTIC_MODULE,
@@ -185,6 +187,28 @@ def test_a_nested_collection_of_strings_is_rejected() -> None:
 
 def test_a_nested_collection_without_strings_is_allowed() -> None:
     assert check_collection_defaults(_module("BACKOFFS = [[1, 2], [4, 8]]\n")) == []
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "src/boardwatch/rank/location_gate.py",
+        "src/boardwatch/rank/location_data.py",
+        "src/boardwatch/rank/foreign_ad_gate.py",
+        "src/boardwatch/delivery/review_gate.py",
+    ],
+)
+def test_the_location_and_review_gates_are_scoped(path: str) -> None:
+    """A scratch copy of the real module with one planted preference literal is flagged.
+
+    These modules decide which countries a posting may come from, which is a tenant's
+    preference; left unscoped, a US-only default there escapes R9 entirely (DESIGN-T183 A1).
+    """
+    real = (REPO_ROOT / path).read_text(encoding="utf-8")
+    planted = real + '\nDEFAULT_COUNTRIES = ["usa"]\n'
+    found = check_collection_defaults(_module(planted, path))
+    assert [(v.rule, v.path) for v in found] == [("R9", path)]
+    assert "'usa'" in found[0].detail
 
 
 def test_real_tree_defaults_match_the_snapshot() -> None:

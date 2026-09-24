@@ -35,6 +35,7 @@ from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
 from boardwatch.rank.leveling import load_leveling
+from boardwatch.rank.tenant_assumptions import TenantAssumptionReport
 from boardwatch.reports.abstain import AbstainReport, build_abstain_report
 from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_hash
 from boardwatch.reports.run_funnel import (
@@ -281,6 +282,8 @@ def collect_run_funnel(
     start_identity: RunIdentity | None = None,
     # T137. `None` means not recorded, and the section says so.
     execution_provenance: ExecutionProvenance | None = None,
+    # T185. `None` means the ranker did not run, and the section says so.
+    tenant_assumptions: TenantAssumptionReport | None = None,
     errors: list[str],
     fatal: str | None,
 ) -> RunFunnel:
@@ -477,6 +480,7 @@ def collect_run_funnel(
             None if start_identity is None else identity_drift(start_identity, end_identity)
         ),
         provenance=execution_provenance,
+        tenant_assumptions=tenant_assumptions,
         errors=errors,
         fatal=fatal,
     )

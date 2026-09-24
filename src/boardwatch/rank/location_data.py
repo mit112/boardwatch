@@ -64,7 +64,7 @@ LOCATION_DATA_VERSION = 6
 # "district of columbia" is carried here as a state because every consumer treats DC as one:
 # the classifier reads "Washington, DC" as US, and the canonicalizer has to fold
 # "Washington, District of Columbia" onto it.
-US_STATE_NAME_TO_ABBREV: dict[str, str] = {
+US_STATE_NAME_TO_ABBREV: dict[str, str] = dict({
     "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar", "california": "ca",
     "colorado": "co", "connecticut": "ct", "delaware": "de", "florida": "fl", "georgia": "ga",
     "hawaii": "hi", "idaho": "id", "illinois": "il", "indiana": "in", "iowa": "ia",
@@ -77,7 +77,7 @@ US_STATE_NAME_TO_ABBREV: dict[str, str] = {
     "south dakota": "sd", "tennessee": "tn", "texas": "tx", "utah": "ut", "vermont": "vt",
     "virginia": "va", "washington": "wa", "west virginia": "wv", "wisconsin": "wi",
     "wyoming": "wy", "district of columbia": "dc",
-}
+})
 
 US_STATE_ABBREVS = frozenset(US_STATE_NAME_TO_ABBREV.values())
 
@@ -94,14 +94,14 @@ US_COUNTRY_SEGMENTS = frozenset(
 )
 
 # Multi-word first so the longest match is tried before "u.s." / "usa".
-US_MARKERS = (
+US_MARKERS = tuple((
     "united states of america",
     "united states",
     "u.s.a.",
     "u.s.a",
     "u.s.",
     "usa",
-)
+))
 
 US_CITIES = frozenset(
     {
