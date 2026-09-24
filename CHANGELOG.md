@@ -337,6 +337,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lane capture is credited only to the lane that landed it (2026-09-24, T199).** `board_scans`
+  now records the lane that wrote each lane row, and the funnel's per-lane recount groups on it, so a
+  company two lanes admitted and one landed no longer counts for both (run 475's hiring.cafe 9-vs-10). A
+  run whose lane rows carry no name falls back to attribution by admission and says so in the cross-check note.
+
 - **Tianjin and the other Chinese municipalities and provincial capitals resolve to China in the
   location catalog (2026-09-24, T194).** The run-474 audit found a Tianjin posting passing the location
   filter as `unknown`. Read-only over every stored location string, the only transitions are
