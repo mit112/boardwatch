@@ -1637,6 +1637,7 @@ def _lead_lanes(
         ungrounded_reasons(
             field=declared_field(load_role_taxonomy(settings.config_dir)),
             taxonomy_field=load_taxonomy(settings.config_dir).field,
+            field_tiers=band_reader.catalog.fields.keys(),
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
             target_countries=target_countries,

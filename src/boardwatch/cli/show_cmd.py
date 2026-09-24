@@ -33,7 +33,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
@@ -236,7 +236,7 @@ def show(
         band, band_reason = seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)),
             cast(TargetBand, profile.target_seniority_band),
-            leveling.fields["software"], leveling,
+            field_tier(leveling, declared_field(role_taxonomy)), leveling,
         )
         band_note = (
             " — hidden from top unless --include-over-seniority" if band == "above_band" else ""

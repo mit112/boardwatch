@@ -218,16 +218,23 @@ def seniority_verdict(
     title: str,
     scheme: LevelScheme | None,
     target_band: TargetBand,
-    tier: FieldTier,
+    tier: FieldTier | None,
     catalog: LevelingCatalog,
 ) -> tuple[SeniorityVerdict, str]:
     """Classify a title against the operator's target band.
 
     `any` makes the gate inert, and says so rather than passing silently — an inert gate nobody
     knows about is the same monitoring failure as an unreported abstain.
+
+    `tier` is `None` when `leveling.yaml` has no word tier for the user's field
+    (`leveling.field_tier`). The words, the roman numerals and the management and MTS
+    readings (S2) are all a field's ladder, so none of them is read for another field: the
+    title is `uncertain`, counted and never dropped (DESIGN-T183 S1/S2).
     """
     if target_band == "any":
         return "in_band", "gate inert: target_seniority_band is `any`"
+    if tier is None:
+        return "uncertain", "leveling.yaml has no seniority tier for your field"
     band, reason = parse_seniority(title, scheme, tier, catalog)
     if band is None:
         return "uncertain", reason

@@ -4,6 +4,7 @@ import pytest
 
 from boardwatch.rank.leveling import (
     LevelingError,
+    field_tier,
     load_bindings,
     load_leveling,
 )
@@ -114,16 +115,22 @@ def test_bindings_are_keyed_on_provider_and_slug(tmp_path: Path) -> None:
 class TestFailDirectionIsPerGate:
     """A broken override raises; broken bindings degrade loudly. Deliberately different."""
 
-    def test_a_catalog_missing_the_software_tier_raises_typed(self, tmp_path: Path) -> None:
-        # Otherwise it loads fine and KeyErrors at four call sites, the 8 AM run included.
+    def test_a_catalog_for_another_field_loads_and_software_has_no_tier(
+        self, tmp_path: Path
+    ) -> None:
+        # T187 C4: a tier is looked up by the user's field, so an override written for one field
+        # is valid and a field it does not cover abstains (`None`), never a KeyError at a call
+        # site. It used to be refused for lacking `software`, which no longer every user reads.
         cfg = _write(tmp_path, """
 leveling_version: 1
 grammars: {}
 schemes: {}
 fields: {nursing: {words: {}, roman: {}}}
 """)
-        with pytest.raises(LevelingError, match="software"):
-            load_leveling(cfg)
+        catalog = load_leveling(cfg)
+        assert field_tier(catalog, "nursing") is catalog.fields["nursing"]
+        assert field_tier(catalog, "software") is None
+        assert field_tier(catalog, None) is None
 
     def test_structurally_broken_bindings_degrade_instead_of_raising(self, tmp_path: Path) -> None:
         """Bindings only ever turn an abstain into a drop, so losing them cannot hide a job."""

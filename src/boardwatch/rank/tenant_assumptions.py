@@ -22,11 +22,10 @@ gate and per run, whether each decision was grounded in a profile field the gate
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass, field
 from typing import Literal
 
-from boardwatch.rank.leveling import DEFAULT_FIELD
 from boardwatch.rank.location_gate import location_target
 from boardwatch.rank.role_taxonomy import MISSING_ROLE_TAXONOMY
 
@@ -43,6 +42,7 @@ def ungrounded_reasons(
     *,
     field: str | None,
     taxonomy_field: str | None,
+    field_tiers: Collection[str],
     target_seniority_band: str,
     seniority_hold: bool,
     target_countries: Sequence[str],
@@ -54,8 +54,9 @@ def ungrounded_reasons(
     is not ``Facts.career_field``, an eligibility input none of these gates reads. The role gate
     is grounded whenever the user HAS a taxonomy, bundled or gathered (T184). The zero-signal
     rule is grounded only when the skill taxonomy's declared field (``taxonomy_field``) is the
-    user's, and it abstains itself otherwise (T187 C2). ``DEFAULT_FIELD`` is the one field the
-    ranker's leveling tier is written for.
+    user's, and it abstains itself otherwise (T187 C2). The seniority gate is grounded only
+    when ``leveling.yaml`` has a word tier for the field (``field_tiers``, its field names), and
+    abstains itself otherwise (T187 C4).
     """
     role: str | None
     zero_signal: str | None
@@ -68,7 +69,7 @@ def ungrounded_reasons(
             None if taxonomy_field == field
             else f"taxonomy_field:{taxonomy_field or 'undeclared'}!={field}"
         )
-        seniority = None if field == DEFAULT_FIELD else f"field_tier:{DEFAULT_FIELD}!={field}"
+        seniority = None if field in field_tiers else f"missing_field_tier:{field}"
     if not seniority_hold:
         judge: str | None = "disarmed:gate.seniority_hold"
     elif target_seniority_band != _JUDGE_QUESTION_BAND:

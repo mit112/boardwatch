@@ -27,6 +27,8 @@ from sqlalchemy import Engine, insert
 from boardwatch.cli.top_cmd import rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings
+from boardwatch.rank.role_taxonomy import write_role_taxonomy
+from boardwatch.rank.title_band import title_band_reader
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
@@ -296,3 +298,41 @@ def test_a_doubly_drained_row_names_both_drains() -> None:
     # And a normally-visible row is still unannotated -- the invariant the ordering protects.
     ordinary = replace(over_band_duplicate, band="in_band", band_reason="", duplicate_of=None)
     assert _why_cell(ordinary) == "score 1.00"
+
+
+# ---------------------------------------------------------------------------------------
+# T187 C4 (DESIGN-T183 S1/S2): the field tier is the USER's field, read off their taxonomy.
+# ---------------------------------------------------------------------------------------
+
+# A synthetic field `leveling.yaml` ships no tier for, as onboarding would gather it.
+CLINICAL_FIELD = {
+    "version": 1,
+    "field": "clinical_care",
+    "role_families": [{"id": "nursing", "title_words": ["registered nurse"]}],
+}
+
+
+def test_a_field_with_no_seniority_tier_abstains_instead_of_reading_the_software_words(
+    engine: Engine, settings: Settings, data_dir: Path, seed: Callable[[list[str]], None]
+) -> None:
+    """"Senior" is a software ladder word in the bundled tier; nothing says it means the same
+    rung for a nurse. With no tier for her field the gate cannot place the title, so it is
+    counted `uncertain` and stays visible — never hidden as above band."""
+    write_role_taxonomy(data_dir, CLINICAL_FIELD)
+    seed(["Senior Registered Nurse", "Registered Nurse"])
+    r = rank_open_postings(engine, settings, limit=50)
+    assert r.hidden_over_seniority == 0
+    assert sorted(p.title for p in r.visible) == ["Registered Nurse", "Senior Registered Nurse"]
+    assert r.uncertain_band == 2
+
+
+def test_the_lane_reads_the_same_field_tier_as_the_ranker(
+    settings: Settings, data_dir: Path
+) -> None:
+    """The delivery lane's band bit comes from the same field tier: a senior title is above an
+    entry band for the software user and is NOT for a user whose field has no tier."""
+    assert title_band_reader(settings, "entry").above_band(OVER_BAND_TITLE, None) is True
+    write_role_taxonomy(data_dir, CLINICAL_FIELD)
+    assert title_band_reader(settings, "entry").above_band(
+        "Senior Registered Nurse", None
+    ) is False

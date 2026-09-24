@@ -47,7 +47,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.location_gate import LocationTarget, TargetClass, location_target
 from boardwatch.rank.role_gate import (
     RoleVerdict,
@@ -512,13 +512,12 @@ def rank_open_postings(
     # binding file is hand-edited, and a typo must not take the whole shortlist down.
     catalog = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(catalog, settings.config_dir)
-    # `software` is the only field tier shipped in leveling.yaml. Resolving the operator's own
-    # career field (and abstaining when it is unresolvable, which is what the catalog comment
-    # calls for) is future work — there is no profile field to resolve it from yet.
-    tier = catalog.fields["software"]
     # The user's own role taxonomy, loaded once like the leveling catalog. `None` (no file) makes
     # the role gate abstain on every row; a malformed file raises here, typed, never defaulted.
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    # The seniority word tier for the user's field; `None` (no tier shipped for it, or no
+    # taxonomy) makes every title abstain `uncertain` rather than read software words.
+    tier = field_tier(catalog, declared_field(role_taxonomy))
     now = now or utcnow()
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -623,11 +622,14 @@ def rank_open_postings(
     # Built ONCE, and only when the gate is inert: on the `any` path the verdict short-circuits
     # before parsing, so this single alternation scan is the only way to tell the operator the
     # gate would have had something to say. `None` on every other path costs nothing.
-    token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
+    token_probe = (
+        build_token_probe(tier, catalog) if target_band == "any" and tier is not None else None
+    )
     tenant = TenantAssumptionTally(
         ungrounded_reasons(
             field=declared_field(role_taxonomy),
             taxonomy_field=skill_taxonomy.field,
+            field_tiers=catalog.fields.keys(),
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
             target_countries=profile.target_countries,

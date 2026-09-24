@@ -142,7 +142,7 @@ def test_the_report_grounds_both_location_gates_on_the_target(
     countries: tuple[str, ...], expected: str | None
 ) -> None:
     got = ungrounded_reasons(
-        field="software", taxonomy_field="software", target_seniority_band="entry",
-        seniority_hold=True, target_countries=countries,
+        field="software", taxonomy_field="software", field_tiers={"software"},
+        target_seniority_band="entry", seniority_hold=True, target_countries=countries,
     )
     assert got["location"] == got["foreign_ad"] == expected

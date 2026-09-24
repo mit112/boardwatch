@@ -181,9 +181,12 @@ def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
     assert zero_signal["abstained"] == {
         "taxonomy_field:software!=clinical_care": zero_signal["considered"]
     }, zero_signal
+    # T187 C4: `leveling.yaml` ships no word tier for her field, so the gate abstains itself.
     seniority = ranker["seniority_field"]
-    assert seniority["fired"] == 0, seniority
-    assert sum(seniority["abstained"].values()) == seniority["considered"]
+    assert seniority["fired"] == seniority["fired_on_default"] == 0, seniority
+    assert seniority["abstained"] == {
+        "missing_field_tier:clinical_care": seniority["considered"]
+    }, seniority
     if mode == "hard":
         location = ranker["location"]
         assert location["considered"] == 5, location

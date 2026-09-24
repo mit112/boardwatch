@@ -22,7 +22,7 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
@@ -152,8 +152,8 @@ def compute_stats(
     # Loaded ONCE, outside the comprehension: `load_leveling` parses YAML on every call.
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
-    tier = leveling.fields["software"]
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    tier = field_tier(leveling, declared_field(role_taxonomy))
     target_band = cast(TargetBand, profile.target_seniority_band)
     stats: list[PostingStat] = []
     for row in rows:

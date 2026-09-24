@@ -26,7 +26,7 @@ from boardwatch.rank.heuristic import (
     passes_hard_filters,
     score_posting,
 )
-from boardwatch.rank.leveling import load_leveling, resolve_schemes
+from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
@@ -145,8 +145,8 @@ def select_new_matches(
     # per-row load would put a YAML parse inside the notify loop.
     leveling = load_leveling(settings.config_dir)
     schemes, _binding_warning = resolve_schemes(leveling, settings.config_dir)
-    tier = leveling.fields["software"]
     role_taxonomy = load_role_taxonomy(settings.config_dir)
+    tier = field_tier(leveling, declared_field(role_taxonomy))
     target_band = cast(TargetBand, profile.target_seniority_band)
     items: list[NotifyItem] = []
     for row in rows:
