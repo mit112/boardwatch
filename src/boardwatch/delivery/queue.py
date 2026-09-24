@@ -115,6 +115,9 @@ WEBLOC_FILE = "apply.webloc"
 URL_FILE = "apply.url"
 LINK_FILE = "apply-link.txt"
 STAGING_PREFIX = ".staging-"
+#: Where `_clear_staging` puts a superseded folder still holding owner files whose lead has no live
+#: folder to take them (T189c). Not a drain: nothing is ever filed here by classification.
+RECOVERED_DIR = "_recovered"
 #: `_relocate`'s case-only-rename temporary, `rename-<16 hex>`. Visible on purpose (its docstring).
 RENAME_TEMPORARY = re.compile(r"rename-[0-9a-f]{16}")
 
@@ -463,7 +466,6 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     the two would refuse the second lead a path that was about to be free, and which pass it
     landed in would depend on the query's row order.
     """
-    _clear_staging(root)
     # An ineligible lead is not work, so it gets no folder at all. It is EXCLUDED here rather than
     # deleted: `reconcile_queue` has already moved any existing folder into `_ineligible`, and
     # leaving the row out of `rows` is what stops the move-loop below pulling it straight back out.
@@ -561,7 +563,10 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             except Exception as exc:  # one lead must never cost the rest
                 failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        # Every staging directory, this one and any a crashed sync left, and only AFTER the create
+        # pass: a lead whose old folder a crash stranded between `_install`'s two renames has its
+        # live folder again by now, so its owner files have somewhere to go.
+        failures.extend(_clear_staging(root))
 
     return SyncReport(
         created=created,
@@ -917,7 +922,8 @@ def _install(staging: Path, target: Path, payload: _Payload) -> int:
     `os.replace` will not rename onto a non-empty directory on POSIX and refuses one at all on
     Windows, and it keeps the window in which the owner could see nothing at all down to a single
     rename. Worst case a crash leaves the superseded copy under `.staging-…`, which the next sync
-    clears — the target itself is only ever the whole old folder or the whole new one.
+    clears, carrying the owner's files out first (`_clear_staging`) — the target itself is only
+    ever the whole old folder or the whole new one.
 
     **Whatever the owner kept in the superseded folder is carried over** (T121). Swapping the
     whole directory is what makes the write atomic, but it also took the owner's own work with it
@@ -1078,11 +1084,52 @@ def _write_details(built: Path, payload: _Payload) -> None:
     )
 
 
-def _clear_staging(root: Path) -> None:
-    """Remove staging directories a crashed sync left behind. Safe because the lock serialises
-    syncs, so no live sync's staging can be visible here."""
-    for path in root.glob(f"{STAGING_PREFIX}*"):
-        shutil.rmtree(path, ignore_errors=True)
+def _clear_staging(root: Path) -> list[LeadFailure]:
+    """Remove every staging directory, deleting only what boardwatch wrote (T189c).
+
+    Safe because the lock serialises syncs, so no other sync's staging can be visible here. A
+    `build-…` directory is ours by construction (`_write_lead` wrote every file in it). Anything
+    else is a superseded folder `_install` moved aside, and a crash (or a failed rename) before
+    `_carry_over_unauthored` leaves the owner's files in it. Those are judged by the folder's own
+    `details.json`, the `_authored_names` allowlist, and moved into the lead's live folder
+    (`_merge_unauthored`), or, if the lead has none, the whole folder is moved to
+    `<root>/_recovered/<folder>` and reported once as a failure. Only then is the directory removed.
+    """
+    failures: list[LeadFailure] = []
+    live: dict[int, _Entry] | None = None
+    for staging in sorted(root.glob(f"{STAGING_PREFIX}*")):
+        kept = False
+        for path in sorted(staging.iterdir()) if staging.is_dir() else ():
+            if path.name.startswith("build-") or not path.is_dir():
+                continue
+            authored = _authored_names(path)
+            if all(child.name in authored for child in path.iterdir()):
+                continue
+            details = _read_details(path)
+            posting_id = (None if details is None else _as_int(details.get("posting_id"))) or 0
+            if live is None:
+                live = _index(root)[0]
+            entry = live.get(posting_id)
+            try:
+                if entry is not None:
+                    _merge_unauthored(path, entry.path)
+                    continue
+                folder = (None if details is None else _as_str(details.get("folder"))) or path.name
+                (root / RECOVERED_DIR).mkdir(exist_ok=True)
+                recovered = _free_name(root / RECOVERED_DIR, folder)
+                os.replace(path, recovered)
+                failures.append(
+                    LeadFailure(
+                        posting_id=posting_id,
+                        detail=f"owner files recovered to {recovered.relative_to(root)}",
+                    )
+                )
+            except Exception as exc:  # the staging directory is then kept, never removed
+                failures.append(LeadFailure(posting_id=posting_id, detail=_detail(exc)))
+                kept = True
+        if not kept:
+            shutil.rmtree(staging, ignore_errors=True)
+    return failures
 
 
 # ------------------------------------------------------------------------------------- reconcile
@@ -1531,6 +1578,7 @@ def _child_dirs(base: Path) -> list[Path]:
         if path.is_dir()
         and not path.name.startswith(".")
         and path.name not in DRAIN_DIRS
+        and path.name != RECOVERED_DIR
     )
 
 

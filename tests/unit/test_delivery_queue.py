@@ -31,7 +31,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import plistlib
+import shutil
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -2774,6 +2776,97 @@ def test_stale_staging_directories_are_cleared_by_the_next_sync(
     assert report.created == 1
     # And it was never mistaken for a lead on the way out.
     assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+
+
+def test_a_crash_before_the_carry_over_leaves_the_owner_file_in_the_live_folder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. `_install` moves the old folder into staging, installs the new one, THEN carries the
+    owner's files back. A crash between the last two left the owner's file only in the superseded
+    copy under `.staging-…`, and the next sync's cleanup deleted the whole directory. Now the
+    cleanup carries it into the lead's live folder first."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    live = root / name
+    superseded = root / ".staging-0123456789abcdef" / "old-0123456789abcdef"
+    shutil.copytree(live, superseded)
+    (superseded / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert report.failures == ()
+    assert (live / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert list(root.glob(".staging-*")) == []
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.updated, again.moved, again.failures) == (0, 0, ())
+    assert _snapshot(root) == snapshot
+
+
+def test_a_crash_between_the_two_renames_puts_the_owner_file_in_the_recreated_folder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. A crash between `_install`'s two renames leaves NO live folder, only the superseded
+    copy in staging. The lead is still offered, so the sync recreates its folder, and the cleanup
+    runs after that, so the owner's file lands there rather than in `_recovered`."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    staging = root / ".staging-0123456789abcdef"
+    staging.mkdir()
+    os.replace(root / name, staging / "old-0123456789abcdef")
+    (staging / "old-0123456789abcdef" / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.failures) == (1, ())
+    assert (root / name / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert not (root / "_recovered").exists()
+    assert list(root.glob(".staging-*")) == []
+
+
+def test_a_stranded_owner_file_whose_lead_has_no_folder_is_recovered_and_reported_once(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189c. The same crash for a lead that no longer has a live folder (here: it was applied, so
+    it is not offered and nothing recreates it). The superseded folder goes to
+    `_recovered/<folder>`, one failure names it, and the next sync is silent and byte-identical."""
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    staging = root / ".staging-0123456789abcdef"
+    staging.mkdir()
+    os.replace(root / name, staging / "old-0123456789abcdef")
+    (staging / "old-0123456789abcdef" / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+    with engine.begin() as conn:  # not offered any more, so nothing recreates its folder
+        create_application(conn, job_id=job_id, status="applied", source="test")
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    recovered = root / "_recovered" / name
+    assert (recovered / "cover-letter.tex").read_text(encoding="utf-8") == "mine\n"
+    assert [f.detail for f in report.failures if "recovered" in f.detail] == [
+        f"owner files recovered to _recovered/{name}"
+    ]
+    assert list(root.glob(".staging-*")) == []
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert [f.detail for f in again.failures if "recovered" in f.detail] == []
+    assert _snapshot(root) == snapshot
+    with engine.connect() as conn:
+        assert reconcile_queue(conn, root=root, owner_name=OWNER).unclassified == ()
 
 
 # -------------------------------------------------------------------------------------- reconcile
