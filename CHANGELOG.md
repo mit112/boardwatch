@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch postings refetch` re-reads named postings from their own board through the scan's
+  write path (2026-09-24, T210).** Workday, SmartRecruiters, Eightfold, Greenhouse and Ashby gain
+  `fetch_posting`; the command reports `revised` / `refreshed` / `gone` / `unsupported` / `failed` per id,
+  writes only with `--apply` (a differing body ⇒ a `revised` version with no run, `raw_json` and provider
+  fields replaced, identity rows rewritten), is not a sighting (closed stays closed, liveness counters
+  untouched), and refuses while a run is in progress. Built for the 0-D repair of the lane-overwritten rows.
+
 - **Every lane's self-reported reach is recounted from the store (2026-09-23, T191).** The funnel's lane
   numbers were the lane's own tally; a lane that admitted a company whose board never landed read the
   same as one that delivered. The funnel now carries one cross-check row per reporting lane (the lane's
