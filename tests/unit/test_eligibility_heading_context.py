@@ -110,6 +110,10 @@ HEADING_CASES: list[tuple] = [
     ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h29:129842 a hedge heading reaches a bare citizenship bar', PREFERRED_129842, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
     ('h30:CONTROL the same citizenship line under the posting\'s own Key Qualifications heading keeps its bar', 'Key Qualifications\nU.S. citizenship with the ability to obtain and maintain required security clearances', P_FACTS, ALL_BLOCKERS, 'ineligible', [['work_auth:us_citizen_standalone_required', 'required', 'unmet']]),
+    ("h31:T215 a hedge after a heading's coordinator is not the heading's, so the bar under it rejects", "Education & Preferred Qualifications\nBachelor's degree in finance\n5+ years of experience in audit\n3+ years of Kubernetes experience preferred", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h32:T215 CONTROL a hedge before the heading\'s coordinator still hedges', 'Preferred Skills & Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h33:T215 a heading naming required AND preferred without a colon is not a hedge either', 'Required & Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h34:T215 CONTROL a hedge ending the heading after its own noun hedges the whole list', 'Qualifications/Education Desired\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.

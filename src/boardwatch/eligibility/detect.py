@@ -24,6 +24,8 @@ The scopes, all applied per match:
                           belongs to THAT bar and reaches nothing outside the aside.
                           On a pattern with a tail hedge, applied (inline and as a heading)
                           only to a bar no abstain waived, as the tail hedge is.
+                          A heading's hedge after its first coordinator reaches nothing
+                          (T215).
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
@@ -609,6 +611,33 @@ def _heading_text(head: str) -> str:
     return head if match is None else f"{head[: match.end()]}:"
 
 
+# The coordinators that join a heading's parts (T215).
+_HEADING_COORDINATOR = re.compile(r"&|/|,|\+|(?<!\w)and(?!\w)", re.IGNORECASE)
+
+
+def _muted_heading(heading: str, hedges: tuple[re.Pattern[str], ...]) -> tuple[int, int] | None:
+    """Where in a heading a hedge governs nothing: from its first coordinator on (T215).
+
+    A hedge before every coordinator modifies the whole list, `Preferred Skills & Experience`; one
+    after a coordinator names only its own part, and `Education & Preferred Qualifications` heads a
+    list that holds the degree and marks its preferences inline, so a bar under it with no hedge of
+    its own is required. A hedge that ENDS the heading after a noun of its own part is postpositive
+    over the whole list, `Qualifications/Education Desired`, and still governs; one that is its part
+    alone, `Required / Preferred`, does not.
+    """
+    coordinators = list(_HEADING_COORDINATOR.finditer(heading))
+    if not coordinators:
+        return None
+    end = len(heading)
+    for rx in hedges:
+        for match in rx.finditer(heading):
+            if not heading[match.end():].strip(" \t:") and heading[
+                coordinators[-1].end():match.start()
+            ].strip():
+                end = min(end, match.start())
+    return coordinators[0].start(), end
+
+
 def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
     """For each unit, the index of the heading unit that governs it, or None.
 
@@ -828,6 +857,7 @@ def _suppressed(
     introducer: bool = False,
     inside_span: bool = False,
     aside_owned: bool = False,
+    muted: tuple[int, int] | None = None,
 ) -> str | None:
     """Run a suppressor list against whatever string it is handed, outside the span.
 
@@ -843,11 +873,13 @@ def _suppressed(
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
     `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
-    its own has claimed (`_hedge_owned_by_an_aside`).
+    its own has claimed (`_hedge_owned_by_an_aside`). `muted` is a range in which no match counts.
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
+            if muted is not None and muted[0] <= match.start() < muted[1]:
+                continue
             if aside_owned and _hedge_owned_by_an_aside(
                 text, lo, hi, match.start(), match.end(), suppressors
             ):
@@ -887,6 +919,7 @@ def _hedged_by_heading(
     field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
     `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
     caller's list was never run over that clause, so a match there is not the heading's.
+    A hedge after the heading's first coordinator is not the heading's (`_muted_heading`).
     """
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
     start = _item_start(unit)
@@ -899,6 +932,7 @@ def _hedged_by_heading(
     return _suppressed(
         intro, lo, hi, hedges,
         bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
+        muted=_muted_heading(heading, hedges),
     )
 
 
