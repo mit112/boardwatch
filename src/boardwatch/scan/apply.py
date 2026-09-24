@@ -150,8 +150,51 @@ def apply_board(
         return result
 
 
+def apply_refetched(
+    engine: Engine, raw: RawPosting, company_id: int, source_url: str
+) -> ApplyResult:
+    """Apply ONE posting re-read from its own board by `postings refetch`, through the same
+    `_apply_listed` a scan runs: a moved body appends a `revised` version, moves
+    `content_hash` and rewrites the identity rows; `raw_json` and every provider-sourced field
+    are replaced regardless (D25).
+
+    NOT `apply_board`, for two schema facts. `board_scans.run_id` and `posting_events.run_id`
+    are NOT NULL, and a refetch has no run: inventing one, or writing a `board_scans` row at all,
+    would make `load_board_coverage` count a one-posting "scan" of the board. So there is no scan
+    row and no events; `posting_versions.run_id` and `posting_version_sources.run_id` are
+    nullable precisely so a non-run writer can still append a version with its provenance.
+
+    A refetch is NOT A SIGHTING, and it says so the way any observation does: it declares
+    `"liveness"` secondhand. A per-posting detail read is not a listing — a board can serve a
+    delisted requisition's detail page — so `last_seen_at`, the miss counters and the reopen stay
+    with the scan and the death probe that own them. That also keeps the reopen, which would need
+    a `reopened` event, unreachable here.
+
+    The caller must hand a posting the store already holds under `(company_id,
+    provider_posting_id)`: this never inserts one.
+    """
+    declared = raw.model_copy(update={"secondhand": raw.secondhand | {"liveness"}})
+    with write_connection(engine) as conn, conn.begin():
+        held = conn.execute(
+            select(postings.c.id).where(
+                postings.c.company_id == company_id,
+                postings.c.provider_posting_id == raw.provider_posting_id,
+            )
+        ).first()
+        if held is None:
+            raise ValueError(
+                f"no stored posting {raw.provider_posting_id!r} at company {company_id}; "
+                "a refetch never inserts"
+            )
+        return _apply_listed(conn, [declared], company_id, None, source_url)
+
+
 def _apply_listed(
-    conn: Connection, raw_postings: list[RawPosting], company_id: int, run_id: int, source_url: str
+    conn: Connection,
+    raw_postings: list[RawPosting],
+    company_id: int,
+    run_id: int | None,
+    source_url: str,
 ) -> ApplyResult:
     now = utcnow()
     # A board may list one provider_posting_id more than once in a single snapshot — Workable
@@ -204,7 +247,8 @@ def _apply_listed(
                 conn, posting_version_id=vid, run_id=run_id, source_url=source_url,
                 source_record_id=raw.provider_posting_id, observed_at=now, payload_hash=new_hash,
             )
-            append_event(conn, posting_id, "new", run_id)
+            if run_id is not None:
+                append_event(conn, posting_id, "new", run_id)
             _write_posting_identity(
                 conn, raw, posting_id=posting_id, company_id=company_id,
                 company_name=company_name, title=fields["title"],
@@ -233,7 +277,8 @@ def _apply_listed(
             if row.status == "closed":
                 values["status"] = "open"
                 values["closed_at"] = None
-                append_event(conn, row.id, "reopened", run_id)
+                if run_id is not None:
+                    append_event(conn, row.id, "reopened", run_id)
                 result.reopened += 1
         # The whole REVISION is skipped for a secondhand body, not merely the two columns.
         # Eligibility reads the CURRENT `posting_versions` row, so leaving `_insert_version` armed
@@ -248,7 +293,10 @@ def _apply_listed(
                 conn, posting_version_id=vid, run_id=run_id, source_url=source_url,
                 source_record_id=raw.provider_posting_id, observed_at=now, payload_hash=new_hash,
             )
-            append_event(conn, row.id, "revised", run_id)
+            # `posting_events.run_id` is NOT NULL, so a runless writer (`apply_refetched`)
+            # appends no event — the `record_body_revision` rule. A scan always has a run.
+            if run_id is not None:
+                append_event(conn, row.id, "revised", run_id)
             result.revised += 1
         # A jobapps tier-1 record declares every column AND `"liveness"`, which leaves NOTHING
         # to write. An empty `values` is not a no-op: SQLAlchemy emits `UPDATE postings SET
@@ -356,7 +404,7 @@ def _write_posting_identity(
 
 def _insert_version(
     conn: Connection, posting_id: int, content_hash: str, body_text: str,
-    captured_at: datetime, run_id: int, capture_reason: str,
+    captured_at: datetime, run_id: int | None, capture_reason: str,
 ) -> int:
     """Append an immutable content version (D29). Called on new and body-revision only."""
     return int(

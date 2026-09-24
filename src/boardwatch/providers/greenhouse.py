@@ -60,6 +60,30 @@ class GreenhouseProvider:
     def _health_url(self, slug: str) -> str:
         return f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
 
+    def _posting_url(self, slug: str, provider_posting_id: str) -> str:
+        # The single-job endpoint serves the same job object the listing carries, `content`
+        # included. `pay_transparency=true` keeps `pay_input_ranges` in `raw_json` exactly as
+        # `board_url` does (D25); `questions=false` leaves out the application form.
+        return (
+            f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs/{provider_posting_id}"
+            "?questions=false&pay_transparency=true"
+        )
+
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None:
+        """One job re-read from its board (`postings refetch`); None when the board 404s it."""
+        try:
+            result = fetcher.get(self._posting_url(slug, provider_posting_id))
+        except FetchFailure as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        job = json.loads(result.content)
+        if not isinstance(job, dict):
+            raise ValueError("job payload is not an object")
+        return parse_job(job)
+
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         try:
             result = fetcher.get(request.url, validators=request.validators)
