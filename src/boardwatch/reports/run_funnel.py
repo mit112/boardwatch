@@ -1860,7 +1860,7 @@ def _lane_cross_checks(
     One `persisted_new` row per lane that REPORTED — a lane that did not run has no row, and
     absent is not zero. The `board_scans` row is ONE across all lanes, as T191 shipped it; the
     lanes' snapshot counts sum exactly to its `scan_kind='lane'` rows. Omitted when any lane's
-    snapshot count was not measured. A run whose lane rows name no lane (pre-T199) is attributed
+    snapshot count was not measured. A run with any lane row naming no lane (pre-T199) is attributed
     by admission alone, and each `persisted_new` note says so.
     """
     if captures is None or not lanes:
@@ -1868,9 +1868,9 @@ def _lane_cross_checks(
     attribution = (
         "a scan_kind='lane' board_scans row for the run naming this lane"
         if captures.attributed_by_row
-        else "a scan_kind='lane' board_scans row for the run (ATTRIBUTED BY ADMISSION ONLY: this "
-        "run's lane rows name no lane, so a company two lanes admitted and one landed is "
-        "credited to both)"
+        else "a scan_kind='lane' board_scans row for the run (ATTRIBUTED BY ADMISSION ONLY: at "
+        "least one of this run's lane rows names no lane, so a company two lanes admitted and one "
+        "landed is credited to both)"
     )
     rows = tuple(
         CrossCheck(
