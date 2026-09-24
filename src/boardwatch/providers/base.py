@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
-from boardwatch.core.models import BoardRequest, BoardSnapshot
+from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure
 
 
@@ -115,3 +115,36 @@ class Provider(Protocol):
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot: ...
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth: ...
+
+
+@runtime_checkable
+class PostingRefetcher(Protocol):
+    """The OPTIONAL half of the provider contract: re-read ONE posting from its own board.
+
+    Separate from `Provider` because a structural protocol has no optional members, and most
+    providers have no per-posting read worth the name. `postings refetch` is its only caller.
+
+    Returns None when the board no longer serves the posting (a 404, or absent from the
+    listing it was looked up in) — a report line, never a close. Raises `FetchFailure` for any
+    other fetch failure and `ValueError` for a payload it cannot parse.
+    """
+
+    name: str
+
+    def board_url(self, slug: str) -> str: ...
+
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None: ...
+
+
+class RefetchUnsupported(Exception):
+    """This provider has no `fetch_posting`. Typed at the seam, so a caller cannot mistake a
+    provider it cannot re-read for a posting the board no longer lists."""
+
+
+def posting_refetcher(provider: Provider) -> PostingRefetcher:
+    """`provider` as a `PostingRefetcher`, or `RefetchUnsupported` — never a silent skip."""
+    if not isinstance(provider, PostingRefetcher):
+        raise RefetchUnsupported(f"provider {provider.name!r} has no per-posting refetch")
+    return provider

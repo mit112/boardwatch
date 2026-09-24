@@ -94,6 +94,27 @@ class AshbyProvider:
             detail_deferred=0,
         )
 
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None:
+        """One job re-read from its board (`postings refetch`): the WHOLE listing, filtered to
+        the id, because the posting API has no per-job read. None when the board 404s or no
+        longer lists the id."""
+        try:
+            result = fetcher.get(self.board_url(slug))
+        except FetchFailure as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        payload = json.loads(result.content)
+        jobs = payload.get("jobs") if isinstance(payload, dict) else None
+        if not isinstance(jobs, list):
+            raise ValueError("invalid board payload: missing 'jobs' list")
+        for job in jobs:
+            if isinstance(job, dict) and str(job.get("id")) == provider_posting_id:
+                return parse_job(job)
+        return None
+
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         try:
             result = fetcher.get(self.board_url(slug))

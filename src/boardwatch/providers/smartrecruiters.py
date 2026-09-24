@@ -190,6 +190,30 @@ class SmartRecruitersProvider:
             detail_deferred=max(0, len(unseen_before_truncation) - budget),
         )
 
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None:
+        """One posting re-read from its detail endpoint (`postings refetch`). None on a 404 or
+        on `active: false`, the same signal `fetch_board` drops a posting for.
+
+        The detail payload is passed as BOTH halves of `parse_posting`: it carries every key
+        that function reads off the listed row (`id`, `name`, `company`, `department`,
+        `releasedDate`, `location`), and paging the whole listing to find one row would cost
+        a request per hundred postings for fields the detail already states.
+        """
+        try:
+            result = fetcher.get(self._detail_url(slug, provider_posting_id))
+        except FetchFailure as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        detail = _json_object(result.content)
+        if detail is None:
+            raise ValueError("detail payload is not an object")
+        if detail.get("active") is False:
+            return None
+        return parse_posting(detail, detail)
+
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """NOTE: DEAD is unreachable here — an unknown org returns 200/totalFound:0. A real
         404 (CDN/WAF blip, malformed slug, future API change) must classify as ERROR, not

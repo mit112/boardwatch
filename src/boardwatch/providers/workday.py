@@ -227,17 +227,20 @@ def _search_url(host: str, tenant: str, site: str) -> str:
     return f"https://{host}/wday/cxs/{tenant}/{site}/jobs"
 
 
-def _search_body(offset: int, applied: dict[str, list[str]] | None = None) -> dict[str, Any]:
+def _search_body(
+    offset: int, applied: dict[str, list[str]] | None = None, search_text: str = ""
+) -> dict[str, Any]:
     """The CXS search body. `limit` is PINNED at _PAGE_LIMIT: 21 returns HTTP 400.
 
     `applied` defaulting to None and rendering as `{}` is what keeps an UNSLICED board's body
     byte-identical to the one 157 live boards have always sent — the key was already there and
-    already empty, so slicing populates a field rather than adding one."""
+    already empty, so slicing populates a field rather than adding one. `search_text` is the
+    same kind of default: only `fetch_posting` sets it."""
     return {
         "appliedFacets": applied or {},
         "limit": _PAGE_LIMIT,
         "offset": offset,
-        "searchText": "",
+        "searchText": search_text,
     }
 
 
@@ -809,6 +812,48 @@ class WorkdayProvider:
             detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
             board_total_censored=board_censored,
         )
+
+    def fetch_posting(
+        self, fetcher: Fetcher, slug: str, provider_posting_id: str
+    ) -> RawPosting | None:
+        """One posting re-read from its board (`postings refetch`).
+
+        The detail URL needs the posting's `externalPath`, which the provider_posting_id does
+        not determine (it is the path's LAST token). So the board's own search is asked for the
+        id first — unfiltered, because a sliced board's posting is on the whole board too — and
+        the row whose `externalPath` keys to exactly this id supplies the path and the listed
+        half of `parse_posting`, as a scan's page row would. None when no row keys to the id,
+        or the detail 404s.
+        """
+        host, tenant, site, _facet = split_target(slug)
+        page = fetcher.post_json(
+            _search_url(host, tenant, site), _search_body(0, search_text=provider_posting_id)
+        )
+        rows = _postings_list(page.content)
+        if rows is None:
+            raise ValueError("invalid search payload: missing 'jobPostings' list")
+        listed = next(
+            (
+                row for row in rows
+                if row.get("externalPath")
+                and _posting_id(str(row["externalPath"])) == provider_posting_id
+            ),
+            None,
+        )
+        if listed is None:
+            return None
+        try:
+            result = fetcher.get(
+                self._detail_url(host, tenant, site, str(listed["externalPath"]))
+            )
+        except FetchFailure as exc:
+            if exc.status_code == 404:
+                return None
+            raise
+        detail = _payload(result.content)
+        if detail is None:
+            raise ValueError("detail payload is not an object")
+        return parse_posting(host, site, listed, detail)
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """404 is the wrong-site-slug signature (errorCode "S21"); 401/403/410 are a gated
