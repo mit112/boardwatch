@@ -485,15 +485,19 @@ def _scan_body(
     # Futures given up on at `board_deadline_seconds` (T192). Their threads still occupy pool
     # workers, so they are counted against the slots below — otherwise a board submitted into
     # that worker would queue, and its deadline clock, started at submit, would run while it
-    # had not started. They leave this set as their threads end.
-    abandoned: set[Future[BoardSnapshot]] = set()
+    # had not started. They leave this map as their threads end, and only then release their
+    # host (T192b): the thread may still hold, or be about to take, `Fetcher`'s per-host lock,
+    # and a same-host board handed out before then would only queue at that lock, be failed at
+    # its own cap without sending a request, and fetch anyway once the lock came free.
+    abandoned: dict[Future[BoardSnapshot], str] = {}
     try:
         queues = host_queues(work)
         busy: set[str] = set()
         future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str, float]] = {}
 
         def _submit_ready() -> None:
-            abandoned.difference_update([f for f in abandoned if f.done()])
+            for ended in [f for f in abandoned if f.done()]:
+                busy.discard(abandoned.pop(ended))
             for row, prov, request in take_ready(
                 queues, busy, settings.scan_workers - len(future_map) - len(abandoned)
             ):
@@ -505,8 +509,9 @@ def _scan_body(
         # flight, so an empty `future_map` means an empty `busy`, which means every non-empty
         # queue is offerable. That is what makes the loop below terminate having submitted each
         # board exactly once, without a separate "anything left?" condition.
-        # The one exception is every worker held by an abandoned thread: then `future_map` is
-        # empty with work queued, and the loop waits on those threads to free a worker.
+        # The one exception is abandoned threads, which hold a worker AND their host (a board
+        # in flight, just no longer ours): `future_map` can then be empty with work queued, and
+        # the loop waits on those threads to free a worker or a host.
         _submit_ready()
         while future_map or (abandoned and any(queues)):
             now = time.monotonic()
@@ -514,7 +519,7 @@ def _scan_body(
                 (max(0.0, start + cap - now) for *_, start in future_map.values()), default=None
             )
             done, _ = wait(
-                future_map.keys() | abandoned, timeout=timeout, return_when=FIRST_COMPLETED
+                future_map.keys() | abandoned.keys(), timeout=timeout, return_when=FIRST_COMPLETED
             )
             now = time.monotonic()
             # A board still running at its deadline is failed HERE and its thread abandoned: the
@@ -527,19 +532,22 @@ def _scan_body(
                 if not f.done() and now - start >= cap
             }
             for future in [*done, *overdue]:
-                # Not ours any more: an abandoned thread ended, so its worker is free again. Keyed
-                # on `future_map` rather than `abandoned`, which `_submit_ready` prunes.
+                # Not ours any more: an abandoned thread ended, so its worker and host are free
+                # again. Keyed on `future_map` rather than `abandoned`, which `_submit_ready`
+                # prunes.
                 if future not in future_map:
                     _submit_ready()
                     continue
                 row, request, host, start = future_map.pop(future)
-                if future in overdue:
-                    abandoned.add(future)  # before the refill, so its worker is not handed out
                 # Released and refilled BEFORE the apply, which is serial and holds the writer:
                 # the pool used to carry the whole fleet as backlog, so a worker never idled
                 # while the coordinator wrote. Refilling only after the batch applied would hand
-                # that back and idle a worker for every apply.
-                busy.discard(host)
+                # that back and idle a worker for every apply. An overdue board's host is NOT
+                # released: it stays busy until the abandoned thread ends.
+                if future in overdue:
+                    abandoned[future] = host  # before the refill: its worker is not handed out
+                else:
+                    busy.discard(host)
                 _submit_ready()
                 if future in overdue:
                     snapshot = BoardSnapshot(

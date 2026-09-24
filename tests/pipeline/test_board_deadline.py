@@ -30,22 +30,29 @@ from boardwatch.store import tables
 class _StuckProvider:
     """`stuck` blocks until released (or 5s pass); every other board completes at once.
 
-    Board URLs carry the slug's host, except `later`, which shares `stuck`'s host — so it can
-    only be scanned if the coordinator releases that host when it gives up on `stuck`."""
+    Board URLs carry the slug's host, except `later`, which shares `stuck`'s host. Boards on
+    that host fetch under `host_lock`, standing in for `Fetcher`'s per-host lock, and record
+    when they started and ended their fetch inside it."""
 
     name = "greenhouse"
     board_hosts: tuple[str, ...] = ()
 
     def __init__(self) -> None:
         self.release = threading.Event()
+        self.host_lock = threading.Lock()
+        self.fetches: dict[str, tuple[float, float]] = {}
 
     def board_url(self, slug: str) -> str:
         host = "stuck" if slug == "later" else slug
         return f"https://{host}.example/{slug}"
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
-        if request.slug == "stuck":
-            self.release.wait(timeout=5.0)
+        if request.url.startswith("https://stuck."):
+            with self.host_lock:
+                started = time.monotonic()
+                if request.slug == "stuck":
+                    self.release.wait(timeout=5.0)
+                self.fetches[request.slug] = (started, time.monotonic())
         return BoardSnapshot(
             status="complete", postings=[], url=request.url,
             observed_validators=None, error=None,
@@ -76,7 +83,7 @@ def _add_company(engine: Engine, slug: str) -> int:
 def test_a_board_past_its_deadline_is_failed_and_the_stage_completes(
     engine: Engine, tmp_path: Path, provider: _StuckProvider
 ) -> None:
-    ids = {slug: _add_company(engine, slug) for slug in ("stuck", "later", "acme")}
+    ids = {slug: _add_company(engine, slug) for slug in ("stuck", "acme")}
     settings = Settings(
         data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=2,
         board_deadline_seconds=0.3,
@@ -87,8 +94,9 @@ def test_a_board_past_its_deadline_is_failed_and_the_stage_completes(
 
     # Not joined on the stuck worker, which is still blocked when the stage ends.
     assert time.monotonic() - started < 3.0
+    assert "stuck" not in provider.fetches
     assert summary.failed == 1
-    assert summary.complete == 2
+    assert summary.complete == 1
     assert "stuck: board deadline 0.3s exceeded" in summary.errors
     with engine.connect() as conn:
         rows = conn.execute(
@@ -99,10 +107,41 @@ def test_a_board_past_its_deadline_is_failed_and_the_stage_completes(
     by_id = {r.company_id: (r.status, r.error) for r in rows}
     assert by_id == {
         ids["stuck"]: ("failed", "board deadline 0.3s exceeded"),
-        ids["later"]: ("complete", None),
         ids["acme"]: ("complete", None),
     }
     assert boards_failed == 1
+
+
+def test_a_board_behind_an_abandoned_one_on_its_host_waits_for_that_thread(
+    engine: Engine, tmp_path: Path, provider: _StuckProvider
+) -> None:
+    """T192b. Releasing the overdue board's host handed `later` to a worker that only queued at
+    the per-host lock the abandoned thread still held, so `later` was failed at its own cap
+    without sending anything — and then fetched anyway once the lock came free. The host stays
+    busy until the abandoned thread ends; `later` starts after it and completes."""
+    ids = {slug: _add_company(engine, slug) for slug in ("stuck", "later")}
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=2,
+        board_deadline_seconds=0.3,
+    )
+    threading.Timer(0.8, provider.release.set).start()  # the stuck fetch ends on its own
+
+    summary = run_scan(engine, settings, providers={"greenhouse": provider})
+    returned = time.monotonic()
+    provider.release.wait()
+    time.sleep(0.3)  # long enough for a thread queued at the lock to have fetched
+
+    assert (summary.failed, summary.complete) == (1, 1)
+    with engine.connect() as conn:
+        statuses = dict(
+            conn.execute(
+                select(tables.board_scans.c.company_id, tables.board_scans.c.status)
+            ).all()
+        )
+    assert statuses == {ids["stuck"]: "failed", ids["later"]: "complete"}
+    assert provider.fetches["later"][0] >= provider.fetches["stuck"][1]
+    # No board fetches after the stage has recorded it and returned.
+    assert all(start < returned for start, _ in provider.fetches.values())
 
 
 def test_boards_inside_the_deadline_are_untouched(
