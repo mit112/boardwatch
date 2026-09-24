@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import version as package_version
 from typing import Any
@@ -150,6 +151,22 @@ class Fetcher:
         self._retry_attempts = settings.retry_attempts
         self._deadline = settings.fetch_deadline_seconds
         self._pacing = pacing if pacing is not None else _PROCESS_PACING
+        self._board = threading.local()  # `.deadline`: (instant, seconds) while a board runs
+
+    @contextmanager
+    def under_deadline(self, at: float, seconds: float) -> Iterator[None]:
+        """Bound every request this THREAD makes, until the block exits, by the instant `at`
+        (T192c). The coordinator gives up on a board at `board_deadline_seconds`, but it cannot
+        interrupt the thread, and a provider that catches each failed detail fetch and moves on
+        would keep the worker — and its host — for up to `detail_budget` more fresh fetch
+        deadlines. Under this scope each request's deadline is `min(its own, at)`, and one that
+        starts past `at` fails at once, so the thread ends within one request of the cap.
+        `seconds` is only the budget the failure names."""
+        self._board.deadline = (at, seconds)
+        try:
+            yield
+        finally:
+            del self._board.deadline
 
     @property
     def effective_delay(self) -> float:
@@ -225,6 +242,7 @@ class Fetcher:
         min_host_delay: float | None = None,
     ) -> FetchResult:
         host = host_key(url)
+        self._check_board_deadline(url)  # past the board cap: no lock, no pacing, no send
         with self._host_lock(host):  # same-host requests serialize for their full duration
             self._pace(host, min_host_delay)
             # Stamping BEFORE the send makes the delay an interval between request STARTS;
@@ -381,7 +399,13 @@ class Fetcher:
         rebuilt.read()
         return rebuilt
 
+    def _check_board_deadline(self, url: str) -> None:
+        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
+        if board is not None and time.monotonic() >= board[0]:
+            raise FetchFailure(f"board deadline {board[1]:g}s exceeded for {url}", status_code=None)
+
     def _check_deadline(self, url: str, deadline: float) -> None:
+        self._check_board_deadline(url)  # the effective deadline is min(request, board)
         # A `FetchFailure`, not an httpx timeout: the retry predicate does not match it, so it is
         # never retried, and it is the one exception every provider already maps to `failed`.
         # `status_code=None` is the transport-level shape `health_from_failure` reads as

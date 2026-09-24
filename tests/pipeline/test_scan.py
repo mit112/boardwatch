@@ -390,12 +390,12 @@ def test_an_abort_stops_the_queued_boards_instead_of_fetching_them_all(
     fetched: list[str] = []
     real_fetch = coordinator.fetch_board_job
 
-    def slow_fetch(prov: Any, fetcher: Any, request: Any) -> Any:
+    def slow_fetch(prov: Any, fetcher: Any, request: Any, *deadline: float) -> Any:
         fetched.append(request.slug)
         # Long enough that the abort below lands while the queue is still queued, rather than
         # after a worker has raced through it.
         sleep(0.2)
-        return real_fetch(prov, fetcher, request)
+        return real_fetch(prov, fetcher, request, *deadline)
 
     def abort_apply(*_a: Any, **_k: Any) -> Any:
         raise KeyboardInterrupt

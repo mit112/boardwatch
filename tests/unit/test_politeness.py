@@ -573,6 +573,62 @@ def test_a_trickling_body_ends_at_the_fetch_deadline_and_is_not_retried(tmp_path
     assert calls == [1]
 
 
+def test_a_request_past_the_board_deadline_fails_at_once_without_sending(tmp_path: Path) -> None:
+    """T192c. Under `under_deadline`, a request that STARTS past the board's instant is refused
+    before the lock, the pacing and the send, in the fetch deadline's own shape — not retried."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=b"ok")
+
+    fetcher = Fetcher(
+        _settings(tmp_path), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with fetcher.under_deadline(time.monotonic() - 1.0, 7.0):
+        with pytest.raises(FetchFailure, match=r"board deadline 7s exceeded") as info:
+            fetcher.get("https://board.example/x")
+    assert info.value.status_code is None
+    assert calls == []
+    assert fetcher.get("https://board.example/x").content == b"ok"  # the scope is cleared
+
+
+def test_a_request_in_flight_trips_at_the_board_deadline(tmp_path: Path) -> None:
+    """T192c. The effective deadline is `min(request, board)`: a body trickling under a
+    generous fetch deadline ends at the board's instant, at the next raw chunk."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=_trickle(40, 0.1))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with fetcher.under_deadline(started + 0.3, 0.3):
+        with pytest.raises(FetchFailure, match=r"board deadline 0\.3s exceeded"):
+            fetcher.get("https://board-trickle.example/x")
+    assert time.monotonic() - started < 1.0
+    assert calls == [1]
+
+
+def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:
+    """T192c. One `Fetcher` serves every worker: one board's expired scope must not fail a
+    request another thread makes."""
+    fetcher = Fetcher(
+        _settings(tmp_path),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200))),
+    )
+    results: list[int] = []
+    with fetcher.under_deadline(time.monotonic() - 1.0, 1.0):
+        other = threading.Thread(
+            target=lambda: results.append(fetcher.get("https://other.example/x").status_code)
+        )
+        other.start()
+        other.join()
+    assert results == [200]
+
+
 def test_a_chunked_body_that_finishes_in_time_is_returned_unchanged(tmp_path: Path) -> None:
     """Control: streaming the body under the deadline must not change what a request returns."""
 

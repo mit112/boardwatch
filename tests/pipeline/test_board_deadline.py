@@ -15,11 +15,12 @@ from concurrent.futures import Future
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot
-from boardwatch.core.politeness import Fetcher
+from boardwatch.core.politeness import Fetcher, FetchFailure, HostPacing
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.scan import coordinator
@@ -219,3 +220,168 @@ def test_a_board_that_finishes_as_its_cap_trips_is_recorded_complete(
         ).scalar_one()
         boards_failed = conn.execute(select(tables.runs.c.boards_failed)).scalar_one()
     assert (status, boards_failed) == ("complete", 0)
+
+
+def _trickle(chunks: int, interval: float) -> Iterator[bytes]:
+    for _ in range(chunks):
+        time.sleep(interval)
+        yield b"x"
+
+
+class _DetailLoopProvider:
+    """T192c. `slow` issues 20 sequential requests, each to its own host and each trickling,
+    catching every `FetchFailure` and moving on — the shape of SmartRecruiters' detail loop. Any
+    other board makes one quick request. Each host is distinct so pacing plays no part."""
+
+    name = "greenhouse"
+    board_hosts: tuple[str, ...] = ()
+
+    def __init__(self, chunks: int, interval: float) -> None:
+        self.chunks, self.interval = chunks, interval
+        self.requests: list[str] = []
+        self.ended: dict[str, float] = {}
+        self.stop = threading.Event()  # teardown: a regression must not outlive the test by 4s
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(str(request.url))
+        if request.url.host.startswith("slow-"):
+            return httpx.Response(200, content=_trickle(self.chunks, self.interval))
+        return httpx.Response(200, content=b"ok")
+
+    def board_url(self, slug: str) -> str:
+        return f"https://{slug}.example/{slug}"
+
+    def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
+        failures = 0
+        urls = [f"https://slow-{i}.example/d" for i in range(20)] if request.slug == "slow" else [
+            request.url
+        ]
+        for url in urls:
+            if self.stop.is_set():
+                break
+            try:
+                fetcher.get(url)
+            except FetchFailure:
+                failures += 1
+        self.ended[request.slug] = time.monotonic()
+        return BoardSnapshot(
+            status="failed" if failures else "complete", postings=[], url=request.url,
+            observed_validators=None, error=f"{failures} failed" if failures else None,
+        )
+
+    def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
+        return BoardHealth.OK
+
+
+def _loop_scan(
+    engine: Engine, tmp_path: Path, provider: _DetailLoopProvider, **deadlines: float
+) -> tuple[Any, float]:
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
+        per_host_delay_seconds=0.25, **deadlines,
+    )
+    fetcher = Fetcher(
+        settings, client=httpx.Client(transport=httpx.MockTransport(provider.handler)),
+        pacing=HostPacing(),
+    )
+    started = time.monotonic()
+    summary = run_scan(engine, settings, providers={"greenhouse": provider}, fetcher=fetcher)
+    return summary, started
+
+
+@pytest.fixture
+def looping() -> Iterator[_DetailLoopProvider]:
+    loop = _DetailLoopProvider(chunks=40, interval=0.1)
+    yield loop
+    loop.stop.set()
+
+
+def test_an_abandoned_board_stops_fetching_at_its_cap(
+    engine: Engine, tmp_path: Path, looping: _DetailLoopProvider
+) -> None:
+    """T192c. The coordinator failing a board at its cap used to leave the thread running the
+    provider's loop: each of its 20 requests got a fresh fetch deadline, so the worker stayed
+    held for 20 × 0.2s. Under the board's own deadline the thread ends within one request of it."""
+    ids = {"slow": _add_company(engine, "slow")}
+    summary, started = _loop_scan(
+        engine, tmp_path, looping, board_deadline_seconds=0.5, fetch_deadline_seconds=0.2
+    )
+
+    assert summary.failed == 1
+    assert "slow: board deadline 0.5s exceeded" in summary.errors
+    with engine.connect() as conn:
+        status = conn.execute(
+            select(tables.board_scans.c.status).where(
+                tables.board_scans.c.company_id == ids["slow"]
+            )
+        ).scalar_one()
+    assert status == "failed"
+    deadline = started + 1.5
+    while "slow" not in looping.ended and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert "slow" in looping.ended, "the abandoned thread was still fetching 1.5s in"
+    assert looping.ended["slow"] - started < 1.0
+    assert len(looping.requests) <= 5  # of 20
+
+
+def test_the_same_loop_under_generous_deadlines_makes_every_request(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """Control: the board-scoped deadline cuts nothing short that finishes inside it."""
+    _add_company(engine, "slow")
+    provider = _DetailLoopProvider(chunks=3, interval=0.02)
+    summary, _ = _loop_scan(
+        engine, tmp_path, provider, board_deadline_seconds=30.0, fetch_deadline_seconds=5.0
+    )
+    assert (summary.complete, summary.failed, summary.errors) == (1, 0, [])
+    assert len(provider.requests) == 20
+
+
+def test_a_board_queued_behind_an_abandoned_one_runs_soon_after_its_cap(
+    engine: Engine, tmp_path: Path, looping: _DetailLoopProvider
+) -> None:
+    """T192c. With ONE worker, the abandoned thread holds the only slot: the healthy board behind
+    it ran only when the provider's loop had run out — hours, on the live fleet."""
+    ids = {slug: _add_company(engine, slug) for slug in ("slow", "acme")}
+    summary, started = _loop_scan(
+        engine, tmp_path, looping, board_deadline_seconds=0.5, fetch_deadline_seconds=0.2
+    )
+
+    assert (summary.failed, summary.complete) == (1, 1)
+    assert looping.ended["acme"] - started < 2.0
+    with engine.connect() as conn:
+        statuses = dict(
+            conn.execute(
+                select(tables.board_scans.c.company_id, tables.board_scans.c.status)
+            ).all()
+        )
+    assert statuses == {ids["slow"]: "failed", ids["acme"]: "complete"}
+    assert not any("abandoned worker" in e for e in summary.errors)
+
+
+def test_an_abandoned_worker_past_every_clock_is_reported_once(
+    engine: Engine, tmp_path: Path, provider: _StuckProvider
+) -> None:
+    """T192c. `stuck` never touches the `Fetcher`, so no clock ends it — the stand-in for a peer
+    trickling response headers. The wait on it is bounded per iteration: past its cap plus one
+    fetch deadline it is reported as an error line, once, and the queue behind it still runs
+    when it ends."""
+    ids = {slug: _add_company(engine, slug) for slug in ("stuck", "acme")}
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
+        board_deadline_seconds=0.3, fetch_deadline_seconds=0.2,
+    )
+    threading.Timer(1.2, provider.release.set).start()
+    summary = run_scan(engine, settings, providers={"greenhouse": provider})
+
+    assert (summary.failed, summary.complete) == (1, 1)
+    assert [e for e in summary.errors if "abandoned" in e] == [
+        "scan: abandoned worker still running after 0.5s: stuck"
+    ]
+    with engine.connect() as conn:
+        statuses = dict(
+            conn.execute(
+                select(tables.board_scans.c.company_id, tables.board_scans.c.status)
+            ).all()
+        )
+    assert statuses == {ids["stuck"]: "failed", ids["acme"]: "complete"}

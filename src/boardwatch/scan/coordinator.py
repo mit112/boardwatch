@@ -489,7 +489,12 @@ def _scan_body(
     # host (T192b): the thread may still hold, or be about to take, `Fetcher`'s per-host lock,
     # and a same-host board handed out before then would only queue at that lock, be failed at
     # its own cap without sending a request, and fetch anyway once the lock came free.
-    abandoned: dict[Future[BoardSnapshot], str] = {}
+    # Keyed to (host, start, slug). A thread ends by itself within about one fetch deadline of
+    # its cap, because `fetch_board_job` runs it under the same deadline (T192c); one still
+    # running past that is reported once, below, so a stall that escapes every clock shows.
+    abandoned: dict[Future[BoardSnapshot], tuple[str, float, str]] = {}
+    grace = settings.fetch_deadline_seconds
+    reported: set[Future[BoardSnapshot]] = set()
     try:
         queues = host_queues(work)
         busy: set[str] = set()
@@ -497,13 +502,16 @@ def _scan_body(
 
         def _submit_ready() -> None:
             for ended in [f for f in abandoned if f.done()]:
-                busy.discard(abandoned.pop(ended))
+                busy.discard(abandoned.pop(ended)[0])
             for row, prov, request in take_ready(
                 queues, busy, settings.scan_workers - len(future_map) - len(abandoned)
             ):
-                future_map[pool.submit(fetch_board_job, prov, fetcher, request)] = (
-                    row, request, host_key(request.url), time.monotonic(),
-                )
+                # ONE instant for both halves of the cap: this loop's `wait` and the thread's
+                # own clock inside `Fetcher` (T192c).
+                start = time.monotonic()
+                future_map[
+                    pool.submit(fetch_board_job, prov, fetcher, request, start + cap, cap)
+                ] = (row, request, host_key(request.url), start)
 
         # Never empty while work remains: a host is in `busy` only while one of its boards is in
         # flight, so an empty `future_map` means an empty `busy`, which means every non-empty
@@ -515,13 +523,25 @@ def _scan_body(
         _submit_ready()
         while future_map or (abandoned and any(queues)):
             now = time.monotonic()
-            timeout = min(
-                (max(0.0, start + cap - now) for *_, start in future_map.values()), default=None
-            )
+            due = [start + cap for *_, start in future_map.values()]
+            due += [
+                start + cap + grace for f, (_, start, _) in abandoned.items() if f not in reported
+            ]
+            timeout = max(0.0, min(due) - now) if due else None
             done, _ = wait(
                 future_map.keys() | abandoned.keys(), timeout=timeout, return_when=FIRST_COMPLETED
             )
             now = time.monotonic()
+            for f, (_, start, slug) in abandoned.items():
+                if f not in reported and not f.done() and now - start >= cap + grace:
+                    # What gets here escaped every clock in `Fetcher`: a peer trickling
+                    # response HEADERS under the per-operation read timeout, or work that never
+                    # goes through it. Reported, not crashed on; the wait on it stays unbounded,
+                    # because the thread cannot be interrupted.
+                    reported.add(f)
+                    summary.errors.append(
+                        f"scan: abandoned worker still running after {cap + grace:g}s: {slug}"
+                    )
             # A board still running at its deadline is failed HERE and its thread abandoned: the
             # thread cannot be interrupted, so it finishes or dies on the fetch deadline, and its
             # snapshot — whenever it arrives — is never applied. `.done()`, not `in done`: a board
@@ -545,7 +565,8 @@ def _scan_body(
                 # that back and idle a worker for every apply. An overdue board's host is NOT
                 # released: it stays busy until the abandoned thread ends.
                 if future in overdue:
-                    abandoned[future] = host  # before the refill: its worker is not handed out
+                    # before the refill: its worker is not handed out
+                    abandoned[future] = (host, start, row.slug)
                 else:
                     busy.discard(host)
                 _submit_ready()

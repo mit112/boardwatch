@@ -14,7 +14,9 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.providers.base import Provider
 
 
-def fetch_board_job(provider: Provider, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
+def fetch_board_job(
+    provider: Provider, fetcher: Fetcher, request: BoardRequest, deadline_at: float, cap: float
+) -> BoardSnapshot:
     """Fetch one board, and record how long the FETCH took.
 
     Timed here rather than in the coordinator because this is the one seam every scanned
@@ -26,7 +28,12 @@ def fetch_board_job(provider: Provider, fetcher: Fetcher, request: BoardRequest)
     A provider that maps its own failure into a `failed` snapshot is still timed — a board
     that spends 30 s timing out cost the run those 30 s, and attributing it only on success
     would make the expensive failures invisible.
+
+    `deadline_at` is the coordinator's own `board_deadline_seconds` instant for this board, passed
+    in rather than recomputed so the thread's clock and the coordinator's agree (T192c): once the
+    coordinator has failed the board, every further request of this thread fails at once.
     """
     started = perf_counter()
-    snapshot = provider.fetch_board(fetcher, request)
+    with fetcher.under_deadline(deadline_at, cap):
+        snapshot = provider.fetch_board(fetcher, request)
     return snapshot.model_copy(update={"fetch_seconds": perf_counter() - started})

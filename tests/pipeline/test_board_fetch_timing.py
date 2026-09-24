@@ -7,6 +7,7 @@ between consecutive scan completions, and the scan fetches through a `scan_worke
 so those gaps sum to wall clock by construction. Hence a measurement at the fetch seam.
 """
 
+import time
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from provider_cases import ProviderCase
 from sqlalchemy import Engine, insert
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot
+from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.reports.run_funnel import ProviderFetchCost
 from boardwatch.scan.coordinator import run_scan
@@ -77,7 +79,9 @@ def test_a_failed_fetch_is_still_charged_for_the_seconds_it_burned(
     assert cost.untimed == 0
 
 
-def test_the_worker_seam_times_a_snapshot_the_provider_already_marked_failed() -> None:
+def test_the_worker_seam_times_a_snapshot_the_provider_already_marked_failed(
+    tmp_path: Path,
+) -> None:
     """`fetch_board_job` must not special-case the provider's own failure mapping."""
 
     class _Failing:
@@ -87,7 +91,10 @@ def test_the_worker_seam_times_a_snapshot_the_provider_already_marked_failed() -
             )
 
     request = BoardRequest(provider="greenhouse", slug="acme", url="https://example.test/b")
-    snapshot = fetch_board_job(_Failing(), None, request)  # type: ignore[arg-type]
+    fetcher = Fetcher(Settings(data_dir=tmp_path, config_dir=tmp_path))
+    snapshot = fetch_board_job(
+        _Failing(), fetcher, request, time.monotonic() + 60, 60  # type: ignore[arg-type]
+    )
     assert snapshot.status == "failed"
     assert snapshot.fetch_seconds is not None
     assert snapshot.fetch_seconds >= 0.0
