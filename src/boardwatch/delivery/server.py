@@ -93,6 +93,7 @@ from boardwatch.store.db import (
     WalUnsafeFilesystemError,
     get_engine,
     get_readonly_engine,
+    write_connection,
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
@@ -596,14 +597,22 @@ class ReviewHandler(BaseHTTPRequestHandler):
         and the owner's selection is the expensive part. The standing set is `delivered_unapplied`
         — the queue page's own definition of a lead still in front of the owner — so this mints no
         second opinion about which leads exist, and no `queue.skipped.<id>` key is ever written
-        for an id that is not one. It is read ONCE per batch, not once per id.
+        for an id that is not one. It is read ONCE per batch, not once per id — and on its own
+        read-only connection BEFORE the write transaction (F6): it takes seconds on a real store,
+        and inside the write lock it would lock a committing run out for all of them. It is a
+        filter, not an invariant, so a lead that leaves the standing set in between is at worst
+        skipped, which `reconcile_queue`'s precedence already ranks below applied.
         """
         job_ids = self._batch_ids()
         if job_ids is None:
             return
+        standing: set[int] = self._read(
+            lambda conn, _ctx: {
+                "standing": {row.job_id for row in delivered_unapplied(conn, skipped=set())}
+            }
+        )["standing"]
 
         def work(conn: Connection) -> tuple[list[int], list[int]]:
-            standing = {row.job_id for row in delivered_unapplied(conn, skipped=set())}
             done: list[int] = []
             unknown: list[int] = []
             at = utcnow()
@@ -821,12 +830,17 @@ class ReviewHandler(BaseHTTPRequestHandler):
         from "here is your result" without an exception crossing the handler boundary. A failure
         that is NOT contention re-raises: a schema fault is not something a retry can fix, and
         collapsing it into 503 would tell the owner to try again forever.
+
+        IMMEDIATE at BEGIN (T134, F6): every route reads before it writes, and a DEFERRED
+        read-then-write whose snapshot a run's commit invalidates fails with 517, which
+        `busy_timeout` never waits on. Taking the write lock at BEGIN turns that into ordinary
+        `SQLITE_BUSY`, which the busy handler waits out.
         """
         deps = self._deps
         for _attempt in range(WRITE_ATTEMPTS):
             engine = get_engine(deps.ctx.settings.data_dir, busy_timeout_ms=WRITE_BUSY_TIMEOUT_MS)
             try:
-                with engine.begin() as conn:
+                with write_connection(engine) as conn, conn.begin():
                     result: _T = work(conn)
                     return result
             except OperationalError as exc:

@@ -1265,44 +1265,44 @@ def test_a_non_contention_store_error_is_not_retryable(tmp_path: Path) -> None:
     assert server_mod._is_locked(caught.value) is False
 
 
-def test_a_write_whose_snapshot_an_unrelated_commit_invalidates_retries_and_succeeds(
+def test_a_write_takes_the_write_lock_at_begin_so_no_commit_can_invalidate_its_read(
     live: Live, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The owner-facing failure: skip is a read-modify-write on a DEFERRED transaction, so a run
-    committing between its read and its write raises `SQLITE_BUSY_SNAPSHOT` — code 517, message
-    `database is locked`. Unfixed, `_is_locked` says that is not contention, `_write` skips its
-    bounded retry, and the exception escapes the handler instead of the whole transaction being
-    retried from a fresh snapshot (the only thing that CAN fix it: an obsolete WAL read snapshot
-    cannot be upgraded in place, so waiting inside the busy handler never succeeds).
+    """Skip is a read-modify-write, and the web write path routes it the way T134 routed every
+    other one: `write_connection`, IMMEDIATE at BEGIN (F6). Under the old DEFERRED `engine.begin()`
+    a run committing between the route's read and its write raised `SQLITE_BUSY_SNAPSHOT` (517),
+    which `busy_timeout` never waits on; the whole transaction was retried and, against a run
+    committing per board, could exhaust its three attempts and answer 503.
 
-    The conflict is injected exactly once, on the route's own read, so the retry has a store it
-    can succeed against — which is what makes this a retry test rather than a 503 test.
+    The same injection as before — a second connection tries to commit on the route's own read —
+    now has to wait for the route's lock and is REFUSED, and the route writes on its first attempt
+    with nothing classified as contention. Against the DEFERRED path the lane commit lands and the
+    route meets 517, so both assertions below fail there.
     """
     with engine.begin() as conn:
         posting_id, job_id = _deliver(conn, "one")
 
     db_path = tmp_path / "data" / DB_FILENAME
-    stolen: list[str] = []
+    lane_outcome: list[str] = []
     real_get_engine = server_mod.get_engine
 
     def spy_get_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:
         eng = real_get_engine(data_dir, busy_timeout_ms=busy_timeout_ms)
 
         @event.listens_for(eng, "after_cursor_execute")
-        def _commit_underneath_the_snapshot(
+        def _commit_underneath_the_read(
             conn: Any, cursor: Any, statement: str, *_rest: Any
         ) -> None:
-            # Matched on `postings` rather than on "the first SELECT": the route's read is
-            # `SELECT postings.job_id ...`, and nothing else must be able to consume the one
-            # injection. A second connection commits while that snapshot is open, which is all
-            # SQLite needs to refuse the write that follows.
-            if stolen or "postings" not in statement:
+            # Matched on `postings`: the route's read is `SELECT postings.job_id ...`.
+            if lane_outcome or "postings" not in statement:
                 return
-            stolen.append(statement)
-            lane = sqlite3.connect(str(db_path))
+            lane = sqlite3.connect(str(db_path), timeout=0.05)
             try:
                 lane.execute("INSERT INTO app_state (key, value) VALUES ('t132-lane', 'x')")
                 lane.commit()
+                lane_outcome.append("committed")
+            except sqlite3.OperationalError:
+                lane_outcome.append("refused")
             finally:
                 lane.close()
 
@@ -1321,17 +1321,66 @@ def test_a_write_whose_snapshot_an_unrelated_commit_invalidates_retries_and_succ
 
     answered = call(live, f"/api/queue/{posting_id}/skipped", method="POST", bearer=live.token)
 
-    assert stolen, "the conflict was never injected, so this proves nothing"
-    # By code, not by message: the write path met 517, not the 5 it was written for.
-    assert classified == [sqlite3.SQLITE_BUSY_SNAPSHOT]
+    assert lane_outcome == ["refused"], "the write lock was not held from BEGIN"
+    assert classified == [], "the write met contention it should have excluded at BEGIN"
     assert answered.status == 200
     assert answered.json() == {"outcome": "skipped"}
-    # Counted through the store, not through the response that claimed it: the retry wrote.
+    # Counted through the store, not through the response that claimed it.
     with engine.connect() as conn:
         assert set(skipped_job_ids(conn)) == {job_id}
 
 
-# ------------------------------------------------------------------------------ applied and undo
+def test_a_batch_skip_reads_the_standing_set_before_it_takes_the_write_lock(
+    live: Live, engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The batch route's standing set is `delivered_unapplied` — 2.2-2.8 s on the live store — and
+    it used to be read INSIDE the write transaction (F6). DEFERRED, a run committing during that
+    read failed every attempt with 517 and the owner's click answered 503; IMMEDIATE with the read
+    still inside, the run's writers would be locked out for the whole read instead. The set is a
+    filter, not an invariant, so it is read on its own connection first.
+
+    A second connection commits during EVERY standing read, as a run committing per board does.
+    Both halves are asserted: the run was never locked out, and the batch still wrote.
+    """
+    with engine.begin() as conn:
+        _one, job_one = _deliver(conn, "one")
+        _two, job_two = _deliver(conn, "two")
+
+    db_path = tmp_path / "data" / DB_FILENAME
+    lane_outcome: list[str] = []
+    real_standing = server_mod.delivered_unapplied
+
+    def standing_while_a_run_commits(conn: Connection, **kw: Any) -> Any:
+        rows = real_standing(conn, **kw)
+        lane = sqlite3.connect(str(db_path), timeout=0.05)
+        try:
+            lane.execute(
+                "INSERT INTO app_state (key, value) VALUES (?, 'x')",
+                (f"run-{len(lane_outcome)}",),
+            )
+            lane.commit()
+            lane_outcome.append("committed")
+        except sqlite3.OperationalError:
+            lane_outcome.append("refused")
+        finally:
+            lane.close()
+        return rows
+
+    monkeypatch.setattr(server_mod, "delivered_unapplied", standing_while_a_run_commits)
+
+    answer = call(
+        live,
+        "/api/queue/skip",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+
+    assert answer.status == 200, answer.body[:200]
+    assert answer.json() == {"skipped": [job_one, job_two], "failed": []}
+    assert lane_outcome == ["committed"], lane_outcome
+    with engine.connect() as conn:
+        assert set(skipped_job_ids(conn)) == {job_one, job_two}
 
 
 def test_marking_applied_twice_appends_exactly_one_event(live: Live, engine: Engine) -> None:
