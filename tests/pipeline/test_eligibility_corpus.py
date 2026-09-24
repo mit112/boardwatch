@@ -5,17 +5,19 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
-TWELVE rows were ADDED and FOUR RE-BASELINED 2026-09-24 for engine batch 3. T193 reads a spelled years
-count (`five (5) years`, `Five years`): m0036 pinned `Five years of experience required.` as a known gap
-and now reads its required floor; m0923's `Mandatory: five years of experience.` now carries its
-experience row (`unknown`, no years declared) and still no degree row, which is what it pins. (a0025's
-`Between five and seven years` keeps main's reading, no row: a spelled range's high end is not a floor.) T197
-keeps a bar whose aside hedges another noun: m1150's `(TS/SCI preferred)` no longer drops the leveled
-Secret row, so it reads as the bare and `, with TS/SCI preferred` forms do; its verdict is unchanged.
-m1157-m1163 are T193 (the two run-474 audit sentences, the bare and `Minimum of` forms, the degree
-escape reading the spelled count, `two (2) weeks` and the benefits-prose control for the digits-only
-domain pattern), m1164-m1165 T196 (`diploma plus a minimum` and the two-word control), m1166-m1168
-T197 (two asides naming their own noun, and a bare mid-sentence aside that still hedges).
+FIFTEEN rows were ADDED and THREE RE-BASELINED 2026-09-24 for engine batch 3. T193 reads a spelled
+years count (`five (5) years`, `Five years`): m0036 pinned `Five years of experience required.` as a
+known gap and now reads its required floor; m0923's `Mandatory: five years of experience.` now carries
+its experience row (`unknown`, no years declared) and still no degree row, which is what it pins.
+a0025's `Between five and seven years` keeps main's reading, no row: a spelled range's high end is not
+a floor. T197 keeps a bar whose aside names its own head noun: m1150's `(TS/SCI preferred)` no longer
+drops the leveled Secret row, so it reads as the bare and `, with TS/SCI preferred` forms do; its
+verdict is unchanged. m1157-m1163 are T193 (the two run-474 audit sentences, the bare and `Minimum of`
+forms, the degree escape reading the spelled count, `two (2) weeks` and the benefits-prose control for
+the digits-only domain pattern), m1164-m1165 T196 (`diploma plus a minimum` and the two-word control),
+m1166-m1169 T197 (an aside naming a capitalised product's experience keeps the bar; a lone lowercase
+word, a bare aside mid-sentence and a restated `(preferred only)` still hedge it), m1170-m1171 T193 (a
+spelled range writes no row; a spelled count behind `Less than` is a ceiling).
 
 TWENTY-FOUR rows were ADDED and ONE RE-BASELINED 2026-09-23 for T178, an experience UPPER bound read
 as a minimum. m1093's `<2 years pertinent experience` is a ceiling, and a one-year profile is under
@@ -1428,6 +1430,9 @@ CASES: list[tuple] = [
     # pv 311120
     ('m1167:T197 WILL NOT a lone lowercase word names no noun of its own, so the aside hedges the bar', '3+ years of experience with HVAC maintenance (commercial preferred).', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1168:T197 CONTROL a bare aside mid-sentence still hedges the bar', '5 years of experience (preferred) in accounting.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('m1169:T197 WILL NOT an aside restating the hedge still hedges the bar', '5+ years of experience (preferred only)', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('m1170:T193 WILL NOT a spelled range does not read its high end as the floor', 'Three to five years of experience with Python', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1171:T193 a spelled count behind a ceiling cue is a ceiling', 'Less than two years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_years_maximum', 'required', 'met']]),
 ]
 
 
@@ -1447,4 +1452,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1167
+    assert len(CASES) == 1170
