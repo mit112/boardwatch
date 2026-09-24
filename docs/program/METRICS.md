@@ -16263,6 +16263,8 @@ Movers by direction: 54 ineligible→eligible, 19 uncertain→ineligible, 18 ine
 | T187 `9ea25ee6` → `0050e42a` (rebased) | 0 → **0** | 11,229 | 11m30 |
 | T194 `5798b56b` | 0 | 11,408 | 10m45 |
 | batch 3 `ea2f85b2` → `51ed4747` (round 2) | 143 (aborted: the executor was still editing) → **0** | 11,461 | 9m30 |
+| wave 1 stack `wave1-2026-09-24` @`0c78d706` (T195, T205–T207, T199, T203–T204, T188) | 2 (one manifest key-set pin, T204) → **0** | 11,551 | 16m13 (load 40–110) |
+| wave 2 stack `wave2-2026-09-24` @`9329c4b4` (wave 1 + T210, T209, T208) | 2 (no guide entry for `postings refetch`) → **0** | 11,571 | 14m41 |
 | T188 `03c99054` (after T188b) | 0 | 11,249 | 9m |
 | batch 2 `f2c51a64` → `19878e51` | 2 (catalog rule-count pins 60→62) → **0** | 11,345+ | 21m / 13m |
 
@@ -16316,6 +16318,16 @@ Overlap agreement 10/10. Live-key verdicts 240 of 434 top-level leads after T179
 ### T173 on the batch (`bw-t173/.agent/t173_aggregate.txt`, pinned 126,854)
 
 Movers A→B 1,468, all `uncertain` → `eligible` (A 354 / 124,249 / 2,251 → B 1,822 / 124,249 / 783); null 0; pure carrier-row additions only (`scoped_years_preferred` unmet 1,696 + unknown 24 on movers, 11,065 more on unchanged verdicts); 180 of T170's 189 `uncertain` movers clear; sample 20/20 stated preferences; ≤13 wrong clears bounded (T196, T197).
+
+### Engine batch 4 (T200, T201, T202; `bw-batch4`, pinned 126,854, A = main `b9eaade8`; D-594) — ROUND 1 MEASURED, ROUND 2 IN FLIGHT
+
+| round | head | null N vs A | movers A→B | by direction | wrong for a one-year profile |
+|---|---|---|---|---|---|
+| 1 | `fcd60187` | 1 / 1 (posting 323521, T202's code path) | **455** | 420 inel→unc, 35 inel→elig | **7 of the 35 new `eligible`** (unread range low ends: `eight to 10 years`, `5 – 8+`, `5 to 10 or more`, domain spaced-dash ranges) |
+
+T200 moves 454 (2,352 rows removed; 1,947 leave the range's low end, 405 leave no row: 145 `up to N` ceilings, 20 `between`, 15 domain spaced-dash, 8 `N months to M years`, 6 spelled-low/digit-high, 4 `or more`, 19 other); T201 built narrower than its ticket (the ticket's rule would have dropped 330 required rows, mostly real bars) — 169 rows, 0 verdict moves; T202 moves 1. `engine_version` `1+66019e1cac8a`, `CORPUS_ROWS` 1183. Round 2 (`TB4b`, the seven range forms read as ranges) re-measures into `batch4_aggregate_v2.txt`. Codex round 1 (high) NO BLOCKER.
+
+### T173 rebased onto batch 4 round 1 (`bw-t173`, D-590 read 1,468 on the old base) — MEASURED, reading in `t173c_aggregate.txt`; one more rebase owed onto batch 4's round 2
 
 ### Engine batch 3 (T193, T196, T197; `bw-batch3`, pinned 126,854, A = main `a69d61aa`; D-592, D-593) — SHIPPED (#457, `7f118822`)
 
