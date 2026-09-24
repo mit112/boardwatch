@@ -199,6 +199,10 @@ class SyncReport:
     destination check, since a repair means the disk silently diverged from what the store
     believed it had written. A non-zero value here is the signal that something outside
     boardwatch is editing the queue.
+
+    `renamed` is orthogonal too: OWNER files boardwatch renamed to `<stem>-N<suffix>` rather than
+    lose them (T189b) — one sharing a name with a merged duplicate's, or with a file a rewrite now
+    needs. Reported because it is a change to the owner's own files, however safe.
     """
 
     created: int = 0
@@ -207,6 +211,7 @@ class SyncReport:
     moved: int = 0
     retired: int = 0
     repaired: int = 0
+    renamed: int = 0
     failures: tuple[LeadFailure, ...] = ()
     contended: bool = False
 
@@ -489,7 +494,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     failed = {failure.posting_id for failure in failures}
 
     # BEFORE the relocation pass, which is what would otherwise refuse the occupied destination.
-    retired, retire_failures = _consolidate_duplicates(duplicates, entries, by_job)
+    retired, renamed, retire_failures = _consolidate_duplicates(duplicates, entries, by_job)
     failures.extend(retire_failures)
     failed.update(failure.posting_id for failure in retire_failures)
 
@@ -545,7 +550,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                     repaired += 1
                     updated += 1
                     continue
-                _install(staging, target, payload)
+                renamed += _install(staging, target, payload)
                 if entry is None:
                     created += 1
                 else:
@@ -562,6 +567,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         moved=moved,
         retired=retired,
         repaired=repaired,
+        renamed=renamed,
         failures=tuple(failures),
     )
 
@@ -901,7 +907,7 @@ def _tailored_artifact_ids(conn: Connection) -> dict[str, int]:
 # ------------------------------------------------------------------------------- staged installs
 
 
-def _install(staging: Path, target: Path, payload: _Payload) -> None:
+def _install(staging: Path, target: Path, payload: _Payload) -> int:
     """Build the folder under `staging` and `os.replace` it onto `target`.
 
     An existing `target` is moved aside into `staging` first rather than removed, for two reasons:
@@ -916,16 +922,47 @@ def _install(staging: Path, target: Path, payload: _Payload) -> None:
     `_repair` goes file-by-file precisely to protect, and that `_destination_intact` already
     refuses to treat as an integrity failure. Those three had agreed the folder is partly the
     owner's; only this path still behaved as though it were wholly ours.
+
+    Returns how many owner files `_make_room` renamed aside so this write could take its names.
     """
     built = staging / f"build-{token_hex(8)}"
     _write_lead(built, payload)
+    renamed = 0
     superseded: Path | None = None
     if target.exists():
+        renamed = _make_room(target, frozenset(path.name for path in built.iterdir()))
         superseded = staging / f"old-{token_hex(8)}"
         os.replace(target, superseded)
     os.replace(built, target)
     if superseded is not None:
         _carry_over_unauthored(superseded, target)
+    return renamed
+
+
+def _make_room(target: Path, needed: frozenset[str]) -> int:
+    """Rename aside every owner file in `target` holding a name the coming write needs (T189b).
+
+    A retitle gives the résumé a new name, and an owner file may already hold it — their own, or
+    one `_merge_unauthored` just brought in from a retired duplicate. `_carry_over_unauthored`
+    would skip it as a collision and the staging cleanup would then delete it, so the owner's file
+    is renamed IN PLACE, before the install moves anything: the generated file takes the name it is
+    recorded under (so a second sync is unchanged), and the owner's file keeps its bytes under
+    `<stem>-2<suffix>`. The count is reported, as `SyncReport.renamed`.
+    """
+    authored = _authored_names(target)
+    clashes = sorted(name for name in needed - authored if os.path.lexists(target / name))
+    for name in clashes:
+        os.replace(target / name, _free_name(target, name, avoid=needed))
+    return len(clashes)
+
+
+def _free_name(folder: Path, name: str, *, avoid: frozenset[str] = frozenset()) -> Path:
+    """`folder / name`, or the first `<stem>-N<suffix>` from 2 up that nothing holds or needs."""
+    candidate, number = name, 2
+    while candidate in avoid or os.path.lexists(folder / candidate):
+        candidate = f"{Path(name).stem}-{number}{Path(name).suffix}"
+        number += 1
+    return folder / candidate
 
 
 def _carry_over_unauthored(superseded: Path, target: Path) -> None:
@@ -938,7 +975,8 @@ def _carry_over_unauthored(superseded: Path, target: Path) -> None:
     this payload no longer uses, and carrying it over would leave two résumés in the folder. The
     old folder's record is the only thing that knows the old name.
 
-    A name the new folder already holds is skipped, so the new bytes always win.
+    A name the new folder already holds is skipped, so the new bytes always win. No OWNER file can
+    reach that skip: `_make_room` renamed every one holding a name of this write's first.
 
     If `details.json` is unreadable, only `details.json` itself is treated as ours and everything
     else is carried over. That folder is already corrupt by `_destination_intact`'s standard, and
@@ -955,24 +993,23 @@ def _carry_over_unauthored(superseded: Path, target: Path) -> None:
         os.replace(path, destination)
 
 
-def _merge_unauthored(retired: Path, keeper: Path) -> None:
+def _merge_unauthored(retired: Path, keeper: Path) -> int:
     """Move everything in `retired` that boardwatch did not write into `keeper` (T189).
 
     "Did not write" is `_carry_over_unauthored`'s rule, read from `retired`'s own `details.json`.
     Unlike that function, a name `keeper` already holds is NOT skipped: there the older copy is
     ours and the new bytes win, but here both are the owner's, so the incoming one is kept beside
-    it as `<stem>-2<suffix>` (the first free number).
+    it as `<stem>-2<suffix>` (the first free number). Returns how many were renamed so.
     """
     authored = _authored_names(retired)
+    renamed = 0
     for path in sorted(retired.iterdir()):
         if path.name in authored:
             continue
-        destination = keeper / path.name
-        number = 2
-        while os.path.lexists(destination):
-            destination = keeper / f"{path.stem}-{number}{path.suffix}"
-            number += 1
+        destination = _free_name(keeper, path.name)
+        renamed += destination.name != path.name
         os.replace(path, destination)
+    return renamed
 
 
 def _authored_names(folder: Path) -> frozenset[str]:
@@ -1212,8 +1249,11 @@ def _consolidate_duplicates(
     duplicates: dict[int, tuple[_Entry, ...]],
     entries: dict[int, _Entry],
     by_job: dict[int, _Entry],
-) -> tuple[int, list[LeadFailure]]:
+) -> tuple[int, int, list[LeadFailure]]:
     """Collapse folders that identity resolution converged onto ONE canonical job.
+
+    Returns `(retired, renamed, failures)`; `renamed` counts owner files `_merge_unauthored` kept
+    under a suffix because the keeper already held the name.
 
     **This is the only place this module deletes a lead folder, and the deletion is safe for a
     reason that does not generalise.** The queue holds COPIES — no `artifacts` row points into
@@ -1238,7 +1278,7 @@ def _consolidate_duplicates(
     it becomes a `LeadFailure` like any other and the survivor is still indexed. A merge that
     fails part-way fails the same way, BEFORE the delete, so nothing unmoved is removed.
     """
-    retired = 0
+    retired = renamed = 0
     failures: list[LeadFailure] = []
     for job_id, group in sorted(duplicates.items()):
         keeper = group[0]
@@ -1247,7 +1287,7 @@ def _consolidate_duplicates(
             if entry.path == keeper.path:
                 continue
             try:
-                _merge_unauthored(entry.path, keeper.path)
+                renamed += _merge_unauthored(entry.path, keeper.path)
                 shutil.rmtree(entry.path)
             except Exception as exc:  # one undeletable folder must never cost the rest
                 failures.append(LeadFailure(posting_id=entry.posting_id, detail=_detail(exc)))
@@ -1257,7 +1297,7 @@ def _consolidate_duplicates(
             if entries.get(entry.posting_id) is entry:
                 del entries[entry.posting_id]
             retired += 1
-    return retired, failures
+    return retired, renamed, failures
 
 
 def _widen_for_a_different_job(

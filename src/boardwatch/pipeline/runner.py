@@ -4177,6 +4177,7 @@ def _sync_queue(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
         f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
         f"{synced.retired} retired, {synced.repaired} repaired, "
+        f"{synced.renamed} owner files renamed, "
         f"{synced.failed + drained.failed} failed",
         markup=False,
     )

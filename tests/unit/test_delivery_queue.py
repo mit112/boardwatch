@@ -2063,6 +2063,58 @@ def test_consolidating_two_folders_keeps_the_owners_files_from_BOTH(
     assert _snapshot(root) == snapshot
 
 
+def test_an_owner_file_named_like_the_NEW_resume_is_renamed_never_deleted(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 3. A consolidation merges the retired folder's owner files into the keeper, and a
+    retitle in the same sync gives the keeper a NEW résumé name. An owner file already holding that
+    name (in either folder) used to be skipped by the carry-over and deleted with the staging
+    directory, while the sync reported success. Now the owner's file is renamed aside BEFORE the
+    install, the rename is counted in `renamed`, and the generated résumé takes its own name."""
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "one")
+        second, second_job = _deliver(conn, apps, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    new_pdf = plan_lead_names(
+        root=root.resolve(), owner_name=OWNER, company="Acme Corp", title="Senior Software Engineer",
+        identity_hash="0" * 64,
+    ).pdf
+    before = _folders(root)
+    for name in before:
+        (root / name / new_pdf).write_text(f"mine, in {name}\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == first).values(job_id=second_job))
+        conn.execute(
+            update(postings)
+            .where(postings.c.id.in_([first, second]))
+            .values(title="Senior Software Engineer", normalized_title="senior software engineer")
+        )
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    # One rename per owner file: the merge suffixes the retired folder's, `_make_room` the keeper's.
+    assert (report.retired, report.renamed, report.failures) == (1, 2, ())
+    (kept,) = _folders(root)
+    folder = root / kept
+    assert _details(folder)["pdf_filename"] == new_pdf
+    assert (folder / new_pdf).read_bytes().startswith(b"%PDF")
+    stem = new_pdf.removesuffix(".pdf")
+    mine = sorted(
+        path.read_text(encoding="utf-8") for path in folder.glob(f"{stem}-*.pdf")
+    )
+    assert mine == sorted(f"mine, in {name}\n" for name in before)
+
+    snapshot = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.retired, again.moved, again.updated, again.renamed, again.failures) == (
+        0, 0, 0, 0, ()
+    )
+    assert _snapshot(root) == snapshot
+
+
 def test_a_name_still_taken_after_disambiguation_is_REPORTED_not_returned_twice(
     tmp_path: Path,
 ) -> None:
