@@ -965,3 +965,67 @@ def test_a_domain_bar_whose_hedge_is_not_its_own_stays_required(  # type: ignore
     (row,) = result.requirements
     start, end = row.jd_locator["span"]
     assert body[start:end] == quote
+
+
+# T212: T196 bounded `a plus` in `bar_hedges` alone. `&degree_hedges` and the preferred patterns'
+# inline hedge lists read it with no leading boundary too, so the end of "diploma" and the
+# conjunction `plus` were a hedge: the degree bar beside it dropped, or a preferred twin was written
+# over a bar that states no preference.
+@pytest.mark.parametrize(
+    ("body", "required"),
+    [
+        pytest.param(
+            "High school diploma plus a Bachelor's degree or equivalent.",
+            "degree:bachelor_or_equivalent_required", id="degree-hedges",
+        ),
+        pytest.param(
+            "Master's degree or equivalent experience or a diploma plus 6 years.",
+            "degree:master_or_equivalent_required", id="master-or-equivalent-preferred-list",
+        ),
+        pytest.param(
+            "Bachelor's degree or equivalent experience, or a high school diploma plus 4 years of "
+            "experience.",
+            "degree:bachelor_or_equivalent_required", id="bachelor-or-equivalent-preferred-list",
+        ),
+        pytest.param(
+            "5 years of experience or a diploma plus training.",
+            "experience_years:total_years_minimum", id="total-years-preferred-list",
+        ),
+        pytest.param(
+            "3-5 years of experience or a diploma plus training.",
+            "experience_years:range_years_minimum", id="range-years-preferred-list",
+        ),
+    ],
+)
+def test_diploma_plus_is_not_the_a_plus_hedge(catalog, body: str, required: str) -> None:  # type: ignore[no-untyped-def]
+    rows = _rows(evaluate(body, FACTS, POLICY, catalog))
+    assert [required, "required"] in [row[:2] for row in rows]
+    assert not [row for row in rows if row[1] == "preferred"]
+
+
+# CONTROLS for T212: the two-word hedge still hedges at every site bounded.
+@pytest.mark.parametrize(
+    ("body", "preferred"),
+    [
+        pytest.param("Bachelor's degree a plus.", "degree:degree_preferred", id="degree-preferred"),
+        pytest.param(
+            "Bachelor's degree or equivalent a plus.", "degree:bachelor_or_equivalent_preferred",
+            id="bachelor-or-equivalent-preferred",
+        ),
+        pytest.param(
+            "Security clearance a plus.", "clearance:clearance_preferred", id="clearance-preferred"
+        ),
+        pytest.param(
+            "5+ years of experience a plus.", "experience_years:total_years_preferred",
+            id="total-years-preferred",
+        ),
+        pytest.param(
+            "3-5 years of experience a plus.", "experience_years:range_years_preferred",
+            id="range-years-preferred",
+        ),
+    ],
+)
+def test_a_two_word_a_plus_still_hedges_every_list(catalog, body: str, preferred: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert [row[:2] for row in _rows(result)] == [[preferred, "preferred"]]
+    assert result.verdict == "eligible"
