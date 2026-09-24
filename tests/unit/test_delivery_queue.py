@@ -1770,7 +1770,7 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     verdict = {7: "ineligible"}
     review = {7}
     closed = {7}
-    lane_copy = {7}
+    lane_copy = {1}  # keyed by the folder's POSTING, the other sets by its job (T189b)
     assert queue._wanted_location(
         entry, applied=both, skipped=both, reported=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
@@ -3447,6 +3447,64 @@ def test_a_lane_copy_grouped_before_its_first_sync_gets_no_folder_until_the_twin
     assert len(_folders(root / SKIPPED_DIR)) == 1
 
 
+def test_a_board_posting_sharing_its_lane_twins_JOB_is_never_hidden_as_a_lane_copy(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 2. Identity resolution can put the lane posting and its board twin on ONE job.
+    A job-keyed lane-copy set then named that job, whose `delivered_unapplied` winner is the BOARD
+    posting: reconcile filed the board lead's folder under `_lane_copy/` and sync then hid it, a
+    real board lead gone from the queue. Keyed on the posting, and a holder on the lane posting's
+    own job not counting, the one job keeps one folder at the root, and it is the board posting's.
+    """
+    with engine.begin() as conn:
+        lane_id, _ = _deliver(
+            conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(hours=1)
+        )
+        board_id, board_job = _deliver(conn, apps, "board", provider="greenhouse")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert len(_folders(root)) == 2
+    with engine.begin() as conn:
+        _cross_host(conn, board_id, "same-job")
+        _cross_host(conn, lane_id, "same-job")
+        conn.execute(update(postings).where(postings.c.id == lane_id).values(job_id=board_job))
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.to_lane_copy, drained.failed, synced.failures) == (0, 0, ())
+    assert _folders(root / LANE_COPY_DIR) == []
+    (kept,) = _folders(root)
+    assert _details(root / kept)["posting_id"] == board_id
+
+    before = _snapshot(root)
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.moved, synced.moved, synced.created, synced.updated) == (0, 0, 0, 0)
+    assert _snapshot(root) == before
+
+
+def test_a_lane_copy_hides_only_its_own_POSTING_never_its_jobs_board_winner(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189b item 2, the half the same-job test above cannot see. A job whose lane posting IS a
+    copy of another job's board lead can still be shown through a board posting of its OWN, which
+    `delivered_unapplied` picks as the winner. Hiding by job hid that board posting too; hiding by
+    posting leaves it standing beside the other job's lead.
+    """
+    with engine.begin() as conn:
+        lane_id, own_job = _deliver(
+            conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(hours=1)
+        )
+        own_board, _ = _deliver(conn, apps, "own", provider="greenhouse", job_id=own_job)
+        other_board, _ = _deliver(conn, apps, "other", provider="workday")
+        _cross_host(conn, lane_id, "other-job")
+        _cross_host(conn, other_board, "other-job")
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert (drained.failed, synced.failures) == (0, ())
+    assert sorted(_details(root / name)["posting_id"] for name in _folders(root)) == sorted(
+        [own_board, other_board]
+    )
+
+
 def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -3479,7 +3537,7 @@ def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
 #: UNIQUE key is (posting_id, kind, algorithm_version) — and `identities reap` is manual,
 #: so retired rows stay on disk. Filing a standing lead under `_lane_copy` on a withdrawn key is
 #: a quarantine with no evidence behind it, so the two readers this drain sits on
-#: (`standing_board_cross_host_keys` and `lane_copy_job_ids`) select the current one.
+#: (`standing_board_cross_host_keys` and `lane_copy_posting_ids`) select the current one.
 RETIRED = "p6.1"
 assert RETIRED != IDENTITY_ALGORITHM_VERSION  # the fixtures below must actually be stale
 
@@ -3532,7 +3590,7 @@ def test_a_board_twin_at_a_RETIRED_generation_holds_nothing(
 def test_a_lane_twin_at_a_RETIRED_generation_is_not_matched_to_a_CURRENT_holder(
     engine: Engine, root: Path, apps: Path
 ) -> None:
-    """The mirror image, isolating `lane_copy_job_ids`: the holder set is current and correct, and
+    """The mirror image, isolating `lane_copy_posting_ids`: the holder set is current and correct, and
     it is the LANE row whose only key is retired. The two rows are in no current group together,
     so the lane lead is work rather than a copy."""
     with engine.begin() as conn:

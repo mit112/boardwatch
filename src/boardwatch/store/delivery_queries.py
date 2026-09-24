@@ -714,7 +714,7 @@ def standing_slate_keys(
       front of the owner — its employer-board twin is, and that twin is a delivered lead holding
       the slot itself. Keeping both would let one job hold two slots and suppress a second,
       distinct posting for as long as the pair stood. The release condition is live: the moment
-      the board twin stops holding, `lane_copy_job_ids` stops returning the lane copy and it
+      the board twin stops holding, `lane_copy_posting_ids` stops returning the lane copy and it
       ranks again.
 
     **That list is `delivery.names.DRAIN_DIRS`, and this is the SECOND place the program decides
@@ -888,8 +888,8 @@ def standing_board_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
-def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
-    """`job_id` for every delivered LANE copy whose employer-board twin is also standing.
+def lane_copy_posting_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
+    """`posting_id` for every delivered LANE copy whose employer-board twin is also standing.
 
     D-498 rule (a)'s missing half. That rule drops a lane's copy of a posting when the employer's
     own board copy is on the slate or standing in the queue — but it runs in the RANKER, so it
@@ -921,15 +921,21 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
     lane copy is drawn straight back out of `_lane_copy` on the next pass — the same shape
     `closed_job_ids` has.
 
+    **Keyed on the POSTING, never the job (T189b).** Identity resolution can put the lane
+    posting and its board twin on ONE job, and a job-keyed set then named the job whose
+    `delivered_unapplied` winner is the BOARD posting — so the board lead itself was hidden as a
+    lane copy of itself. For the same reason a holder on the lane posting's OWN job does not make
+    it a lane copy: that job has one lead, and hiding it hides the job. A lane posting is a copy
+    only of a DIFFERENT job's standing board posting.
+
     A bare set, like `closed_job_ids` and `review_job_ids`: `_wanted_location` asks only whether
-    the job is in it. Naming WHICH lead supersedes this one would be better for a reader auditing
-    the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is versioned, so
-    it is left for whoever wants it rather than carried unused here.
+    the folder's posting is in it. Naming WHICH lead supersedes this one would be better for a
+    reader auditing the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is
+    versioned, so it is left for whoever wants it rather than carried unused here.
     """
     held = standing_board_cross_host_keys(conn, skipped=skipped)
     if not held:
         return set()
-    holder_of: dict[str, int] = {key: ids[0] for key, ids in held.items() if ids}
     # Joined outward from the delivered rows, binding no id list: this module hit SQLite's
     # 32,766 bound-parameter cap at six call sites on 2026-08-23 and the drain sets have been
     # applied in Python over joined rows ever since.
@@ -944,14 +950,15 @@ def lane_copy_job_ids(conn: Connection, *, skipped: set[int]) -> set[int]:
         )
         .where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all()
+    # Every holder is one of these rows: the seed reads this same select, join and filter.
+    job_of = {int(row.posting_id): int(row.job_id) for row in rows}
     out: set[int] = set()
     for row in rows:
         if str(row.provider) in PROVIDER_NAMES:
             continue
-        holder = holder_of.get(str(row.identity_key))
-        if holder is None or holder == int(row.posting_id):
-            continue
-        out.add(int(row.job_id))
+        holders = held.get(str(row.identity_key), ())
+        if any(job_of[holder] != int(row.job_id) for holder in holders):
+            out.add(int(row.posting_id))
     return out
 
 

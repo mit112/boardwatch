@@ -86,7 +86,7 @@ from boardwatch.store.delivery_queries import (
     closed_job_ids,
     delivered_unapplied,
     ineligible_job_ids,
-    lane_copy_job_ids,
+    lane_copy_posting_ids,
     lane_decision,
     queue_detail,
     review_job_ids,
@@ -345,11 +345,11 @@ def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     refresh re-judges from exactly these, so the population is defined once — why each exclusion
     is there is `_sync_locked`'s comment."""
     withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
-    lane_copy = lane_copy_job_ids(conn, skipped=withheld)
+    lane_copy = lane_copy_posting_ids(conn, skipped=withheld)
     return [
         row
         for row in delivered_unapplied(conn, skipped=withheld)
-        if row.verdict != "ineligible" and row.job_id not in lane_copy
+        if row.verdict != "ineligible" and row.posting_id not in lane_copy
     ]
 
 
@@ -1057,7 +1057,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     review = review_job_ids(conn)
     # Passed the SAME withheld set the other drains derive from, so a lead the owner already
     # skipped or reported cannot be re-filed as a lane copy behind their statement.
-    lane_copy = lane_copy_job_ids(conn, skipped=set(skipped) | set(reported))
+    lane_copy = lane_copy_posting_ids(conn, skipped=set(skipped) | set(reported))
     entries, unclassified = _index(root)
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it
@@ -1201,7 +1201,9 @@ def _wanted_location(
         return CLOSED_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
-    if entry.job_id in lane_copy:
+    # By the folder's POSTING, as `lane_copy_posting_ids` is keyed: a board posting sharing its
+    # lane twin's job is never a lane copy (T189b).
+    if entry.posting_id in lane_copy:
         return LANE_COPY_DIR
     if entry.job_id in review:
         return REVIEW_DIR
