@@ -16297,3 +16297,15 @@ drain findings fixed, two more fixed, one exotic input ruled a follow-up), T190 
 (medium, clean), T192 × 3 (high, high, medium: four fetcher findings fixed, one stall fixed, then clean),
 batch 2 (high, clean). Every review that found a blocker had it closed in one follow-up round; no fourth
 round was run.
+
+### Run-474 audit (B8 blind two-judge, T159's apparatus; `bw-review/.agent/audit474/`)
+
+| arm | judge A | judge B | pooled | 95% Wilson |
+|---|---|---|---|---|
+| `run474` (census, 24 leads 474 placed) | 0/10 | 2/16 | **2/24 = 8.3%** | 2–26% |
+| `std` (standing top-up, 32) | 6/23 | 4/17 | **8/32 = 25.0%** | 13–42% |
+| `all` (the lane as it stands, 56) | 6/33 | 6/33 | **10/56 = 17.9%** | **10–30%** |
+| T159 `ctl` (D-550) | 1/36 | 3/40 | 3/56 = 5.4% | 2–15% |
+
+Overlap agreement 10/10. Live-key verdicts 240 of 434 top-level leads after T179's re-key (119 folders live,
+315 off-key); T113b hiding 0, released 297 (14 delivered top-level). `refresh_pending_after` 731 → 767.
