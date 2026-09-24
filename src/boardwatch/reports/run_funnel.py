@@ -65,6 +65,7 @@ from boardwatch.store.run_funnel_queries import (
     STALE_COMPLETE_BANDS,
     CorpusCounts,
     DedupSweep,
+    LaneCaptureCounts,
     NeverCompleteBoard,
     SourceOutcome,
     StaleCompleteBoard,
@@ -244,6 +245,12 @@ _TOP_MISSING = 10
 # new top-level key that supplies no denominator an existing block was read without, and changes
 # no existing key's MEANING — the shortlist stage's drops and the lane split count exactly what
 # they did. A funnel written before it lacks the key, which reads as `null`: NOT MEASURED.
+#
+# **T191's lane cross-checks do NOT bump it either.** They are more ENTRIES in the existing
+# `cross_checks` list, each in the unchanged `{name, in_memory, from_store, agrees, note}` shape,
+# and `LaneReport.snapshots` is not emitted in the `lanes` block. `reconciles` keeps its meaning
+# (every cross-check agrees); there are just more of them. `cli/verify_cmd.py` reads cross-checks
+# by name, so new names are invisible to it.
 ARTIFACT_VERSION = 8
 
 # The stored verdict that carries the keystone invariant's ABSTAIN. Named here once so the
@@ -1516,6 +1523,10 @@ class LaneReport:
     fetch_seconds: float | None = None
     apply_seconds: float | None = None
     stage_elapsed_seconds: float | None = None
+    # T191. How many company snapshots the apply landed — each writes one `scan_kind='lane'`
+    # `board_scans` row, which is what the funnel recounts it against. `None` means NOT
+    # MEASURED, and the cross-check is then omitted rather than compared with a zero.
+    snapshots: int | None = None
 
 
 @dataclass(frozen=True)
@@ -1841,6 +1852,49 @@ def _dedup_stage(dedup: DedupSweep | None) -> Stage:
     )
 
 
+def _lane_cross_checks(
+    lanes: Sequence[LaneReport], captures: LaneCaptureCounts | None
+) -> tuple[CrossCheck, ...]:
+    """T191: each lane's self-report against the store's recount of the same deliverable.
+
+    One `persisted_new` row per lane that REPORTED — a lane that did not run has no row, and
+    absent is not zero. The `board_scans` row is ONE across all lanes because the table records
+    no lane name; the lanes' snapshot counts sum exactly to its `scan_kind='lane'` rows, whereas
+    splitting it per lane would double-count a company two lanes both touched. Omitted when any
+    lane's snapshot count was not measured.
+    """
+    if captures is None or not lanes:
+        return ()
+    rows = tuple(
+        CrossCheck(
+            name=f"lane:{lane.name}:persisted_new",
+            in_memory=len(lane.persisted_new),
+            from_store=captures.first_captures.get(lane.name, 0),
+            note=(
+                "the lane's admitted-and-landed companies vs the admitted companies the store "
+                "shows FIRST captured this run: a scan_kind='lane' board_scans row for the run, "
+                "none in an earlier run, and a posting whose `new` event carries this run"
+            ),
+        )
+        for lane in lanes
+    )
+    snapshots = [lane.snapshots for lane in lanes]
+    if any(count is None for count in snapshots):
+        return rows
+    return (
+        *rows,
+        CrossCheck(
+            name="lanes:board_scans",
+            in_memory=sum(count for count in snapshots if count is not None),
+            from_store=captures.scan_rows,
+            note=(
+                "snapshots the lanes say they applied vs board_scans rows with scan_kind='lane' "
+                "for this run. Summed over every lane: board_scans records no lane name"
+            ),
+        ),
+    )
+
+
 def build_run_funnel(
     *,
     run_id: int,
@@ -1882,6 +1936,9 @@ def build_run_funnel(
     # change what any stage claims, so an omitted list and a genuinely empty one describe the
     # same artifact.
     lanes: Sequence[LaneReport] = (),
+    # T191. The store's recount of what the lanes landed, read by the caller. `None` means it
+    # was not read, and no lane cross-check is emitted rather than one against a zero.
+    lane_captures: LaneCaptureCounts | None = None,
     # D-325. Omitted means the sweep did not run and the section reports itself UNMEASURED,
     # never zero — the same omission direction as `liveness` above.
     death_probe: DeathProbeReport | None = None,
@@ -2412,6 +2469,7 @@ def build_run_funnel(
                 ),
             )
         ),
+        *_lane_cross_checks(lanes, lane_captures),
     )
 
     # ONE total, not two. A per-board `eligible` total was shipped here and deleted after

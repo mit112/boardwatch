@@ -71,11 +71,13 @@ from boardwatch.store.queries import (
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
+    LaneCaptureCounts,
     SourceOutcome,
     TailoredArtifactCounts,
     count_applied_for_postings,
     count_by_source,
     count_corpus,
+    count_lane_captures,
     count_open_postings,
     count_projected_tailored_artifacts,
     count_stub_postings,
@@ -279,10 +281,11 @@ def collect_run_funnel(
     # morning artifact must render the identical object: `held` has no run dimension, so two
     # loads can disagree. Building it here would reintroduce exactly that drift.
     board_coverage: BoardCoverageReport | None = None,
-    # D7. Built by the pipeline's lane stage and passed straight through — there is nothing to
-    # read back out of the store for it: a lane's outcome counters are in-memory tallies of
-    # requests it made, and the postings it DID land are already counted by the per-source table
-    # (a lane company carries `company_source='lane'`, so the attribution comes free). Required
+    # D7. Built by the pipeline's lane stage and passed straight through: a lane's outcome
+    # counters are in-memory tallies of requests it made, and the postings it DID land are
+    # already counted by the per-source table (a lane company carries `company_source='lane'`,
+    # so the attribution comes free). Its new reach and applied snapshots ARE read back out of
+    # the store below (T191), as cross-checks against these self-reports. Required
     # rather than defaulted here, unlike in the pure builder: this module has exactly one caller
     # and a forgotten argument should be a type error rather than a silently lane-less artifact.
     lanes: Sequence[LaneReport],
@@ -367,6 +370,14 @@ def collect_run_funnel(
         # there is nothing to compare it with.
         projected_lineage_rows = (
             count_projected_tailored_artifacts(conn, run_id) if projection_ran else 0
+        )
+        # T191. Every lane number is the lane's own tally, so its new reach and applied snapshots
+        # are recounted here from `board_scans`/`posting_events`. Read only when a lane reported:
+        # a lane that did not run gets no row, never a store count of zero.
+        lane_captures: LaneCaptureCounts | None = (
+            count_lane_captures(conn, run_id, {lane.name: lane.admitted for lane in lanes})
+            if lanes
+            else None
         )
         # T110. B8's volume cohort, read HERE and not from the leads this function was handed.
         # The two answer different questions and the ordering is what separates them: a lead's
@@ -496,6 +507,7 @@ def collect_run_funnel(
         coverages=coverages,
         board_coverage=board_coverage,
         lanes=lanes,
+        lane_captures=lane_captures,
         stage_durations=stage_durations,
         # Against the read sites' config, not `end_identity`'s: the manifest keeps naming the
         # config the run started, ranked and judged under, and the drift names the two config

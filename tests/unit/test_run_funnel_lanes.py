@@ -31,7 +31,11 @@ from boardwatch.reports.run_funnel import (
     funnel_to_dict,
     funnel_to_markdown,
 )
-from boardwatch.store.run_funnel_queries import CorpusCounts, TailoredArtifactCounts
+from boardwatch.store.run_funnel_queries import (
+    CorpusCounts,
+    LaneCaptureCounts,
+    TailoredArtifactCounts,
+)
 
 
 def _tally(*outcomes: str) -> AcquisitionTally:
@@ -51,6 +55,7 @@ def _report(
     apply_seconds: float | None = None,
     search_pages: tuple[tuple[str, int], ...] = (),
     search_outcomes: tuple[SearchOutcome, ...] = (),
+    snapshots: int | None = None,
 ) -> LaneReport:
     tally = _tally(*outcomes)
     return LaneReport(
@@ -68,10 +73,13 @@ def _report(
         apply_seconds=apply_seconds,
         search_pages=search_pages,
         search_outcomes=search_outcomes,
+        snapshots=snapshots,
     )
 
 
-def _funnel(lanes: tuple[LaneReport, ...] = ()) -> RunFunnel:
+def _funnel(
+    lanes: tuple[LaneReport, ...] = (), lane_captures: LaneCaptureCounts | None = None
+) -> RunFunnel:
     """The smallest funnel that renders, with only the lane section varying."""
     return build_run_funnel(
         run_id=1,
@@ -110,6 +118,7 @@ def _funnel(lanes: tuple[LaneReport, ...] = ()) -> RunFunnel:
             load_rules(Path("does-not-exist")), {}, not_applicable_families=frozenset()
         ),
         lanes=lanes,
+        lane_captures=lane_captures,
     )
 
 
@@ -314,3 +323,77 @@ def test_a_lane_without_outcomes_renders_its_page_table_as_before() -> None:
 
     unpaged = funnel_to_markdown(_funnel((_report("jobapps"),)))
     assert "| search | pages fetched" not in unpaged
+
+
+# --- T191: each lane's self-report, recounted from the store ---------------------------------
+
+_TWO = (("hiringcafe", "src:a"), ("hiringcafe", "src:b"))
+
+
+def _checks(funnel: RunFunnel) -> dict[str, tuple[int, int, bool]]:
+    return {c.name: (c.in_memory, c.from_store, c.agrees) for c in funnel.cross_checks}
+
+
+def test_a_lane_claiming_more_new_reach_than_the_store_holds_disagrees() -> None:
+    """The red case F8 names: the lane says two companies were newly persisted, the store's
+    first-capture recount finds one. The row lands in `disagreements`, so the run stops
+    reconciling through the same property the three older cross-checks feed."""
+    funnel = _funnel(
+        (_report("stub", admitted=_TWO, persisted_new=_TWO, snapshots=2),),
+        LaneCaptureCounts(first_captures={"stub": 1}, scan_rows=2),
+    )
+    assert _checks(funnel)["lane:stub:persisted_new"] == (2, 1, False)
+    assert [c.name for c in funnel.disagreements] == ["lane:stub:persisted_new"]
+    assert funnel.reconciles is False
+    rows = {row["name"]: row for row in funnel_to_dict(funnel)["cross_checks"]}
+    assert rows["lane:stub:persisted_new"]["agrees"] is False
+
+
+def test_a_lane_whose_self_report_matches_the_store_agrees() -> None:
+    """Control for the case above: same shape, the store agrees, nothing is flagged."""
+    funnel = _funnel(
+        (_report("stub", admitted=_TWO, persisted_new=_TWO, snapshots=2),),
+        LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2),
+    )
+    assert _checks(funnel)["lane:stub:persisted_new"] == (2, 2, True)
+    assert _checks(funnel)["lanes:board_scans"] == (2, 2, True)
+    assert funnel.disagreements == ()
+
+
+def test_lane_scan_rows_the_lanes_did_not_report_disagree() -> None:
+    """`board_scans` carries no lane name, so the row count is checked once, across every lane:
+    the sum of the snapshots the lanes say they applied against the store's `scan_kind='lane'`
+    rows for the run."""
+    funnel = _funnel(
+        (
+            _report("a", snapshots=2),
+            _report("b", snapshots=1),
+        ),
+        LaneCaptureCounts(first_captures={"a": 0, "b": 0}, scan_rows=4),
+    )
+    assert _checks(funnel)["lanes:board_scans"] == (3, 4, False)
+
+
+def test_a_lane_that_did_not_run_has_no_row_and_absent_is_not_zero() -> None:
+    """No lane ran: no lane rows at all, rather than rows of zeros that claim a check passed."""
+    names = set(_checks(_funnel((), LaneCaptureCounts(first_captures={}, scan_rows=0))))
+    assert not any(name.startswith("lane") for name in names)
+
+
+def test_unmeasured_store_counts_emit_no_lane_rows() -> None:
+    """A caller that did not read the store gets no lane rows, never a store count of 0."""
+    names = set(_checks(_funnel((_report("stub", persisted_new=_TWO, snapshots=2),))))
+    assert not any(name.startswith("lane") for name in names)
+
+
+def test_an_unmeasured_snapshot_count_omits_only_the_scan_row_check() -> None:
+    """`snapshots=None` is NOT MEASURED: comparing it as 0 against the store's rows would flag a
+    healthy run. The per-lane reach check still runs, because both of its sides were measured."""
+    checks = _checks(
+        _funnel(
+            (_report("stub", admitted=_TWO, persisted_new=_TWO),),
+            LaneCaptureCounts(first_captures={"stub": 2}, scan_rows=2),
+        )
+    )
+    assert "lanes:board_scans" not in checks
+    assert checks["lane:stub:persisted_new"] == (2, 2, True)
