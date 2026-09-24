@@ -73,8 +73,10 @@ def apply_board(
     company_id: int,
     run_id: int,
     scan_kind: str = "board",
+    lane: str | None = None,
 ) -> ApplyResult:
-    """Apply one board snapshot. `scan_kind` says which subsystem produced it (D-285).
+    """Apply one board snapshot. `scan_kind` says which subsystem produced it (D-285), and `lane`
+    which lane, when one did (T199).
 
     The default is not a hidden decision: every caller on the six-provider scan path genuinely
     IS a board scan, so `"board"` states that fact. A lane passes `"lane"` explicitly, which is
@@ -95,13 +97,13 @@ def apply_board(
         if snapshot.status == "failed":
             _scan_row(
                 conn, run_id, company_id, started_at, "failed", 0, snapshot.error,
-                scan_kind=scan_kind,
+                scan_kind=scan_kind, lane=lane,
             )
             return ApplyResult(status="failed")
         if snapshot.status == "unchanged":
             _scan_row(
                 conn, run_id, company_id, started_at, "unchanged", 0, None,
-                scan_kind=scan_kind,
+                scan_kind=scan_kind, lane=lane,
             )
             return ApplyResult(status="unchanged")
         result = _apply_listed(conn, snapshot.postings, company_id, run_id, snapshot.url)
@@ -143,6 +145,7 @@ def apply_board(
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
             len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
+            lane=lane,
         )
         return result
 
@@ -629,6 +632,7 @@ def _scan_row(
     *,
     snapshot: BoardSnapshot | None = None,
     scan_kind: str = "board",
+    lane: str | None = None,
 ) -> None:
     conn.execute(
         insert(board_scans).values(
@@ -640,6 +644,7 @@ def _scan_row(
             postings_listed=listed,
             error=error,
             scan_kind=scan_kind,
+            lane=lane,
             # NULL, not 0, when there is no snapshot: a failed board's coverage is undefined.
             board_reported_total=None if snapshot is None else snapshot.board_reported_total,
             board_enumerated=None if snapshot is None else snapshot.board_enumerated,
