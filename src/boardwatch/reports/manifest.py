@@ -83,6 +83,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         "fetch_deadline_seconds",  # throughput: how long one request may hold its host
         "busy_timeout_ms",         # throughput
         "scan_workers",            # throughput
+        "board_deadline_seconds",  # throughput: how long one board may hold its worker
         "detail_fetch_budget",     # throughput
         "reap_stale_after_hours",  # run bookkeeping/liveness — never which postings become leads
         # Bounds how stale a board's cached validator may get before a forced unconditional
@@ -334,6 +335,7 @@ _ROUTING_IRRELEVANT: frozenset[str] = frozenset(
         "fetch_deadline_seconds",
         "busy_timeout_ms",
         "scan_workers",
+        "board_deadline_seconds",
         "detail_fetch_budget",
         "reap_stale_after_hours",
         "validator_max_age_hours",

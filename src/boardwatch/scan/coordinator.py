@@ -481,41 +481,78 @@ def _scan_body(
     # still waited for (`wait=True`): they hold a live HTTP connection, and abandoning one
     # would leak it. Only the queue is dropped.
     pool = ThreadPoolExecutor(max_workers=settings.scan_workers)
+    cap = settings.board_deadline_seconds
+    # Futures given up on at `board_deadline_seconds` (T192). Their threads still occupy pool
+    # workers, so they are counted against the slots below — otherwise a board submitted into
+    # that worker would queue, and its deadline clock, started at submit, would run while it
+    # had not started. They leave this set as their threads end.
+    abandoned: set[Future[BoardSnapshot]] = set()
     try:
         queues = host_queues(work)
         busy: set[str] = set()
-        future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str]] = {}
+        future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str, float]] = {}
 
         def _submit_ready() -> None:
+            abandoned.difference_update([f for f in abandoned if f.done()])
             for row, prov, request in take_ready(
-                queues, busy, settings.scan_workers - len(future_map)
+                queues, busy, settings.scan_workers - len(future_map) - len(abandoned)
             ):
                 future_map[pool.submit(fetch_board_job, prov, fetcher, request)] = (
-                    row, request, host_key(request.url),
+                    row, request, host_key(request.url), time.monotonic(),
                 )
 
         # Never empty while work remains: a host is in `busy` only while one of its boards is in
         # flight, so an empty `future_map` means an empty `busy`, which means every non-empty
         # queue is offerable. That is what makes the loop below terminate having submitted each
         # board exactly once, without a separate "anything left?" condition.
+        # The one exception is every worker held by an abandoned thread: then `future_map` is
+        # empty with work queued, and the loop waits on those threads to free a worker.
         _submit_ready()
-        while future_map:
-            done, _ = wait(future_map.keys(), return_when=FIRST_COMPLETED)
-            for future in done:
-                row, request, host = future_map.pop(future)
+        while future_map or (abandoned and any(queues)):
+            now = time.monotonic()
+            timeout = min(
+                (max(0.0, start + cap - now) for *_, start in future_map.values()), default=None
+            )
+            done, _ = wait(
+                future_map.keys() | abandoned, timeout=timeout, return_when=FIRST_COMPLETED
+            )
+            now = time.monotonic()
+            # A board still running at its deadline is failed HERE and its thread abandoned: the
+            # thread cannot be interrupted, so it finishes or dies on the fetch deadline, and its
+            # snapshot — whenever it arrives — is never applied.
+            overdue = {
+                f for f, (*_, start) in future_map.items()
+                if f not in done and now - start >= cap
+            }
+            for future in [*done, *overdue]:
+                # Not ours any more: an abandoned thread ended, so its worker is free again. Keyed
+                # on `future_map` rather than `abandoned`, which `_submit_ready` prunes.
+                if future not in future_map:
+                    _submit_ready()
+                    continue
+                row, request, host, start = future_map.pop(future)
+                if future in overdue:
+                    abandoned.add(future)  # before the refill, so its worker is not handed out
                 # Released and refilled BEFORE the apply, which is serial and holds the writer:
                 # the pool used to carry the whole fleet as backlog, so a worker never idled
                 # while the coordinator wrote. Refilling only after the batch applied would hand
                 # that back and idle a worker for every apply.
                 busy.discard(host)
                 _submit_ready()
-                try:
-                    snapshot = future.result()
-                except Exception as exc:  # providers map failures themselves; belt-and-braces
+                if future in overdue:
                     snapshot = BoardSnapshot(
                         status="failed", postings=[], url=request.url,
-                        observed_validators=None, error=f"unexpected worker error: {exc}",
+                        observed_validators=None, error=f"board deadline {cap:g}s exceeded",
+                        fetch_seconds=now - start,
                     )
+                else:
+                    try:
+                        snapshot = future.result()
+                    except Exception as exc:  # providers map failures; belt-and-braces
+                        snapshot = BoardSnapshot(
+                            status="failed", postings=[], url=request.url,
+                            observed_validators=None, error=f"unexpected worker error: {exc}",
+                        )
                 # Accounted BEFORE the apply, and outside its try: the fetch already cost the run
                 # its seconds whether or not the apply then succeeds, and attributing cost only to
                 # boards that applied cleanly would hide the expensive failures.
@@ -560,7 +597,10 @@ def _scan_body(
         pool.shutdown(wait=True, cancel_futures=True)
         raise
     else:
-        pool.shutdown(wait=True)
+        # Not joined: every board is collected, so the only threads left are abandoned ones, and
+        # waiting on them is the stall the board deadline exists to end. The interpreter still
+        # joins pool threads at exit; the fetch deadline is what bounds that.
+        pool.shutdown(wait=False)
 
     with engine.connect() as conn:
         summary.open_postings = int(

@@ -172,6 +172,10 @@ class Settings(BaseModel):
     # The DEFAULT stays 4 deliberately. The right number is a property of the operator's box and
     # their fleet, so it belongs in their own `config.toml` and never in this line.
     scan_workers: int = Field(default=4, ge=1, le=32)
+    # A board whose fetch is still running after this many seconds is recorded `failed` and its
+    # worker abandoned, so one stuck board cannot hold the scan stage open (T192). It bounds a
+    # BOARD — many requests — where `fetch_deadline_seconds` bounds one.
+    board_deadline_seconds: float = Field(default=600.0, gt=0)
     # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.
