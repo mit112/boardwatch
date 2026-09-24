@@ -62,8 +62,10 @@ class RoleTaxonomy:
 
 def _words_pattern(words: tuple[str, ...]) -> re.Pattern[str]:
     # Literal words, never regex: whitespace inside a phrase matches any run of whitespace.
+    # `(?<!\w)…(?!\w)`, not `\b…\b`, as `rank/heuristic.py`'s exclude regex: `\b` needs a word
+    # character beside it, so a word starting or ending in punctuation (`c++`, `.net`) never fired.
     parts = (r"\s+".join(re.escape(part) for part in word.split()) for word in words)
-    return re.compile(r"\b(?:" + "|".join(parts) + r")\b", re.IGNORECASE)
+    return re.compile(r"(?<!\w)(?:" + "|".join(parts) + r")(?!\w)", re.IGNORECASE)
 
 
 def role_token(value: object, where: str) -> str:

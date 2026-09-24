@@ -170,6 +170,26 @@ def test_title_words_match_whole_words_only() -> None:
     assert taxonomy_role_verdict("Widget Inspectorate Clerk", taxonomy)[0] == "uncertain"
 
 
+PUNCTUATED_FIELD: dict[str, Any] = {
+    "version": 1,
+    "field": "dotnet",
+    "role_families": [{"id": "languages", "title_words": ["c++", "c#", ".net"]}],
+}
+
+
+@pytest.mark.parametrize("title", ["C++ Developer", "Senior C# Engineer", ".NET Developer"])
+def test_a_word_that_starts_or_ends_in_punctuation_still_matches(title: str) -> None:
+    # `\b` needs a word character beside it, so `\bc\+\+\b` could never match "C++ Developer".
+    taxonomy = parse_role_taxonomy(PUNCTUATED_FIELD)
+    assert taxonomy_role_verdict(title, taxonomy)[0] == "swe"
+
+
+@pytest.mark.parametrize("title", ["Metac++ Tooling", "Abc# Lead", ".NETX Lead"])
+def test_a_punctuated_word_does_not_match_inside_a_longer_word(title: str) -> None:
+    taxonomy = parse_role_taxonomy(PUNCTUATED_FIELD)
+    assert taxonomy_role_verdict(title, taxonomy)[0] == "uncertain"
+
+
 # --------------------------------------------- (3) control: the tech user's verdicts do not move
 
 
