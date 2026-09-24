@@ -233,6 +233,29 @@ def test_a_user_with_no_role_taxonomy_names_the_missing_field(
         }, (gate, ranker[gate])
 
 
+def test_a_user_with_no_role_taxonomy_counts_every_role_hold_as_fired_on_default(
+    env: Path, tmp_path: Path
+) -> None:
+    """T224. With no taxonomy the review gate holds every lead it reaches as
+    `role_gate_unmeasured` — a hold made while ungrounded, which is what `fired_on_default`
+    counts. The held leads are counted through the apply-lane block, not the tally."""
+    _ready(env)
+    (load_settings(data_dir=env).config_dir / ROLE_TAXONOMY_FILE).unlink()
+    _add_posting(env, "beta", "Backend Engineer", ["Remote"])
+
+    payload = _run(env, tmp_path / "apps", mode="soft")
+
+    held = [
+        lead for lead in payload["apply_lane"]["leads"]
+        if lead["review_reason"] == "role_gate_unmeasured"
+    ]
+    role = payload["tenant_assumptions"]["review"]["role"]
+    assert len(held) == 2, payload["apply_lane"]
+    assert role["fired_on_default"] == len(held), role
+    assert role["fired"] == 0, role
+    assert role["abstained"] == {MISSING_ROLE_TAXONOMY: role["considered"]}, role
+
+
 def test_the_report_changes_no_other_funnel_key(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

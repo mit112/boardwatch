@@ -1697,7 +1697,9 @@ def _lead_lanes(
         if review_gate_reached("role", reason):
             tenant.observe(
                 "role",
-                fired=reason in ("role_vetoed", "role_unconfirmed"),
+                # `role_gate_unmeasured` occurs only while ungrounded, so it moves
+                # `fired_on_default` and never the grounded `fired` (T224).
+                fired=reason in ("role_vetoed", "role_unconfirmed", "role_gate_unmeasured"),
                 # T184: no taxonomy file — the gate held the lead without reading a field.
                 own_abstain=(
                     "missing_profile_field:role_taxonomy"
