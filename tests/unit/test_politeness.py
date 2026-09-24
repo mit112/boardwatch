@@ -1166,7 +1166,7 @@ def test_a_large_post_to_a_fast_reader_arrives_whole(tmp_path: Path) -> None:
     assert received.endswith(b"x" * 65536 + b'"}')
 
 
-# --- T226: the CONNECT phase is clamped too, once per resolved address ----------------------
+# --- T226: the CONNECT phase is clamped too — once per resolved address, and DNS on a thread ---
 #
 # Never real DNS or a real black hole: the resolver is `socket.getaddrinfo` patched per test, and
 # an "unreachable" address is `socket.socket.connect` patched to hang for exactly the timeout the
@@ -1268,3 +1268,55 @@ def test_every_address_refused_raises_the_connect_error_httpcore_raised() -> Non
     with pytest.raises(httpcore.ConnectError) as info:
         politeness._DeadlineBackend().connect_tcp("127.0.0.1", port, timeout=5.0)
     assert isinstance(info.value.__cause__, ConnectionRefusedError), repr(info.value.__cause__)
+
+
+def test_a_resolver_that_hangs_ends_at_the_fetch_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T226. `getaddrinfo` ignores every socket timeout (review F2 probe: 3.02s against 1.0s). It
+    now runs on a worker thread joined for only the time left; the resolver call itself cannot
+    be cancelled, so that thread finishes in the background."""
+
+    def slow(port: int) -> list[tuple[Any, ...]]:
+        time.sleep(3.0)
+        return [_tcp("127.0.0.1", port)]
+
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _network(monkeypatch, {"slow-dns.invalid": slow}):
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
+            fetcher.get("http://slow-dns.invalid:9/x")
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_hundred_fast_connects_leave_no_resolver_thread_behind() -> None:
+    """Control for T226: a resolver thread that answers in time is joined, not leaked."""
+    listener = socket.create_server(("127.0.0.1", 0), backlog=128)
+    port = listener.getsockname()[1]
+    accepted: list[socket.socket] = []
+
+    def accept() -> None:
+        for _ in range(100):
+            accepted.append(listener.accept()[0])
+
+    acceptor = threading.Thread(target=accept, daemon=True)
+    acceptor.start()
+    # By identity, not by count: an earlier test's abandoned resolver may end in the meantime.
+    before = set(threading.enumerate())
+    backend = politeness._DeadlineBackend()
+    politeness._REQUEST_DEADLINE.at = time.monotonic() + 30.0
+    try:
+        for _ in range(100):
+            backend.connect_tcp("127.0.0.1", port, timeout=5.0).close()
+    finally:
+        del politeness._REQUEST_DEADLINE.at
+    left_behind = set(threading.enumerate()) - before
+    acceptor.join(timeout=10)
+    for conn in accepted:
+        conn.close()
+    listener.close()
+    assert len(accepted) == 100
+    assert not left_behind, left_behind
