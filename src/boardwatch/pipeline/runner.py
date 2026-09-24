@@ -32,7 +32,6 @@ from threading import Thread
 from time import perf_counter, sleep
 from typing import TYPE_CHECKING
 
-import httpx
 from rich.console import Console
 from sqlalchemy import Connection as SAConnection
 from sqlalchemy import Engine, select
@@ -697,12 +696,7 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
       contract was always unchanged, because one `Fetcher` serves every lane and its per-host
       lock is held for each request's full duration.
     """
-    return Fetcher(
-        settings,
-        httpx.Client(
-            headers={"User-Agent": _LANE_USER_AGENT}, timeout=30.0, follow_redirects=True
-        ),
-    )
+    return Fetcher(settings, user_agent=_LANE_USER_AGENT)
 
 
 def _rotation_index(run_id: int) -> int:
