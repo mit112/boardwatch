@@ -1001,13 +1001,15 @@ def test_a_header_trickle_ends_at_the_board_deadline(tmp_path: Path) -> None:
 
 
 def test_a_body_trickle_ends_at_the_deadline_not_at_the_next_byte(tmp_path: Path) -> None:
-    """Headers fast, then one body byte every 0.35s. `_read_body`'s per-chunk check alone ends
-    this at the first byte PAST the deadline (0.7s), and a host pacing its bytes 29s apart would
-    run 29s over; the backend ends it at the deadline itself (0.5s). The interval is 0.35s, not
-    0.1s, so the per-chunk check cannot win the race and the backend's firing is observable."""
+    """Headers and the first body byte at once, then the next byte WITHHELD past any bound.
+    `_read_body`'s per-chunk check runs only when a chunk arrives, so it can never fire again
+    (a host pacing its bytes 29s apart runs 29s over it). No race is left: the read ends at the
+    deadline on a timeout, and the backend's clamp is the binding one, because it re-reads the
+    time left AFTER the per-request timeout (T205) was computed from it."""
 
     def answer(conn: socket.socket) -> None:
-        _drip(conn, b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\n", every=0.35)
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\nx")
+        time.sleep(3.0)
 
     settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
