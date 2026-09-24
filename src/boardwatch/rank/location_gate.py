@@ -30,20 +30,23 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections.abc import Sequence
+from dataclasses import dataclass
+from functools import cache
 from typing import Literal
 
 from boardwatch.rank.location_data import (
     AMBIGUOUS_REGIONS,
+    BUNDLED_PACKS,
+    CITIES_BY_ISO3,
+    COUNTRY_NAMES_BY_ISO3,
     NON_US_CITIES,
     NON_US_COUNTRIES,
     NON_US_ISO3,
     NON_US_ISO3_SUFFIX,
     NON_US_REGIONS,
     POLICY_ONLY,
-    US_CITIES,
-    US_MARKERS,
-    US_STATE_ABBREVS,
-    US_STATE_NAMES,
+    REGIONS_TO_ISO3,
+    CountryPack,
 )
 
 LocationClass = Literal["us", "non_us", "unknown"]
@@ -88,17 +91,25 @@ def _alternation(tokens: Sequence[str] | frozenset[str]) -> re.Pattern[str]:
     return re.compile(rf"(?<![a-z])(?:{body})(?![a-z])")
 
 
-_US_MARKER_RE = _alternation(US_MARKERS)
-_NON_US_COUNTRY_RE = _alternation(NON_US_COUNTRIES)
-_NON_US_CITY_RE = _alternation(NON_US_CITIES)
-_NON_US_REGION_RE = _alternation(NON_US_REGIONS)
-_US_STATE_NAME_RE = _alternation(US_STATE_NAMES)
-_US_CITY_RE = _alternation(US_CITIES)
-_US_BARE_RE = re.compile(r"(?<![a-z])(?:us|u\.s\.?)(?![a-z])")
-_US_ZIP_RE = re.compile(r"(?<!\d)\d{5}(?:-\d{4})?(?!\d)")
-# A US state abbrev as a "City, ST" suffix. Requires the comma AND an UPPERCASE code in the
-# ORIGINAL text (the "City, ST" convention), so a lowercase "in"/"or" inside prose never fires.
-_STATE_ABBREV_RE = re.compile(r",\s*([A-Z]{2})(?![A-Za-z])")
+def _token_map(by_country: dict[str, frozenset[str]]) -> dict[str, frozenset[str]]:
+    """Folded token -> the countries it names, inverted from a per-country catalog."""
+    inverted: dict[str, set[str]] = {}
+    for iso3, tokens in by_country.items():
+        for token in tokens:
+            inverted.setdefault(_fold(token), set()).add(iso3)
+    return {token: frozenset(codes) for token, codes in inverted.items()}
+
+
+_COUNTRY_NAME_RE = _alternation(NON_US_COUNTRIES)
+_CITY_RE = _alternation(NON_US_CITIES)
+_REGION_RE = _alternation(NON_US_REGIONS)
+_COUNTRY_NAME_TO_ISO3 = _token_map(COUNTRY_NAMES_BY_ISO3)
+_CITY_TO_ISO3 = _token_map(CITIES_BY_ISO3)
+_REGION_TO_ISO3 = {_fold(token): codes for token, codes in REGIONS_TO_ISO3.items()}
+_NOWHERE: frozenset[str] = frozenset()
+# A pack's subdivision code as a "City, ST" suffix. Requires the comma AND an UPPERCASE code in
+# the ORIGINAL text (the "City, ST" convention), so a lowercase "in"/"or" inside prose never fires.
+_SUBDIVISION_CODE_RE = re.compile(r",\s*([A-Z]{2})(?![A-Za-z])")
 # An ISO-3166 alpha-3 country code where a provider names no city: a site code
 # ("VNM06-01-Ho Chi Minh"), a dash prefix ("BGR-Varna"), or a parenthesised suffix
 # ("Remote (IND)"). UPPERCASE in the ORIGINAL text is required for the same reason
@@ -112,82 +123,136 @@ _ISO3_PAREN_RE = re.compile(r"\(([A-Z]{3})\)\s*$")
 _ISO3_SUFFIX_RE = re.compile(r",\s*([A-Z]{3})\s*$")
 
 
-def _non_us_country_code(segment: str) -> bool:
-    """True when a segment carries a structural non-US alpha-3 country code."""
+def _country_code(segment: str) -> str | None:
+    """The structural non-US alpha-3 country code a segment carries, uppercase, if any."""
     stripped = segment.strip()
     for pattern in (_ISO3_PREFIX_RE, _ISO3_PAREN_RE):
         match = pattern.search(stripped)
         if match and match.group(1).casefold() in NON_US_ISO3:
-            return True
+            return match.group(1)
     match = _ISO3_SUFFIX_RE.search(stripped)
-    return match is not None and match.group(1).casefold() in NON_US_ISO3_SUFFIX
+    if match is not None and match.group(1).casefold() in NON_US_ISO3_SUFFIX:
+        return match.group(1)
+    return None
 
 
-def _classify_segment(segment: str) -> LocationClass:
+@dataclass(frozen=True)
+class _CompiledPack:
+    iso3: str
+    strong: re.Pattern[str] | None
+    subdivision_codes: frozenset[str]
+    postal: re.Pattern[str] | None
+    cities: re.Pattern[str] | None
+
+
+@cache
+def _compiled(pack: CountryPack) -> _CompiledPack:
+    # An empty alternation compiles to a pattern that matches everywhere, so an empty token set
+    # is `None`, never `_alternation(())`.
+    strong = pack.markers | pack.bare_tokens | pack.subdivision_names
+    return _CompiledPack(
+        iso3=pack.iso3,
+        strong=_alternation(strong) if strong else None,
+        subdivision_codes=frozenset(code.casefold() for code in pack.subdivision_codes),
+        postal=re.compile(pack.postal_pattern) if pack.postal_pattern else None,
+        cities=_alternation(pack.cities) if pack.cities else None,
+    )
+
+
+def _strong_signal(pack: _CompiledPack, segment: str, low: str) -> bool:
+    if pack.strong is not None and pack.strong.search(low):
+        return True
+    return any(
+        match.group(1).casefold() in pack.subdivision_codes
+        for match in _SUBDIVISION_CODE_RE.finditer(segment)
+    )
+
+
+def _weak_signal(pack: _CompiledPack, segment: str, low: str) -> bool:
+    return bool(
+        (pack.postal is not None and pack.postal.search(segment))
+        or (pack.cities is not None and pack.cities.search(low))
+    )
+
+
+def _named(pattern: re.Pattern[str], to_iso3: dict[str, frozenset[str]], low: str) -> set[str]:
+    return {code for match in pattern.finditer(low) for code in to_iso3[match.group(0)]}
+
+
+def _resolve_segment(segment: str, packs: tuple[_CompiledPack, ...]) -> frozenset[str]:
     low = _fold(segment)
     if not low or low in POLICY_ONLY:
-        return "unknown"
+        return _NOWHERE
     if low in AMBIGUOUS_REGIONS:  # "Americas" / "Worldwide" — includes the US, undecidable
-        return "unknown"
-    if _US_MARKER_RE.search(low):
-        return "us"
-    # US STATE signals (abbrev / full name) are checked BEFORE any non-US token, so a US town
-    # that shares a foreign name — "Vienna, VA", "Athens, GA", "Lebanon, NH", "Mexico, MO" — is
-    # kept, not silently dropped. This ordering is the whole defense against false US drops in
-    # hard mode (the worst error for the visa gate); the reviewer found the reverse order
-    # deleting real US postings. The remaining collision is a foreign city carrying a token
-    # that is ALSO a US state code ("Bangalore, IN"): it resolves US (kept) — a fail-open leak,
-    # never a drop, which is the safe direction. A bare "Bangalore, India" still reads non-US
-    # via the country name below.
-    for match in _STATE_ABBREV_RE.finditer(segment):
-        if match.group(1).casefold() in US_STATE_ABBREVS:
-            return "us"
-    if _US_STATE_NAME_RE.search(low):
-        return "us"
-    # A bare "US"/"U.S." is an EXPLICIT US signal and must win within a segment that also names
+        return _NOWHERE
+    # A pack's STRONG signals (country marker, bare country token, subdivision code or name)
+    # are checked BEFORE any foreign token, so a US town that shares a foreign name — "Vienna,
+    # VA", "Athens, GA", "Lebanon, NH", "Mexico, MO" — is kept, not silently dropped. This
+    # ordering is the whole defense against a false drop of a pack country's posting in hard
+    # mode; the reviewer found the reverse order deleting real US postings. The remaining
+    # collision is a foreign city carrying a token that is ALSO a subdivision code ("Bangalore,
+    # IN"): it resolves to the pack's country (kept) — a fail-open leak, never a drop. A bare
+    # "Bangalore, India" still resolves IND via the country name below.
+    #
+    # A bare "US"/"U.S." is among the strong signals so it wins within a segment that also names
     # a foreign place ("US, Canada", "Remote - US, Canada", "US, EMEA") — the posting is offered
-    # in the US, so it is US-eligible. `_SEGMENT_SPLIT` never separates a comma / "and" / "&", so
-    # such a pair arrives as one segment and the explicit US token would otherwise lose to the
-    # foreign country below. A US CITY name, by contrast, stays AFTER the non-US tokens: a
-    # foreign city sharing a US city's name ("Manchester, UK") must still read non-US, so only
-    # the explicit bare token is promoted here, not the city allowlist.
-    if _US_BARE_RE.search(low):
-        return "us"
-    if _NON_US_COUNTRY_RE.search(low) or _NON_US_CITY_RE.search(low):
-        return "non_us"
-    # After every US signal above, so "USA-GA-Remote Location" has already resolved US and a
-    # US state code in the same shape can never reach here. BEFORE the US-city token, so an
+    # in the US. `_SEGMENT_SPLIT` never separates a comma / "and" / "&", so such a pair arrives
+    # as one segment. A pack CITY, by contrast, stays AFTER the foreign tokens: a foreign city
+    # sharing a US city's name ("Manchester, UK") must still read foreign.
+    for pack in packs:
+        if _strong_signal(pack, segment, low):
+            return frozenset({pack.iso3})
+    named = _named(_COUNTRY_NAME_RE, _COUNTRY_NAME_TO_ISO3, low) | _named(
+        _CITY_RE, _CITY_TO_ISO3, low
+    )
+    if named:
+        return frozenset(named)
+    # After every strong signal above, so "USA-GA-Remote Location" has already resolved US and a
+    # US state code in the same shape can never reach here. BEFORE the pack cities, so an
     # explicit country code beats a curated city name: "Kirkland, QC, CAN" is Quebec.
-    if _non_us_country_code(segment):
-        return "non_us"
-    if _NON_US_REGION_RE.search(low):
-        return "non_us"
-    # US ZIP is checked AFTER non-US country/region so a foreign postal beside its country
-    # ("Berlin, Germany 10115") reads non-US; a bare US ZIP with no other signal still reads US.
-    if _US_ZIP_RE.search(segment):
-        return "us"
-    if _US_CITY_RE.search(low):
-        return "us"
-    return "unknown"
+    code = _country_code(segment)
+    if code is not None:
+        return frozenset({code})
+    regions = _named(_REGION_RE, _REGION_TO_ISO3, low)
+    if regions:
+        return frozenset(regions)
+    # A postal code is checked AFTER foreign countries and regions so a foreign postal beside
+    # its country ("Berlin, Germany 10115") reads foreign; a bare US ZIP with no other signal
+    # still reads US.
+    for pack in packs:
+        if _weak_signal(pack, segment, low):
+            return frozenset({pack.iso3})
+    return _NOWHERE
 
 
-def classify_location(locations: Sequence[str]) -> LocationClass:
-    """Label a posting's locations `us` / `non_us` / `unknown`.
+def resolve_countries(
+    locations: Sequence[str], packs: Sequence[CountryPack] = BUNDLED_PACKS
+) -> frozenset[str]:
+    """The ISO-3 countries a posting's locations name; empty when none can be resolved.
 
-    A posting offered in several places keeps its US eligibility if ANY location is US — the
-    applicant can take that one — so `us` wins over everything. Absent a US location, a single
-    non-US signal makes it `non_us`; a posting with no geographic signal at all (bare "Remote",
-    an office nickname, empty) is `unknown`. Policy-only segments ("Hybrid", "Remote") are
-    skipped so a real place beside them still decides.
+    `packs` is in PRECEDENCE order: when two packs both claim a segment, the first one wins,
+    so a caller that puts the tenant's target countries first gets the target-first reading.
+    Policy-only segments ("Hybrid", "Remote") are skipped so a real place beside them decides.
     """
-    verdicts: list[LocationClass] = []
+    compiled = tuple(_compiled(pack) for pack in packs)
+    found: set[str] = set()
     for location in locations:
         for segment in _SEGMENT_SPLIT.split(location):
             if segment.strip().casefold() in POLICY_ONLY:
                 continue
-            verdicts.append(_classify_segment(segment))
-    if "us" in verdicts:
+            found |= _resolve_segment(segment, compiled)
+    return frozenset(found)
+
+
+def classify_location(locations: Sequence[str]) -> LocationClass:
+    """Label a posting's locations `us` / `non_us` / `unknown` — the US reading of the resolver.
+
+    A posting offered in several places keeps its US eligibility if ANY location is US — the
+    applicant can take that one — so `us` wins over everything. Absent a US location, a single
+    foreign signal makes it `non_us`; a posting with no geographic signal at all (bare "Remote",
+    an office nickname, empty) is `unknown`.
+    """
+    countries = resolve_countries(locations)
+    if "USA" in countries:
         return "us"
-    if "non_us" in verdicts:
-        return "non_us"
-    return "unknown"
+    return "non_us" if countries else "unknown"

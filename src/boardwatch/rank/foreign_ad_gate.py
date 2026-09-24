@@ -77,7 +77,24 @@ _CJK_SCRIPT = re.compile(
     r"[\u3400-\u4dbf\u4e00-\u9fff\u3040-\u30fa\u30fd-\u30ff\uac00-\ud7af]"
 )
 
-_MARKERS = (_DACH_GENDER_MARKER, _FRENCH_GENDER_MARKER, _ENGINEER_FR_DE, _CJK_SCRIPT)
+# Each convention -> the ISO-3 countries whose job ads use it (DESIGN-T183 L4). For a tenant in one
+# of them it is a HOME signal, not a foreign one. Inclusive on purpose: a country listed here can
+# only ever KEEP a posting for a tenant targeting it, never drop one.
+_DACH = frozenset({"DEU", "AUT", "CHE", "LIE", "LUX"})
+_FRANCOPHONE = frozenset({"FRA", "BEL", "CHE", "LUX", "MCO", "CAN"})
+_MARKERS = tuple((
+    (_DACH_GENDER_MARKER, _DACH),
+    (_FRENCH_GENDER_MARKER, _FRANCOPHONE),
+    (_ENGINEER_FR_DE, _DACH | _FRANCOPHONE),
+    (_CJK_SCRIPT, frozenset({"CHN", "HKG", "MAC", "TWN", "JPN", "KOR", "PRK", "SGP"})),
+))
+
+
+def ad_marker_countries(title: str) -> frozenset[str]:
+    """The countries whose job-ad conventions a title carries; empty when it carries none."""
+    return frozenset(
+        code for pattern, countries in _MARKERS if pattern.search(title) for code in countries
+    )
 
 
 def has_non_us_ad_marker(title: str) -> bool:
@@ -87,4 +104,5 @@ def has_non_us_ad_marker(title: str) -> bool:
     the drop into the existing `hidden_hard_filter` count the run funnel already reports — a
     veto nobody can see is how a real job disappears unnoticed.
     """
-    return any(pattern.search(title) for pattern in _MARKERS)
+    countries = ad_marker_countries(title)
+    return bool(countries) and "USA" not in countries
