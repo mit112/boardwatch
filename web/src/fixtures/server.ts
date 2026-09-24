@@ -135,6 +135,8 @@ function counts(rows: QueueRow[]): QueueCounts {
     // Drained like `ineligible` and counted for the same reason, but counted over the whole pool
     // rather than the apply lane: a closed posting leaves the queue without any rule judging it.
     closed: pool().filter((row) => row.status === "closed").length,
+    // The fixture pool models no cross-host pairs, so nothing here is ever a lane copy.
+    lane_copy: 0,
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,

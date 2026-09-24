@@ -294,13 +294,19 @@ export function StatusBand({
         note="The employer took the posting down; drained to _closed, never judged."
         order={9}
       />
-      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={10} />
-      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={11} />
+      <Metric
+        label="held as lane copies"
+        value={counts.lane_copy.toLocaleString()}
+        note="Leads whose employer-board twin is in the queue, so apply through the twin. Drained to _lane_copy."
+        order={10}
+      />
+      <Metric label="applied ever" value={counts.applied_ever.toLocaleString()} order={11} />
+      <Metric label="skipped" value={counts.skipped.toLocaleString()} order={12} />
       <Metric
         label="reported"
         value={counts.reported.toLocaleString()}
         note="Flagged as wrongly-eligible and held for investigation. Its own cell, never folded into skipped, and taken out of the queue like a skip."
-        order={12}
+        order={13}
       />
       {/* `?? 0` because a server older than the field omits it, and the honest render for a
           count nobody took is zero rather than `NaN`. Clickable at zero like every other facet
@@ -309,7 +315,7 @@ export function StatusBand({
         label="follow-up due"
         value={(counts.follow_up_due ?? 0).toLocaleString()}
         note="Leads whose pinned follow-up date has arrived — today or earlier, on this machine's calendar. A follow-up is a note on a lead, so these are still in whichever lane they were in. Click to show only these."
-        order={13}
+        order={14}
         active={activeFacet === "follow_up_due"}
         onToggle={() => {
           onToggleFacet("follow_up_due");
@@ -323,7 +329,7 @@ export function StatusBand({
             : `${formatTimestamp(counts.last_run_finished)} · ${counts.delivered_last_run.toLocaleString()}`
         }
         note="When the most recent run finished, and how many of its leads are still in the queue."
-        order={14}
+        order={15}
       />
     </>
   );
