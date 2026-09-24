@@ -858,7 +858,9 @@ def test_a_suppressed_own_view_match_does_not_hide_the_heading_view_row(tmp_path
     (pattern,) = catalog.family("degree").patterns
     assert pattern.regex.search(bullet) is not None, "fixture broke: the own view must match"
     dets = detect(body, catalog, enabled_families=ALL)
-    assert _readings(dets) == [("bachelor_preferred", (0, 43), {})]
+    # The heading-view row is quoted from its bar, not from the heading (T180 F7), so the span
+    # starts at `Bachelor`, not at `Preferred Qualifications:`.
+    assert _readings(dets) == [("bachelor_preferred", (28, 43), {})]
 
 
 def test_a_required_bar_under_a_hedge_heading_is_unchanged(catalog) -> None:
