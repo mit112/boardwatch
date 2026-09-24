@@ -105,7 +105,7 @@ class TestTheRankerHardGate:
 
 def _review(locations: list[str], target: tuple[str, ...], **kw: object) -> LaneDecision:
     return _classify(  # type: ignore[arg-type]
-        verdict="uncertain", locations=locations, role="swe",
+        verdict="uncertain", locations=locations, role="in_field",
         experience_unconfirmed=False, eligibility_unconfirmed=False, no_requirement_rows=False,
         posting_closed=False, seniority_above_band=False, judge_verdict=None,
         judge_seniority_above_band=False, revised_since_build=False,

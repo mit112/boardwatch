@@ -164,7 +164,7 @@ def compute_stats(
         # than the funnel's `hidden_over_seniority` for the same corpus -- two numbers for one
         # gate that could not be reconciled.
         role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
-        non_swe = role == "not_swe"
+        non_swe = role == "out_of_field"
         # Between the two, exactly where the ranker `continue`s on it: an `uncertain` +
         # zero-skill + above-band posting is `hidden_zero_signal` in the funnel and must not
         # ALSO be `over_seniority` here, which is the same irreconcilable double-count the

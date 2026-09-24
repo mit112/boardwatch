@@ -20,7 +20,12 @@ from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.eligibility.read import current_verdicts
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
+from boardwatch.rank.heuristic import (
+    ProfileView,
+    generic_title_tokens_for,
+    passes_hard_filters,
+    score_posting,
+)
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
@@ -155,7 +160,7 @@ def select_new_matches(
         role = taxonomy_role_verdict(row.title, role_taxonomy)[0]
         # Same default as `top`: a non-software title is not a "new match" worth a push.
         # Suppressed rather than dropped — `top --include-non-swe` still shows it.
-        if not include_non_swe and role == "not_swe":
+        if not include_non_swe and role == "out_of_field":
             continue
         # Same default as `top`, and in the same ORDER (before the band gate): a posting whose
         # title carried no role signal and whose body yielded no recognised term is not a "new
@@ -181,6 +186,7 @@ def select_new_matches(
             list(row.locations_json or []), row.remote_policy,
             settings.weights, now, settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         items.append(NotifyItem(
             posting_id=int(row.id), title=row.title, company=row.company_name,

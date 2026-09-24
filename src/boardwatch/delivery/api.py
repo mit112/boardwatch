@@ -30,10 +30,10 @@ that is what it is (design §6.2):
   it is not auditable, and re-deriving "off target" from a title pattern written here would be a
   second, wrong opinion about a shipped gate.
 
-`off_target` is `not_swe` only, never `uncertain`. About a third of the delivered set classifies
-`uncertain` (design §6.4: 69 of 220) and `uncertain` is not a veto — badging it "off target"
-would assert a decision the gate declined to make, which is the same error as folding an abstain
-into a neighbour.
+`off_target` is `out_of_field` only, never `uncertain`. About a third of the delivered set
+classifies `uncertain` (design §6.4: 69 of 220) and `uncertain` is not a veto — badging it "off
+target" would assert a decision the gate declined to make, which is the same error as folding an
+abstain into a neighbour.
 
 `review_reason` is therefore a SEPARATE field and `off_target` must never be stretched to stand in
 for it. It names which member of `review_gate.ReviewReason` held the lead, and it comes from
@@ -41,7 +41,7 @@ for it. It names which member of `review_gate.ReviewReason` held the lead, and i
 and the lane the row arrived in are one decision and cannot disagree (D-332). It is `None` for
 every apply-lane row, and `None` for a closed one, which makes `review_reason is not None` and
 "this row came in `review`" the same statement.
-The two fields answer different questions: `off_target` is `not_swe` alone, while the lane also
+The two fields answer different questions: `off_target` is `out_of_field` alone, while the lane also
 holds a confirmed non-US location and a title the role gate merely could not call software, so
 most review leads carry a reason and no badge.
 
@@ -88,9 +88,13 @@ from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
 from boardwatch.rank.explain import why_summary
-from boardwatch.rank.heuristic import profile_view_from_row, score_posting
+from boardwatch.rank.heuristic import (
+    generic_title_tokens_for,
+    profile_view_from_row,
+    score_posting,
+)
 from boardwatch.rank.role_gate import taxonomy_role_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.store.applications import (
     APPLIED_STATUSES,
     ApplicationStatus,
@@ -303,7 +307,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # Its own list, NOT an exclusion. These leads are real work — they are held for a look
         # rather than blind-applied — so dropping them from the payload would hide ~30% of the
         # delivered set behind a folder the page never mentions. `off_target` cannot stand in for
-        # this: it is `not_swe` ONLY, never `uncertain` (see this module's docstring), so most
+        # this: it is `out_of_field` ONLY, never `uncertain` (see this module's docstring), so most
         # review leads carry no flag at all and were previously indistinguishable on the page.
         "review": [
             _row_json(
@@ -419,7 +423,7 @@ def _row_json(
     together only by an implementation that reports the absence as an eligible.
     """
     fraction = None if facts.coverage is None else facts.coverage.fraction
-    off_target = facts.role == "not_swe"
+    off_target = facts.role == "out_of_field"
     # The SAME call the two lists above are split by, so this row's reason and the list it was
     # sorted into are ONE decision rather than two that agree today. `None` on an apply-lane row
     # by construction — a reason comes back only with `REVIEW_DIR` — and `None` on a CLOSED one
@@ -695,6 +699,7 @@ def _live_facts(
                 now,
                 settings.recency_half_life_days,
                 settings.zero_skill_coverage_prior,
+                generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
             )
             score = scored.total
             why = why_summary(scored, source.posted_at, now)

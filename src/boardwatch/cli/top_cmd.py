@@ -41,6 +41,7 @@ from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
     HardFilterClause,
     Score,
+    generic_title_tokens_for,
     hard_filter_verdict,
     passes_hard_filters,
     profile_view_from_row,
@@ -102,7 +103,7 @@ class RankedPosting:
     score: Score
     why: str
     verdict: str | None = None  # the current profile's eligibility verdict, None if unevaluated
-    role: RoleVerdict = "uncertain"  # title role gate; "not_swe" is hidden unless asked for
+    role: RoleVerdict = "uncertain"  # title role gate; "out_of_field" is hidden unless asked for
     role_reason: str = ""
     # The zero-signal rule's own verdict, twin fields in the same shape as `band`/`band_reason`:
     # the verdict is a closed catalog for machines, the reason is the text that decided it for
@@ -671,7 +672,7 @@ def rank_open_postings(
         role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
         tenant.observe(
             "role",
-            fired=role == "not_swe",
+            fired=role == "out_of_field",
             own_abstain=(
                 # No taxonomy file at all: the gate could not read this user's field (T184).
                 "missing_profile_field:role_taxonomy" if role == "unmeasured"
@@ -682,7 +683,7 @@ def rank_open_postings(
         if role == "unmeasured":
             # Counted, never dropped: the gate had no taxonomy to read (see `role_unmeasured`).
             role_unmeasured += 1
-        if role == "not_swe" and not include_non_swe:
+        if role == "out_of_field" and not include_non_swe:
             hidden_non_swe += 1
             continue
         # The zero-signal rule (see `role_gate.zero_signal_verdict`): the title abstained AND
@@ -739,6 +740,7 @@ def rank_open_postings(
             list(row.locations_json or []), row.remote_policy,
             settings.weights, now, settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         why = why_summary(score, row.posted_at, now)
         # A BODY-LESS posting is uncappable, and this guard is the difference between the cap
@@ -779,7 +781,7 @@ def rank_open_postings(
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
-            why=f"{why} · role: {role_reason}" if role == "not_swe" else why,
+            why=f"{why} · role: {role_reason}" if role == "out_of_field" else why,
             verdict=verdicts.get(int(row.id)),
             role=role, role_reason=role_reason,
             zero_signal=zero_signal, zero_signal_reason=zero_signal_reason,
@@ -790,22 +792,22 @@ def rank_open_postings(
     # Score alone used to be the whole key, so a decided lead could rank below one nobody
     # has judged yet. Tier first, score second (D-477): tier 0 is a DECIDED `eligible` — the
     # deterministic verdict on the row, or a persisted final-gate `eligible` read the same
-    # way the ineligible hide below reads `gate_verdicts` — AND role `swe`; tier 1 is
-    # `uncertain` + role `swe`; tier 2 is everything else still visible (any-verdict
+    # way the ineligible hide below reads `gate_verdicts` — AND role `in_field`; tier 1 is
+    # `uncertain` + role `in_field`; tier 2 is everything else still visible (any-verdict
     # non-swe or no-role-signal, unevaluated, ...). Role is a term of tier 0 since run 5
     # (2026-09-05, D-483): without it every `eligible` posting whose title carried no role
     # signal at all — park rangers, pulmonologists, wealth associates, all `eligible` because
     # the body flagged nothing — outranked every undecided software lead, 20 of 30 delivered,
     # worsening each run as `built` retired the software ones. The release population is
-    # role `swe` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
+    # role `in_field` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
     # tiers, it does not re-weigh the score.
     def _rank_tier(posting: RankedPosting) -> int:
         decided_eligible = (
             posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
         )
-        if decided_eligible and posting.role == "swe":
+        if decided_eligible and posting.role == "in_field":
             return 0
-        if posting.verdict == "uncertain" and posting.role == "swe":
+        if posting.verdict == "uncertain" and posting.role == "in_field":
             return 1
         return 2
 
@@ -1075,7 +1077,7 @@ def rank_open_postings(
             if (
                 job_id is not None
                 and posting.band != "above_band"
-                and posting.role != "not_swe"
+                and posting.role != "out_of_field"
                 and posting.zero_signal != "veto"
             ):
                 surfaced_job_ids.append(job_id)

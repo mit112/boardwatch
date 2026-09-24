@@ -6,6 +6,7 @@ import pytest
 from boardwatch.core.settings import RankWeights, Settings
 from boardwatch.rank.explain import explain, why_summary
 from boardwatch.rank.heuristic import (
+    GENERIC_TITLE_TOKENS,
     ProfileView,
     location_fit,
     passes_hard_filters,
@@ -37,26 +38,26 @@ class TestTitleMatch:
     processor=default_process) / 100."""
 
     def test_reordered_tokens_score_exactly_one(self) -> None:
-        assert title_match("Software Engineer, Backend", ("Backend Software Engineer",)) == 1.0
+        assert title_match("Software Engineer, Backend", ("Backend Software Engineer",), GENERIC_TITLE_TOKENS) == 1.0
 
     def test_default_process_strips_punctuation_and_case(self) -> None:
-        assert title_match("SR. SOFTWARE ENGINEER (BACKEND)", ("sr software engineer backend",)) == 1.0
+        assert title_match("SR. SOFTWARE ENGINEER (BACKEND)", ("sr software engineer backend",), GENERIC_TITLE_TOKENS) == 1.0
 
     def test_token_subset_scores_one_documented(self) -> None:
         # token_set_ratio gives 100 when one title's tokens are a subset of the
         # other's — documented behavior, not a bug.
-        assert title_match("Senior Backend Engineer", ("Backend Engineer",)) == 1.0
+        assert title_match("Senior Backend Engineer", ("Backend Engineer",), GENERIC_TITLE_TOKENS) == 1.0
 
     def test_max_over_multiple_targets(self) -> None:
-        assert title_match("Backend Engineer", ("Data Scientist", "Backend Engineer")) == 1.0
+        assert title_match("Backend Engineer", ("Data Scientist", "Backend Engineer"), GENERIC_TITLE_TOKENS) == 1.0
 
     def test_unrelated_title_scores_low_but_in_range(self) -> None:
-        score = title_match("Marketing Manager", ("Backend Engineer",))
+        score = title_match("Marketing Manager", ("Backend Engineer",), GENERIC_TITLE_TOKENS)
         assert score is not None
         assert 0.0 <= score < 0.8
 
     def test_empty_target_list_is_undefined(self) -> None:
-        assert title_match("Backend Engineer", ()) is None
+        assert title_match("Backend Engineer", (), GENERIC_TITLE_TOKENS) is None
 
     def test_generic_only_shared_token_scores_zero(self) -> None:
         # P12 daily-driver finding: a posting that shares only a generic filler
@@ -64,17 +65,17 @@ class TestTitleMatch:
         # would otherwise hand "Field Service Engineer" ~0.80 off the lone "Engineer".
         assert (
             title_match(
-                "Field Service Engineer", ("Software Engineer", "Backend Engineer")
+                "Field Service Engineer", ("Software Engineer", "Backend Engineer"), GENERIC_TITLE_TOKENS
             )
             == 0.0
         )
-        assert title_match("Control Systems Engineer", ("Software Engineer",)) == 0.0
+        assert title_match("Control Systems Engineer", ("Software Engineer",), GENERIC_TITLE_TOKENS) == 0.0
 
     def test_meaningful_shared_token_still_matches(self) -> None:
         # A real domain token ("software") survives the guard and scores high even
         # when the posting carries extra tokens.
-        assert title_match("Software Engineer, Money Movement", ("Software Engineer",)) == 1.0
-        assert title_match("Forward Deployed Software Engineer", ("Software Engineer",)) == 1.0
+        assert title_match("Software Engineer, Money Movement", ("Software Engineer",), GENERIC_TITLE_TOKENS) == 1.0
+        assert title_match("Forward Deployed Software Engineer", ("Software Engineer",), GENERIC_TITLE_TOKENS) == 1.0
 
 
 class TestSkillCoverage:
@@ -155,7 +156,7 @@ class TestZeroSkillImputation:
     def test_posting_without_skills_takes_the_neutral_prior(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown",
-            RankWeights(), NOW,
+            RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert score.components["skill_coverage"].value == pytest.approx(0.50)
         # coverage 0.50x0.50 + title 0.25 + recency 0.15 + location 0.10, over weight 1.0
@@ -172,11 +173,11 @@ class TestZeroSkillImputation:
         )
         posted = NOW - timedelta(days=3)
         args = ("Backend Engineer", posted, ["Anywhere"], "remote", RankWeights(), NOW)
-        zero_skill = score_posting(seven_of_eight, set(), *args)
+        zero_skill = score_posting(seven_of_eight, set(), *args, generic_title_tokens=GENERIC_TITLE_TOKENS)
         seven = score_posting(
             seven_of_eight,
             {"Python", "Go", "PostgreSQL", "Redis", "Kafka", "AWS", "Docker", "Rust"},
-            *args,
+            *args, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert zero_skill.total == pytest.approx(0.7293, abs=5e-5)
         # 7 of 8 shrinks to (7 + 0.50)/9 = 0.8333, not the raw 0.875 — the pseudo-count
@@ -187,11 +188,11 @@ class TestZeroSkillImputation:
 
     def test_prior_is_configurable_and_zero_is_not_the_default(self) -> None:
         args = (_profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown")
-        punitive = score_posting(*args, RankWeights(), NOW, 14.0, 0.0)
+        punitive = score_posting(*args, RankWeights(), NOW, 14.0, 0.0, generic_title_tokens=GENERIC_TITLE_TOKENS)
         assert punitive.components["skill_coverage"].value == 0.0
         # A punitive 0 is explicitly rejected by §3.6 — it would swing this population from
         # advantaged straight to buried. Guard against it silently becoming the default.
-        assert score_posting(*args, RankWeights(), NOW).total != punitive.total
+        assert score_posting(*args, RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS).total != punitive.total
         assert Settings(data_dir=Path("d"), config_dir=Path("c")).zero_skill_coverage_prior == 0.50
 
     def test_all_zero_weights_score_zero_instead_of_crashing(self) -> None:
@@ -212,17 +213,17 @@ class TestZeroSkillImputation:
         zero = RankWeights(skill_coverage=0.0, title_match=0.0, recency=0.0, location_fit=0.0)
         args = (_profile(), {"Python"}, "Backend Engineer", NOW, ["New York"], "unknown")
 
-        score = score_posting(*args, zero, NOW)
+        score = score_posting(*args, zero, NOW, generic_title_tokens=GENERIC_TITLE_TOKENS)
 
         assert score.total == 0.0
         # Guard: a non-zero weight set on the SAME inputs must score differently, or the
         # assertion above would hold for a scorer that always returned 0.
-        assert score_posting(*args, RankWeights(), NOW).total != 0.0
+        assert score_posting(*args, RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS).total != 0.0
 
     def test_why_line_stays_one_line_and_names_the_assumption(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW - timedelta(days=2), ["New York"],
-            "unknown", RankWeights(), NOW,
+            "unknown", RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         why = why_summary(score, NOW - timedelta(days=2), NOW)
         # Never "covers 0/0 skills": that would read as a measurement, not an assumption.
@@ -254,7 +255,7 @@ class TestCoverageShrinksTowardThePrior:
         )
         score = score_posting(
             _profile(skills=frozenset({"Python"})), {"Python"}, "Backend Engineer", NOW,
-            ["New York"], "unknown", weights, NOW,
+            ["New York"], "unknown", weights, NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         # (1 + 1.0 x 0.50) / (1 + 1.0). NOT 1.00.
         assert score.components["skill_coverage"].value == pytest.approx(0.75)
@@ -269,7 +270,7 @@ class TestCoverageShrinksTowardThePrior:
         posting_skills = {f"S{i:02d}" for i in range(1, 28)}  # 27 terms, 14 of them matched
         score = score_posting(
             _profile(skills=profile_skills), posting_skills, "Backend Engineer", NOW,
-            ["New York"], "unknown", weights, NOW,
+            ["New York"], "unknown", weights, NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         # (14 + 0.50) / 28 = 0.517857, against a raw 14/27 = 0.518519: a move of 0.00066.
         assert score.components["skill_coverage"].value == pytest.approx(0.517857, abs=5e-7)
@@ -287,9 +288,9 @@ class TestCoverageShrinksTowardThePrior:
         )
         profile = _profile(skills=frozenset(f"S{i:02d}" for i in range(1, 15)))
         common = (NOW, ["New York"], "unknown", weights, NOW)
-        thin = score_posting(profile, {"S01"}, "Technical Product Owner", *common)
+        thin = score_posting(profile, {"S01"}, "Technical Product Owner", *common, generic_title_tokens=GENERIC_TITLE_TOKENS)
         rich = score_posting(
-            profile, {f"S{i:02d}" for i in range(1, 28)}, "Backend Engineer", *common
+            profile, {f"S{i:02d}" for i in range(1, 28)}, "Backend Engineer", *common, generic_title_tokens=GENERIC_TITLE_TOKENS
         )
         assert thin.total < rich.total
         assert thin.total == pytest.approx(0.701923, abs=5e-7)
@@ -298,10 +299,10 @@ class TestCoverageShrinksTowardThePrior:
         # And the SAME call against the pre-change scorer, which is exactly
         # `coverage_pseudo_count=0.0`: the raw ratio, and the inversion is back.
         raw_thin = score_posting(profile, {"S01"}, "Technical Product Owner", *common, 14.0,
-                                 0.50, 0.0)
+                                 0.50, 0.0, generic_title_tokens=GENERIC_TITLE_TOKENS)
         raw_rich = score_posting(
             profile, {f"S{i:02d}" for i in range(1, 28)}, "Backend Engineer", *common, 14.0,
-            0.50, 0.0,
+            0.50, 0.0, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert raw_thin.components["skill_coverage"].value == 1.0
         assert raw_thin.total > raw_rich.total  # the defect, pinned so the fix cannot lapse
@@ -317,7 +318,7 @@ class TestCoverageShrinksTowardThePrior:
             skill_coverage=0.50, title_match=0.25, recency=0.15, location_fit=0.10
         )
         imputed = score_posting(
-            _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown", weights, NOW,
+            _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown", weights, NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert imputed.components["skill_coverage"].value == pytest.approx(0.50)
         # (0 + 1.0 x 0.50) / (0 + 1.0) == 0.50, the same number by the other route.
@@ -329,7 +330,7 @@ class TestRenormalization:
         score = score_posting(
             _profile(skills=frozenset()), {"Python"}, "Backend Engineer",
             NOW - timedelta(days=14), ["San Francisco"], "unknown",
-            RankWeights(), NOW,
+            RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         # title 1.0x0.25 + recency 0.5x0.15 + location 0.0x0.10 over weight 0.50
         assert score.total == pytest.approx((0.25 + 0.075 + 0.0) / 0.50)
@@ -337,7 +338,7 @@ class TestRenormalization:
     def test_all_undefined_scores_zero(self) -> None:
         profile = _profile(skills=frozenset(), target_titles=(), locations=())
         score = score_posting(
-            profile, set(), "Backend Engineer", None, [], "unknown", RankWeights(), NOW
+            profile, set(), "Backend Engineer", None, [], "unknown", RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS
         )
         assert score.total == 0.0
 
@@ -349,11 +350,11 @@ class TestRenormalization:
             _profile(), {"Python", "Go", "Kubernetes"}, "Backend Engineer",
             NOW - timedelta(days=7), ["New York"], "unknown",
         )
-        default = score_posting(*args, RankWeights(), NOW)
+        default = score_posting(*args, RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS)
         skewed = score_posting(
             *args,
             RankWeights(skill_coverage=0.97, title_match=0.01, recency=0.01, location_fit=0.01),
-            NOW,
+            NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert default.total != skewed.total  # no caching, no invalidation machinery (D17)
 
@@ -361,7 +362,7 @@ class TestRenormalization:
         profile = _profile(skills=frozenset())
         score = score_posting(
             profile, {"Python", "Go"}, "Backend Engineer", NOW, ["New York"], "unknown",
-            RankWeights(), NOW,
+            RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert score.components["skill_coverage"].value is None
         assert score.total == pytest.approx(1.0)  # title, recency, location all 1.0
@@ -370,7 +371,7 @@ class TestRenormalization:
         profile = _profile(target_titles=())
         score = score_posting(
             profile, {"Python", "Go", "Kubernetes"}, "Anything", NOW, ["New York"], "unknown",
-            RankWeights(), NOW,
+            RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert score.components["title_match"].value is None
         # coverage (2+0.50)/(3+1)x0.50 + recency 1.0x0.15 + location 1.0x0.10, over weight 0.75
@@ -430,7 +431,7 @@ class TestExplain:
     def test_breakdown_rows_and_why_summary(self) -> None:
         score = score_posting(
             _profile(), {"Python", "Go", "Kubernetes"}, "Backend Engineer",
-            NOW - timedelta(days=2), ["New York, NY"], "unknown", RankWeights(), NOW,
+            NOW - timedelta(days=2), ["New York, NY"], "unknown", RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         rows = explain(score)
         assert [r.component for r in rows] == [
@@ -451,7 +452,7 @@ class TestExplain:
     def test_no_skills_message_names_the_assumed_value(self) -> None:
         score = score_posting(
             _profile(), set(), "Backend Engineer", NOW, ["New York"], "unknown",
-            RankWeights(), NOW,
+            RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert score.components["skill_coverage"].detail == (
             "no recognized skills in this posting — coverage assumed neutral (0.50)"
@@ -460,7 +461,7 @@ class TestExplain:
     def test_no_skills_on_either_side_is_still_undefined(self) -> None:
         score = score_posting(
             _profile(skills=frozenset()), set(), "Backend Engineer", NOW, ["New York"],
-            "unknown", RankWeights(), NOW,
+            "unknown", RankWeights(), NOW, generic_title_tokens=GENERIC_TITLE_TOKENS,
         )
         assert score.components["skill_coverage"].value is None
         assert score.components["skill_coverage"].detail == "no recognized skills in this posting"

@@ -4,7 +4,7 @@ Fixture strings are calibrated against the live `classify_location` / `role_verd
 classifiers (2026-08-27): US cities classify `us`; "Kaunas Office" is `unknown`
 (city without a country); "Kaunas, Lithuania"/"Zhubei, Taiwan" are `non_us`;
 "Front Office Agent"/"Field Auto Appraiser" have no role signal → `uncertain`;
-"Registered Nurse Practitioner" matches a deny pattern → `not_swe`. The two role
+"Registered Nurse Practitioner" matches a deny pattern → `out_of_field`. The two role
 answers are asserted out loud where they are load-bearing rather than assumed, so a
 gate that moves under the fixture fails here instead of passing vacuously.
 """
@@ -235,13 +235,13 @@ def test_a_confirmed_foreign_location_names_the_location_as_the_reason() -> None
 def test_a_vetoed_title_and_an_unconfirmed_one_are_DIFFERENT_reasons() -> None:
     """The role gate's veto and its abstain must not share one reason string.
 
-    `Registered Nurse Practitioner` matches a deny pattern (`not_swe`) and `Front Office Agent`
+    `Registered Nurse Practitioner` matches a deny pattern (`out_of_field`) and `Front Office Agent`
     carries no role signal at all (`uncertain`). Both are held, but only the first is a decision
     the gate made: reporting the second as "not software" would assert a claim it declined to
     make, which is folding an abstain into its neighbour. They therefore differ HERE, at the
     classifier, and not merely in how the page words them.
     """
-    assert role_verdict("Registered Nurse Practitioner")[0] == "not_swe"
+    assert role_verdict("Registered Nurse Practitioner")[0] == "out_of_field"
     assert role_verdict("Front Office Agent")[0] == "uncertain"
 
     vetoed = classify(
@@ -659,7 +659,7 @@ def test_seniority_verdict_actually_calls_the_titles_above_and_in_band(cat, tier
 
 
 def test_an_above_band_title_holds_an_otherwise_appliable_lead() -> None:
-    """T44's red case. "Senior Software Engineer" is US, confirmed `swe`, `uncertain`, and
+    """T44's red case. "Senior Software Engineer" is US, confirmed `in_field`, `uncertain`, and
     carries every requirement row — every OLDER gate in `classify` clears it, so unchanged code
     promotes it straight to the blind-apply queue. `seniority_above_band` is TITLE-only: the
     caller derives it from `rank.seniority_gate.seniority_verdict` and passes the boolean

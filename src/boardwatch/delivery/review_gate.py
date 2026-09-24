@@ -66,8 +66,8 @@ CLOSED_DIR = "_closed"
 #: outside it is a bug rather than a new bucket, and the page's map over it stays exhaustive.
 #:
 #: ``role_vetoed`` and ``role_unconfirmed`` are separate members on purpose. The role gate returns
-#: three answers and only ``not_swe`` is a veto; ``uncertain`` is an abstain, and reporting it as
-#: "not software" would assert the decision the gate declined to make — the same error as folding
+#: three answers and only ``out_of_field`` is a veto; ``uncertain`` is an abstain, and reporting it
+#: as "not software" would assert the decision the gate declined to make — the same error as folding
 #: an abstain into a neighbour.
 #:
 #: ``experience_requirement`` and ``eligibility_unconfirmed`` are likewise separate, and neither is
@@ -276,7 +276,7 @@ def classify(
     genuinely foreign city the classifier does not recognise (e.g. an unlisted "Kaunas
     Office") reads ``unknown`` and is a classifier-coverage gap to close in
     ``rank/location_data`` (the D-294 pattern), not something to fix by demoting every
-    remote lead here. Role, by contrast, is demoted on anything not positively ``swe`` — a
+    remote lead here. Role, by contrast, is demoted on anything not positively ``in_field`` — a
     title carrying no software signal is not blindly-appliable.
 
     An unevaluated (``None``) verdict is held for review, and REVERSES the reading that it be
@@ -327,11 +327,11 @@ def classify(
     # The reason keeps its `non_us_location` name for the same mirror sites the ranker's does.
     if location_target(target_countries, location_packs).classify(locations) == "out_of_target":
         return LaneDecision(REVIEW_DIR, "non_us_location")
-    if role == "not_swe":
+    if role == "out_of_field":
         return LaneDecision(REVIEW_DIR, "role_vetoed")
     if role == "unmeasured":
         return LaneDecision(REVIEW_DIR, "role_gate_unmeasured")
-    if role != "swe":
+    if role != "in_field":
         return LaneDecision(REVIEW_DIR, "role_unconfirmed")
     # T44. TITLE-only, like the two gates just above, and for the same reason it sits here rather
     # than below the `eligible` short-circuit: eligibility answers the six blocker families and

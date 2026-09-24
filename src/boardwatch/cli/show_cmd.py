@@ -28,6 +28,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.explain import explain
 from boardwatch.rank.heuristic import (
+    generic_title_tokens_for,
     hard_filter_verdict,
     profile_view_from_row,
     score_posting,
@@ -172,11 +173,13 @@ def show(
                 )
             ).scalar_one_or_none()
         skills = set((extraction or {}).get("skills", []))
+        role_taxonomy = load_role_taxonomy(settings.config_dir)
         score = score_posting(
             profile, skills, row.title, row.posted_at,
             list(row.locations_json or []), row.remote_policy,
             settings.weights, utcnow(), settings.recency_half_life_days,
             settings.zero_skill_coverage_prior,
+            generic_title_tokens=generic_title_tokens_for(declared_field(role_taxonomy)),
         )
         table = Table(title=f"Score {score.total:.2f}")
         table.add_column("Component")
@@ -201,9 +204,10 @@ def show(
         # `show <id>` is the audit surface for the role gate: every posting says what the
         # gate made of its title, so a hidden row can always be looked up and checked.
         # Plain line, markup off — the matched text is arbitrary title text.
-        role_taxonomy = load_role_taxonomy(settings.config_dir)
         role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
-        hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
+        hidden_note = (
+            " — hidden from top unless --include-non-swe" if role == "out_of_field" else ""
+        )
         out.print(f"Role: {role_reason}{hidden_note}", markup=False)
         # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
         # already read above for the score, and it is the ROW (None when absent), not a

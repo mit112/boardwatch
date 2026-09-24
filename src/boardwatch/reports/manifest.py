@@ -514,7 +514,7 @@ def profile_row_hash(
         # And the skill taxonomy, for the same reason again: since the zero-signal veto,
         # "0 recognised requirement terms" is a taxonomy judgement that DROPS a posting.
         "taxonomy_version": taxonomy_version,
-        # And the user's role taxonomy (P2 item 8): it decides the role gate's `not_swe` drop.
+        # And the user's role taxonomy (P2 item 8): it decides the role gate's `out_of_field` drop.
         # `""` is "no taxonomy", which no real digest can equal.
         "role_taxonomy_digest": role_taxonomy_digest,
         # DESIGN-T183 B1. The target set the location gates are keyed to; always present, so

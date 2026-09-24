@@ -36,7 +36,7 @@ false vetoes (D-294).
 `uncertain` passes through to scoring unchanged. That pass-through is why the gate
 retains 100% of the protected population (software-titled postings whose skills the
 taxonomy missed): those titles exit at the rescue or signal stage and never meet a
-deny pattern. A `not_swe` verdict is never silent — it carries the matched text so
+deny pattern. A `out_of_field` verdict is never silent — it carries the matched text so
 the veto is auditable at `show`, countable in `stats`, and viewable in `top` behind
 a flag. A gate you cannot audit is how a real job disappears unnoticed.
 
@@ -59,10 +59,14 @@ from typing import Any, Literal
 
 from boardwatch.rank.role_taxonomy import MISSING_ROLE_TAXONOMY, RoleTaxonomy
 
-# `unmeasured` is the gate declining to fire because the user has no role taxonomy: never `swe`,
-# never `not_swe`, and deliberately not `uncertain` either, because `uncertain` feeds the
-# zero-signal VETO and an abstain must never become a drop (CLAUDE.md's keystone invariant).
-RoleVerdict = Literal["swe", "not_swe", "uncertain", "unmeasured"]
+# `unmeasured` is the gate declining to fire because the user has no role taxonomy: never
+# `in_field`, never `out_of_field`, and deliberately not `uncertain` either, because `uncertain`
+# feeds the zero-signal VETO and an abstain must never become a drop (CLAUDE.md's keystone
+# invariant). The field-neutral names (DESIGN-T183 R2) were `swe` and `not_swe`. The value never
+# leaves the process, so nothing persisted moves; the names a user or an artifact sees keep the
+# old spelling as aliases — `--include-non-swe`, `hidden_non_swe`, the `role_vetoed` reason —
+# until an `ARTIFACT_VERSION` bump renames them.
+RoleVerdict = Literal["in_field", "out_of_field", "uncertain", "unmeasured"]
 
 # `unmeasured` is NOT a third outcome of the rule — it is the rule declining to fire because
 # the input it reads is absent. Kept distinct from `pass` so "we looked and found signal" can
@@ -87,7 +91,7 @@ _NOENG = (
     # business roles that merely name the technology — "Aladdin Data Risk, Controls &
     # Governance, Director", "AI Physics Sales Lead - EMEA", "Accounting AI Solutions Lead".
     # `data` also un-vetoes "Item Data Quality Analyst", which this repository's own suite
-    # pins as `not_swe`. `_NOSW` can afford them because it guards denies whose head noun is
+    # pins as `out_of_field`. `_NOSW` can afford them because it guards denies whose head noun is
     # already a software org word; this guard has no such backstop.
     r"platform|infrastructure|machine\s+learning|ml)\b).*"
 )
@@ -323,8 +327,8 @@ _DENY_BUSINESS_SOFT: tuple[str, ...] = tuple([
     r"\bgtm\b|\bgo.?to.?market\b|\bpre.?sales\b|\bconsult(ing|ancy)\b",
     # Bare `coordinator`, anchor-guarded (D-245). "Disaster Response Coordinator" reached the
     # shortlist on run 61 because it verdicts `uncertain` and the ranker passes `uncertain`
-    # through. Measured over 26,997 open postings: 135 flip to not_swe, all non-software, and
-    # 0 `swe`-classified titles contain the word, so this cannot bury a software job. The
+    # through. Measured over 26,997 open postings: 135 flip to out_of_field, all non-software, and
+    # 0 `in_field`-classified titles contain the word, so this cannot bury a software job. The
     # anchored guard additionally spares 4 administrative roles at engineering schools.
     _NOENG + r"\bcoordinator\b",
     # Bare `... Manager` / `... Director` / `... Lead`, anchor-guarded (owner decision,
@@ -419,12 +423,13 @@ _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
     # engineer/engineering/developer/architect/programmer/swe/sde/sdet is spared, and the SOFT
     # lane keeps a rescued or signalled software title out of reach. Deliberately NOT `_NOSW`-
     # guarded: `QA Analyst` / `QA Specialist` carry the software SURFACE word `qa`, so `_NOSW`
-    # would spare the very retail/ops rows this deny exists to catch. `swe`-classified titles
+    # would spare the very retail/ops rows this deny exists to catch. `in_field`-classified titles
     # containing these words (e.g. "Analyst II, Full Stack", "Forward Deployed Engineer,
     # Infrastructure Specialist", "SRE Database Administrator") all match at the rescue or signal
     # stage and never reach here. This SUPERSEDES the earlier deliberate hold on bare `security
     # specialist` (its retail-vs-infosec ambiguity is a company-list question, but neither
-    # reading is a software-engineer role, so `not_swe` is correct for a SWE target either way).
+    # reading is a software-engineer role, so `out_of_field` is correct for a SWE target either
+    # way).
     _NOENG + r"\b(?:analyst|specialist|administrator|advisor|adviser)\b",
 ])
 
@@ -518,15 +523,15 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
     """Classify a posting TITLE as a software role, not one, or unknown.
 
     Returns the verdict and a one-line reason naming the text that decided it, so a
-    `not_swe` veto can always be audited against the posting it hid.
+    `out_of_field` veto can always be audited against the posting it hid.
     """
     rescue = _RESCUE.search(title)
     if rescue is not None:  # software-first title: every deny below is skipped
-        return "swe", f'software title (matched "{rescue.group(0)}")'
+        return "in_field", f'software title (matched "{rescue.group(0)}")'
     for pattern in _DENY_HARD:
         hard = pattern.search(title)
         if hard is not None:
-            return "not_swe", f'not software (matched "{hard.group(0)}")'
+            return "out_of_field", f'not software (matched "{hard.group(0)}")'
     # Checked immediately after `_DENY_HARD` -- the same position `_DENY_EXEC_RANK_HARD`'s
     # patterns held before D-412 split them out -- so no title's verdict moves. The reason names
     # the DENY PATTERN the gate matched and the substring that matched it, and makes NO claim about
@@ -542,7 +547,7 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         exec_rank = pattern.search(title)
         if exec_rank is not None:
             return (
-                "not_swe",
+                "out_of_field",
                 f'title matched the executive/seniority deny pattern '
                 f'(matched "{exec_rank.group(0)}")',
             )
@@ -552,9 +557,9 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
         for pattern in _DENY_SOFT:
             soft = pattern.search(title)
             if soft is not None:
-                return "not_swe", f'not software (matched "{soft.group(0)}")'
+                return "out_of_field", f'not software (matched "{soft.group(0)}")'
         return "uncertain", "no role signal in title"
-    return "swe", f'software title (matched "{signal.group(0)}")'
+    return "in_field", f'software title (matched "{signal.group(0)}")'
 
 
 def taxonomy_role_verdict(title: str, taxonomy: RoleTaxonomy | None) -> tuple[RoleVerdict, str]:
@@ -562,8 +567,8 @@ def taxonomy_role_verdict(title: str, taxonomy: RoleTaxonomy | None) -> tuple[Ro
 
     No taxonomy ⇒ abstain, naming the missing profile field. A bundled field ⇒ the software
     classifier above, unchanged. A gathered taxonomy ⇒ rescue-first like the software gate
-    (D-294): a family word decides `swe` (on target) before any exclude word is tried, then an
-    exclude word decides `not_swe`, and a title matching neither is `uncertain` and passes.
+    (D-294): a family word decides `in_field` (on target) before any exclude word is tried, then an
+    exclude word decides `out_of_field`, and a title matching neither is `uncertain` and passes.
     """
     if taxonomy is None:
         return "unmeasured", MISSING_ROLE_TAXONOMY
@@ -572,11 +577,11 @@ def taxonomy_role_verdict(title: str, taxonomy: RoleTaxonomy | None) -> tuple[Ro
     for family in taxonomy.families:
         hit = family.pattern.search(title)
         if hit is not None:
-            return "swe", f'role family {family.id!r} (matched "{hit.group(0)}")'
+            return "in_field", f'role family {family.id!r} (matched "{hit.group(0)}")'
     if taxonomy.exclude is not None:
         excluded = taxonomy.exclude.search(title)
         if excluded is not None:
-            return "not_swe", f'excluded by your role taxonomy (matched "{excluded.group(0)}")'
+            return "out_of_field", f'excluded by your role taxonomy (matched "{excluded.group(0)}")'
     return "uncertain", "no role signal in title"
 
 
@@ -591,7 +596,7 @@ def zero_signal_verdict(
     """Veto a posting whose TITLE carried no role signal and whose BODY carried none either.
 
     Fires only on the intersection of two independently-computed abstains: `role ==
-    "uncertain"` (never `swe`, never `not_swe`) and a taxonomy extraction that RAN, over a
+    "uncertain"` (never `in_field`, never `out_of_field`) and a taxonomy extraction that RAN, over a
     body that EXISTED, and recognised exactly zero terms.
 
     `body_empty` is keyword-only and has no default on purpose. It is the caller's assertion
@@ -609,16 +614,16 @@ def zero_signal_verdict(
     **The evidence, over all 48,285 open postings.** Zero-skill rate by role verdict:
 
         role_verdict    open   zero-skill    rate
-        swe            8,002          121    1.5%
+        in_field       8,002          121    1.5%
         uncertain      9,277        3,334   35.9%
-        not_swe       31,006       12,193   39.3%
+        out_of_field  31,006       12,193   39.3%
 
-    The zero-skill rate separates cleanly along the ROLE boundary — 23.8x between `swe` and
-    `uncertain` — and `uncertain` ∩ zero-skill sits with `not_swe` (39.3%), not with `swe`
+    The zero-skill rate separates cleanly along the ROLE boundary — 23.8x between `in_field` and
+    `uncertain` — and `uncertain` ∩ zero-skill sits with `out_of_field` (39.3%), not with `in_field`
     (1.5%). A title that gives no role signal and a substantial body that yields no recognised
     term behaves like the non-software population on every axis measurable here.
 
-    **This is falsifiable, and here is the falsifier.** If `swe` ∩ zero-skill were ~30% rather
+    **This is falsifiable, and here is the falsifier.** If `in_field` ∩ zero-skill were ~30% rather
     than 1.5%, the rule would be indefensible: the zero-skill signal would be telling us about
     the extractor's coverage rather than about the posting. That 23.8x gap is what shipping at
     exactly zero buys, and it is the number to re-measure before anyone widens the threshold.
@@ -645,7 +650,7 @@ def zero_signal_verdict(
     paragraph instead.
 
     `zero_skill_coverage_prior` is left untouched. It still governs every zero-skill posting
-    that survives here — the `swe`-titled ones, the `unmeasured` ones, and every drained row.
+    that survives here — the `in_field`-titled ones, the `unmeasured` ones, and every drained row.
 
     **Exactly zero, and NOT tunable.** Measured over those 9,277 `uncertain` postings:
 
@@ -667,7 +672,7 @@ def zero_signal_verdict(
     this very population.
 
     **Scoped to `uncertain`, not unconditional.** "Embedded Software Engineer - MCU Platforms"
-    and "Associate Software Engineer" both have zero-recognised-term bodies and are `swe` by
+    and "Associate Software Engineer" both have zero-recognised-term bodies and are `in_field` by
     title; applied unconditionally this rule would delete them.
 
     **Three states, and each reason string names its own.** "0 recognised terms" is a claim
@@ -701,7 +706,7 @@ def zero_signal_verdict(
     """
     if role != "uncertain":
         # Checked first so `unmeasured` counts only the population the rule could act on:
-        # a missing extraction under a `swe` title is not this rule declining to fire.
+        # a missing extraction under a `in_field` title is not this rule declining to fire.
         return "pass", ""
     if taxonomy_field is None or taxonomy_field != role_field:
         # Before every body check: with the wrong instrument, no reading of the body is evidence.

@@ -72,7 +72,7 @@ assert set(_PATTERNS) == KNOWN_GRAMMARS, (
 # Perplexity, xAI, Cohere, Cockroach Labs, Adyen and others — frequently entry-level — and
 # `role_gate._TITLE_SWE_SIGNAL` already names it a POSITIVE software signal. Without this mask
 # the two gates in this package contradict each other on the same string: measured over 26,997
-# live open postings, `staff` falsely dropped **94** `swe`-classified MTS titles. The 19 that
+# live open postings, `staff` falsely dropped **94** `in_field`-classified MTS titles. The 19 that
 # also carry a real senior word ("Sr. Member of Technical Staff") still drop, because only the
 # phrase is masked, not the title.
 _NOT_SENIORITY_PHRASES: tuple[re.Pattern[str], ...] = tuple([

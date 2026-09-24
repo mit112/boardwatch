@@ -1,9 +1,9 @@
 """The zero-signal veto: no role signal in the title AND no recognised term in the body.
 
 Two independently-computed abstains, ANDed. `role_verdict` returning `uncertain` used to fail
-open all by itself — `top_cmd` vetoed only `not_swe` — so a title carrying no software word
+open all by itself — `top_cmd` vetoed only `out_of_field` — so a title carrying no software word
 shipped a résumé regardless of what its job description said. Measured over the full corpus,
-the zero-skill rate is 1.5% under a `swe` title and 35.9% under an `uncertain` one, and a
+the zero-skill rate is 1.5% under a `in_field` title and 35.9% under an `uncertain` one, and a
 posting with zero recognised requirement terms cannot be tailored to at all.
 
 **What every test here has to defend against, because it is the failure mode that would ship
@@ -46,7 +46,7 @@ from tests.conftest import write_bundled_role_taxonomy
 NOW = utcnow()
 
 # Every string below is a REAL title from the measured population, not a plausible invention.
-# Two `swe`-by-title postings whose bodies yield zero recognised terms. Both would be deleted
+# Two `in_field`-by-title postings whose bodies yield zero recognised terms. Both would be deleted
 # if the rule were applied unconditionally instead of only to `uncertain`.
 SWE_ZERO_SKILL = "Embedded Software Engineer - MCU Platforms"
 SWE_ZERO_SKILL_2 = "Associate Software Engineer"
@@ -163,8 +163,8 @@ def _accounted(results: RankedResults) -> int:
 def test_the_titles_this_module_relies_on_still_carry_the_role_verdicts_it_assumes() -> None:
     """Every test below is conditioned on these verdicts; if the role gate is retuned and a
     fixture title changes bucket, the tests would keep passing while testing nothing."""
-    assert role_verdict(SWE_ZERO_SKILL)[0] == "swe"
-    assert role_verdict(SWE_ZERO_SKILL_2)[0] == "swe"
+    assert role_verdict(SWE_ZERO_SKILL)[0] == "in_field"
+    assert role_verdict(SWE_ZERO_SKILL_2)[0] == "in_field"
     assert role_verdict(UNCERTAIN_NOISE)[0] == "uncertain"
     assert role_verdict(UNCERTAIN_NOISE_2)[0] == "uncertain"
     assert role_verdict(UNCERTAIN_WITH_SIGNAL)[0] == "uncertain"
@@ -176,11 +176,11 @@ def test_only_uncertain_and_zero_skills_is_vetoed() -> None:
     assert zero_signal_verdict(
         "uncertain", {"skills": ["Distributed systems"]}, body_empty=False, **SOFTWARE
     )[0] == "pass"
-    assert zero_signal_verdict("swe", {"skills": []}, body_empty=False, **SOFTWARE)[0] == "pass"
-    assert zero_signal_verdict("swe", {"skills": ["Python"]}, body_empty=False, **SOFTWARE)[0] == "pass"
-    # `not_swe` is the role gate's own bucket and is already gone by this point; asserted so
+    assert zero_signal_verdict("in_field", {"skills": []}, body_empty=False, **SOFTWARE)[0] == "pass"
+    assert zero_signal_verdict("in_field", {"skills": ["Python"]}, body_empty=False, **SOFTWARE)[0] == "pass"
+    # `out_of_field` is the role gate's own bucket and is already gone by this point; asserted so
     # nobody widens the rule to it and quietly changes which counter a posting lands in.
-    assert zero_signal_verdict("not_swe", {"skills": []}, body_empty=False, **SOFTWARE)[0] == "pass"
+    assert zero_signal_verdict("out_of_field", {"skills": []}, body_empty=False, **SOFTWARE)[0] == "pass"
 
 
 def test_exactly_one_recognised_term_survives() -> None:
@@ -215,9 +215,9 @@ def test_an_empty_jd_body_is_never_read_as_zero_signal() -> None:
     verdict, reason = zero_signal_verdict("uncertain", {"skills": []}, body_empty=True, **SOFTWARE)
     assert verdict == "unmeasured"
     assert reason == "empty JD body — nothing to read"
-    # `swe` still short-circuits first: an empty body under a software title is not this
+    # `in_field` still short-circuits first: an empty body under a software title is not this
     # rule's population and must not inflate its abstain rate.
-    assert zero_signal_verdict("swe", {"skills": []}, body_empty=True, **SOFTWARE)[0] == "pass"
+    assert zero_signal_verdict("in_field", {"skills": []}, body_empty=True, **SOFTWARE)[0] == "pass"
 
 
 def test_the_reason_string_distinguishes_all_three_states() -> None:
@@ -312,7 +312,7 @@ def test_a_posting_with_no_extraction_row_at_all_still_ships(env: Path) -> None:
     # Visible AND counted: an inert gate has to be legible as a number, or `hidden_zero_signal
     # == 0` cannot be told apart from a clean corpus.
     assert results.signal_unmeasured == 1
-    # `swe`-titled postings are not this rule's population and never reach the abstain.
+    # `in_field`-titled postings are not this rule's population and never reach the abstain.
     assert _accounted(results) == results.considered == 2
 
 
@@ -468,7 +468,7 @@ def test_a_taxonomy_written_for_another_field_is_unmeasured_never_a_veto() -> No
     )[0] == "unmeasured"
     # A title the role gate decided is still not this rule's population.
     assert zero_signal_verdict(
-        "swe", {"skills": []}, body_empty=False,
+        "in_field", {"skills": []}, body_empty=False,
         taxonomy_field="software", role_field="clinical_care",
     ) == ("pass", "")
 

@@ -254,7 +254,7 @@ def _queue_row(posting_id: int, company: str, title: str) -> QueueRow:
         tex_uri="file:///lead.tex",
         pdf_uri="file:///lead.pdf",
         target_flag=None,
-        role="swe",
+        role="in_field",
     )
 
 

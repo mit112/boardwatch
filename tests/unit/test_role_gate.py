@@ -22,7 +22,7 @@ NOT_SWE_TITLES = [
     "On Shift (IOS) Technology Development Engineer – Night Shift 6",
 ]
 
-# Real software titles. A `not_swe` here is the exact failure mode — a silently hidden job.
+# Real software titles. A `out_of_field` here is the exact failure mode — a silently hidden job.
 NEVER_NOT_SWE_TITLES = [
     "Software Engineer I, Backend (Collections)",
     "Forward Deployed Software Engineer",  # a real protected zero-skill row
@@ -51,27 +51,27 @@ class TestVerdicts:
     @pytest.mark.parametrize("title", NOT_SWE_TITLES)
     def test_noise_titles_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason  # never silent: the veto always names what it matched
 
     @pytest.mark.parametrize("title", NEVER_NOT_SWE_TITLES)
     def test_software_titles_are_never_vetoed(self, title: str) -> None:
-        # `swe` or `uncertain` both pass: `uncertain` falls through to scoring unchanged,
+        # `in_field` or `uncertain` both pass: `uncertain` falls through to scoring unchanged,
         # which is why the gate retains 100% of the protected population.
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
     @pytest.mark.parametrize("title", SOFTWARE_LEADS_WITHOUT_A_FAMILY_NOUN)
     def test_a_software_lead_with_no_family_noun_is_not_vetoed(self, title: str) -> None:
-        """T18. Not asserted as `swe` — the title carries no positive software signal either,
+        """T18. Not asserted as `in_field` — the title carries no positive software signal either,
         so `uncertain` is the honest verdict and the ranker passes it through to scoring. What
-        must not happen is a hard `not_swe`, which hides the posting outright."""
-        assert role_verdict(title)[0] != "not_swe"
+        must not happen is a hard `out_of_field`, which hides the posting outright."""
+        assert role_verdict(title)[0] != "out_of_field"
 
     def test_the_widened_guard_still_vetoes_a_non_software_domain_title(self) -> None:
         """The control on the other side. `_NOENG` spares the domain words; it does not spare
         a title whose only engineering-adjacent word is a business one."""
-        assert role_verdict("Deal Strategist")[0] == "not_swe"
-        assert role_verdict("Payroll Coordinator")[0] == "not_swe"
+        assert role_verdict("Deal Strategist")[0] == "out_of_field"
+        assert role_verdict("Payroll Coordinator")[0] == "out_of_field"
 
     def test_uncertain_is_reachable_and_reasoned(self) -> None:
         verdict, reason = role_verdict("Data Warehouse Engineer")
@@ -85,22 +85,22 @@ class TestOrdering:
     def test_software_test_engineer_is_swe(self) -> None:
         # Matches `(test|validation|verification|quality) engineer`, whose trailing
         # lookahead cannot see the "Software" to its left. Rescue-first is what saves it.
-        assert role_verdict("Software Test Engineer")[0] == "swe"
+        assert role_verdict("Software Test Engineer")[0] == "in_field"
 
     def test_software_quality_engineer_is_swe(self) -> None:
-        assert role_verdict("Software Quality Engineer")[0] == "swe"
+        assert role_verdict("Software Quality Engineer")[0] == "in_field"
 
     def test_night_shift_deny_loses_to_the_rescue(self) -> None:
         # "(night|day|swing|weekend) shift" is a hard deny; `site reliability` rescues first.
-        assert role_verdict("Site Reliability Engineer (Night Shift)")[0] == "swe"
+        assert role_verdict("Site Reliability Engineer (Night Shift)")[0] == "in_field"
         # ...and with no software signal, the same deny still fires.
-        assert role_verdict("Production Associate – Night Shift")[0] == "not_swe"
+        assert role_verdict("Production Associate – Night Shift")[0] == "out_of_field"
 
     def test_soft_denies_are_skipped_when_the_title_signals_software(self) -> None:
         # `consultant(?!.*software)` is a SOFT deny: it applies only to titles with no
         # software signal at all, so a signal-matched title is never reached by it.
-        assert role_verdict("Consultant")[0] == "not_swe"
-        assert role_verdict("Machine Learning Engineer, Consultant Tools")[0] == "swe"
+        assert role_verdict("Consultant")[0] == "out_of_field"
+        assert role_verdict("Machine Learning Engineer, Consultant Tools")[0] == "in_field"
 
 
 class TestPrecisionAdditions:
@@ -126,7 +126,7 @@ class TestPrecisionAdditions:
         ],
     )
     def test_presales_support_sales_titles_are_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] == "not_swe"
+        assert role_verdict(title)[0] == "out_of_field"
 
     @pytest.mark.parametrize(
         "title",
@@ -140,11 +140,11 @@ class TestPrecisionAdditions:
         ],
     )
     def test_real_or_ambiguous_software_titles_are_not_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
     def test_sw_engineer_abbreviation_is_software(self) -> None:
         # "SW Engineer" is unambiguously software; "SW" alone (=southwest) is not added.
-        assert role_verdict("SW Engineer")[0] == "swe"
+        assert role_verdict("SW Engineer")[0] == "in_field"
 
 
 class TestNarrowedPatterns:
@@ -155,7 +155,7 @@ class TestNarrowedPatterns:
         "title", ["Engineer, Retail Systems", "Backend Engineer, Manufacturing Cloud"]
     )
     def test_dropped_bare_domain_nouns_no_longer_veto(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
     @pytest.mark.parametrize(
         "title",
@@ -168,7 +168,7 @@ class TestNarrowedPatterns:
         ],
     )
     def test_the_noise_those_patterns_caught_is_still_caught(self, title: str) -> None:
-        assert role_verdict(title)[0] == "not_swe"
+        assert role_verdict(title)[0] == "out_of_field"
 
 
 class TestAuditability:
@@ -193,18 +193,18 @@ class TestLiveRunNarrowings:
         "title", ["iOS Tooling Engineer", "Consultant Developer (Kotlin + Java) Hybrid position"]
     )
     def test_live_false_positives_are_released(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
     @pytest.mark.parametrize("title", ["Tooling Technician", "Solutions Consultant, Mid-Market"])
     def test_the_manufacturing_and_gtm_readings_are_still_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] == "not_swe"
+        assert role_verdict(title)[0] == "out_of_field"
 
 
 class TestCoordinatorDeny:
     """A bare `… Coordinator` with no engineering noun is not a software role (D-245).
 
     Measured 2026-08-19 over 26,997 live open postings: 135 postings / 125 distinct titles
-    flip `uncertain` -> `not_swe`, and ZERO `swe`-classified titles contain `coordinator`,
+    flip `uncertain` -> `out_of_field`, and ZERO `in_field`-classified titles contain `coordinator`,
     so the deny cannot bury a software job.
     """
 
@@ -217,7 +217,7 @@ class TestCoordinatorDeny:
     ])
     def test_bare_coordinator_is_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert "coordinator" in reason.lower()
 
     @pytest.mark.parametrize("title", [
@@ -228,7 +228,7 @@ class TestCoordinatorDeny:
         "Software Engineer, Release Coordinator Tooling",
     ])
     def test_engineering_titles_are_never_vetoed_by_the_coordinator_deny(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
 
 class TestManagerDirectorDeny:
@@ -249,7 +249,7 @@ class TestManagerDirectorDeny:
     ])
     def test_non_engineering_managers_and_directors_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert "manager" in reason.lower() or "director" in reason.lower()
 
     @pytest.mark.parametrize("title", [
@@ -259,7 +259,7 @@ class TestManagerDirectorDeny:
         "Software Development Manager",   # 'software development' rescues before any deny
     ])
     def test_engineering_managers_and_directors_are_never_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
 
 class TestDataRolesOutOfScope:
@@ -276,7 +276,7 @@ class TestDataRolesOutOfScope:
     ])
     def test_data_science_and_analyst_titles_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason  # never silent: the veto names what it matched
 
     @pytest.mark.parametrize("title", [
@@ -286,7 +286,7 @@ class TestDataRolesOutOfScope:
         "Data Warehouse Engineer",  # no signal -> stays uncertain, still not vetoed
     ])
     def test_data_engineering_titles_are_never_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
 
 class TestBusinessOpsDeny:
@@ -307,7 +307,7 @@ class TestBusinessOpsDeny:
     ])
     def test_business_ops_titles_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason  # never silent
 
     @pytest.mark.parametrize("title", [
@@ -317,7 +317,7 @@ class TestBusinessOpsDeny:
         "Software Engineer, Strategy Tools",     # rescued
     ])
     def test_real_software_titles_are_not_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
 
 class TestBareLeadDeny:
@@ -341,7 +341,7 @@ class TestBareLeadDeny:
     ])
     def test_non_engineering_lead_titles_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert "lead" in reason.lower()
 
     @pytest.mark.parametrize("title", [
@@ -351,7 +351,7 @@ class TestBareLeadDeny:
         "Software Engineer, Lead Scoring Platform",   # product noun 'Lead' -> rescued
     ])
     def test_engineering_lead_titles_are_never_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe"
+        assert role_verdict(title)[0] != "out_of_field"
 
 
 class TestOwnerRulingNonSoftwareFamilies:
@@ -402,7 +402,7 @@ class TestOwnerRulingNonSoftwareFamilies:
     )
     def test_family_titles_are_denied(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe", (title, reason)
+        assert verdict == "out_of_field", (title, reason)
 
     @pytest.mark.parametrize(
         "title",
@@ -426,22 +426,22 @@ class TestOwnerRulingNonSoftwareFamilies:
         ],
     )
     def test_software_titles_on_those_surfaces_survive(self, title: str) -> None:
-        """`!= "not_swe"` and not `== "swe"` on purpose, and the difference is real.
+        """`!= "out_of_field"` and not `== "in_field"` on purpose, and the difference is real.
 
-        Most of these land on `uncertain`, not `swe`: `_TITLE_SWE_SIGNAL` requires an
+        Most of these land on `uncertain`, not `in_field`: `_TITLE_SWE_SIGNAL` requires an
         adjacency, so a bare `Engineer` head noun beside a business noun is not a positive
         software signal. `uncertain` still passes through to scoring, which is the property
         under test — the guard must stop the veto, not manufacture a signal.
         """
         verdict, reason = role_verdict(title)
-        assert verdict != "not_swe", (title, reason)
+        assert verdict != "out_of_field", (title, reason)
 
 
 class TestOwnerRulingTeamLeader:
     """Ruling 2 (D-294): `Team Leader` is retail/ops, and blocking it must not cost a real
     software lead.
 
-    The measurement that forced the SHAPE of this: five retail rows were classified `swe`
+    The measurement that forced the SHAPE of this: five retail rows were classified `in_field`
     because a store's checkout area is called the FRONT END and the bare token rescued them.
     The fix is in the rescue, not in a stage that outranks it — a deny evaluated before the
     rescue is reachable by every software title.
@@ -465,7 +465,7 @@ class TestOwnerRulingTeamLeader:
     )
     def test_retail_team_leaders_are_denied(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe", (title, reason)
+        assert verdict == "out_of_field", (title, reason)
 
     @pytest.mark.parametrize(
         "title",
@@ -491,7 +491,7 @@ class TestOwnerRulingTeamLeader:
     )
     def test_software_team_leaders_are_never_denied(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict != "not_swe", (title, reason)
+        assert verdict != "out_of_field", (title, reason)
 
     def test_front_end_still_rescues_a_real_front_end_role(self) -> None:
         for title in (
@@ -502,7 +502,7 @@ class TestOwnerRulingTeamLeader:
             "Senior Backend Java Engineer - Aladdin Engineering, Vice President",
             "AI/ML Agent Engineer - Front-End Focus",
         ):
-            assert role_verdict(title)[0] == "swe", title
+            assert role_verdict(title)[0] == "in_field", title
 
     @pytest.mark.parametrize("title", [
         # Giant Eagle's checkout supervisor track: 47 open rows reached the apply lane with
@@ -516,7 +516,7 @@ class TestOwnerRulingTeamLeader:
     ])
     def test_a_store_front_end_title_is_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe", (title, reason)
+        assert verdict == "out_of_field", (title, reason)
 
     @pytest.mark.parametrize("title", [
         "Front End Tech Lead",  # the rescue's `lead` head noun exists for exactly this title
@@ -525,7 +525,7 @@ class TestOwnerRulingTeamLeader:
     ])
     def test_the_store_deny_spares_a_real_front_end_role(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict != "not_swe", (title, reason)
+        assert verdict != "out_of_field", (title, reason)
 
 
 class TestNonSoftwareFamiliesAnalystSpecialist:
@@ -571,7 +571,7 @@ class TestNonSoftwareFamiliesAnalystSpecialist:
     ])
     def test_non_software_family_titles_are_vetoed(self, title: str) -> None:
         verdict, reason = role_verdict(title)
-        assert verdict == "not_swe", (title, reason)
+        assert verdict == "out_of_field", (title, reason)
         assert reason  # never silent: the veto names what it matched
 
     @pytest.mark.parametrize("title", [
@@ -589,7 +589,7 @@ class TestNonSoftwareFamiliesAnalystSpecialist:
         "Career Advisor, Cockrell School of Engineering",
     ])
     def test_software_and_engineering_titles_are_never_vetoed(self, title: str) -> None:
-        assert role_verdict(title)[0] != "not_swe", title
+        assert role_verdict(title)[0] != "out_of_field", title
 
 
 class TestGuardedPatternsGuardEveryBranch:
@@ -656,7 +656,7 @@ class TestSeniorityRankProvenance:
     """D-412: `Vice President` (and `Head of`, `Chief ... Officer`, bare `President`) do
     EXECUTIVE/SENIORITY-PHRASE work inside the ROLE gate, not role determination -- "Java
     Developer - Vice President" is a real software req; VP is a banking GRADE stapled on top of
-    it, not a business role redefining the job. The verdict stays `not_swe` on purpose (a
+    it, not a business role redefining the job. The verdict stays `out_of_field` on purpose (a
     VP-ranked req is a genuine new-grad mismatch, an owner-defensible OUTCOME) but the recorded
     REASON must no longer claim "not software" -- that claim is false for a title carrying a real
     engineering signal, or for a title where the phrase is merely an ORGANIZATIONAL QUALIFIER
@@ -687,7 +687,7 @@ class TestSeniorityRankProvenance:
 
     def test_vice_president_reason_names_an_exec_phrase_without_distinguishing_role(self) -> None:
         verdict, reason = role_verdict("Java Developer - Vice President")
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason == (
             'title matched the executive/seniority deny pattern '
             '(matched "Vice President")'
@@ -695,7 +695,7 @@ class TestSeniorityRankProvenance:
 
     def test_head_of_reason_names_an_exec_phrase_without_distinguishing_role(self) -> None:
         verdict, reason = role_verdict("Head of Sales")
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason == (
             'title matched the executive/seniority deny pattern '
             '(matched "Head of")'
@@ -706,7 +706,7 @@ class TestSeniorityRankProvenance:
         # present and the hard deny still wins the verdict (owner ruling), but the reason must
         # not assert the false claim that the title itself is non-software.
         verdict, reason = role_verdict("Machine Learning Engineer Vice President")
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert "not software" not in reason
         assert reason == (
             'title matched the executive/seniority deny pattern '
@@ -719,12 +719,12 @@ class TestSeniorityRankProvenance:
         # "Chief Technology Officer" or "President" IS a role, so the reason may not claim it is
         # none. The wording now reports only that the deny pattern matched -- no claim to falsify.
         assert role_verdict("Chief Technology Officer") == (
-            "not_swe",
+            "out_of_field",
             'title matched the executive/seniority deny pattern '
             '(matched "Chief Technology Officer")',
         )
         assert role_verdict("President") == (
-            "not_swe",
+            "out_of_field",
             'title matched the executive/seniority deny pattern '
             '(matched "President")',
         )
@@ -732,7 +732,7 @@ class TestSeniorityRankProvenance:
     def test_organizational_qualifier_no_longer_asserts_the_false_not_software_claim(self) -> None:
         # The counterexample that falsified 49c4d479's "names the job itself" theory: both
         # titles carry a real software function, and the executive phrase names an org unit,
-        # not the person's role. The verdict stays `not_swe` (unchanged, and out of scope to fix
+        # not the person's role. The verdict stays `out_of_field` (unchanged, and out of scope to fix
         # here -- the regex still cannot tell a qualifier from a role) but the reason may no
         # longer claim the title itself is non-software.
         for title in (
@@ -740,18 +740,18 @@ class TestSeniorityRankProvenance:
             "Java Developer, Office of the Chief Technology Officer",
         ):
             verdict, reason = role_verdict(title)
-            assert verdict == "not_swe", title
+            assert verdict == "out_of_field", title
             assert "not software" not in reason, title
             assert "matched the executive/seniority deny pattern" in reason, title
 
     def test_an_incidental_match_gets_the_literal_pattern_reason_not_a_title_claim(self) -> None:
         # The round-4 counterexample that retired the "role from qualifier" wording: `_DENY_EXEC_RANK`
         # matches "Head of" here, where it names the STUDY, not a rank -- neither a role nor a
-        # qualifier. The verdict stays `not_swe` (the gate still vetoes the match, unchanged) but
+        # qualifier. The verdict stays `out_of_field` (the gate still vetoes the match, unchanged) but
         # the reason may not call it an executive/seniority phrase or a role/qualifier of any kind;
         # it may report ONLY that the deny pattern matched, which is the one claim that stays true.
         verdict, reason = role_verdict("Survey Coordinator, Head of Household Study")
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason == 'title matched the executive/seniority deny pattern (matched "Head of")'
         assert "role" not in reason and "qualifier" not in reason and "phrase" not in reason
 
@@ -785,7 +785,7 @@ class TestSeniorityRankProvenance:
         # fallback before this change -- and must still be, unchanged, after it. The reason
         # wording is the ONE thing this change is allowed to move.
         verdict, reason = role_verdict("Vice-President of Engineering")
-        assert verdict == "not_swe"
+        assert verdict == "out_of_field"
         assert reason == (
             'title matched the executive/seniority deny pattern '
             '(matched "President")'
