@@ -145,7 +145,7 @@ def test_posting_context_uses_the_injected_taxonomy(
             )
         )
 
-    empty = Taxonomy(patterns=(), version=INJECTED_VERSION, source="test")
+    empty = Taxonomy(patterns=(), version=INJECTED_VERSION, source="test", field=None)
     ctx = posting_context(engine, settings, posting_id, taxonomy=empty)
 
     assert ctx.jd_skills == frozenset(INJECTED_SKILLS)

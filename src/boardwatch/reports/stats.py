@@ -24,7 +24,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import passes_hard_filters, profile_view_from_row
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
@@ -114,7 +114,8 @@ def compute_stats(
     now = now or utcnow()
     # Read ONCE, outside the connection: the extraction join below keys on it, exactly as
     # `top`'s does, so the two surfaces read the same row for the same posting.
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -170,6 +171,7 @@ def compute_stats(
         # comment above records for `non_swe`.
         zero_signal = not non_swe and zero_signal_verdict(
             role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )[0] == "veto"
         over_seniority = not non_swe and not zero_signal and seniority_verdict(
             row.title, schemes.get((row.provider, row.slug)), target_band, tier, leveling,

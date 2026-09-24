@@ -34,7 +34,7 @@ from boardwatch.rank.heuristic import (
 )
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
@@ -161,7 +161,8 @@ def show(
                 out.print("no profile yet — run `boardwatch init` first")
                 raise typer.Exit(code=1)
             profile = profile_view_from_row(profile_row)
-            version = load_taxonomy(settings.config_dir).version
+            skill_taxonomy = load_taxonomy(settings.config_dir)
+            version = skill_taxonomy.version
             extraction = conn.execute(
                 select(extractions.c.json).where(
                     extractions.c.posting_id == row.id,
@@ -200,9 +201,8 @@ def show(
         # `show <id>` is the audit surface for the role gate: every posting says what the
         # gate made of its title, so a hidden row can always be looked up and checked.
         # Plain line, markup off — the matched text is arbitrary title text.
-        role, role_reason = taxonomy_role_verdict(
-            row.title, load_role_taxonomy(settings.config_dir)
-        )
+        role_taxonomy = load_role_taxonomy(settings.config_dir)
+        role, role_reason = taxonomy_role_verdict(row.title, role_taxonomy)
         hidden_note = " — hidden from top unless --include-non-swe" if role == "not_swe" else ""
         out.print(f"Role: {role_reason}{hidden_note}", markup=False)
         # Same contract for the zero-signal rule, and it needs no extra query: `extraction` was
@@ -215,7 +215,8 @@ def show(
         # whitespace SQLite's `trim` does not — this surface has to agree with `top` about
         # which body is empty, or `show` would explain a row `top` did not hide.
         zero_signal, zero_signal_reason = zero_signal_verdict(
-            role, extraction, body_empty=not (row.body_text or "").strip(" \t\n\r\f\v")
+            role, extraction, body_empty=not (row.body_text or "").strip(" \t\n\r\f\v"),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )
         if zero_signal != "pass":
             signal_note = (

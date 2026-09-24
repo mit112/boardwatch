@@ -158,3 +158,31 @@ def test_write_extraction_is_idempotent(tmp_path: Path) -> None:
     assert len(rows) == 1
     assert rows[0].engine_version == taxonomy.version
     assert "Python" in rows[0].json["skills"] and "Go" in rows[0].json["skills"]
+
+
+def test_the_bundled_taxonomy_declares_the_field_it_was_written_for(tmp_path: Path) -> None:
+    """DESIGN-T183 R3: the zero-signal rule counts THESE terms, so it may only fire for a user
+    whose field is the one the terms describe. The bundled file is the tech taxonomy."""
+    assert load_taxonomy(tmp_path).field == "software"
+
+
+def test_an_override_declares_its_own_field_or_none(tmp_path: Path) -> None:
+    pattern = "  - {name: 'Zig', category: language, pattern: '\\bzig\\b', case_sensitive: false}\n"
+    (tmp_path / "taxonomy.yaml").write_text(
+        "field: clinical_care\npatterns:\n" + pattern, encoding="utf-8"
+    )
+    assert load_taxonomy(tmp_path).field == "clinical_care"
+    # An override that says nothing is not assumed to be software: the user wrote its terms.
+    (tmp_path / "taxonomy.yaml").write_text("patterns:\n" + pattern, encoding="utf-8")
+    assert load_taxonomy(tmp_path).field is None
+
+
+@pytest.mark.parametrize("field", ["7", "Clinical Care", "''", "[a]"])
+def test_an_override_field_that_is_not_a_token_is_refused(tmp_path: Path, field: str) -> None:
+    (tmp_path / "taxonomy.yaml").write_text(
+        f"field: {field}\npatterns:\n"
+        "  - {name: 'Zig', category: language, pattern: '\\bzig\\b', case_sensitive: false}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(TaxonomyError, match="field"):
+        load_taxonomy(tmp_path)

@@ -51,6 +51,7 @@ def _taxonomy() -> Taxonomy:
         ),
         version="select-test-1",
         source="bundled",
+        field="software",
     )
 
 

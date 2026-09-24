@@ -23,7 +23,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.rank.heuristic import ProfileView, passes_hard_filters, score_posting
 from boardwatch.rank.leveling import load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import body_is_empty, current_posting_versions
@@ -88,7 +88,8 @@ def select_new_matches(
     new_ids, max_event_id = _new_ids_and_max(conn, since_event_id)
     if not new_ids:
         return NotifyResult(items=(), since_event_id=since_event_id, max_event_id=max_event_id)
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     base = (
         select(
             postings.c.id,
@@ -163,7 +164,8 @@ def select_new_matches(
         # pushed: an abstain is never a suppression, exactly as `uncertain` band is.
         # Suppressed rather than dropped — `top --include-zero-signal` still shows it.
         if not include_zero_signal and zero_signal_verdict(
-            role, row.extraction_json, body_empty=bool(row.body_empty)
+            role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )[0] == "veto":
             continue
         # Same default as `top`: a title above the operator's target band is not a "new match"

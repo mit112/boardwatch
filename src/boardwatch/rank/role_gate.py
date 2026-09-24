@@ -581,7 +581,12 @@ def taxonomy_role_verdict(title: str, taxonomy: RoleTaxonomy | None) -> tuple[Ro
 
 
 def zero_signal_verdict(
-    role: RoleVerdict, extraction: Mapping[str, Any] | None, *, body_empty: bool
+    role: RoleVerdict,
+    extraction: Mapping[str, Any] | None,
+    *,
+    body_empty: bool,
+    taxonomy_field: str | None,
+    role_field: str | None,
 ) -> tuple[ZeroSignalVerdict, str]:
     """Veto a posting whose TITLE carried no role signal and whose BODY carried none either.
 
@@ -683,6 +688,14 @@ def zero_signal_verdict(
     `hidden_zero_signal` with `signal_unmeasured` at 0 — an inert gate that reads as clean
     noise removal, which is the monitoring failure the keystone invariant forbids.
 
+    **The instrument's field (DESIGN-T183 R3).** "0 recognised terms" is measured against the
+    skill taxonomy, and the bundled one is a TECH taxonomy: every nursing JD recognises zero of
+    its terms, so for a nurse the veto would drop every `uncertain` title on a count that says
+    nothing about the posting. `taxonomy_field` is the field the taxonomy declares
+    (`Taxonomy.field`), `role_field` the user's own (`RoleTaxonomy.field`); the rule fires only
+    when the two are the same field, and abstains otherwise, naming both. Keyword-only and
+    without defaults for the reason `body_empty` is.
+
     Returns the verdict and a one-line reason, so a veto is auditable against the posting it
     hid and an `unmeasured` abstain is auditable against the specific thing it could not read.
     """
@@ -690,6 +703,12 @@ def zero_signal_verdict(
         # Checked first so `unmeasured` counts only the population the rule could act on:
         # a missing extraction under a `swe` title is not this rule declining to fire.
         return "pass", ""
+    if taxonomy_field is None or taxonomy_field != role_field:
+        # Before every body check: with the wrong instrument, no reading of the body is evidence.
+        return "unmeasured", (
+            f"taxonomy field {taxonomy_field or '(undeclared)'} is not your field "
+            f"{role_field or '(undeclared)'} — its term count says nothing about this role"
+        )
     if body_empty:
         # BEFORE the row check, because when there is no body the row's contents are not
         # evidence of anything: an extraction over a whitespace-only body recognises zero

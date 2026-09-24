@@ -54,7 +54,7 @@ from boardwatch.rank.role_gate import (
     taxonomy_role_verdict,
     zero_signal_verdict,
 )
-from boardwatch.rank.role_taxonomy import load_role_taxonomy
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import (
     SeniorityVerdict,
     TargetBand,
@@ -502,7 +502,8 @@ def rank_open_postings(
     stats = run_eligibility(
         engine, settings, output_console, run_id=run_id
     )  # no-op on a null profile; before the check
-    version = load_taxonomy(settings.config_dir).version
+    skill_taxonomy = load_taxonomy(settings.config_dir)
+    version = skill_taxonomy.version
     # Loaded ONCE, beside the taxonomy, never per row: `role_verdict` is tuned to 0.30s over
     # 19,262 postings and the loop below runs ~27k times. `bindings` is user config keyed on
     # (provider, slug); resolving it to LevelScheme objects here means the loop does one dict
@@ -624,7 +625,8 @@ def rank_open_postings(
     token_probe = build_token_probe(tier, catalog) if target_band == "any" else None
     tenant = TenantAssumptionTally(
         ungrounded_reasons(
-            career_field=facts.career_field,
+            field=declared_field(role_taxonomy),
+            taxonomy_field=skill_taxonomy.field,
             target_seniority_band=target_band,
             seniority_hold=settings.gate.seniority_hold,
             target_countries=profile.target_countries,
@@ -692,7 +694,8 @@ def rank_open_postings(
         # boolean computed in SQLite by the same `select(...)`, so the emptiness check costs no
         # transfer of the body itself.
         zero_signal, zero_signal_reason = zero_signal_verdict(
-            role, row.extraction_json, body_empty=bool(row.body_empty)
+            role, row.extraction_json, body_empty=bool(row.body_empty),
+            taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )
         tenant.observe(
             "zero_signal",

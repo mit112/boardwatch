@@ -23,11 +23,22 @@ from boardwatch.delivery.review_gate import REVIEW_DIR, LaneDecision
 from boardwatch.pipeline import runner as runner_mod
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.rank import tenant_assumptions as tenant_mod
+from boardwatch.rank.role_taxonomy import (
+    MISSING_ROLE_TAXONOMY,
+    ROLE_TAXONOMY_FILE,
+    write_role_taxonomy,
+)
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
 from tests.pipeline.test_pipeline_run import _ready
 
 _NO_CAN_PACK = "missing_country_pack:CAN"
+# The second tenant's role taxonomy, as onboarding would gather it: synthetic, written by the test.
+_CLINICAL_TAXONOMY: dict[str, Any] = {
+    "version": 1,
+    "field": "clinical_care",
+    "role_families": [{"id": "nursing", "title_words": ["registered nurse", "infirmière"]}],
+}
 
 
 @pytest.fixture()
@@ -91,10 +102,12 @@ def _run(data_dir: Path, out_root: Path, *, mode: str) -> dict[str, Any]:
 
 def _seed_tenant2(data_dir: Path) -> None:
     """DESIGN-T183 §3's second tenant, DATA ONLY: a Canadian nurse whose field is not in the
-    bundled catalog, with P1/P2/P3/P5 from the smoke spec beside `_ready`'s software posting."""
+    bundled catalog, with P1/P2/P3/P5 from the smoke spec beside `_ready`'s software posting.
+    `_ready`'s `init` wrote the bundled software answer; the nurse gathers her own instead."""
     _ready(data_dir)
     # No CAN positive pack ships (Q6), so both location gates abstain on the missing pack.
     _set_countries(data_dir, ["CAN"])
+    write_role_taxonomy(load_settings(data_dir=data_dir).config_dir, _CLINICAL_TAXONOMY)
     _set_facts(
         data_dir,
         {
@@ -112,9 +125,9 @@ def _seed_tenant2(data_dir: Path) -> None:
 
 
 def test_the_funnel_reports_each_gate_for_a_software_tenant(env: Path, tmp_path: Path) -> None:
-    """Mit-shaped facts: `career_field: software` grounds the role, zero-signal and seniority
-    field gates, and `target_countries: [USA]` grounds both location gates, so each reports
-    what it did, with no missing-field abstain."""
+    """Mit-shaped: the bundled software role taxonomy (`init`'s answer) grounds the role,
+    zero-signal and seniority field gates, and `target_countries: [USA]` grounds both location
+    gates, so each reports what it did, with no missing-field abstain."""
     _ready(env)
     _set_facts(env, {"career_field": "software"})
     _set_countries(env, ["USA"])
@@ -145,11 +158,12 @@ def test_the_funnel_reports_each_gate_for_a_software_tenant(env: Path, tmp_path:
 def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
     env: Path, tmp_path: Path, mode: str
 ) -> None:
-    """The falsifier: a gate that reports `fired` while reading a field tenant 2 lacks. Every
-    decision the role gate made for this tenant rests on nothing it declared, so each one is an
-    abstain naming the field, and the drops it still makes are `fired_on_default`. The location
-    gates read the declared `[CAN]` and, with no CAN pack, abstain and drop NOTHING (DESIGN-T183
-    §3.1) — Toronto is no longer lost to a US default.
+    """The falsifier: a gate that reports `fired` while reading a field tenant 2 lacks. The
+    role gate reads HER taxonomy (T184), so it is grounded and vetoes nothing; the zero-signal
+    rule and the seniority field tier were written for software, so every decision they made
+    is an abstain naming the mismatch. The location gates read the declared `[CAN]` and, with
+    no CAN pack, abstain and drop NOTHING (DESIGN-T183 §3.1) — Toronto is no longer lost to a
+    US default.
     """
     _seed_tenant2(env)
 
@@ -159,12 +173,17 @@ def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
     ranker, review = report["ranker"], report["review"]
     role = ranker["role"]
     assert role["considered"] == 5 if mode == "soft" else role["considered"] >= 1
-    assert role["fired"] == 0, role
-    assert role["abstained"] == {"no_role_pack:clinical_care": role["considered"]}, role
-    assert role["fired_on_default"] >= 1, role  # the nurse titles, vetoed as `not_swe`
-    for gate in ("zero_signal", "seniority_field"):
-        assert ranker[gate]["fired"] == 0, (gate, ranker[gate])
-        assert sum(ranker[gate]["abstained"].values()) == ranker[gate]["considered"]
+    assert role["fired"] == role["fired_on_default"] == 0, role
+    assert set(role["abstained"]) <= {"role_uncertain"}, role  # Physiotherapist, not a pack word
+    # T187 C2: the tech taxonomy's term count is not evidence about a clinical posting.
+    zero_signal = ranker["zero_signal"]
+    assert zero_signal["fired"] == zero_signal["fired_on_default"] == 0, zero_signal
+    assert zero_signal["abstained"] == {
+        "taxonomy_field:software!=clinical_care": zero_signal["considered"]
+    }, zero_signal
+    seniority = ranker["seniority_field"]
+    assert seniority["fired"] == 0, seniority
+    assert sum(seniority["abstained"].values()) == seniority["considered"]
     if mode == "hard":
         location = ranker["location"]
         assert location["considered"] == 5, location
@@ -173,19 +192,23 @@ def test_a_second_tenant_sees_the_role_and_location_gates_abstain_not_fire(
         assert location["fired_on_default"] == 0, location  # inert: nothing dropped
     else:
         assert "location" not in ranker, "soft mode never runs the ranker's location clause"
-    for gate in ("location", "role"):
-        assert review[gate]["fired"] == 0, (gate, review[gate])
-        assert sum(review[gate]["abstained"].values()) == review[gate]["considered"] >= 1
+    assert review["location"]["fired"] == 0, review["location"]
+    assert sum(review["location"]["abstained"].values()) == review["location"]["considered"] >= 1
+    # Held on HER taxonomy's own reading (`role_unconfirmed` for a title no pack word names),
+    # so grounded: nothing is an abstain and nothing rests on the software default.
+    assert review["role"]["abstained"] == {}, review["role"]
+    assert review["role"]["fired_on_default"] == 0, review["role"]
     assert review["location"]["abstained"] == {_NO_CAN_PACK: review["location"]["considered"]}
     assert review["location"]["fired_on_default"] == 0, review["location"]  # nothing held
     assert payload["reconciles"] is True
 
 
-def test_a_profile_with_no_career_field_names_the_missing_field(
+def test_a_user_with_no_role_taxonomy_names_the_missing_field(
     env: Path, tmp_path: Path
 ) -> None:
+    """The user who skipped the role prompt: every field-keyed ranker gate names the file."""
     _ready(env)
-    _set_facts(env, {})
+    (load_settings(data_dir=env).config_dir / ROLE_TAXONOMY_FILE).unlink()
 
     payload = _run(env, tmp_path / "apps", mode="soft")
 
@@ -193,7 +216,7 @@ def test_a_profile_with_no_career_field_names_the_missing_field(
     for gate in ("role", "zero_signal", "seniority_field"):
         assert ranker[gate]["fired"] == 0, (gate, ranker[gate])
         assert ranker[gate]["abstained"] == {
-            "missing_profile_field:career_field": ranker[gate]["considered"]
+            MISSING_ROLE_TAXONOMY: ranker[gate]["considered"]
         }, (gate, ranker[gate])
 
 

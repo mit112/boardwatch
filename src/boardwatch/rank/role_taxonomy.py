@@ -178,6 +178,16 @@ def load_role_taxonomy(config_dir: Path) -> RoleTaxonomy | None:
     return parse_role_taxonomy(raw)
 
 
+def declared_field(taxonomy: RoleTaxonomy | None) -> str | None:
+    """The user's field as the ranker knows it: the one their role taxonomy declares, or `None`.
+
+    Every field-keyed ranker gate reads THIS, not `Facts.career_field`: that fact is an
+    eligibility input validated against the rules catalog's closed field list, while this is the
+    ranker's own per-user declaration, free for any field (DESIGN-T183 C1/C2/C4).
+    """
+    return None if taxonomy is None else taxonomy.field
+
+
 def role_taxonomy_digest(taxonomy: RoleTaxonomy | None) -> str:
     """The identity component: `""` for no taxonomy, which no real digest can equal."""
     return taxonomy.digest if taxonomy is not None else ""
