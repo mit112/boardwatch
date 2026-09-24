@@ -836,6 +836,64 @@ def test_a_lane_company_reaches_the_funnels_per_source_table_as_a_lane(
     assert lane_sources[0]["open_postings"] == 1
 
 
+
+def _lane_checks(payload: dict[str, Any]) -> dict[str, tuple[int, int, bool]]:
+    return {
+        c["name"]: (c["in_memory"], c["from_store"], c["agrees"])
+        for c in payload["cross_checks"]
+        if c["name"].startswith("lane")
+    }
+
+
+def test_a_lanes_new_reach_is_recounted_from_the_store_and_agrees_when_it_landed(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T191 control, end to end: two new companies land, and both of the lane's self-reports
+    (new reach, snapshots applied) match the store's recount in the funnel's cross-checks."""
+    _ready(env)
+    lane = StubLane([("hiringcafe", "src:acme"), ("hiringcafe", "src:beta")])
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+
+    _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
+
+    payload = _payload(tmp_path / "apps")
+    assert _lane_checks(payload) == {
+        "lane:stub:persisted_new": (2, 2, True),
+        "lanes:board_scans": (2, 2, True),
+    }
+
+
+def test_a_lane_board_that_never_landed_makes_the_funnels_lane_cross_check_disagree(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T191 red case, end to end: the lane self-reports two persisted companies while the store
+    holds one. `apply_board` is made to drop one company's board silently, which is the class
+    of fault F8 names (a lane result the store never received), and the lane's own tally cannot
+    see it. The funnel's store-side recount does."""
+    _ready(env)
+    lane = StubLane([("hiringcafe", "src:acme"), ("hiringcafe", "src:beta")])
+    monkeypatch.setattr(runner_mod, "LANE_FACTORIES", {"stub": lambda _ctx: lane})
+    real_apply = runner_mod.apply_board
+
+    def drops_beta(engine: Engine, snapshot: BoardSnapshot, company_id: int, run_id: int,
+                   scan_kind: str = "board") -> Any:
+        if snapshot.postings and snapshot.postings[0].provider_posting_id.startswith("src:beta"):
+            return None
+        return real_apply(engine, snapshot, company_id, run_id, scan_kind=scan_kind)
+
+    monkeypatch.setattr(runner_mod, "apply_board", drops_beta)
+
+    summary = _pipeline(env, tmp_path / "apps", lanes_enabled=("stub",))
+
+    assert [len(report.persisted_new) for report in summary.lanes] == [2]
+    payload = _payload(tmp_path / "apps")
+    assert _lane_checks(payload) == {
+        "lane:stub:persisted_new": (2, 1, False),
+        "lanes:board_scans": (2, 1, False),
+    }
+    assert payload["reconciles"] is False
+
+
 # --- the role facet reaches the lane from the PROFILE, never from the module ---------------
 
 

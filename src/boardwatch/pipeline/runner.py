@@ -1240,6 +1240,7 @@ def _apply_lane(
             admitted=budget.admitted,
             refused=budget.refused,
             persisted_new=tuple(key for key in budget.admitted if key in landed),
+            snapshots=len(result.snapshots),
             search_pages=result.search_pages,
             search_outcomes=result.search_outcomes,
             fetch_seconds=fetched.fetch_seconds,

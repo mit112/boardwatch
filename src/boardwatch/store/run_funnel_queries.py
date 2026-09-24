@@ -24,7 +24,7 @@ layering (see `queries.save_eligibility`, which states the same rule).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -51,6 +51,7 @@ from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
     eligibility_inputs,
+    posting_events,
     posting_identities,
     posting_versions,
     postings,
@@ -412,6 +413,79 @@ def count_projected_tailored_artifacts(conn: Connection, run_id: int) -> int:
                 lineage.is_not(None),
             )
         ).scalar_one()
+    )
+
+
+@dataclass(frozen=True)
+class LaneCaptureCounts:
+    """The store's own account of what the lanes landed this run (T191).
+
+    `first_captures` is, per lane, how many of the companies that lane ADMITTED the store shows
+    as first captured in this run: a `board_scans` row with `scan_kind='lane'` for the run, no
+    `board_scans` row in any earlier run, and at least one posting whose `new` event carries this
+    run. The two exclusions split first captures from overwrites — a company re-applied from an
+    earlier run, and a lane board that landed no posting, added no reach. `scan_rows` is every
+    `scan_kind='lane'` row for the run, across all lanes, because `board_scans` records no lane
+    name and a company two lanes touched legitimately has two rows.
+    """
+
+    first_captures: Mapping[str, int]
+    scan_rows: int
+
+
+def count_lane_captures(
+    conn: Connection, run_id: int, admitted: Mapping[str, Sequence[tuple[str, str]]]
+) -> LaneCaptureCounts:
+    """Recount each lane's new reach from the store, never from the lane's result.
+
+    Keyed on `admitted` (the companies the cap approved BEFORE any body was fetched), not on
+    `persisted_new`: the lane derives `persisted_new` by intersecting admissions with its own
+    snapshots, and this has to reach the store without going through that intersection. The
+    admission list only attributes a captured company to a lane — `board_scans` has no lane
+    column — and does not decide whether it was captured. Slugs compare case-folded, as
+    `stored_slug` resolves a lane's spelling to the stored row.
+    """
+    prior = board_scans.alias("prior")
+    earlier = (
+        select(prior.c.id)
+        .where(prior.c.company_id == companies.c.id, prior.c.run_id < run_id)
+        .exists()
+    )
+    new_posting = (
+        select(posting_events.c.id)
+        .join(postings, postings.c.id == posting_events.c.posting_id)
+        .where(
+            postings.c.company_id == companies.c.id,
+            posting_events.c.run_id == run_id,
+            posting_events.c.kind == "new",
+        )
+        .exists()
+    )
+    captured = {
+        (provider, slug.casefold())
+        for provider, slug in conn.execute(
+            select(companies.c.provider, companies.c.slug)
+            .join(board_scans, board_scans.c.company_id == companies.c.id)
+            .where(
+                board_scans.c.run_id == run_id,
+                board_scans.c.scan_kind == "lane",
+                ~earlier,
+                new_posting,
+            )
+            .distinct()
+        ).all()
+    }
+    scan_rows = conn.execute(
+        select(func.count()).where(
+            board_scans.c.run_id == run_id, board_scans.c.scan_kind == "lane"
+        )
+    ).scalar_one()
+    return LaneCaptureCounts(
+        first_captures={
+            lane: len({(p, s.casefold()) for p, s in keys} & captured)
+            for lane, keys in admitted.items()
+        },
+        scan_rows=int(scan_rows),
     )
 
 
