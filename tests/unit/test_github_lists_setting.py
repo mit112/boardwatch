@@ -22,7 +22,14 @@ from boardwatch.lanes.facets import LaneFacets
 from boardwatch.lanes.github_lists import fetch_listings, list_urls
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.pipeline.runner import LANE_FACTORIES
-from tests.unit.test_jsonld_lane import _Admits, _fetcher, _Reader
+from tests.unit.test_jsonld_lane import (
+    HIREOLOGY_PAGE,
+    HIREOLOGY_URL,
+    _Admits,
+    _fetcher,
+    _Reader,
+    _seed,
+)
 
 LISTS = (S1_REPO, S2_REPO)
 
@@ -54,6 +61,25 @@ def test_the_jsonld_lane_reports_no_lists_and_requests_none(tmp_path: Path) -> N
         result = JsonLdLane(_Reader(()), list_repos=()).collect(_fetcher(tmp_path), _Admits())
         assert router.calls.call_count == 0
     assert result.not_attemptable == "no_lists"
+    assert [str(note) for note in result.not_attempted] == ["no_lists"]
+
+
+def test_with_no_lists_the_lane_still_drains_its_seeds_and_does_not_abstain(
+    tmp_path: Path,
+) -> None:
+    """T188b: `no_lists` is an abstain only when the lane requested NOTHING. With seeds pending it
+    resolved them, so it reports those postings and names the missing lists as a note beside
+    them, never as `not_attemptable`."""
+    with respx.mock(assert_all_called=True, assert_all_mocked=True) as router:
+        router.get(HIREOLOGY_URL).mock(return_value=httpx.Response(200, text=HIREOLOGY_PAGE))
+        result = JsonLdLane(_Reader((_seed(HIREOLOGY_URL),)), list_repos=()).collect(
+            _fetcher(tmp_path), _Admits()
+        )
+        assert router.calls.call_count == 1
+
+    assert result.snapshots
+    assert result.not_attemptable is None
+    assert [str(note) for note in result.not_attempted] == ["no_lists"]
 
 
 def test_the_jsonld_lane_reads_both_configured_lists(tmp_path: Path) -> None:

@@ -251,6 +251,7 @@ from boardwatch.lanes.base import (
     CompanyAdmission,
     LaneCompanySnapshot,
     LaneResult,
+    NotAttempted,
     lane_snapshot,
 )
 from boardwatch.lanes.dereference import UnresolvablePostingURL, parse_posting_target
@@ -832,7 +833,16 @@ class JsonLdLane:
             seed_attempts=tuple(attempts),
             uncharged_resolved=tuple(uncharged),
             resolver_errors=tuple(resolver_errors),
-            not_attemptable=None if self._list_repos else "no_lists",
+            # An abstain only when this lane requested NOTHING: with no lists it still drains the
+            # seed queue other producers fill, and a seed GET is a request. Counted off the
+            # request budget, not `attempts`, which also holds refused seeds nothing was fetched
+            # for. The missing lists are a note either way (T188b).
+            not_attemptable=(
+                "no_lists"
+                if not self._list_repos and remaining == self._request_budget
+                else None
+            ),
+            not_attempted=() if self._list_repos else (NotAttempted("no_lists"),),
         )
 
     def _resolve_aliases(
