@@ -337,6 +337,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Tianjin and the other Chinese municipalities and provincial capitals resolve to China in the
+  location catalog (2026-09-24, T194).** The run-474 audit found a Tianjin posting passing the location
+  filter as `unknown`. Read-only over every stored location string, the only transitions are
+  `unknown` → `non_us` for the names added. Audit D-589.
+
 - **The queue's drains keep what they hold and never discard the owner's files (2026-09-23, T189).** A
   drained lane copy was pulled back out of `_lane_copy/` by the next refresh, so the drain never held in
   production; it now stays held, and a second refresh changes nothing. Retiring a duplicate folder moved
