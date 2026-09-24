@@ -373,8 +373,18 @@ class Fetcher:
             self._check_deadline(url, deadline)  # every hop, not only the first
             if len(history) > self._client.max_redirects:
                 raise httpx.TooManyRedirects("Exceeded maximum allowed redirects.", request=request)
-            streamed = self._client.send(request, stream=True, follow_redirects=False)
-            response = self._read_body(streamed, url, deadline)
+            # The HEADER phase is bounded by httpx's per-operation timeout alone (T205): each
+            # operation gets `min(its own, seconds left)`, so a host that goes SILENT mid-headers
+            # times out at the deadline, re-raised as the deadline's `FetchFailure`, which the
+            # retry predicate does not match. It cannot stop a header TRICKLE: httpcore reads the
+            # timeout once per phase and each byte restarts it (D-584's known limit stands).
+            request.extensions["timeout"] = self._timeout_within(deadline)
+            try:
+                streamed = self._client.send(request, stream=True, follow_redirects=False)
+                response = self._read_body(streamed, url, deadline)
+            except httpx.TimeoutException:
+                self._check_deadline(url, deadline)
+                raise
             response.history = list(history)
             if not self._client.follow_redirects or streamed.next_request is None:
                 return response
@@ -398,6 +408,17 @@ class Fetcher:
         )
         rebuilt.read()
         return rebuilt
+
+    def _timeout_within(self, deadline: float) -> dict[str, float | None]:
+        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
+        at = deadline if board is None else min(deadline, board[0])
+        # Floored above zero: a zero socket timeout is non-blocking, not "already expired". An
+        # operation starting at or after this instant cannot time out before `at`.
+        left = max(at - time.monotonic(), 0.001)
+        return {
+            op: left if limit is None else min(limit, left)
+            for op, limit in self._client.timeout.as_dict().items()
+        }
 
     def _check_board_deadline(self, url: str) -> None:
         board: tuple[float, float] | None = getattr(self._board, "deadline", None)
