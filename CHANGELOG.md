@@ -337,6 +337,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lane capture is credited only to the lane that landed it (2026-09-24, T199).** `board_scans`
+  now records the lane that wrote each lane row, and the funnel's per-lane recount groups on it, so a
+  company two lanes admitted and one landed no longer counts for both (run 475's hiring.cafe 9-vs-10). A
+  run whose lane rows carry no name falls back to attribution by admission and says so in the cross-check note.
+
 - **A stalled response-header phase ends at the fetch or board deadline; a lead folder named
   `_recovered` is reported, never recovered into; the tenant tests run on one config (2026-09-24, T205,
   T206, T207).** Every send carries a timeout clamped to the seconds left on both deadlines, and a

@@ -548,9 +548,9 @@ def test_a_lane_board_is_applied_as_a_lane_scan_and_not_as_a_board_scan(
     calls: list[tuple[int, str]] = []
     real = runner_mod.apply_board
 
-    def spy(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+    def spy(engine_, snapshot, company_id, run_id, scan_kind="board", lane=None):  # type: ignore[no-untyped-def]
         calls.append((company_id, scan_kind))
-        return real(engine_, snapshot, company_id, run_id, scan_kind)
+        return real(engine_, snapshot, company_id, run_id, scan_kind, lane)
 
     monkeypatch.setattr(runner_mod, "apply_board", spy)
 
@@ -563,6 +563,24 @@ def test_a_lane_board_is_applied_as_a_lane_scan_and_not_as_a_board_scan(
     )
 
     assert [kind for _, kind in calls] == ["lane"]
+
+
+def test_a_lane_board_scan_row_names_the_lane_that_wrote_it(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T199. `count_lane_captures` credits a capture to the lane named on the row, so the stage
+    must write the name — a row left NULL would drop the whole run to admission-only attribution."""
+    _collect_lane(
+        engine,
+        _settings(tmp_path),
+        StubLane([("hiringcafe", "src:a")]),
+        Fetcher(_settings(tmp_path)),
+        insert_run(engine),
+    )
+
+    with engine.connect() as conn:
+        rows = conn.execute(select(tables.board_scans.c.scan_kind, tables.board_scans.c.lane)).all()
+    assert [tuple(row) for row in rows] == [("lane", "stub")]
 
 
 def test_a_lane_snapshot_never_claims_a_complete_board(engine: Engine, tmp_path: Path) -> None:
@@ -876,10 +894,10 @@ def test_a_lane_board_that_never_landed_makes_the_funnels_lane_cross_check_disag
     real_apply = runner_mod.apply_board
 
     def drops_beta(engine: Engine, snapshot: BoardSnapshot, company_id: int, run_id: int,
-                   scan_kind: str = "board") -> Any:
+                   scan_kind: str = "board", lane: str | None = None) -> Any:
         if snapshot.postings and snapshot.postings[0].provider_posting_id.startswith("src:beta"):
             return None
-        return real_apply(engine, snapshot, company_id, run_id, scan_kind=scan_kind)
+        return real_apply(engine, snapshot, company_id, run_id, scan_kind=scan_kind, lane=lane)
 
     monkeypatch.setattr(runner_mod, "apply_board", drops_beta)
 
@@ -1041,9 +1059,9 @@ def test_the_cost_boundary_sits_between_fetching_and_applying(
     monkeypatch.setattr(runner_mod, "perf_counter", clock)
     real = runner_mod.apply_board
 
-    def costly_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+    def costly_apply(engine_, snapshot, company_id, run_id, scan_kind="board", lane=None):  # type: ignore[no-untyped-def]
         clock.advance(APPLY_DELAY)
-        return real(engine_, snapshot, company_id, run_id, scan_kind)
+        return real(engine_, snapshot, company_id, run_id, scan_kind, lane)
 
     monkeypatch.setattr(runner_mod, "apply_board", costly_apply)
 
@@ -1149,13 +1167,13 @@ def test_the_applies_never_overlap_because_apply_board_is_the_single_writer(
     depth = 0
     max_depth = 0
 
-    def counting_apply(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+    def counting_apply(engine_, snapshot, company_id, run_id, scan_kind="board", lane=None):  # type: ignore[no-untyped-def]
         nonlocal depth, max_depth
         depth += 1
         max_depth = max(max_depth, depth)
         try:
             sleep(0.05)  # widen the window a second writer would land in
-            return real(engine_, snapshot, company_id, run_id, scan_kind)
+            return real(engine_, snapshot, company_id, run_id, scan_kind, lane)
         finally:
             depth -= 1
 
@@ -2340,9 +2358,9 @@ def test_the_lane_stage_applies_on_the_joining_thread_and_never_on_the_backgroun
     apply_threads: list[int] = []
     real = runner_mod.apply_board
 
-    def spy(engine_, snapshot, company_id, run_id, scan_kind="board"):  # type: ignore[no-untyped-def]
+    def spy(engine_, snapshot, company_id, run_id, scan_kind="board", lane=None):  # type: ignore[no-untyped-def]
         apply_threads.append(get_ident())
-        return real(engine_, snapshot, company_id, run_id, scan_kind)
+        return real(engine_, snapshot, company_id, run_id, scan_kind, lane)
 
     monkeypatch.setattr(runner_mod, "apply_board", spy)
     # A scan slow enough that a lane applying on its own thread lands WHILE the scan is still

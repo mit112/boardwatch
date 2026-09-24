@@ -197,6 +197,10 @@ board_scans = Table(
     # SECOND row for the same (company_id, run_id); coverage joins one BoardCoverage per row, so
     # without this the company is counted twice. Defaulted 'board': every pre-existing row is one.
     Column("scan_kind", Text, nullable=False, server_default="board"),
+    # The lane that wrote a `scan_kind='lane'` row (T199), so a lane's captures are attributed by
+    # the row rather than by admission alone. NULL on every board row and every pre-migration
+    # lane row.
+    Column("lane", Text, nullable=True),
     CheckConstraint(
         "status IN ('complete', 'partial', 'failed', 'unchanged')", name="status_enum"
     ),
