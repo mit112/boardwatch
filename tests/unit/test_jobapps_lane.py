@@ -388,6 +388,57 @@ def test_the_rejected_count_sums_across_both_roots(tmp_path):
     assert result.tally.counts["not_attemptable"] == 2
 
 
+def _two_roots_sharing_one_record(tmp_path: Path) -> tuple[Path, Path]:
+    """Two roots of two records each, one record in BOTH by the same `posting_id` -- the
+    promotion race, where job-apps has copied a folder into the queue but not yet removed it from
+    discovery. Three distinct employers, so a count of companies and a count of postings are the
+    same number and either one exposes a root read twice or skipped."""
+    discovery = tmp_path / "resumes"
+    promoted = tmp_path / "APPLY_QUEUE"
+    shared = {
+        "company": "Shared Co", "title": "Shared Role", "posting_id": "pst_shared",
+        "direct_url": "https://job-boards.greenhouse.io/sharedco/jobs/3333333333",
+    }
+    _write(
+        discovery, "Greenhouse", "only-discovery", company="Alpha", title="Discovery Role",
+        posting_id="pst_discovery",
+        direct_url="https://job-boards.greenhouse.io/alpha/jobs/1111111111",
+    )
+    _write(discovery, "Greenhouse", "shared", **shared)
+    _write(promoted, "Greenhouse", "shared", **shared)
+    _write(
+        promoted, "Greenhouse", "only-queue", company="Beta", title="Queue Role",
+        posting_id="pst_queue",
+        direct_url="https://job-boards.greenhouse.io/beta/jobs/2222222222",
+    )
+    return discovery, promoted
+
+
+def test_two_roots_are_each_walked_once_and_yield_exactly_the_distinct_set(tmp_path, monkeypatch):
+    """T218: the lane's count over two roots is the DISTINCT set -- three postings from four
+    records, the cross-root duplicate counted once as `not_attemptable` -- and each root is
+    walked exactly once, in order. A walk that reads the discovery root twice (in place of the
+    queue, or in addition to it) either loses "Queue Role" or counts the two extra duplicates."""
+    discovery, promoted = _two_roots_sharing_one_record(tmp_path)
+    walked: list[Path] = []
+    real_walk = JobAppsLane._records_under
+
+    def spy(self, root):
+        walked.append(root)
+        return real_walk(self, root)
+
+    monkeypatch.setattr(JobAppsLane, "_records_under", spy)
+
+    result = _collect_two(discovery, promoted, tmp_path)
+
+    assert walked == [discovery, promoted]
+    assert sorted(posting.title for posting in _postings(result)) == [
+        "Discovery Role", "Queue Role", "Shared Role",
+    ]
+    assert result.tally.counts["not_attemptable"] == 1
+    assert result.tally.counts["body_inline"] == 3
+
+
 def test_an_unknown_acquisition_source_is_skipped_rather_than_trusted(tmp_path):
     """A closed set: a NEW source is counted, not silently assumed direct-apply."""
     root = tmp_path / "queue"
