@@ -320,6 +320,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **One trickling host can no longer pin a run (2026-09-23, T192).** Run 473 sat 55 minutes on a single
+  SmartRecruiters board whose server dribbled bytes: the fetcher's timeout is per read, so it never
+  tripped, and the scan had no per-board deadline. A request is now bounded end to end by
+  `fetch_deadline_seconds` (default 240, every attempt, backoff and redirect hop included, the clock
+  checked per raw network chunk), and a board that outlives
+  `board_deadline_seconds` (default 600) is recorded `failed`, its thread stopped at the same clock, and the stage continues.
+  Neither default changes the config fingerprint.
+
 - **The lane's judge-verdict read narrows on the effort level, as it already did on the model
   (2026-09-23, T162).** After an effort switch-back (`medium` → `high` → `medium`), the freshness
   read found the older matching row and called the lead judged, while the lane served the newer

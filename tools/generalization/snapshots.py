@@ -14,9 +14,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.per_host_delay_seconds": 1.0,
     "Settings.pace_from_request_start": False,
     "Settings.retry_attempts": 3,
+    "Settings.fetch_deadline_seconds": 240.0,
     "Settings.busy_timeout_ms": 5000,
     "Settings.reap_stale_after_hours": 24,
     "Settings.scan_workers": 4,
+    "Settings.board_deadline_seconds": 600.0,
     "Settings.detail_fetch_budget": 50,
     # A revalidation bound, not a preference: after this many hours a board's cached ETag/
     # Last-Modified is dropped and refetched unconditionally, so a permanently-stale upstream
@@ -179,9 +181,11 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.per_host_delay_seconds": "operational",
     "Settings.pace_from_request_start": "operational",
     "Settings.retry_attempts": "operational",
+    "Settings.fetch_deadline_seconds": "operational",
     "Settings.busy_timeout_ms": "operational",
     "Settings.reap_stale_after_hours": "operational",
     "Settings.scan_workers": "operational",
+    "Settings.board_deadline_seconds": "operational",
     "Settings.detail_fetch_budget": "operational",
     "Settings.validator_max_age_hours": "operational",
     "Settings.recency_half_life_days": "preference",

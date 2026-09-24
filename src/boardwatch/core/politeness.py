@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib.metadata import version as package_version
 from typing import Any
@@ -148,7 +149,24 @@ class Fetcher:
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
         self._pace_from_start = settings.pace_from_request_start
         self._retry_attempts = settings.retry_attempts
+        self._deadline = settings.fetch_deadline_seconds
         self._pacing = pacing if pacing is not None else _PROCESS_PACING
+        self._board = threading.local()  # `.deadline`: (instant, seconds) while a board runs
+
+    @contextmanager
+    def under_deadline(self, at: float, seconds: float) -> Iterator[None]:
+        """Bound every request this THREAD makes, until the block exits, by the instant `at`
+        (T192c). The coordinator gives up on a board at `board_deadline_seconds`, but it cannot
+        interrupt the thread, and a provider that catches each failed detail fetch and moves on
+        would keep the worker — and its host — for up to `detail_budget` more fresh fetch
+        deadlines. Under this scope each request's deadline is `min(its own, at)`, and one that
+        starts past `at` fails at once, so the thread ends within one request of the cap.
+        `seconds` is only the budget the failure names."""
+        self._board.deadline = (at, seconds)
+        try:
+            yield
+        finally:
+            del self._board.deadline
 
     @property
     def effective_delay(self) -> float:
@@ -224,6 +242,7 @@ class Fetcher:
         min_host_delay: float | None = None,
     ) -> FetchResult:
         host = host_key(url)
+        self._check_board_deadline(url)  # past the board cap: no lock, no pacing, no send
         with self._host_lock(host):  # same-host requests serialize for their full duration
             self._pace(host, min_host_delay)
             # Stamping BEFORE the send makes the delay an interval between request STARTS;
@@ -266,6 +285,11 @@ class Fetcher:
         min_host_delay: float | None = None,
     ) -> FetchResult:
         floor = max(min_host_delay or 0.0, 0.0)
+        # ONE clock for the whole call, every attempt and backoff included (T192). The thing this
+        # bounds is how long the per-host lock is held, and `_dispatch` holds it across all of
+        # them; a per-attempt budget would multiply by `retry_attempts`, and a retry is exactly
+        # what reconnected to the trickling host and stalled again in run 473.
+        deadline = time.monotonic() + self._deadline
 
         def _wait(retry_state: RetryCallState) -> float:
             base = wait_exponential_jitter(initial=0.5, max=8.0)(retry_state)
@@ -289,7 +313,9 @@ class Fetcher:
                 reraise=True,
             ):
                 with attempt:
-                    return self._send_once(method, url, validators, json_body, headers)
+                    return self._send_once(
+                        method, url, validators, json_body, headers, deadline
+                    )
         except _RetryableStatus as exc:
             raise FetchFailure(
                 f"HTTP {exc.status_code} after {self._retry_attempts} attempts for {url}",
@@ -314,14 +340,86 @@ class Fetcher:
         validators: ResponseValidators | None,
         json_body: dict[str, Any] | None,
         extra_headers: Mapping[str, str] | None,
+        deadline: float,
     ) -> FetchResult:
+        self._check_deadline(url, deadline)  # a backoff can spend the budget before an attempt
         headers: dict[str, str] = dict(extra_headers or {})
         if validators is not None:
             if validators.etag:
                 headers["If-None-Match"] = validators.etag
             if validators.last_modified:
                 headers["If-Modified-Since"] = validators.last_modified
-        response = self._client.request(method, url, headers=headers, json=json_body)
+        request = self._client.build_request(method, url, headers=headers, json=json_body)
+        return self._classify(self._read_response(request, url, deadline), url)
+
+    def _read_response(self, request: httpx.Request, url: str, deadline: float) -> httpx.Response:
+        """Send `request` and read its body in a loop that can look at the clock.
+
+        httpx has no total deadline — its timeout is per OPERATION, and a host trickling a byte
+        every few seconds never trips it. The clock is checked per RAW network chunk (T192b): a
+        compressed body can trickle for minutes while decoding to nothing, so a check per
+        DECODED chunk is never reached. The raw bytes are then rebuilt into a response whose
+        `.read()` decodes its `Content-Encoding` exactly as the eager read did. `stream=`, not
+        `content=`: `content=` adds a `Content-Length` to a chunked response's headers.
+
+        Redirects are followed HERE, not by httpx: with `follow_redirects=True` httpx reads each
+        redirect's body itself before the stream is handed back, outside this clock. Each hop is
+        sent unfollowed and read under the same deadline, up to the client's `max_redirects`,
+        exactly where httpx's own loop would stop. A hop to another host stays under the caller's
+        per-host lock and this request's deadline, as it always did.
+        """
+        history: list[httpx.Response] = []
+        while True:
+            self._check_deadline(url, deadline)  # every hop, not only the first
+            if len(history) > self._client.max_redirects:
+                raise httpx.TooManyRedirects("Exceeded maximum allowed redirects.", request=request)
+            streamed = self._client.send(request, stream=True, follow_redirects=False)
+            response = self._read_body(streamed, url, deadline)
+            response.history = list(history)
+            if not self._client.follow_redirects or streamed.next_request is None:
+                return response
+            history.append(response)
+            request = streamed.next_request
+
+    def _read_body(self, streamed: httpx.Response, url: str, deadline: float) -> httpx.Response:
+        try:
+            if streamed.is_stream_consumed:
+                return streamed  # an in-memory transport handed back a body already read
+            raw: list[bytes] = []
+            for chunk in streamed.iter_raw():
+                raw.append(chunk)
+                self._check_deadline(url, deadline)
+        finally:
+            streamed.close()
+        rebuilt = httpx.Response(
+            status_code=streamed.status_code, headers=streamed.headers,
+            stream=httpx.ByteStream(b"".join(raw)), request=streamed.request,
+            extensions=streamed.extensions, default_encoding=streamed.default_encoding,
+        )
+        rebuilt.read()
+        return rebuilt
+
+    def _check_board_deadline(self, url: str) -> None:
+        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
+        if board is not None and time.monotonic() >= board[0]:
+            raise FetchFailure(f"board deadline {board[1]:g}s exceeded for {url}", status_code=None)
+
+    def _check_deadline(self, url: str, deadline: float) -> None:
+        self._check_board_deadline(url)  # the effective deadline is min(request, board)
+        # A `FetchFailure`, not an httpx timeout: the retry predicate does not match it, so it is
+        # never retried, and it is the one exception every provider already maps to `failed`.
+        # `status_code=None` is the transport-level shape `health_from_failure` reads as
+        # UNREACHABLE — which a host that trickled for the whole budget is.
+        if time.monotonic() >= deadline:
+            raise FetchFailure(
+                f"fetch deadline {self._deadline:g}s exceeded for {url}", status_code=None
+            )
+
+    def _classify(self, response: httpx.Response, url: str) -> FetchResult:
+        # EVERY body has been read before the status is looked at, as the eager read did
+        # (T192b): a transport error mid-body is then a transport error — retried, and
+        # UNREACHABLE on exhaustion — whatever the status, rather than a 404 classified DEAD
+        # from its headers.
         if response.status_code == 304:
             return FetchResult(304, b"", True, None)
         if response.status_code in _RETRYABLE_STATUSES:

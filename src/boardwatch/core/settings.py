@@ -155,6 +155,12 @@ class Settings(BaseModel):
     # delay paces itself.
     pace_from_request_start: bool = False
     retry_attempts: int = Field(default=3, ge=1, le=10)          # total attempts; 1 = no retry
+    # Wall-clock budget for ONE `Fetcher` request, every attempt and backoff included. httpx's
+    # own timeout is per OPERATION, so a host that trickles a byte every few seconds never trips
+    # it and holds its per-host lock for as long as it likes (T192). 240 is three honoured
+    # `Retry-After` pauses at RETRY_AFTER_CAP_SECONDS plus request time: at 120 a throttled
+    # board never sent its third attempt and read as UNREACHABLE instead of HTTP 429 (T192b).
+    fetch_deadline_seconds: float = Field(default=240.0, gt=0)
     busy_timeout_ms: int = 5000
     # A `running` row this old with no terminal status is a crashed/killed run, not one still
     # in flight (P3 slice 2, D-046). Age-based because `runs` carries no pid/heartbeat column.
@@ -168,6 +174,10 @@ class Settings(BaseModel):
     # The DEFAULT stays 4 deliberately. The right number is a property of the operator's box and
     # their fleet, so it belongs in their own `config.toml` and never in this line.
     scan_workers: int = Field(default=4, ge=1, le=32)
+    # A board whose fetch is still running after this many seconds is recorded `failed` and its
+    # worker abandoned, so one stuck board cannot hold the scan stage open (T192). It bounds a
+    # BOARD — many requests — where `fetch_deadline_seconds` bounds one.
+    board_deadline_seconds: float = Field(default=600.0, gt=0)
     # Multi-endpoint providers (SmartRecruiters) need one detail request per UNSEEN
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.

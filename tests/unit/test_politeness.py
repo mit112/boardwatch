@@ -1,6 +1,8 @@
+import gzip
 import json
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
@@ -542,3 +544,308 @@ def test_two_fetcher_instances_on_different_hosts_still_overlap(tmp_path: Path) 
 
     gap = starts[1] - starts[0]
     assert gap < 0.5, gap
+
+
+def _trickle(chunks: int, interval: float) -> Iterator[bytes]:
+    for _ in range(chunks):
+        time.sleep(interval)
+        yield b"x"
+
+
+def test_a_trickling_body_ends_at_the_fetch_deadline_and_is_not_retried(tmp_path: Path) -> None:
+    """T192. httpx's timeout is per operation, so a server that sends one byte every 0.1s never
+    trips it. Forty bytes is 4s of trickle — "forever" against a 0.5s deadline — kept finite so
+    a regression fails on its assertions instead of hanging the suite."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=_trickle(40, 0.1))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+        fetcher.get("https://trickle.example/x")
+    assert time.monotonic() - started < 1.5
+    assert info.value.status_code is None  # the transport-level shape -> UNREACHABLE
+    # Not retried: reconnecting to a host that trickled for the whole budget stalls again.
+    assert calls == [1]
+
+
+def test_a_request_past_the_board_deadline_fails_at_once_without_sending(tmp_path: Path) -> None:
+    """T192c. Under `under_deadline`, a request that STARTS past the board's instant is refused
+    before the lock, the pacing and the send, in the fetch deadline's own shape — not retried."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=b"ok")
+
+    fetcher = Fetcher(
+        _settings(tmp_path), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with fetcher.under_deadline(time.monotonic() - 1.0, 7.0):
+        with pytest.raises(FetchFailure, match=r"board deadline 7s exceeded") as info:
+            fetcher.get("https://board.example/x")
+    assert info.value.status_code is None
+    assert calls == []
+    assert fetcher.get("https://board.example/x").content == b"ok"  # the scope is cleared
+
+
+def test_a_request_in_flight_trips_at_the_board_deadline(tmp_path: Path) -> None:
+    """T192c. The effective deadline is `min(request, board)`: a body trickling under a
+    generous fetch deadline ends at the board's instant, at the next raw chunk."""
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(200, content=_trickle(40, 0.1))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with fetcher.under_deadline(started + 0.3, 0.3):
+        with pytest.raises(FetchFailure, match=r"board deadline 0\.3s exceeded"):
+            fetcher.get("https://board-trickle.example/x")
+    assert time.monotonic() - started < 1.0
+    assert calls == [1]
+
+
+def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:
+    """T192c. One `Fetcher` serves every worker: one board's expired scope must not fail a
+    request another thread makes."""
+    fetcher = Fetcher(
+        _settings(tmp_path),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200))),
+    )
+    results: list[int] = []
+    with fetcher.under_deadline(time.monotonic() - 1.0, 1.0):
+        other = threading.Thread(
+            target=lambda: results.append(fetcher.get("https://other.example/x").status_code)
+        )
+        other.start()
+        other.join()
+    assert results == [200]
+
+
+def test_a_chunked_body_that_finishes_in_time_is_returned_unchanged(tmp_path: Path) -> None:
+    """Control: streaming the body under the deadline must not change what a request returns."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=iter([b'{"a":', b" 1}"]), headers={"ETag": '"v1"'}
+        )
+
+    fetcher = Fetcher(
+        _settings(tmp_path), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    result = fetcher.get("https://quick.example/x")
+    assert result == politeness.FetchResult(
+        200, b'{"a": 1}', False, ResponseValidators(etag='"v1"', last_modified=None),
+        "https://quick.example/x",
+    )
+
+
+def _gzip_with_comment(payload: bytes, comment_len: int) -> bytes:
+    """A valid gzip member whose header carries an FCOMMENT field: the decoder has to consume
+    every comment byte before it can emit anything, so those bytes decode to nothing."""
+    member = gzip.compress(payload, mtime=0)
+    return member[:3] + b"\x10" + member[4:10] + b"c" * comment_len + b"\x00" + member[10:]
+
+
+def test_a_compressed_body_trickling_raw_bytes_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T192b. A gzip body can trickle raw bytes for a long time while decoding to nothing, so a
+    clock checked per DECODED chunk is never looked at. It must be checked per raw chunk."""
+    member = _gzip_with_comment(b'{"a": 1}', 40)
+
+    def body() -> Iterator[bytes]:
+        yield member[:10]
+        for i in range(10, 51):  # the comment and its terminator: ~4s decoding to nothing
+            time.sleep(0.1)
+            yield member[i : i + 1]
+        yield member[51:]
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=body(), headers={"Content-Encoding": "gzip"})
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, client=httpx.Client(transport=httpx.MockTransport(handler)))
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded"):
+        fetcher.get("https://gzip-trickle.example/x")
+    assert time.monotonic() - started < 1.5
+
+
+def _equivalence_handler(request: httpx.Request) -> httpx.Response:
+    # Iterator bodies, as a network transport's are: an in-memory `content=b"..."` response
+    # arrives already read, and would never reach the raw read under test.
+    body = b'{"name": "caf\xc3\xa9"}'
+    if request.url.path == "/gzip":
+        return httpx.Response(
+            200, content=iter([gzip.compress(body)]),
+            headers={"Content-Encoding": "gzip", "ETag": '"g"'},
+        )
+    if request.url.path == "/charset":
+        return httpx.Response(
+            200, content=iter(["café".encode("latin-1")]),
+            headers={"Content-Type": "text/plain; charset=latin-1"},
+        )
+    if request.url.path == "/json":
+        return httpx.Response(
+            200, content=iter([body]), headers={"Content-Type": "application/json"}
+        )
+    return httpx.Response(200, content=iter([body]))
+
+
+@pytest.mark.parametrize("path", ["/gzip", "/identity", "/charset", "/json"])
+def test_the_raw_read_decodes_exactly_as_the_eager_read(tmp_path: Path, path: str) -> None:
+    """Control for T192b's raw read: the rebuilt response is the eager one, attribute for
+    attribute — decoded content, text, encoding, headers, URL — and so is the FetchResult."""
+    url = f"https://same.example{path}"
+    client = httpx.Client(transport=httpx.MockTransport(_equivalence_handler))
+    eager = client.request("GET", url)
+    fetcher = Fetcher(_settings(tmp_path), client=client)
+
+    rebuilt = fetcher._read_response(
+        client.build_request("GET", url), url, time.monotonic() + 60
+    )
+    assert (rebuilt.status_code, rebuilt.content, rebuilt.text, rebuilt.encoding) == (
+        eager.status_code, eager.content, eager.text, eager.encoding
+    )
+    assert rebuilt.headers.multi_items() == eager.headers.multi_items()
+    assert rebuilt.url == eager.url
+    if path != "/charset":
+        assert rebuilt.json() == eager.json()
+
+    result = fetcher.get(url)
+    assert (result.content, result.final_url) == (eager.content, str(eager.url))
+
+
+def test_a_non_200_whose_body_read_fails_is_retried_as_a_transport_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T192b. The eager read consumed every body before the status was looked at, so a 404
+    whose body read raised was a TRANSPORT error: retried, and on exhaustion `status_code=None`
+    (UNREACHABLE). Classifying the 404 before its body is read would make it DEAD instead."""
+    monkeypatch.setattr(politeness.time, "sleep", lambda _seconds: None)
+    calls: list[int] = []
+
+    def broken_body() -> Iterator[bytes]:
+        yield b"<html>"
+        raise httpx.ReadError("connection reset mid-body")
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(404, content=broken_body())
+
+    fetcher = Fetcher(
+        _settings(tmp_path, retries=3), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(FetchFailure, match="transport error after 3 attempts") as info:
+        fetcher.get("https://reset.example/x")
+    assert info.value.status_code is None
+    assert calls == [1, 1, 1]
+
+
+def test_a_redirect_whose_body_trickles_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T192b. With `follow_redirects=True` httpx reads a redirect's body itself before the
+    stream is handed back, so a trickled 302 body escaped the clock entirely."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"Location": "/end"}, content=_trickle(40, 0.1))
+        return httpx.Response(200, content=iter([b"ok"]))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded"):
+        Fetcher(settings, client=client).get("https://hop.example/start")
+    assert time.monotonic() - started < 1.5
+
+
+def _redirecting(request: httpx.Request) -> httpx.Response:
+    if request.url.path in ("/a", "/b"):
+        target = "https://other.example/final" if request.url.path == "/a" else "/gone"
+        return httpx.Response(301, headers={"Location": target}, content=iter([b"moved"]))
+    if request.url.path == "/loop":
+        return httpx.Response(302, headers={"Location": "/loop"}, content=iter([b""]))
+    if request.url.path == "/gone":
+        return httpx.Response(404, content=iter([b"no"]))
+    return httpx.Response(200, content=iter([b"final"]), headers={"ETag": '"f"'})
+
+
+def test_followed_redirects_end_where_the_eager_read_ended(tmp_path: Path) -> None:
+    """Control for following redirects by hand: the final response, its URL, and the
+    redirected flag of a non-200 reached through one are what httpx's own follow gave."""
+    client = httpx.Client(transport=httpx.MockTransport(_redirecting), follow_redirects=True)
+    fetcher = Fetcher(_settings(tmp_path), client=client)
+
+    eager = client.request("GET", "https://hop.example/a")
+    result = fetcher.get("https://hop.example/a")
+    assert (result.status_code, result.content, result.final_url) == (
+        200, eager.content, str(eager.url)
+    )
+    assert result.final_url == "https://other.example/final"
+
+    eager_gone = client.request("GET", "https://hop.example/b")
+    with pytest.raises(FetchFailure) as info:
+        fetcher.get("https://hop.example/b")
+    assert (info.value.status_code, info.value.redirected, info.value.final_url) == (
+        eager_gone.status_code, bool(eager_gone.history), str(eager_gone.url)
+    )
+
+
+def test_a_redirect_loop_is_cut_where_httpx_cut_it(tmp_path: Path) -> None:
+    """Control: `max_redirects` hops are followed, then `TooManyRedirects`, unretried."""
+    calls: list[int] = []
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return _redirecting(request)
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(counting), follow_redirects=True, max_redirects=3
+    )
+    with pytest.raises(httpx.TooManyRedirects):
+        client.request("GET", "https://hop.example/loop")
+    eager_calls = len(calls)
+    calls.clear()
+    with pytest.raises(FetchFailure, match="request error") as info:
+        Fetcher(_settings(tmp_path), client=client).get("https://hop.example/loop")
+    assert info.value.status_code is None
+    assert len(calls) == eager_calls == 4
+
+
+def test_a_client_that_does_not_follow_redirects_still_does_not(tmp_path: Path) -> None:
+    """Control: an injected client with `follow_redirects=False` gets the 3xx as a failure."""
+    client = httpx.Client(transport=httpx.MockTransport(_redirecting))
+    with pytest.raises(FetchFailure) as info:
+        Fetcher(_settings(tmp_path), client=client).get("https://hop.example/a")
+    assert (info.value.status_code, info.value.redirected) == (301, False)
+
+
+def test_the_default_fetch_deadline_admits_three_honoured_retry_afters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T192b. A host answering `429 Retry-After: 60` on every attempt must still be reported as
+    `HTTP 429 after 3 attempts` — ERROR, counted by the throttle ledger — under the DEFAULT
+    deadline. A default of two such pauses cancelled the third attempt, and the board read as a
+    transport-shaped UNREACHABLE instead."""
+    clock = _FakeTime()
+    monkeypatch.setattr(politeness, "time", clock)
+    monkeypatch.setattr(time, "sleep", clock.sleep)  # tenacity's backoff sleeps through `time`
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        clock.advance(1.0)  # what answering costs, on the fake clock
+        return httpx.Response(429, headers={"Retry-After": "60"})
+
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path, retry_attempts=3)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(FetchFailure, match="HTTP 429 after 3 attempts") as info:
+        Fetcher(settings, client=client).get("https://throttled.example/x")
+    assert info.value.status_code == 429
+    assert calls == [1, 1, 1]
