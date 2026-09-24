@@ -1317,9 +1317,22 @@ def _widen_for_a_different_job(
 
 
 def _relocate(src: Path, dst: Path) -> None:
-    """Move a whole folder, refusing an occupied destination rather than merging into it."""
+    """Move a whole folder, refusing an occupied destination rather than merging into it.
+
+    A destination that "exists" only because it IS `src` under a name differing by letter case
+    (APFS and NTFS fold case) is not occupied: the move is a case-only rename, done in two steps
+    through a temporary name rather than relying on every folding filesystem to apply a direct
+    case-only rename (APFS does) (T189). The temporary name is an ordinary visible folder, NOT
+    `.staging-…`, which `_clear_staging` deletes: a crash between the two steps leaves a folder
+    `_index` still identifies by its `details.json`, and the next sync relocates it.
+    """
     if dst.exists():
-        raise QueueConflictError(f"{dst.name} already exists at its destination")
+        if not os.path.samefile(src, dst):
+            raise QueueConflictError(f"{dst.name} already exists at its destination")
+        temporary = src.parent / f"rename-{token_hex(8)}"
+        os.replace(src, temporary)
+        os.replace(temporary, dst)
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     os.replace(src, dst)
 

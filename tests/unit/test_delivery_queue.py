@@ -2108,6 +2108,50 @@ def test_the_disambiguated_names_are_stable_across_syncs(
     assert _folders(root) == first
 
 
+# ---------------------------------------------------------- T189: names that differ only by case
+
+
+def _case_insensitive(base: Path) -> bool:
+    probe = base / "Case-Probe"
+    probe.mkdir(parents=True)
+    try:
+        return (base / "case-probe").exists()
+    finally:
+        probe.rmdir()
+
+
+def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T189 F3. On APFS and NTFS the new name and the old one are ONE path, so `_relocate` saw its
+    destination "occupied" by the very folder it was moving and raised `QueueConflictError` on
+    every sync, which also froze the lead's content. Only reproducible where the filesystem folds
+    case, so it is skipped elsewhere rather than passing vacuously."""
+    if not _case_insensitive(root.parent / "probe"):
+        pytest.skip("needs a case-insensitive filesystem (APFS/NTFS default)")
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (old,) = _folders(root)
+    (root / old / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == pid).values(title="Software ENGINEER"))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (report.failures, report.moved) == ((), 1)
+    assert _folders(root) == ["Acme_Corp_Software_ENGINEER"]
+    assert (root / "Acme_Corp_Software_ENGINEER" / "cover-letter.tex").read_text(
+        encoding="utf-8"
+    ) == "mine\n"
+    assert _details(root / "Acme_Corp_Software_ENGINEER")["title"] == "Software ENGINEER"
+
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
+
+
 # --------------------------------------------------------------------- T172: cross-job collision
 
 
