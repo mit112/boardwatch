@@ -14,7 +14,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.per_host_delay_seconds": 1.0,
     "Settings.pace_from_request_start": False,
     "Settings.retry_attempts": 3,
-    "Settings.fetch_deadline_seconds": 120.0,
+    "Settings.fetch_deadline_seconds": 240.0,
     "Settings.busy_timeout_ms": 5000,
     "Settings.reap_stale_after_hours": 24,
     "Settings.scan_workers": 4,

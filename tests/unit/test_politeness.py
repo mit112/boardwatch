@@ -768,3 +768,28 @@ def test_a_client_that_does_not_follow_redirects_still_does_not(tmp_path: Path) 
     with pytest.raises(FetchFailure) as info:
         Fetcher(_settings(tmp_path), client=client).get("https://hop.example/a")
     assert (info.value.status_code, info.value.redirected) == (301, False)
+
+
+def test_the_default_fetch_deadline_admits_three_honoured_retry_afters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T192b. A host answering `429 Retry-After: 60` on every attempt must still be reported as
+    `HTTP 429 after 3 attempts` — ERROR, counted by the throttle ledger — under the DEFAULT
+    deadline. A default of two such pauses cancelled the third attempt, and the board read as a
+    transport-shaped UNREACHABLE instead."""
+    clock = _FakeTime()
+    monkeypatch.setattr(politeness, "time", clock)
+    monkeypatch.setattr(time, "sleep", clock.sleep)  # tenacity's backoff sleeps through `time`
+    calls: list[int] = []
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        clock.advance(1.0)  # what answering costs, on the fake clock
+        return httpx.Response(429, headers={"Retry-After": "60"})
+
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path, retry_attempts=3)
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(FetchFailure, match="HTTP 429 after 3 attempts") as info:
+        Fetcher(settings, client=client).get("https://throttled.example/x")
+    assert info.value.status_code == 429
+    assert calls == [1, 1, 1]
