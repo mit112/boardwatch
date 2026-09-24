@@ -214,3 +214,35 @@ def test_every_guard_reads_the_spelled_count(spelled: str, digits: str, catalog)
 def test_a_spelled_policy_sentence_writes_no_required_bar(body: str, catalog) -> None:  # type: ignore[no-untyped-def]
     assert not [row for row in _read(body, catalog)[1] if row[1:3] == ("required", "unmet")]
 
+
+
+# Round 2, finding 2: a spelled RANGE is not its high end. "Three to five years" read `five` as the
+# minimum through `scoped_years_minimum`, and "Between five and seven years" read `seven`. A spelled
+# count that ends a range (`to <count>`, `between <count> and <count>`) writes no row.
+def _read_at(body: str, years: int, catalog) -> tuple[str, list[tuple[str, str, str]]]:  # type: ignore[no-untyped-def]
+    result = evaluate(body, Facts(total_years_experience=years), POLICY, catalog)
+    return result.verdict, sorted((r.rule_id, r.requiredness, r.disposition) for r in result.requirements)
+
+
+@pytest.mark.parametrize(
+    "body,years",
+    [
+        pytest.param("Three to five years of experience with Python", 4, id="to-scoped"),
+        pytest.param("Three to five years of experience", 4, id="to-total"),
+        pytest.param("Between five and seven years of relevant experience.", 6, id="between-total"),
+        pytest.param("Between five and seven years of experience with Python.", 6, id="between-scoped"),
+        pytest.param("Three to 5 (five) years of building web applications", 4, id="to-activity"),
+        pytest.param("Between 5 and seven years of experience in Java, Go, and experience", 6,
+                     id="between-domain-list"),
+    ],
+)
+def test_a_spelled_range_does_not_read_its_high_end(body: str, years: int, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _read_at(body, years, catalog) == ("uncertain", [])
+
+
+# CONTROL: the conjunction alone does not make a range. pv 224384's "... or related and five (5) years
+# of experience as ..." keeps its bar (AUDIT above), and so does a count after a plain `to`-less list.
+def test_and_without_between_keeps_the_spelled_bar(catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _read_at("A degree and five years of experience.", 1, catalog) == (
+        "ineligible", [("experience_years:total_years_minimum", "required", "unmet")],
+    )

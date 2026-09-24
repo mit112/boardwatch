@@ -8,8 +8,8 @@ scratchpad/gen_corpus.py; do NOT hand-edit.
 TWELVE rows were ADDED and FOUR RE-BASELINED 2026-09-24 for engine batch 3. T193 reads a spelled years
 count (`five (5) years`, `Five years`): m0036 pinned `Five years of experience required.` as a known gap
 and now reads its required floor; m0923's `Mandatory: five years of experience.` now carries its
-experience row (`unknown`, no years declared) and still no degree row, which is what it pins; a0025's
-`Between five and seven years` now reads exactly as its digit twin `Between 5 and 7 years` does. T197
+experience row (`unknown`, no years declared) and still no degree row, which is what it pins. (a0025's
+`Between five and seven years` keeps main's reading, no row: a spelled range's high end is not a floor.) T197
 keeps a bar whose aside hedges another noun: m1150's `(TS/SCI preferred)` no longer drops the leveled
 Secret row, so it reads as the bare and `, with TS/SCI preferred` forms do; its verdict is unchanged.
 m1157-m1163 are T193 (the two run-474 audit sentences, the bare and `Minimum of` forms, the degree
@@ -1172,7 +1172,7 @@ CASES: list[tuple] = [
     ('a0022:B9', '10+ years of experience leading engineering teams.', {'total_years_experience': 12}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
     ('a0023:B24', 'Must have 3 years of post-qualification experience.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
     ('a0024:B18', 'Experience the difference of working somewhere engineers own the roadmap.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
-    ('a0025:B3', 'Between five and seven years of relevant experience.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('a0025:B3', 'Between five and seven years of relevant experience.', {'total_years_experience': 4}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('a0026:C1', 'Active Top Secret/SCI clearance with a current polygraph is required.', {'security_clearance': {'scheme': 'us_dod', 'level': 'top_secret', 'state': 'active', 'accesses': []}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['clearance:active_ts_sci_required', 'required', 'unknown'], ['clearance:polygraph_required', 'required', 'unknown']]),
     ('a0027:C1b', 'Active Top Secret/SCI clearance with a current polygraph is required.', {'security_clearance': {'scheme': 'us_dod', 'level': 'top_secret', 'state': 'active', 'accesses': ['sci']}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['clearance:active_ts_sci_required', 'required', 'met'], ['clearance:polygraph_required', 'required', 'unknown']]),
     ('a0028:C8', 'Current DOE Q clearance required.', {'security_clearance': {'scheme': 'us_dod', 'level': 'top_secret', 'state': 'active', 'accesses': []}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['clearance:doe_q_required', 'required', 'unknown']]),
