@@ -620,3 +620,32 @@ def test_a_widened_predicate_still_keeps_a_bar_whose_tail_is_another_nouns(  # t
     result = evaluate(body, FACTS, POLICY, catalog)
     assert [f"experience_years:{rule}", "required", "unmet"] in _rows(result)
     assert result.verdict == "ineligible"
+
+
+# T196: `a plus` is a hedge only as two words. `bar_hedges` read it with no leading boundary, so the
+# last letter of "diploma" and the conjunction `plus` read as the hedge, and the clause-scoped hedge
+# dropped the required bar beside it (T173's measurement, D-590). pv 89429.
+def test_the_a_plus_hedge_needs_a_word_boundary(catalog) -> None:  # type: ignore[no-untyped-def]
+    body = (
+        "Minimum requirement is High school diploma plus a minimum of 8 years of sales/clinical "
+        "work experience in cardiac mapping and navigation."
+    )
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert ["experience_years:scoped_years_minimum", "required", "unmet"] in _rows(result)
+    assert result.verdict == "ineligible"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # CONTROLS: the two-word hedge still hedges. (The ticket's "3+ years of Kubernetes a plus"
+        # is NOT hedged on main: domain_years_minimum's span swallows its own hedge. A follow-up.)
+        pytest.param("3+ years of Kubernetes experience a plus", id="bar-then-a-plus"),
+        pytest.param("3+ years of experience with Kubernetes a plus", id="scoped-bar-then-a-plus"),
+    ],
+)
+def test_a_two_word_a_plus_still_hedges_the_bar(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert not any(row[1] == "required" for row in _rows(result))
+    assert result.verdict in ("eligible", "uncertain")
+

@@ -304,9 +304,10 @@ families:
         # DROPS; a posting left with no row abstains (`uncertain`). The marker patterns above
         # carry no hedge on purpose: "Must be a US citizen" under a hedge heading contradicts
         # itself, and it is how a heading's over-long reach meets sponsorship and export-control
-        # boilerplate (review F5), so it stays required.
+        # boilerplate (review F5), so it stays required. `a plus` is bounded both sides: the end of
+        # "diploma plus a minimum of 8 years" is not the hedge (T196).
         hedged_by_tail:
-          - &bar_hedges "preferred|desirable|a\\s+plus|nice\\s+to\\s+have|ideally|bonus|advantageous|an\\s+advantage|would\\s+be\\s+nice|if\\s+possible|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
+          - &bar_hedges "preferred|desirable|\\ba\\s+plus\\b|nice\\s+to\\s+have|ideally|bonus|advantageous|an\\s+advantage|would\\s+be\\s+nice|if\\s+possible|strongly\\s+desired|desired\\b(?!\\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\\w*)|we\\s+(?:would\\s+)?prefer|preference\\s+for"
         # `(` joins the terminator set: "US Citizens only (no dual citizenship)." is a LIVE
         # posting that produced ZERO work_auth rows because the clause ends in a parenthetical
         # rather than a full stop. The terminator is what stops this pattern swallowing a
