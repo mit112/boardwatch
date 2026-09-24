@@ -1961,6 +1961,39 @@ def test_the_refresh_keeps_the_callers_order_behind_the_released_holds(
 
 
 @_needs_an_executable_fake
+def test_a_hold_released_by_a_body_revision_is_ordered_first(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T225. A body revision (a scan, or `postings refetch`) makes a new version with no gate row,
+    so B's judge `ineligible` on the superseded version releases exactly as a re-key does. Read
+    on the current version alone, B was ordered with the never-judged A."""
+    from boardwatch.llm.gate_judge import _stale, run_gate_stage
+    from boardwatch.store.body_revision import record_body_revision
+
+    _ready(env)
+    a, b = (_seed(env, slug=f"acme-revised-{n}") for n in "ab")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(b))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+    engine, settings = get_engine(env), load_settings(data_dir=env)
+    run_gate_stage(engine, settings, [SimpleNamespace(posting_id=b)], run_id=None)
+    assert _current_gate_verdict(env, b) == "ineligible"
+    revised = BODY + " The team is hybrid."
+    with engine.begin() as conn:
+        record_body_revision(
+            conn, posting_id=b, body_text=revised, content_hash="h-revised", captured_at=utcnow()
+        )
+    # The verdict read stays on the current version: the hold is released, not re-applied.
+    assert _current_gate_verdict(env, b) is None
+
+    order = _stale(engine, settings, [SimpleNamespace(posting_id=p) for p in (a, b)])
+
+    assert order is not None
+    assert [lead.posting_id for lead in order] == [b, a]
+
+
+@_needs_an_executable_fake
 def test_the_refresh_commits_one_batch_per_stage_call(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

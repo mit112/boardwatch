@@ -486,23 +486,40 @@ def current_gate_verdicts(
     return out
 
 
-def newest_gate_verdicts(conn: Connection, posting_version_ids: list[int]) -> dict[int, str]:
-    """posting_id -> the stored verdict of the newest final-gate row on its current version, under
-    ANY key: any facts key, model, level or gate policy version (T195). Not a lane read — no lane
-    may serve a verdict reached on other inputs. Its one caller, `gate_judge._stale`, reads it to
-    put a RELEASED hold (an off-key `ineligible` the lane no longer holds on) at the front of the
-    refresh. The `final_gate:` prefix keeps the deterministic and advisory `llm:` lanes out.
+def newest_gate_verdicts(conn: Connection, posting_ids: list[int]) -> dict[int, str]:
+    """posting_id -> the stored verdict of the newest final-gate row over ALL of its versions,
+    under ANY key: any facts key, model, level or gate policy version (T195). Not a lane read — no
+    lane may serve a verdict reached on other inputs, or on a body the posting no longer carries.
+    Its one caller, `gate_judge._stale`, reads it to put a RELEASED hold at the front of the
+    refresh: an off-key `ineligible` the lane no longer holds on, and one a body revision left on a
+    superseded version (T225). The `final_gate:` prefix keeps the deterministic and advisory `llm:`
+    lanes out. Chunked like `_latest_gate_rows`, and sound for the same reason: the chunked column
+    IS the group key.
     """
-    if not posting_version_ids:
-        return {}
-    scope = [
-        eligibility_evaluations.c.engine_kind == "llm",
-        eligibility_evaluations.c.engine_version.startswith(GATE_VERSION_PREFIX, autoescape=True),
-    ]
-    return {
-        posting_id: verdict
-        for posting_id, (verdict, _) in _latest_gate_rows(conn, posting_version_ids, scope).items()
-    }
+    out: dict[int, str] = {}
+    for chunk in id_chunks(posting_ids):
+        latest = (
+            select(posting_versions.c.posting_id,
+                   func.max(eligibility_evaluations.c.id).label("eid"))
+            .join(eligibility_inputs, eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+            .join(posting_versions,
+                  posting_versions.c.id == eligibility_inputs.c.posting_version_id)
+            .where(
+                posting_versions.c.posting_id.in_(chunk),
+                eligibility_evaluations.c.engine_kind == "llm",
+                eligibility_evaluations.c.engine_version.startswith(
+                    GATE_VERSION_PREFIX, autoescape=True
+                ),
+            )
+            .group_by(posting_versions.c.posting_id)
+            .subquery()
+        )
+        rows = conn.execute(
+            select(latest.c.posting_id, eligibility_evaluations.c.verdict)
+            .join(latest, eligibility_evaluations.c.id == latest.c.eid)
+        ).all()
+        out.update({int(r.posting_id): str(r.verdict) for r in rows})
+    return out
 
 
 def fresh_gate_verdicts(
