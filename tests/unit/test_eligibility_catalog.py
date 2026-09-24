@@ -95,6 +95,8 @@ families:
           - "or equivalent"
         suppressed_by_sentence:
           - "or an? equivalent"
+        suppressed_by_predicate:
+          - " may be substituted"
         abstain_by:
           - "or equivalent experience"
         abstain_by_sentence:
@@ -134,6 +136,7 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
     census = {
         "suppressed_by_unit": sum(bool(p.suppressed_by_unit) for p in patterns),
         "suppressed_by_sentence": sum(bool(p.suppressed_by_sentence) for p in patterns),
+        "suppressed_by_predicate": sum(bool(p.suppressed_by_predicate) for p in patterns),
         "subject_suppressors": sum(bool(p.subject_suppressors) for p in patterns),
         "abstain_by": sum(bool(p.abstain_by) for p in patterns),
         "abstain_by_sentence": sum(bool(p.abstain_by_sentence) for p in patterns),
@@ -160,6 +163,10 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # `company_side_years`. That anchor reaches only a subject BEFORE the bar;
         # `company_tenure_after_bar` is its narrow after-span complement.
         "suppressed_by_sentence": 18,
+        # T201: one per experience pattern carrying `company_tenure_after_bar`, the same set. A
+        # credit or substitution rule whose subject is the bar ("One year of experience will be
+        # credited ...") is matched at the span's end, which a sentence scope cannot express.
+        "suppressed_by_predicate": 13,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
         # an ownership verb before an internship mention says the JD runs the programme. The
@@ -226,6 +233,7 @@ def test_optional_pattern_members_are_compiled_and_carried(tmp_path: Path) -> No
         pattern.subject_suppressors,
         pattern.suppressed_by_unit,
         pattern.suppressed_by_sentence,
+        pattern.suppressed_by_predicate,
         pattern.abstain_by,
         pattern.abstain_by_sentence,
         pattern.abstain_by_adjacent,

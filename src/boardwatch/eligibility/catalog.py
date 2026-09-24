@@ -82,6 +82,10 @@ class PatternSpec:
     # Unit-scoped and NOT clause-bounded: a same-sentence qualifying escape needs this
     # third scope, which is neither of the other two (finding 39).
     suppressed_by_sentence: tuple[re.Pattern[str], ...]
+    # Matched AT the span's end: a predicate whose SUBJECT is this bar ("One year of experience
+    # will be credited for ..."). A sentence-scoped suppressor cannot say whose predicate it is:
+    # the bar may open the sentence, where a prefix match is empty (T201).
+    suppressed_by_predicate: tuple[re.Pattern[str], ...]
     # Must PRECEDE the detection inside its own clause: a grammatical subject only.
     subject_suppressors: tuple[re.Pattern[str], ...]
     # Document-scoped, but ABSTAINS instead of dropping: an escape that may waive the
@@ -811,6 +815,9 @@ def _pattern(
         ),
         suppressed_by_sentence=_regex_list(
             raw.get("suppressed_by_sentence"), at, "suppressed_by_sentence"
+        ),
+        suppressed_by_predicate=_regex_list(
+            raw.get("suppressed_by_predicate"), at, "suppressed_by_predicate"
         ),
         subject_suppressors=_regex_list(
             raw.get("subject_suppressors"), at, "subject_suppressors"

@@ -599,6 +599,19 @@ families:
         # down; none was seen in the measured sample.
         suppressed_by_sentence:
           - &company_tenure_after_bar "^(?![^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w)[^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))(?:\\W*with\\s+(?:over\\s+|more\\s+than\\s+|nearly\\s+|almost\\s+|about\\s+|close\\s+to\\s+|some\\s+)?(?=(?:\\d{1,2}|(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)[^;:]{0,160}?,\\s*(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)\\s+(?:is|are|has|have|brings?)(?!\\s+(?:looking|seeking|hiring|searching)\\b)|we\\s+(?:have\\s+built|(?:have\\s+)?(?:earned|established|grown|delivered|served|helped|developed)|['’]ve\\s+built|offer|bring|deliver|provide|pride)\\b)))|(?<=\\bexperience)\\s+is\\s+what\\s+(?:our\\s+(?:\\w+\\s+){0,2}(?:team|teams|firm|company|people|experts|engineers|staff|organization)|we)\\s+(?:brings?|offers?|delivers?|provides?)\\b(?![^\\n]*?(?:\\d{1,3}|\\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\\s*\\(\\s*\\d{1,2}\\s*\\))?)\\s*\\+?\\s*(?:years?|yrs?|months?|mos?)(?!\\w))"
+        # T201. A CREDIT or SUBSTITUTION rule is not a bar: "The first 5 years of experience will be
+        # credited at the following rate", "One year of acceptable experience will be credited for
+        # each year of ...", "Four (4) years of additional experience may be substituted for a
+        # bachelor's degree". The count is the SUBJECT of the predicate, so the predicate is matched
+        # AT the span's end (`suppressed_by_predicate`), across at most one aside and eight words
+        # that hold no clause break, coordinator or second predicate. NOT the sentence: measured
+        # over the 126,854 pinned postings, a credit or substitution word anywhere after a bar in its
+        # sentence follows 330 required rows (245 postings), and most are real bars whose sentence
+        # goes on to substitute SOMETHING ELSE ("10+ years of relevant experience (additional
+        # experience may substitute for degree)", "...; internship experience may be counted").
+        # Nor a sentence-scoped prefix: the bar usually opens its sentence, where a prefix is empty.
+        suppressed_by_predicate:
+          - &credit_predicate "(?:\\s*\\([^()]*\\))?(?:\\s+(?!(?:and|or|but|nor|while|whereas|which|who|that|required|preferred|will|shall|may|maybe|can|could|would|is|are)(?!\\w))[\\w’'/&+#-]+){0,8}?\\s+(?:will|shall|may|maybe|can|could|would|is|are)\\s+(?:also\\s+|only\\s+)?(?:be\\s+)?(?:credited|counted|substituted?)(?!\\w)"
         # A stated PREFERENCE read as a hard floor is the worst wrong verdict this family can
         # produce, so the hedge vocabulary carries the VERB and the PARTICIPLE, not only the
         # adjective: "We prefer 5 years of experience." and "5 years of experience is desired."
@@ -690,6 +703,7 @@ families:
         pattern: '(?<![-–—\d])(?<!to\s)\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges, &months_conversion "counts?\\s+(?:as|toward|towards)"]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -704,6 +718,7 @@ families:
         pattern: '(?<![-–—\d])\b(?P<months>\d{1,3})\s*\+?\s*(?:or\s+more\s+)?months?\b[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?:experience\s+(?:with|in|using|on|building|developing|designing|as|leading|managing|supporting)\b|(?!(?:professional|relevant|industry|work|hands-on|total|overall|full-time|experience|equivalent|of|in|with|the|a|an|and|or|to|for|as|on|at|age|old)\b)[A-Za-z][\w.+#/-]*(?:\s+[\w.+#/-]+){0,3}\s+experience\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges, *months_conversion]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -718,6 +733,7 @@ families:
         pattern: '\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         hedged_as: range_years_preferred
@@ -752,6 +768,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -820,6 +837,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -854,6 +872,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
@@ -866,6 +885,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         # The sentence-scoped degree escape, as on scoped_years_minimum.
@@ -905,6 +925,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -961,6 +982,7 @@ families:
         scope: sentence
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         bounded_above_by: [*years_ceiling]
@@ -1003,6 +1025,7 @@ families:
         pattern: '\bexperience(?:\s+(?:required|requirements?|needed|level|range))?\s*[:\-–—]+\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of|min\.?)\s+)?(?P<years>(?<!between\s\d\sand\s)(?<!between\s\d\d\sand\s)(?<!\d\s[-–—]\s)(?<!\d[-–—]\s)\d{1,2}|(?<!to\s)(?<!between\s\w{1}\sand\s)(?<!between\s\w{2}\sand\s)(?<!between\s\w{3}\sand\s)(?<!between\s\w{4}\sand\s)(?<!between\s\w{5}\sand\s)(?<!between\s\w{6}\sand\s)(?<!between\s\w{7}\sand\s)(?<!between\s\w{8}\sand\s)(?<!between\s\w{9}\sand\s)(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\s*\(\s*\d{1,2}\s*\))?)\s*(?:(?:[-–—]|\s+to\s+)\s*\d{1,2})?\s*\+?\s*(?:years?|yrs?)(?!\w)\.?'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
         hedged_as: total_years_preferred
@@ -1025,6 +1048,7 @@ families:
         pattern: '(?:(?<![-–—\d])(?<!to\s)\b(?P<years>(?<!between\s\d\sand\s)(?<!between\s\d\d\sand\s)(?<!\d\s[-–—]\s)(?<!\d[-–—]\s)\d{1,2}|(?<!to\s)(?<!between\s\w{1}\sand\s)(?<!between\s\w{2}\sand\s)(?<!between\s\w{3}\sand\s)(?<!between\s\w{4}\sand\s)(?<!between\s\w{5}\sand\s)(?<!between\s\w{6}\sand\s)(?<!between\s\w{7}\sand\s)(?<!between\s\w{8}\sand\s)(?<!between\s\w{9}\sand\s)(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\s*\(\s*\d{1,2}\s*\))?)\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)(?:(?![,;:]|(?<!\w)(?:and|but|while|whereas)(?!\w))[^.]){0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?(?<![-–—\d])\b(?P<years_alt>(?<!between\s\d\sand\s)(?<!between\s\d\d\sand\s)(?<!\d\s[-–—]\s)(?<!\d[-–—]\s)\d{1,2}|(?<!to\s)(?<!between\s\w{1}\sand\s)(?<!between\s\w{2}\sand\s)(?<!between\s\w{3}\sand\s)(?<!between\s\w{4}\sand\s)(?<!between\s\w{5}\sand\s)(?<!between\s\w{6}\sand\s)(?<!between\s\w{7}\sand\s)(?<!between\s\w{8}\sand\s)(?<!between\s\w{9}\sand\s)(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)(?:\s*\(\s*\d{1,2}\s*\))?)\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
       - id: range_years_preferred
         requiredness: preferred
         implies: range_years_preferred
@@ -1034,6 +1058,7 @@ families:
         pattern: '(?:\b(?P<years>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b)(?:(?![,;:]|(?<!\w)(?:and|but|while|whereas)(?!\w))[^.]){0,25}?(?:preferred|desirable|a\s+plus|nice\s+to\s+have|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|(?:nice\s+to\s+have|ideally|preferred|desirable|bonus|advantageous|desired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)|we\s+(?:would\s+)?prefer|preference\s+for)\s*[:,]?\s*(?:(?:at\s+least|a\s+minimum\s+of|minimum\s+of)\s+)?\b(?P<years_alt>\d{1,2})\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:years?|yrs?)(?!\w)\.?(?>\s+of)?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time)(?:\s*,)?)*)\s+experience\b(?!\s+(?:with|in|using|of|on|building|developing|designing|as|leading|managing|supporting)\b))'
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
+        suppressed_by_predicate: [*credit_predicate]
 
       # T178. The CEILING readings. Their rows arrive ONLY by carry, from a minimum pattern whose
       # bar an upper-bound cue touches (`bounded_above_by: [*years_ceiling]`), so their own regex

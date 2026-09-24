@@ -16,6 +16,8 @@ The scopes, all applied per match:
   suppressed_by           DOCUMENT-scoped. "A more specific statement exists somewhere in
                           this posting, so stand down."
   suppressed_by_sentence  UNIT-scoped, unbounded. A same-sentence qualifying escape.
+  suppressed_by_predicate Matched AT the span's end: a predicate whose subject is the bar
+                          itself ("... experience will be credited", "... may be substituted").
   suppressed_by_unit      CLAUSE-scoped hedge, plus an introducer allowance for a hedge
                           separated from its clause by delimiters only ("Nice to have: ...").
                           A hedge inside a parenthetical that states its own duration bar
@@ -1010,6 +1012,8 @@ def detect(
                     if _suppressed(body_text, at(lo), at(hi), pattern.suppressed_by):
                         continue
                     if _suppressed(unit, lo, hi, pattern.suppressed_by_sentence):
+                        continue
+                    if any(rx.match(unit, hi) for rx in pattern.suppressed_by_predicate):
                         continue
                     bounds = _clause_bounds(unit, lo, hi)
                     if _suppressed(
