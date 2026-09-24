@@ -690,3 +690,81 @@ def test_a_non_200_whose_body_read_fails_is_retried_as_a_transport_error(
         fetcher.get("https://reset.example/x")
     assert info.value.status_code is None
     assert calls == [1, 1, 1]
+
+
+def test_a_redirect_whose_body_trickles_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T192b. With `follow_redirects=True` httpx reads a redirect's body itself before the
+    stream is handed back, so a trickled 302 body escaped the clock entirely."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/start":
+            return httpx.Response(302, headers={"Location": "/end"}, content=_trickle(40, 0.1))
+        return httpx.Response(200, content=iter([b"ok"]))
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    client = httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True)
+    started = time.monotonic()
+    with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded"):
+        Fetcher(settings, client=client).get("https://hop.example/start")
+    assert time.monotonic() - started < 1.5
+
+
+def _redirecting(request: httpx.Request) -> httpx.Response:
+    if request.url.path in ("/a", "/b"):
+        target = "https://other.example/final" if request.url.path == "/a" else "/gone"
+        return httpx.Response(301, headers={"Location": target}, content=iter([b"moved"]))
+    if request.url.path == "/loop":
+        return httpx.Response(302, headers={"Location": "/loop"}, content=iter([b""]))
+    if request.url.path == "/gone":
+        return httpx.Response(404, content=iter([b"no"]))
+    return httpx.Response(200, content=iter([b"final"]), headers={"ETag": '"f"'})
+
+
+def test_followed_redirects_end_where_the_eager_read_ended(tmp_path: Path) -> None:
+    """Control for following redirects by hand: the final response, its URL, and the
+    redirected flag of a non-200 reached through one are what httpx's own follow gave."""
+    client = httpx.Client(transport=httpx.MockTransport(_redirecting), follow_redirects=True)
+    fetcher = Fetcher(_settings(tmp_path), client=client)
+
+    eager = client.request("GET", "https://hop.example/a")
+    result = fetcher.get("https://hop.example/a")
+    assert (result.status_code, result.content, result.final_url) == (
+        200, eager.content, str(eager.url)
+    )
+    assert result.final_url == "https://other.example/final"
+
+    eager_gone = client.request("GET", "https://hop.example/b")
+    with pytest.raises(FetchFailure) as info:
+        fetcher.get("https://hop.example/b")
+    assert (info.value.status_code, info.value.redirected, info.value.final_url) == (
+        eager_gone.status_code, bool(eager_gone.history), str(eager_gone.url)
+    )
+
+
+def test_a_redirect_loop_is_cut_where_httpx_cut_it(tmp_path: Path) -> None:
+    """Control: `max_redirects` hops are followed, then `TooManyRedirects`, unretried."""
+    calls: list[int] = []
+
+    def counting(request: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return _redirecting(request)
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(counting), follow_redirects=True, max_redirects=3
+    )
+    with pytest.raises(httpx.TooManyRedirects):
+        client.request("GET", "https://hop.example/loop")
+    eager_calls = len(calls)
+    calls.clear()
+    with pytest.raises(FetchFailure, match="request error") as info:
+        Fetcher(_settings(tmp_path), client=client).get("https://hop.example/loop")
+    assert info.value.status_code is None
+    assert len(calls) == eager_calls == 4
+
+
+def test_a_client_that_does_not_follow_redirects_still_does_not(tmp_path: Path) -> None:
+    """Control: an injected client with `follow_redirects=False` gets the 3xx as a failure."""
+    client = httpx.Client(transport=httpx.MockTransport(_redirecting))
+    with pytest.raises(FetchFailure) as info:
+        Fetcher(_settings(tmp_path), client=client).get("https://hop.example/a")
+    assert (info.value.status_code, info.value.redirected) == (301, False)

@@ -343,8 +343,27 @@ class Fetcher:
         DECODED chunk is never reached. The raw bytes are then rebuilt into a response whose
         `.read()` decodes its `Content-Encoding` exactly as the eager read did. `stream=`, not
         `content=`: `content=` adds a `Content-Length` to a chunked response's headers.
+
+        Redirects are followed HERE, not by httpx: with `follow_redirects=True` httpx reads each
+        redirect's body itself before the stream is handed back, outside this clock. Each hop is
+        sent unfollowed and read under the same deadline, up to the client's `max_redirects`,
+        exactly where httpx's own loop would stop. A hop to another host stays under the caller's
+        per-host lock and this request's deadline, as it always did.
         """
-        streamed = self._client.send(request, stream=True)
+        history: list[httpx.Response] = []
+        while True:
+            self._check_deadline(url, deadline)  # every hop, not only the first
+            if len(history) > self._client.max_redirects:
+                raise httpx.TooManyRedirects("Exceeded maximum allowed redirects.", request=request)
+            streamed = self._client.send(request, stream=True, follow_redirects=False)
+            response = self._read_body(streamed, url, deadline)
+            response.history = list(history)
+            if not self._client.follow_redirects or streamed.next_request is None:
+                return response
+            history.append(response)
+            request = streamed.next_request
+
+    def _read_body(self, streamed: httpx.Response, url: str, deadline: float) -> httpx.Response:
         try:
             if streamed.is_stream_consumed:
                 return streamed  # an in-memory transport handed back a body already read
@@ -357,8 +376,7 @@ class Fetcher:
         rebuilt = httpx.Response(
             status_code=streamed.status_code, headers=streamed.headers,
             stream=httpx.ByteStream(b"".join(raw)), request=streamed.request,
-            extensions=streamed.extensions, history=streamed.history,
-            default_encoding=streamed.default_encoding,
+            extensions=streamed.extensions, default_encoding=streamed.default_encoding,
         )
         rebuilt.read()
         return rebuilt
