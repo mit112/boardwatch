@@ -69,6 +69,7 @@ from boardwatch.delivery.queue import (
     SKIPPED_DIR,
     URL_FILE,
     WEBLOC_FILE,
+    LeadFailure,
     ReconcileReport,
     _identity_hash,
     _plan,
@@ -2936,6 +2937,71 @@ def test_a_stranded_owner_file_whose_lead_has_no_folder_is_recovered_and_reporte
     assert _snapshot(root) == snapshot
     with engine.connect() as conn:
         assert reconcile_queue(conn, root=root, owner_name=OWNER).unclassified == ()
+
+
+def test_a_lead_folder_named_recovered_is_reported_once_and_left_alone(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T206. `_recovered` is reserved for superseded folders, and `_index` skips it, so a LEAD
+    folder the owner named that was invisible: the lead re-delivered as missing, a second folder
+    beside the owner's. Now it is one failure naming the folder, and nothing on disk changes."""
+    with engine.begin() as conn:
+        posting_id, _ = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    (name,) = _folders(root)
+    os.replace(root / name, root / "_recovered")
+    snapshot = _snapshot(root)
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    assert (report.created, report.updated, report.moved) == (0, 0, 0)
+    assert report.failures == (
+        LeadFailure(
+            posting_id=posting_id,
+            detail="_recovered is a lead folder, but that name is reserved for recovered owner "
+            "files: rename it",
+        ),
+    )
+    assert _folders(root) == ["_recovered"]
+    assert _snapshot(root) == snapshot
+
+
+def test_owner_files_are_not_recovered_into_a_lead_folder_named_recovered(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T206. A stranded superseded folder whose lead has no live folder would be moved INTO the
+    owner's `_recovered` lead folder. It stays in staging instead, reported, until the name is
+    free; the owner's folder is not touched."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+        _, stranded_job = _deliver(conn, apps, "two", title="Data Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    one, two = sorted(_folders(root), key=lambda n: "Data" in n)
+    staging = root / ".staging-0123456789abcdef"
+    staging.mkdir()
+    os.replace(root / two, staging / "old-0123456789abcdef")
+    (staging / "old-0123456789abcdef" / "cover-letter.tex").write_text("mine\n", encoding="utf-8")
+    with engine.begin() as conn:  # not offered any more, so nothing recreates its folder
+        create_application(conn, job_id=stranded_job, status="applied", source="test")
+    os.replace(root / one, root / "_recovered")
+    owner_folder = {
+        k: v for k, v in _snapshot(root).items() if k.startswith("_recovered/")
+    }
+
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+
+    kept = staging / "old-0123456789abcdef" / "cover-letter.tex"
+    assert kept.read_text(encoding="utf-8") == "mine\n"
+    assert {k: v for k, v in _snapshot(root).items() if k.startswith("_recovered/")} == (
+        owner_folder
+    )
+    assert [f.detail for f in report.failures if "staging" in f.detail] == [
+        "QueueConflictError: _recovered is a lead folder; owner files kept in staging"
+    ]
 
 
 # -------------------------------------------------------------------------------------- reconcile
