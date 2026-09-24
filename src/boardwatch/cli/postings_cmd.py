@@ -191,7 +191,10 @@ def refetch(
     Never closes a posting: `gone` is a report line, the death probe owns closing.
     """
     posting_ids = _parse_ids(ids, ids_file)[:limit]
-    app_ctx = build_context(ctx.obj)
+    # Report-only must not migrate a behind-schema store: `ensure_schema` runs alembic to head, the
+    # reason `doctor` and `coverage` pass `ensure=False` (Codex on T210). `--apply` is a write and
+    # takes the migration like every writing command.
+    app_ctx = build_context(ctx.obj, ensure=apply_)
     engine = app_ctx.engine
     try:
         _refuse_while_running(engine)
