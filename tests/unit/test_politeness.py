@@ -944,3 +944,221 @@ def test_each_send_carries_a_timeout_no_longer_than_the_deadline(tmp_path: Path)
     short = httpx.Client(transport=httpx.MockTransport(handler), timeout=2.0)
     Fetcher(settings, client=short).get("https://mem.example/x")
     assert seen[1] == {"connect": 2.0, "read": 2.0, "write": 2.0, "pool": 2.0}
+
+
+# --- T209: a TRICKLE is bounded by the deadline-aware network backend -------------------------
+#
+# These tests use the `Fetcher`'s OWN client (no injected one), because the bound lives in the
+# transport it builds. `pacing=HostPacing()` keeps 127.0.0.1 off the process-wide pacing clock.
+
+
+def _drip(conn: socket.socket, head: bytes, every: float, seconds: float = 4.0) -> None:
+    conn.sendall(head)
+    for _ in range(int(seconds / every)):
+        time.sleep(every)
+        conn.sendall(b"x")
+
+
+def _trickle_headers(conn: socket.socket) -> None:
+    # The status line, then ONE header byte every 0.1s: each `recv` returns, so no per-operation
+    # timeout of any size ever fires (T205's measurement: 4.17s past a 0.5s deadline).
+    _drip(conn, b"HTTP/1.1 200 OK\r\nX-Slow: ", every=0.1)
+
+
+def _assert_the_backend_fired(failure: FetchFailure) -> None:
+    # Not a retry's next-attempt check, and not the clamped per-request timeout: the
+    # transport's `httpx.TimeoutException` raised off the backend's own `DeadlineExceeded`.
+    context = failure.__context__
+    assert isinstance(context, httpx.TimeoutException), repr(context)
+    assert isinstance(context.__cause__, politeness.DeadlineExceeded), repr(context.__cause__)
+
+
+def test_a_header_trickle_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(_trickle_headers) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    assert info.value.status_code is None
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_header_trickle_ends_at_the_board_deadline(tmp_path: Path) -> None:
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(_trickle_headers) as url:
+        started = time.monotonic()
+        with fetcher.under_deadline(started + 0.3, 0.3):
+            with pytest.raises(FetchFailure, match=r"board deadline 0\.3s exceeded") as info:
+                fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    assert info.value.status_code is None
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_body_trickle_ends_at_the_deadline_not_at_the_next_byte(tmp_path: Path) -> None:
+    """Headers and the first body byte at once, then the next byte WITHHELD past any bound.
+    `_read_body`'s per-chunk check runs only when a chunk arrives, so it can never fire again
+    (a host pacing its bytes 29s apart runs 29s over it). No race is left: the read ends at the
+    deadline on a timeout, and the backend's clamp is the binding one, because it re-reads the
+    time left AFTER the per-request timeout (T205) was computed from it."""
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 40\r\n\r\nx")
+        time.sleep(3.0)
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_reused_pooled_connection_obeys_the_deadline_of_the_request_using_it(
+    tmp_path: Path,
+) -> None:
+    """One fast request, then a trickling one on the SAME keep-alive connection: the pool hands
+    back a stream opened under the first request, and it must read the second one's deadline."""
+    second_arrived = threading.Event()
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        if conn.recv(65536):  # the second request, on this same connection
+            second_arrived.set()
+            _trickle_headers(conn)
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        assert fetcher.get(url).content == b"ok"
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert second_arrived.is_set()  # reused, not a fresh connection the server never accepted
+    # The pacing sleep (0.25s) sits inside `get` but before the deadline's clock starts.
+    assert elapsed < 1.75, elapsed
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_fast_response_over_the_fetchers_own_transport_is_unchanged(tmp_path: Path) -> None:
+    """Control for T209: the default client, real socket, a response that arrives in time."""
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nETag: \"v\"\r\nContent-Length: 2\r\n\r\nok")
+
+    fetcher = Fetcher(_settings(tmp_path), pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        result = fetcher.get(url)
+    assert (result.status_code, result.content, result.observed_validators) == (
+        200, b"ok", ResponseValidators(etag='"v"', last_modified=None)
+    )
+
+
+def test_the_lane_fetcher_gets_the_deadline_transport_too(tmp_path: Path) -> None:
+    """T209: the lane stage's client is built by `Fetcher` (`user_agent=`), not beside it, so a
+    lane host that trickles is bounded exactly like a board host."""
+    from boardwatch.pipeline.runner import _lane_fetcher
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = _lane_fetcher(settings)
+    with _local_server(_trickle_headers) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.get(url)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_reused_connection_does_not_keep_the_deadline_of_the_request_that_opened_it(
+    tmp_path: Path,
+) -> None:
+    """The other half of reuse: a fast request AFTER the first request's deadline has passed,
+    on the same connection, succeeds. A stream that captured its opener's deadline fails it."""
+    second_arrived = threading.Event()
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+        if conn.recv(65536):
+            second_arrived.set()
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 3\r\n\r\nok2")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        assert fetcher.get(url).content == b"ok"
+        time.sleep(0.6)  # past the first request's deadline
+        assert fetcher.get(url).content == b"ok2"
+    assert second_arrived.is_set()
+
+
+def _read_slowly(conn: socket.socket) -> None:
+    # Reads the request 256 KiB every 0.1s for 4s and never answers: every `send()` makes
+    # progress, so a socket timeout re-armed on each partial send never fires. Smaller reads
+    # do not reopen macOS loopback's window often enough, and the send stalls on its own.
+    for _ in range(40):
+        time.sleep(0.1)
+        if not conn.recv(256 * 1024):
+            return
+
+
+# Loopback buffers take a few MiB in one `send()`; 4s of those reads drain about 10 MiB more.
+_LARGE_BODY = {"blob": "x" * 16 * 1024 * 1024}
+
+
+def test_a_slowly_read_request_body_ends_at_the_fetch_deadline(tmp_path: Path) -> None:
+    """T209 round 2. httpcore's `write` loops `send()` and re-arms the timeout per partial send,
+    so one clamped `write` call let a slow reader hold the worker past the deadline. The wrapper
+    writes bounded slices, each clamped to what is left."""
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.5})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(_read_slowly) as url:
+        started = time.monotonic()
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.5s exceeded") as info:
+            fetcher.post_json(url, _LARGE_BODY)
+        elapsed = time.monotonic() - started
+    assert elapsed < 1.5, elapsed
+    assert info.value.status_code is None
+    _assert_the_backend_fired(info.value)
+
+
+def test_a_small_post_over_the_fetchers_own_transport_is_unchanged(tmp_path: Path) -> None:
+    """Control for the sliced write: a small body, answered at once."""
+
+    def answer(conn: socket.socket) -> None:
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    fetcher = Fetcher(_settings(tmp_path), pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        result = fetcher.post_json(url, {"limit": 20})
+    assert (result.status_code, result.content) == (200, b"ok")
+
+
+def test_a_large_post_to_a_fast_reader_arrives_whole(tmp_path: Path) -> None:
+    """Control for the sliced write: the whole body is sent and the answer comes back."""
+    received = bytearray()
+
+    def answer(conn: socket.socket) -> None:
+        # `_local_server` already consumed the first recv; read on to the JSON's closing brace.
+        while not received.endswith(b'"}'):
+            chunk = conn.recv(1024 * 1024)
+            if not chunk:
+                return
+            received.extend(chunk)
+        conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 5.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _local_server(answer) as url:
+        result = fetcher.post_json(url, _LARGE_BODY)
+    assert (result.status_code, result.content) == (200, b"ok")
+    assert received.endswith(b"x" * 65536 + b'"}')

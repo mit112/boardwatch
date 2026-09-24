@@ -10,14 +10,17 @@ coordinator alone persists them, transactionally, on complete applies only
 
 from __future__ import annotations
 
+import ssl
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from functools import partial
 from importlib.metadata import version as package_version
-from typing import Any
+from typing import Any, TypeVar
 
+import httpcore
 import httpx
 from tenacity import (
     RetryCallState,
@@ -135,6 +138,203 @@ class HostPacing:
 _PROCESS_PACING = HostPacing()
 
 
+_T = TypeVar("_T")
+
+#: The instant (`time.monotonic()`) the request running on THIS thread must be done by, set by
+#: `Fetcher` around each send and body read; absent outside one. Thread-local because the
+#: `ConnectionPool` runs a request on its caller's thread, so a pooled connection reads the
+#: deadline of the request currently using it, never the one that opened it.
+_REQUEST_DEADLINE = threading.local()
+
+
+class DeadlineExceeded(httpcore.TimeoutException):
+    """The backend's own timeout (T209): the socket op had no time left before the deadline."""
+
+
+def _bounded(op: Callable[[float | None], _T], timeout: float | None) -> _T:
+    """Run one socket op with `min(timeout, seconds left)`, re-read on EVERY call.
+
+    This is what a per-request timeout cannot do (T205): httpcore reads that value once per
+    phase and each `recv` restarts it, so a host sending a byte every 0.1s never trips it. Here
+    each `recv` gets only what is left, so the trickle ends at the deadline however it is paced.
+    A timeout that fired on the clamp rather than on the caller's own value is the deadline's.
+    """
+    at: float | None = getattr(_REQUEST_DEADLINE, "at", None)
+    if at is None:
+        return op(timeout)
+    left = at - time.monotonic()
+    if left <= 0:
+        raise DeadlineExceeded("no time left before the deadline")
+    clamped = timeout is None or left < timeout
+    try:
+        return op(left if clamped else timeout)
+    except httpcore.TimeoutException as exc:
+        if clamped:
+            raise DeadlineExceeded("the deadline passed during a socket operation") from exc
+        raise
+
+
+#: The most `_DeadlineStream.write` hands one bounded `write` call.
+_WRITE_SLICE = 16 * 1024
+
+
+class _DeadlineStream(httpcore.NetworkStream):
+    def __init__(self, stream: httpcore.NetworkStream) -> None:
+        self._stream = stream
+
+    def read(self, max_bytes: int, timeout: float | None = None) -> bytes:
+        return _bounded(lambda t: self._stream.read(max_bytes, t), timeout)
+
+    def write(self, buffer: bytes, timeout: float | None = None) -> None:
+        # In slices, each bounded on its own: httpcore's `write` loops `send()` and re-arms the
+        # timeout on every partial send, so one bounded call lets a slow reader outlast it.
+        for start in range(0, len(buffer), _WRITE_SLICE):
+            _bounded(partial(self._stream.write, buffer[start:start + _WRITE_SLICE]), timeout)
+
+    def close(self) -> None:
+        self._stream.close()
+
+    def start_tls(
+        self,
+        ssl_context: ssl.SSLContext,
+        server_hostname: str | None = None,
+        timeout: float | None = None,
+    ) -> httpcore.NetworkStream:
+        return _DeadlineStream(
+            _bounded(lambda t: self._stream.start_tls(ssl_context, server_hostname, t), timeout)
+        )
+
+    def get_extra_info(self, info: str) -> Any:
+        return self._stream.get_extra_info(info)
+
+
+class _DeadlineBackend(httpcore.NetworkBackend):
+    """httpcore's own `SyncBackend`, with every stream it opens bounded by `_bounded`."""
+
+    def __init__(self) -> None:
+        self._backend = httpcore.SyncBackend()
+
+    def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.NetworkStream:
+        return _DeadlineStream(_bounded(
+            lambda t: self._backend.connect_tcp(host, port, t, local_address, socket_options),
+            timeout,
+        ))
+
+    def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> httpcore.NetworkStream:
+        return _DeadlineStream(_bounded(
+            lambda t: self._backend.connect_unix_socket(path, t, socket_options), timeout
+        ))
+
+    def sleep(self, seconds: float) -> None:
+        self._backend.sleep(seconds)
+
+
+#: httpcore → httpx, as `httpx.HTTPTransport` maps them (its table is private). Looked up along
+#: the raised exception's MRO, so the most specific class wins: `DeadlineExceeded` becomes an
+#: `httpx.TimeoutException` whose `__cause__` is still the backend's own exception.
+_HTTPCORE_TO_HTTPX: dict[type[Exception], type[httpx.TransportError]] = {
+    httpcore.TimeoutException: httpx.TimeoutException,
+    httpcore.ConnectTimeout: httpx.ConnectTimeout,
+    httpcore.ReadTimeout: httpx.ReadTimeout,
+    httpcore.WriteTimeout: httpx.WriteTimeout,
+    httpcore.PoolTimeout: httpx.PoolTimeout,
+    httpcore.NetworkError: httpx.NetworkError,
+    httpcore.ConnectError: httpx.ConnectError,
+    httpcore.ReadError: httpx.ReadError,
+    httpcore.WriteError: httpx.WriteError,
+    httpcore.ProxyError: httpx.ProxyError,
+    httpcore.UnsupportedProtocol: httpx.UnsupportedProtocol,
+    httpcore.ProtocolError: httpx.ProtocolError,
+    httpcore.LocalProtocolError: httpx.LocalProtocolError,
+    httpcore.RemoteProtocolError: httpx.RemoteProtocolError,
+}
+
+
+@contextmanager
+def _httpx_errors() -> Iterator[None]:
+    try:
+        yield
+    except Exception as exc:
+        mapped = next(
+            (_HTTPCORE_TO_HTTPX[c] for c in type(exc).__mro__ if c in _HTTPCORE_TO_HTTPX), None
+        )
+        if mapped is None:
+            raise
+        raise mapped(str(exc)) from exc
+
+
+class _ResponseStream(httpx.SyncByteStream):
+    def __init__(self, stream: Iterable[bytes]) -> None:
+        self._stream = stream
+
+    def __iter__(self) -> Iterator[bytes]:
+        with _httpx_errors():
+            yield from self._stream
+
+    def close(self) -> None:
+        close = getattr(self._stream, "close", None)
+        if close is not None:
+            close()
+
+
+class DeadlineTransport(httpx.BaseTransport):
+    """`httpx.HTTPTransport`'s default configuration over a pool on `_DeadlineBackend` (T209).
+
+    Built from public extension points only: httpx 0.28's `HTTPTransport` takes no network
+    backend, and reaching its pool would mean a private attribute. What this gives up is
+    `HTTPTransport`'s proxy support — see `Fetcher.__init__`.
+    """
+
+    def __init__(self) -> None:
+        limits = httpx.Limits()
+        self._pool = httpcore.ConnectionPool(
+            ssl_context=httpx.create_ssl_context(),
+            max_connections=limits.max_connections,
+            max_keepalive_connections=limits.max_keepalive_connections,
+            keepalive_expiry=limits.keepalive_expiry,
+            network_backend=_DeadlineBackend(),
+        )
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        assert isinstance(request.stream, httpx.SyncByteStream)
+        core_request = httpcore.Request(
+            method=request.method,
+            url=httpcore.URL(
+                scheme=request.url.raw_scheme,
+                host=request.url.raw_host,
+                port=request.url.port,
+                target=request.url.raw_path,
+            ),
+            headers=request.headers.raw,
+            content=request.stream,
+            extensions=request.extensions,
+        )
+        with _httpx_errors():
+            response = self._pool.handle_request(core_request)
+        assert isinstance(response.stream, Iterable)
+        return httpx.Response(
+            status_code=response.status,
+            headers=response.headers,
+            stream=_ResponseStream(response.stream),
+            extensions=response.extensions,
+        )
+
+    def close(self) -> None:
+        self._pool.close()
+
+
 class Fetcher:
     def __init__(
         self,
@@ -142,9 +342,19 @@ class Fetcher:
         client: httpx.Client | None = None,
         *,
         pacing: HostPacing | None = None,
+        user_agent: str | None = None,
     ) -> None:
+        # The ONE place a production `Fetcher` client is built (T209): every caller that does
+        # not inject a test client gets `DeadlineTransport`, and `user_agent` is how the lane
+        # stage gets its browser UA without building a client of its own. `trust_env=False`
+        # because httpx routes an environment proxy through its OWN `HTTPTransport`, which would
+        # bypass the deadline backend silently; a proxy is therefore not honoured.
         self._client = client or httpx.Client(
-            headers={"User-Agent": identifying_user_agent()}, timeout=30.0, follow_redirects=True
+            headers={"User-Agent": user_agent or identifying_user_agent()},
+            timeout=30.0,
+            follow_redirects=True,
+            transport=DeadlineTransport(),
+            trust_env=False,
         )
         self._delay = max(settings.per_host_delay_seconds, PER_HOST_DELAY_FLOOR)
         self._pace_from_start = settings.pace_from_request_start
@@ -376,15 +586,23 @@ class Fetcher:
             # The HEADER phase is bounded by httpx's per-operation timeout alone (T205): each
             # operation gets `min(its own, seconds left)`, so a host that goes SILENT mid-headers
             # times out at the deadline, re-raised as the deadline's `FetchFailure`, which the
-            # retry predicate does not match. It cannot stop a header TRICKLE: httpcore reads the
-            # timeout once per phase and each byte restarts it (D-584's known limit stands).
+            # retry predicate does not match. It cannot stop a header TRICKLE on its own: httpcore
+            # reads the timeout once per phase and each byte restarts it.
             request.extensions["timeout"] = self._timeout_within(deadline)
+            # Underneath it, `DeadlineTransport`'s backend reads this instant on every socket op
+            # (T209), which is what bounds a TRICKLE, on a fresh or a reused pooled connection.
+            # A client injected without that transport keeps only the two clocks above.
+            _REQUEST_DEADLINE.at = self._effective_deadline(deadline)
             try:
                 streamed = self._client.send(request, stream=True, follow_redirects=False)
                 response = self._read_body(streamed, url, deadline)
-            except httpx.TimeoutException:
+            except httpx.TimeoutException as exc:
+                if isinstance(exc.__cause__, DeadlineExceeded):
+                    raise self._deadline_failure(url, deadline)  # noqa: B904 — keeps __context__
                 self._check_deadline(url, deadline)
                 raise
+            finally:
+                del _REQUEST_DEADLINE.at
             response.history = list(history)
             if not self._client.follow_redirects or streamed.next_request is None:
                 return response
@@ -409,9 +627,12 @@ class Fetcher:
         rebuilt.read()
         return rebuilt
 
-    def _timeout_within(self, deadline: float) -> dict[str, float | None]:
+    def _effective_deadline(self, deadline: float) -> float:
         board: tuple[float, float] | None = getattr(self._board, "deadline", None)
-        at = deadline if board is None else min(deadline, board[0])
+        return deadline if board is None else min(deadline, board[0])
+
+    def _timeout_within(self, deadline: float) -> dict[str, float | None]:
+        at = self._effective_deadline(deadline)
         # Floored above zero: a zero socket timeout is non-blocking, not "already expired". An
         # operation starting at or after this instant cannot time out before `at`.
         left = max(at - time.monotonic(), 0.001)
@@ -419,6 +640,18 @@ class Fetcher:
             op: left if limit is None else min(limit, left)
             for op, limit in self._client.timeout.as_dict().items()
         }
+
+    def _deadline_failure(self, url: str, deadline: float) -> FetchFailure:
+        """The failure `_check_deadline` raises for whichever deadline bound this request —
+        decided by which instant is earlier, not by the clock, since the backend's timeout can
+        fire a hair before `time.monotonic()` reaches the instant it was clamped to."""
+        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
+        if board is not None and board[0] <= deadline:
+            message = f"board deadline {board[1]:g}s exceeded for {url}"
+            return FetchFailure(message, status_code=None)
+        return FetchFailure(
+            f"fetch deadline {self._deadline:g}s exceeded for {url}", status_code=None
+        )
 
     def _check_board_deadline(self, url: str) -> None:
         board: tuple[float, float] | None = getattr(self._board, "deadline", None)
