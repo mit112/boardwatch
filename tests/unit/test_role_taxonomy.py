@@ -182,6 +182,31 @@ def test_engineer_is_title_filler_only_in_the_software_field(
     assert (title > 0.5) is matched, title
 
 
+# The user's OWN pack for the one field boardwatch ships code for (DESIGN-T183 C3, the D24 rule
+# `taxonomy.yaml` follows: a user's file wins over what ships).
+SOFTWARE_OVERLAY: dict[str, Any] = {
+    "version": 1,
+    "field": "software",
+    "role_families": [{"id": "solutions", "title_words": ["account executive"]}],
+}
+
+
+def test_a_users_own_pack_for_the_software_field_wins_over_the_shipped_one(
+    tmp_path: Path,
+) -> None:
+    """T187 C3. The shipped software classifier is the `bundled: true` pack, and it is used only
+    when the user asks for it: their own families for `software` REPLACE it, not merge with it.
+    The shipped gate would veto the first title and rescue the second."""
+    assert role_verdict(DENIED_BY_SOFTWARE_GATE)[0] == "out_of_field"  # guard
+    assert role_verdict(SOFTWARE_TITLE)[0] == "in_field"  # guard
+    results = _rank(
+        tmp_path, [DENIED_BY_SOFTWARE_GATE, SOFTWARE_TITLE], taxonomy=SOFTWARE_OVERLAY
+    )
+    roles = {p.title: p.role for p in results.visible}
+    assert roles == {DENIED_BY_SOFTWARE_GATE: "in_field", SOFTWARE_TITLE: "uncertain"}
+    assert results.hidden_non_swe == 0
+
+
 def test_a_family_word_is_tried_before_any_exclude_word() -> None:
     taxonomy = parse_role_taxonomy(WIDGET_FIELD)
     # "engineer" is excluded, but a family hit decides first (the software gate's rescue order).
