@@ -16317,7 +16317,7 @@ Overlap agreement 10/10. Live-key verdicts 240 of 434 top-level leads after T179
 
 Movers A→B 1,468, all `uncertain` → `eligible` (A 354 / 124,249 / 2,251 → B 1,822 / 124,249 / 783); null 0; pure carrier-row additions only (`scoped_years_preferred` unmet 1,696 + unknown 24 on movers, 11,065 more on unchanged verdicts); 180 of T170's 189 `uncertain` movers clear; sample 20/20 stated preferences; ≤13 wrong clears bounded (T196, T197).
 
-### Engine batch 3 (T193, T196, T197; `bw-batch3`, pinned 126,854, A = main `a69d61aa`; D-592) — MEASURED, NOT SHIPPED
+### Engine batch 3 (T193, T196, T197; `bw-batch3`, pinned 126,854, A = main `a69d61aa`; D-592, D-593) — SHIPPED (#457, `7f118822`)
 
 | round | head | null N vs A (verdicts / rows) | movers A→B | by direction | row-only | 20-sample |
 |---|---|---|---|---|---|---|
@@ -16329,4 +16329,5 @@ Round 2 against round 1 (arm B only): 4 verdict moves (1 `eligible` restored on 
 posting 323521) and 169 postings with row changes (−81 `scoped_years_minimum unmet`, −61
 `clearable_leveled_required`, +18 ceiling rows). Executors: round 1 $8.15 list-equivalent; round 2 82 turns,
 $4.56, 75 min (the measurement is the bulk). Codex: round 1 high, three blockers, all closed in round 2; the
-verification round is NOT run (the owner's close ruling).
+verification round (medium, 2026-09-24b) NO BLOCKER, four of four VERIFIED, posting 323521 ruled accept-parity
+(D-593). Shipped as #457; run 476 is the re-key and live proof.
