@@ -11,7 +11,6 @@ from rich.console import Console
 
 from boardwatch.cli.context import build_context
 from boardwatch.cli.eligibility_cmd import (
-    set_career_field,
     set_fact,
     set_field_of_study,
     set_policy,
@@ -201,23 +200,12 @@ def init(ctx: typer.Context) -> None:
     # Eligibility is optional and comes AFTER persist_profile: profile.text is NOT NULL, so
     # facts cannot be written before the row exists (§4.6). Exactly TWO prompt call sites plus
     # one confirm drive every family, so R11's pin stays constant as the catalog grows (D-P2-8).
-    # A third prompt sets `career_field` and a fourth `field_of_study`. Both are single
-    # catalog-scalars, not per-family — one prompt each whatever the size of their
-    # vocabularies, so the pin stays constant there too.
+    # A third prompt sets `field_of_study`, a single catalog-scalar, not per-family — one prompt
+    # whatever the size of its vocabulary, so the pin stays constant there too. `career_field`
+    # has no prompt: the engine reads the role taxonomy's field (D-586, T208).
     if typer.confirm("Set up eligibility checks now?", default=False):
         rules_catalog = load_rules(app_ctx.settings.config_dir)
         facts, policy = Facts(), Policy()
-        if rules_catalog.career_fields:
-            field_hint = ", ".join(sorted(rules_catalog.career_fields))
-            while True:
-                answer = typer.prompt(f"Your career field [{field_hint}]", default="")
-                if not answer.strip():
-                    break
-                try:
-                    facts = set_career_field(facts, rules_catalog, answer.strip())
-                    break
-                except typer.BadParameter as exc:
-                    console.print(exc.message)
         if rules_catalog.fields_of_study:
             study_hint = ", ".join(sorted(s.id for s in rules_catalog.fields_of_study))
             while True:

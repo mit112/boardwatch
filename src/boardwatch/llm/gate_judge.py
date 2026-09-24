@@ -29,7 +29,7 @@ from sqlalchemy import Connection, Engine
 
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import RulesCatalog, load_rules
-from boardwatch.eligibility.facts import Facts, ProfileRowInvalid, parse_facts, parse_policy
+from boardwatch.eligibility.facts import Facts, ProfileRowInvalid, parse_policy
 from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gate_request
 from boardwatch.eligibility.oracle import (
@@ -39,6 +39,7 @@ from boardwatch.eligibility.oracle import (
     OracleVerdictError,
     accept_oracle_verdict,
 )
+from boardwatch.eligibility.preflight import engine_facts
 from boardwatch.eligibility.read import fresh_gate_verdicts, newest_gate_verdicts
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 
@@ -471,7 +472,7 @@ def run_gate_stage(
         if profile_row is None:
             return leads, GateStageResult(candidates=candidates)
         try:
-            facts = parse_facts(profile_row.eligibility_facts_json)
+            facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
             policy = parse_policy(profile_row.eligibility_policy_json)
         except ProfileRowInvalid:
             # The ranker already refused an unusable profile row upstream of this stage
@@ -625,7 +626,7 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
         if profile_row is None:
             return None
         try:
-            facts = parse_facts(profile_row.eligibility_facts_json)
+            facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
         except ProfileRowInvalid:
             return None
         versions = current_posting_versions(conn, [p.posting_id for p in leads])

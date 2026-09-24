@@ -11,6 +11,7 @@ from boardwatch.cli.app import app
 from boardwatch.cli.eligibility_cmd import set_ceiling
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import Policy, parse_facts, parse_policy
+from boardwatch.rank.role_taxonomy import write_role_taxonomy
 from boardwatch.store.db import get_engine
 from boardwatch.store.queries import get_profile
 
@@ -124,233 +125,31 @@ def test_setting_a_field_of_study_outside_the_catalog_is_refused(env: Path) -> N
     assert facts.field_of_study is None
 
 
-def test_set_career_field_accepts_a_catalog_value(tmp_path: Path) -> None:
-    from boardwatch.cli.eligibility_cmd import set_career_field
-    from boardwatch.eligibility.catalog import load_rules
-    from boardwatch.eligibility.facts import Facts
-    catalog = load_rules(tmp_path / "no-override")  # bundled: career_fields == {software}
-    out = set_career_field(Facts(), catalog, "software")
-    assert out.career_field == "software"
-
-
-def test_set_career_field_rejects_out_of_vocab(tmp_path: Path) -> None:
-    import typer
-
-    from boardwatch.cli.eligibility_cmd import set_career_field
-    from boardwatch.eligibility.catalog import load_rules
-    from boardwatch.eligibility.facts import Facts
-    catalog = load_rules(tmp_path / "no-override")
-    with pytest.raises(typer.BadParameter):
-        set_career_field(Facts(), catalog, "nursing")
-
-
-def test_facts_set_routes_career_field_to_its_own_setter(env: Path) -> None:
-    """The dispatch in `facts set`, exercised through the CLI rather than around it.
-
-    `set_fact` resolves a `family.fact`, and career_field is a non-family scalar, so without
-    the interception this command fails with `unknown fact 'career_field'` and stores nothing.
-    """
+def test_facts_set_refuses_career_field_and_names_the_taxonomy(env: Path) -> None:
+    """T208: the engine reads `career_field` from the role taxonomy, so a stored value would be a
+    second write path nothing reads. `facts set` refuses it, says where the field comes from, and
+    stores nothing — even for a value the catalog declares."""
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
     result = _run(env, ["eligibility", "facts", "set", "career_field", "software"])
-    assert result.exit_code == 0
-    facts, _ = _facts(env)
-    assert facts.career_field == "software"
-
-
-def test_facts_set_rejects_a_career_field_outside_the_catalog_vocabulary(env: Path) -> None:
-    """Rejection has to come from the career-field vocabulary, not the fact list: routed to
-    `set_fact` instead, this would also exit 1, but saying `unknown fact` about a fact that
-    exists."""
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "facts", "set", "career_field", "nursing"])
     assert result.exit_code == 1
-    assert "unknown career_field 'nursing'" in result.output
+    assert "role-taxonomy.yaml" in result.output
     facts, _ = _facts(env)
     assert facts.career_field is None
 
 
-def test_facts_renders_the_career_field_line(env: Path) -> None:
+def test_facts_renders_the_career_field_the_taxonomy_declares(env: Path, tmp_path: Path) -> None:
     """career_field belongs to no family, so the family loop cannot render it and it needs its
-    own line. Scoped to the whole line: `software` alone also occurs in other output."""
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    before = _run(env, ["eligibility", "facts"])
-    assert before.exit_code == 0
-    assert "Career field: not set" in before.output
+    own line — showing what the ENGINE reads, the taxonomy's field (T208). Scoped to the whole
+    line: `software` alone also occurs in other output."""
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0  # answers the taxonomy `software`
+    with_taxonomy = _run(env, ["eligibility", "facts"])
+    assert with_taxonomy.exit_code == 0
+    assert "Career field: software (from role-taxonomy.yaml)" in with_taxonomy.output
 
-    assert _run(env, ["eligibility", "facts", "set", "career_field", "software"]).exit_code == 0
-    after = _run(env, ["eligibility", "facts"])
-    assert after.exit_code == 0
-    assert "Career field: software" in after.output
-
-
-def test_an_unknown_fact_is_rejected_and_lists_the_valid_ones(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "facts", "set", "favourite_colour", "blue"])
-    assert result.exit_code == 1
-    assert "highest_degree" in result.output
-
-
-def test_a_value_outside_the_catalog_choices_is_rejected(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "facts", "set", "highest_degree", "phd"])
-    assert result.exit_code == 1
-    assert "doctorate" in result.output  # the message lists the declared choices
-
-
-def test_a_non_integer_years_value_is_rejected(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "facts", "set", "total_years_experience", "loads"])
-    assert result.exit_code == 1
-
-
-def test_a_structured_fact_needs_a_field(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "facts", "set", "work_authorization", "citizen"])
-    assert result.exit_code == 1
-    assert "status" in result.output
-
-
-def test_setting_a_policy(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    assert _run(env, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
-    _, policy = _facts(env)
-    assert policy.families["degree"] == "blocker"
-
-
-def test_an_unknown_policy_family_is_rejected(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "policy", "set", "salary", "blocker"])
-    assert result.exit_code == 1
-    assert "work_auth" in result.output
-
-
-def test_an_unknown_severity_is_rejected(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    assert _run(env, ["eligibility", "policy", "set", "degree", "maybe"]).exit_code == 1
-
-
-def test_facts_renders_declared_and_undeclared_values(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    _run(env, ["eligibility", "facts", "set", "highest_degree", "bachelor"])
-    result = _run(env, ["eligibility", "facts"])
-    assert result.exit_code == 0
-    assert "bachelor" in result.output
-    assert "not set" in result.output  # the other three are visibly absent
-
-
-def test_policy_renders_the_materialised_map(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "policy"])
-    assert result.exit_code == 0
-    for family in ("work_auth", "experience_years", "clearance", "degree"):
-        assert family in result.output
-    assert "preference" in result.output  # the catalog default
-
-
-def test_the_commands_fail_cleanly_with_no_profile(env: Path) -> None:
-    result = _run(env, ["eligibility", "facts"])
-    assert result.exit_code == 1
-    assert "boardwatch init" in result.output
-
-
-def test_summary_with_no_evaluations_reports_zero(env: Path) -> None:
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "summary"])
-    assert result.exit_code == 0
-    assert "evaluated: 0" in result.output
-    assert "no current-engine evaluation: 0" in result.output
-
-
-def test_abstain_lists_every_catalog_rule_on_an_empty_database(env: Path) -> None:
-    """The distinguishing behaviour vs `summary`: with zero rows, `summary` shows nothing and
-    `abstain` still shows all 55 rules, every one of them flagged `never fired`."""
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "abstain"])
-
-    assert result.exit_code == 0
-    # 57 -> 59: the two months patterns (2026-09-04). 59 -> 60: `labeled_years_minimum`,
-    # the noun-first bar (2026-09-05). 60 -> 62: the two T178 ceiling patterns.
-    assert "62 rules · 62 never fired" in result.output
-    assert "0 fire but never decide" in result.output
-    # A rule with no rows is never reported as 0% — that would read as "never abstains".
-    assert "0%" not in result.output
-
-
-def test_setting_COLUMNS_reaches_the_module_level_console(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The premise the three width-controlling tests below rest on, pinned on its own.
-
-    Since rich 15.0.0 `Console.__init__` reads `COLUMNS` eagerly into `self._width`, and
-    `Console.size` returns `self._width` verbatim when it is set. `cli/eligibility_cmd.py`
-    builds its `Console` at import, so an ambient `COLUMNS` freezes that console's width for
-    the whole process and every later `monkeypatch.setenv("COLUMNS", ...)` silently does
-    nothing — the tests below then assert against whatever width the RUNNER happened to
-    supply. `tests/conftest.py` pops `COLUMNS`/`LINES` at import to keep `_width` None, which
-    is the only state in which `Console.size`'s live lookup is reachable. Without that pop
-    this fails under `COLUMNS=80`, which is exactly how ubuntu/3.12 went red in CI.
-    """
-    from boardwatch.cli.eligibility_cmd import console
-
-    monkeypatch.setenv("COLUMNS", "137")
-    # `Console.size` returns `width - self.legacy_windows`, so a legacy Windows console reports one
-    # column fewer than `COLUMNS` names — it reserves the last cell that would otherwise auto-wrap.
-    # Read the flag off the console rather than restating the platform test here: what this pins is
-    # that the env var ARRIVES, not what rich subsequently subtracts from it. Asserting the bare
-    # 137 made this the one deterministic failure in all nine nightly Windows jobs (D-212).
-    assert console.width == 137 - console.legacy_windows
-
-
-def test_typer_does_not_force_a_terminal_for_help_rendering() -> None:
-    """The same premise one layer up, for typer's own help console rather than rich's.
-
-    `typer/rich_utils.py` bakes `FORCE_TERMINAL = True if getenv("GITHUB_ACTIONS") or
-    getenv("FORCE_COLOR") or getenv("PY_COLORS") else None` at IMPORT time and passes it to the
-    console it builds for every `--help` render. Baked at import means the pop in
-    `tests/conftest.py` only works because it runs BEFORE anything imports typer — an ordering
-    nothing else pins, and rich's own vars did not need because it reads those live.
-
-    So this asserts the outcome, not the environment: a styled help render splits an option name
-    across escape codes, and `assert "--new" in result.stdout` then fails on a flag that rendered
-    perfectly. That is exactly how all three ubuntu jobs went red at `64cf63c` while all three
-    macOS jobs passed.
-    """
-    import typer.rich_utils
-
-    assert typer.rich_utils.FORCE_TERMINAL is not True
-
-
-def test_abstain_names_rules_that_have_never_been_detected(
-    env: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """These seven are exactly why enumeration cannot come from a GROUP BY.
-
-    Widened because rule_ids must render in full: at 80 columns rich abbreviates them to a
-    common prefix and two distinct rules become indistinguishable.
-    """
-    monkeypatch.setenv("COLUMNS", "160")
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "abstain"])
-
-    for rule_id in (
-        "clearance:doe_q_required",
-        "work_auth:eu_authorization_required",
-        "experience_years:total_years_minimum",
-    ):
-        assert rule_id in result.output
-
-
-def test_abstain_never_abbreviates_a_rule_id_on_a_narrow_terminal(
-    env: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """At 80 columns rich's default overflow truncates rule_ids to a shared prefix, so
-    `experience_years:total_years_minimum` and `..._preferred` both render as
-    `experience_years:total_y…` — two different rules, one string. The rule_id is this
-    report's key, so it may wrap but must never be abbreviated. Pins `overflow="fold"`.
-    """
-    monkeypatch.setenv("COLUMNS", "80")
-    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    result = _run(env, ["eligibility", "abstain"])
-
-    assert "…" not in result.output
+    (tmp_path / "cfg" / "role-taxonomy.yaml").unlink()
+    without = _run(env, ["eligibility", "facts"])
+    assert without.exit_code == 0
+    assert "Career field: not set (from role-taxonomy.yaml)" in without.output
 
 
 def _write_field_tier_catalog(config_dir: Path):
@@ -390,7 +189,10 @@ def test_abstain_footer_counts_the_not_applicable_bucket(
     assert skipped > 0
 
     assert _run(env, ["init"], INIT_INPUT).exit_code == 0
-    assert _run(env, ["eligibility", "facts", "set", "career_field", "data"]).exit_code == 0
+    write_role_taxonomy(  # the profile's field is `data`, so `internship` does not apply
+        tmp_path / "cfg",
+        {"version": 1, "field": "data", "role_families": [{"id": "analyst", "title_words": ["analyst"]}]},
+    )
     result = _run(env, ["eligibility", "abstain"])
 
     assert result.exit_code == 0

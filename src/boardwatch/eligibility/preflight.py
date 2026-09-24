@@ -46,6 +46,7 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
 from boardwatch.store.queries import ensure_run, finish_run, get_profile
 from boardwatch.store.tables import (
@@ -141,6 +142,24 @@ def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[i
         ]
 
 
+def engine_facts(raw: object, config_dir: Path) -> Facts:
+    """The stored facts as the engine, the identity and the gate read them (D-586, T208).
+
+    `career_field` is the role taxonomy's `field`, never the stored fact: one source for the
+    user's field, so the ranker's field gates and the engine's field-tier families cannot
+    disagree. No taxonomy leaves it None and the field-tier families abstain on
+    `missing_profile_field:career_field` — no fallback to the stored value, no default. A field
+    the catalog's closed `career_fields` does not declare is carried as written, and the engine
+    (`field_applicability`, authoritative) abstains on it with the same reason: refusing it here
+    would fail every command for a second tenant whose gathered field the bundled catalog lacks.
+
+    Every reader of `eligibility_facts_json` that feeds an evaluation, a hash or the judge
+    goes through this; only the paths that write the column back read it raw (`parse_facts`).
+    """
+    field = declared_field(load_role_taxonomy(config_dir))
+    return parse_facts(raw).model_copy(update={"career_field": field})
+
+
 def _identity_hashes(
     facts: Facts,
     policy: Policy,
@@ -179,21 +198,24 @@ def current_identity(
     profile_row = get_profile(conn)
     if profile_row is None:
         return None
-    facts = parse_facts(profile_row.eligibility_facts_json)
+    facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
     policy = parse_policy(profile_row.eligibility_policy_json)
     if catalog is None:
         catalog = load_rules(settings.config_dir)
     return _identity_hashes(facts, policy, catalog, declared_fields())
 
 
-def current_judge_inputs(conn: Connection) -> tuple[Facts | None, str]:
+def current_judge_inputs(conn: Connection, settings: Settings) -> tuple[Facts | None, str]:
     """The live profile's facts and `target_seniority_band`, or `(None, "any")` when there is no
     profile — for the gate reads keyed on the judge's inputs rather than on the identity (T152,
     T161, T188b). With no profile every such read finds nothing, so the band is never consulted."""
     profile_row = get_profile(conn)
     if profile_row is None:
         return None, "any"
-    return parse_facts(profile_row.eligibility_facts_json), profile_row.target_seniority_band
+    return (
+        engine_facts(profile_row.eligibility_facts_json, settings.config_dir),
+        profile_row.target_seniority_band,
+    )
 
 
 # Rebuilt per child process by `_init_worker`, never pickled: a RulesCatalog carries every
@@ -225,7 +247,7 @@ def _init_worker(
     no serial fallback: it would turn this into a run that looks successful.
     """
     global _WORKER_INPUTS
-    facts = parse_facts(facts_raw)
+    facts = engine_facts(facts_raw, config_dir)
     policy = parse_policy(policy_raw)
     catalog = load_rules(config_dir)
     got_profile, got_rules = _identity_hashes(facts, policy, catalog, declared_fields())
@@ -309,7 +331,7 @@ def run_eligibility(
     # posting is pending unless it already has an evaluation FOR THIS identity (not merely at
     # this engine version). That is what makes a corrected fact re-evaluate. The catalog parse
     # this costs runs on every top invocation, but the pending scan itself stays one query.
-    facts = parse_facts(profile_row.eligibility_facts_json)
+    facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
     policy = parse_policy(profile_row.eligibility_policy_json)
     catalog = load_rules(settings.config_dir)
     fields = declared_fields()

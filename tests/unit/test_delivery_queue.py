@@ -123,7 +123,7 @@ from boardwatch.store.tables import (
     quarantined_bodies,
     runs,
 )
-from tests.conftest import write_bundled_role_taxonomy
+from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 26, 12, 0, 0)
 OWNER = "Mit Sheth"
@@ -164,14 +164,15 @@ def _judge_version(conn: Connection, version_id: int, body: str) -> None:
     `_review`. Production writes the evaluation alongside the revision; these fixtures do too.
     """
     catalog = load_rules(load_settings().config_dir)
+    facts = as_engine_reads(FACTS, load_settings().config_dir)
     write_evaluation(
         conn,
         posting_version_id=version_id,
         identity=build_identity(
-            posting_version_id=version_id, facts=FACTS, policy=POLICY,
+            posting_version_id=version_id, facts=facts, policy=POLICY,
             catalog=catalog, declared_fields=declared_fields(),
         ),
-        result=evaluate(body, FACTS, POLICY, catalog),
+        result=evaluate(body, facts, POLICY, catalog),
     )
 
 
@@ -1572,6 +1573,7 @@ def _make_ineligible(conn: Connection, posting_id: int) -> None:
         ).scalar_one()
     )
     catalog = load_rules(load_settings().config_dir)
+    facts = as_engine_reads(facts, load_settings().config_dir)
     result = evaluate(INELIGIBLE_JD, facts, policy, catalog)
     assert result.verdict == "ineligible", (
         f"premise broken: this body now resolves {result.verdict!r}, so the drain tests below "
@@ -4551,7 +4553,7 @@ def _judge(
             conn,
             posting_version_id=version.posting_version_id,
             jd_text=jd,
-            facts=FACTS,
+            facts=as_engine_reads(FACTS, load_settings().config_dir),
             policy=POLICY,
             catalog=load_rules(load_settings().config_dir),
             verdict=OracleVerdict(
