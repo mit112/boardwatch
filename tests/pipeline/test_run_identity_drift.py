@@ -8,6 +8,7 @@ and finalization, then read the published artifacts back off disk — the only p
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -163,6 +164,33 @@ def test_a_rules_edit_mid_run_names_rules_hash_and_not_the_profile(
     assert _drift_lines(summary) == [f"{_DRIFT_LINE}: rules_hash"], summary.errors
 
 
+def test_a_config_edit_mid_run_is_reported_as_drift(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F7. The queue and the funnel's apply-lane cohort read `config.toml` again at finalize
+    (`delivered_unapplied` calls `load_settings()`), so an edit mid-run changes every lead's final
+    lane — while the manifest's two config values were computed from the run's in-memory
+    `Settings` at both readings and could not move. The end reading now hashes the config those
+    read sites read, so the edit is named and the alert fires.
+
+    Both knobs, one per hash: `gate.model` is `config_hash`-relevant and `gate.seniority_hold` is
+    the routing knob `config_hash` classifies out, so each value is shown to see the file.
+    """
+    _ready(env)
+    config = load_settings(data_dir=env).config_dir / "config.toml"
+    original = config.read_text(encoding="utf-8") if config.exists() else ""
+    assert "[gate]" not in original, "guard: the edit below appends the only [gate] table"
+    assert load_settings(data_dir=env).gate.model != "opus", "guard: the edit must move the model"
+    edited = original + '\n[gate]\nmodel = "opus"\nseniority_hold = true\n'
+    fired = _edit_mid_run(monkeypatch, lambda: config.write_text(edited, encoding="utf-8"))
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert fired == [1], "guard: the mid-run edit must have happened exactly once"
+    assert _payload(summary)["identity_drift"] == ["config_hash", "routing_hash"]
+    assert _drift_lines(summary) == [f"{_DRIFT_LINE}: config_hash, routing_hash"], summary.errors
+
+
 # --- 4: provenance moves where the manifest cannot see ----------------------------------------
 
 
@@ -289,12 +317,13 @@ def test_a_package_root_that_is_not_a_checkout_leaves_code_none(
 
 
 @pytest.mark.parametrize(
-    ("raised", "provenance_recorded"),
+    "raised",
     [
-        (subprocess.TimeoutExpired(cmd=["git"], timeout=5.0), True),
+        subprocess.TimeoutExpired(cmd=["git"], timeout=5.0),
         # Outside the tuple `code_provenance` expects, so it escapes that function and is caught
-        # by the runner's own guard instead — which costs the provenance, and still not the run.
-        (RuntimeError("git exploded"), False),
+        # by the runner's own guard instead. Since F11 that guard wraps the commit read alone, at
+        # the run's start, so it costs the `code` field and neither the rest nor the run.
+        RuntimeError("git exploded"),
     ],
     ids=["timeout", "unexpected"],
 )
@@ -303,7 +332,6 @@ def test_a_raising_git_subprocess_is_never_a_fatal(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     raised: Exception,
-    provenance_recorded: bool,
 ) -> None:
     _ready(env)
 
@@ -318,11 +346,50 @@ def test_a_raising_git_subprocess_is_never_a_fatal(
     assert summary.funnel is not None and summary.morning is not None
     assert not [e for e in summary.errors if "git" in e.lower()], summary.errors
     provenance = _payload(summary)["provenance"]
-    if provenance_recorded:
-        assert provenance["code"] is None
-        assert provenance["flags"]["skip_scan"] is True
-    else:
-        assert provenance is None
+    assert provenance["code"] is None
+    assert provenance["flags"]["skip_scan"] is True
+
+
+def test_provenance_names_the_commit_the_run_started_on_when_head_moves_during_the_scan(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F11. The commit used to be read in `_capture_run_start`, AFTER the scan returned — about
+    an hour into a real run — so a checkout that moved during the scan was reported as the code
+    that ran. HEAD is moved where the scan would be (`ensure_run` is the `--no-scan` branch's
+    stand-in for it), in a scratch repository the package root is pointed at."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    _ready(env)
+    repo = tmp_path / "repo"
+    (repo / "boardwatch").mkdir(parents=True)
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+            cwd=repo, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    git("init", "-q")
+    (repo / "boardwatch" / "__init__.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-q", "-m", "start")
+    started_on = git("rev-parse", "HEAD")
+    monkeypatch.setattr(funnel_writer, "_PACKAGE_ROOT", repo / "boardwatch")
+
+    real_ensure_run = runner_mod.ensure_run
+    moved: list[str] = []
+
+    def ensure_run_while_the_checkout_moves(*args: Any, **kwargs: Any) -> Any:
+        git("commit", "-q", "--allow-empty", "-m", "moved during the scan")
+        moved.append(git("rev-parse", "HEAD"))
+        return real_ensure_run(*args, **kwargs)
+
+    monkeypatch.setattr(runner_mod, "ensure_run", ensure_run_while_the_checkout_moves)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert moved and moved[0] != started_on, "guard: HEAD must have moved during the run"
+    assert _payload(summary)["provenance"]["code"] == {"commit": started_on, "dirty": False}
 
 
 # --- 6: ordering ---------------------------------------------------------------------------

@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import subprocess
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, Engine, Row, select
 
-from boardwatch.core.settings import Settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
@@ -201,19 +202,28 @@ def code_provenance(root: Path) -> CodeProvenance | None:
     return CodeProvenance(commit=commit, dirty=dirty)
 
 
+def read_code_provenance() -> CodeProvenance | None:
+    """`code_provenance` of the package this process imported. The runner calls it as the run
+    STARTS and hands the answer to `read_execution_provenance` (F11): read after the scan, it
+    would name whatever the checkout had moved to an hour into the run."""
+    return code_provenance(_PACKAGE_ROOT)
+
+
 def read_execution_provenance(
     conn: Connection,
     settings: Settings,
     *,
+    code: CodeProvenance | None,
     boards_attempted: int,
     skip_scan: bool,
     project: bool,
     liveness_prober: bool,
     top_n: int,
 ) -> ExecutionProvenance:
-    """T137's execution provenance, from `settings`, the store and the command's own flags."""
+    """T137's execution provenance, from `settings`, the store and the command's own flags, and
+    the `code` the run read at its start (`read_code_provenance`)."""
     return ExecutionProvenance(
-        code=code_provenance(_PACKAGE_ROOT),
+        code=code,
         gate_engine_version=gate_engine_version(),
         gate_model=settings.gate.model,
         gate_effort=settings.gate.effort,
@@ -372,6 +382,12 @@ def collect_run_funnel(
         apply_lane = ApplyLaneCohort(
             placements=apply_lane_cohort(conn, run_ids={run_id}).get(run_id, ())
         )
+        # F7. The config that read — and the queue sync after this artifact — actually used:
+        # `delivered_unapplied` calls `load_settings()` itself rather than taking the run's
+        # `Settings`, so a `config.toml` edit mid-run moves every lead's final lane while
+        # `settings` here still holds the start. Loaded beside the cohort read, through the same
+        # call, so the drift check below compares what those read sites saw.
+        read_site_settings = load_settings()
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
@@ -481,8 +497,20 @@ def collect_run_funnel(
         board_coverage=board_coverage,
         lanes=lanes,
         stage_durations=stage_durations,
+        # Against the read sites' config, not `end_identity`'s: the manifest keeps naming the
+        # config the run started, ranked and judged under, and the drift names the two config
+        # values when the file the finalize-time reads loaded no longer hashes the same (F7).
         identity_drift=(
-            None if start_identity is None else identity_drift(start_identity, end_identity)
+            None
+            if start_identity is None
+            else identity_drift(
+                start_identity,
+                replace(
+                    end_identity,
+                    config_hash=config_hash(read_site_settings),
+                    routing_hash=routing_hash(read_site_settings),
+                ),
+            )
         ),
         provenance=execution_provenance,
         tenant_assumptions=tenant_assumptions,

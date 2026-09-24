@@ -29,7 +29,7 @@ from datetime import timedelta
 from itertools import zip_longest
 from pathlib import Path
 from threading import Thread
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import TYPE_CHECKING
 
 import httpx
@@ -47,6 +47,7 @@ from boardwatch.delivery.api import resolve_owner_name
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     DEFAULT_QUEUE_ROOT,
+    QueueLockHeldError,
     refresh_queue,
     standing_queue_rows,
 )
@@ -94,6 +95,7 @@ from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_death
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import (
     collect_run_funnel,
+    read_code_provenance,
     read_execution_provenance,
     read_run_identity,
 )
@@ -125,6 +127,7 @@ from boardwatch.reports.morning import MorningLead, build_morning, write_morning
 from boardwatch.reports.resume_gate import LeadArtifactError, RenderToolMissingError
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
+    CodeProvenance,
     DeathProbeReport,
     ExecutionProvenance,
     GateCounters,
@@ -2115,6 +2118,15 @@ def _run_pipeline_leased(
     # pipeline -> cli -> pipeline a cycle the moment run_cmd imports this.
     from boardwatch.cli.top_cmd import NoProfileError, rank_open_postings
 
+    # T137's code provenance, read FIRST (F11). `_capture_run_start` runs after the scan returns,
+    # about an hour in, and a checkout moved in between would be reported as the code that ran.
+    # Guarded here rather than there: it is reporting, so any failure costs the commit field.
+    try:
+        start_code = read_code_provenance()
+    except Exception as exc:  # noqa: BLE001 - provenance must never fail a run
+        console.print(f"  ! code provenance not recorded: {exc}", markup=False)
+        start_code = None
+
     # P3 slice 2 (D-046): drain any crashed/killed prior run before minting this one's row.
     # Never touches the row this run is about to create (it doesn't exist yet). Swallowed and
     # logged, mirroring `_emit_funnel` below: a drain failure must never block a new run.
@@ -2214,6 +2226,7 @@ def _run_pipeline_leased(
             settings,
             console,
             summary,
+            code=start_code,
             boards_attempted=scan_summary.companies if scan_summary is not None else 0,
             skip_scan=skip_scan,
             project=project,
@@ -3776,13 +3789,15 @@ def _capture_run_start(
     console: Console,
     summary: PipelineSummary,
     *,
+    code: CodeProvenance | None,
     boards_attempted: int,
     skip_scan: bool,
     project: bool,
     liveness_prober: bool,
     top_n: int,
 ) -> None:
-    """T137. The run's identity and execution provenance, read before ranking.
+    """T137. The run's identity and execution provenance, read before ranking. `code` is the
+    commit read when the run started (F11), not here.
 
     HERE because it is the first point at which every run has a `runs` row and a schema — the
     scan minted the row, or `ensure_run` did — and it is before the lane apply, the ranker, the
@@ -3803,6 +3818,7 @@ def _capture_run_start(
             summary.provenance = read_execution_provenance(
                 conn,
                 settings,
+                code=code,
                 boards_attempted=boards_attempted,
                 skip_scan=skip_scan,
                 project=project,
@@ -4075,6 +4091,16 @@ def _interleave(first: list[str], second: list[str]) -> list[str]:
     return merged
 
 
+#: How many times the run asks for the queue lock before recording the sync as skipped (F5). The web
+#: server holds that lock for every skip, apply and report while it reconciles, and its store reads
+#: alone measured 7.2 s on the live store, so one refusal is routine while the owner triages. Four
+#: asks ten seconds apart wait out a few of those holds — about thirty seconds — and a lock still
+#: held after that is recorded rather than waited on further, since the run is in its `finally`.
+QUEUE_LOCK_ATTEMPTS = 4
+#: Seconds between those asks. Read by name at call time so a test can pin it to zero.
+QUEUE_LOCK_RETRY_SECONDS = 10.0
+
+
 def _sync_queue(
     engine: Engine,
     settings: Settings,
@@ -4093,9 +4119,11 @@ def _sync_queue(
     lead sitting in the queue.
 
     Neither entry point raises on contention: both report `contended=True`, so a scheduled run
-    colliding with a serving web app is a normal outcome that changed nothing, not an error. Both
-    also report per-lead failures inside their report rather than raising; those failures are
-    returned so the caller can record them durably, and they are still never re-raised here.
+    colliding with a serving web app is a normal outcome. This asks again, `QUEUE_LOCK_ATTEMPTS`
+    times, and only a lock held across every ask raises `QueueLockHeldError` — a skipped sync is
+    recorded by the caller, not silent (F5). Both entry points also report per-lead failures
+    inside their report rather than raising; those failures are returned so the caller can record
+    them durably, and they are still never re-raised here.
 
     **ONE STRING PER FAILURE, NOT A COUNT.** `LeadFailure` and `FolderFailure` each already carry
     a `detail`, and this function used to discard both and return `len()`. So the run line and
@@ -4126,13 +4154,26 @@ def _sync_queue(
         # OWN connection, closed before the queue pass: a connection that has read holds its
         # snapshot, and the plan must read one taken after the queue lock is held (T135).
         owner_name = resolve_owner_name(conn, settings.config_dir)
-    drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
-    contended = " (contended, nothing changed)" if synced.contended or drained.contended else ""
+    # Contention used to change only the console line below, so a run that lost the lock to the
+    # web server delivered leads with no folder and said so nowhere else (F5). Asked a bounded
+    # number of times; still held after that, it RAISES the queue's own typed error, which the
+    # call site's handler records in `summary.errors` and `runs.errors_json` above
+    # `_emit_morning` like every other queue failure — and, like them, never fails the run.
+    for attempt in range(1, QUEUE_LOCK_ATTEMPTS + 1):
+        drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
+        if not (synced.contended or drained.contended):
+            break
+        if attempt == QUEUE_LOCK_ATTEMPTS:
+            raise QueueLockHeldError(
+                f"the queue lock under {root} was still held after {QUEUE_LOCK_ATTEMPTS} "
+                f"attempts {QUEUE_LOCK_RETRY_SECONDS:g}s apart; no folder was written or drained"
+            )
+        sleep(QUEUE_LOCK_RETRY_SECONDS)
     console.print(
         f"  queue → {root}: {synced.created} new, {synced.updated} updated, "
         f"{synced.unchanged} unchanged, {synced.moved + drained.moved} moved, "
         f"{synced.retired} retired, {synced.repaired} repaired, "
-        f"{synced.failed + drained.failed} failed{contended}",
+        f"{synced.failed + drained.failed} failed",
         markup=False,
     )
     # Both halves of the partition: a lead `sync_queue` could not write, and a folder
