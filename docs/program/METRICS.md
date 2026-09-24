@@ -16260,7 +16260,9 @@ Movers by direction: 54 ineligible→eligible, 19 uncertain→ineligible, 18 ine
 | T192 `97f9fb03` (after T192b/c) | **0** | 11,075 | 11m |
 | T191 `f2665a24` | 0 | — | — |
 | T189 `e73509ec` (before the T189e rebase) | 0 | 11,086 | 9m |
-| T187 `9ea25ee6` → `0050e42a` (rebased) | 0 → <T187GATE> | — | — |
+| T187 `9ea25ee6` → `0050e42a` (rebased) | 0 → **0** | 11,229 | 11m30 |
+| T194 `5798b56b` | 0 | 11,408 | 10m45 |
+| batch 3 `ea2f85b2` → `51ed4747` (round 2) | 143 (aborted: the executor was still editing) → **0** | 11,461 | 9m30 |
 | T188 `03c99054` (after T188b) | 0 | 11,249 | 9m |
 | batch 2 `f2c51a64` → `19878e51` | 2 (catalog rule-count pins 60→62) → **0** | 11,345+ | 21m / 13m |
 
@@ -16314,3 +16316,17 @@ Overlap agreement 10/10. Live-key verdicts 240 of 434 top-level leads after T179
 ### T173 on the batch (`bw-t173/.agent/t173_aggregate.txt`, pinned 126,854)
 
 Movers A→B 1,468, all `uncertain` → `eligible` (A 354 / 124,249 / 2,251 → B 1,822 / 124,249 / 783); null 0; pure carrier-row additions only (`scoped_years_preferred` unmet 1,696 + unknown 24 on movers, 11,065 more on unchanged verdicts); 180 of T170's 189 `uncertain` movers clear; sample 20/20 stated preferences; ≤13 wrong clears bounded (T196, T197).
+
+### Engine batch 3 (T193, T196, T197; `bw-batch3`, pinned 126,854, A = main `a69d61aa`; D-592) — MEASURED, NOT SHIPPED
+
+| round | head | null N vs A (verdicts / rows) | movers A→B | by direction | row-only | 20-sample |
+|---|---|---|---|---|---|---|
+| 1 | `ea2f85b2` | 3 / 240 | 127 | — | — | — |
+| 2 | `51ed4747` | 4 / 206 | **125** | 80 unc→inel, 24 inel→unc, 20 elig→inel, 1 elig→unc | 1,633 | 19/20 |
+
+Round 2 against round 1 (arm B only): 4 verdict moves (1 `eligible` restored on a spelled range; 2
+`uncertain`→`ineligible` correct once `less than one year` is a ceiling; 1 new wrong `ineligible` at digit parity,
+posting 323521) and 169 postings with row changes (−81 `scoped_years_minimum unmet`, −61
+`clearable_leveled_required`, +18 ceiling rows). Executors: round 1 $8.15 list-equivalent; round 2 82 turns,
+$4.56, 75 min (the measurement is the bulk). Codex: round 1 high, three blockers, all closed in round 2; the
+verification round is NOT run (the owner's close ruling).

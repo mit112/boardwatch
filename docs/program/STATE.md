@@ -24,28 +24,28 @@
 
 ## Current standing
 
-### 2026-09-23c/24 — **THE SPRINT SESSION (D-576): FOURTEEN TICKETS SHIPPED — T172 #434, T168b #437, T171 #438, T170 #439, f10 #440, T162 #441, T179 #442, T185 #443, T184 #444, T192 #445, T186 #446, T190 #447, T191 #448 — AND THE SECOND ENGINE BATCH (T174/T175, T178, T180, T181, T182) IS ASSEMBLED, GATED AND MEASURED (D-587). RUNS 472 AND 474 HAND-LAUNCHED AND READ; 473 KILLED ON A TRICKLING HOST (D-580, D-584). THE PRIMARY IS ON `8753abc2`+ WITH THE T186 CUTOVER DONE (D-583).**
+### 2026-09-23c/24 — **THE SPRINT SESSION (D-576) IS CLOSED: FIFTEEN TICKETS SHIPPED — T172 #434, T168b #437, T171 #438, T170 #439, f10 #440, T162 #441, T179 #442, T185 #443, T184 #444, T192 #445, T186 #446, T190 #447, T191 #448, T187 #449, T189 #452, T194 #455 — AND THE SECOND ENGINE BATCH SHIPPED (#450, D-587). RUNS 472, 474 AND 475 READ (D-580, D-589, D-591); 473 KILLED (D-584). ENGINE BATCH 3 (T193/T196/T197) IS BUILT, REVIEWED AND MEASURED TWICE BUT HELD UNSHIPPED (D-592). THE PRIMARY IS PARKED ON `main` AT #455 WITH THE T186 CUTOVER DONE (D-583).**
 
 The session ran 15:xx on 09-23 to ~06:00 on 09-24 CDT, planner on the personal sub, ≤5 executors on the
 enterprise seat (whose 5-hour window hit twice: 17:24 at 11 executors, 02:22 after four hours of 2–5; the
 lesson is in memory). The owner ruled everything up front (D-577, D-578) and slept from 22:05 (D-58x).
 
 **Next session, in order:**
-1. **Run 475 is READ (D-591): the batch's re-key ran, the tenant report is grounded on the owner's data, the
-   apply lane placed 36.** Two new mechanisms spoke: T192's board cap failed four large Workday boards (T198),
-   and T191's cross-check flagged hiring.cafe at 9 vs 10 (T199). Read run 476 for `refresh_pending_after`
-   falling (767 → ~640) and the four Workday boards.
-2. **The second engine batch SHIPPED (#450, D-587)** and T189 shipped (#452) after its rebase.
-3. **Owner calls** (Owner-gated, below): T188 (D1 re-judges every stored gate verdict), T173 (measure
-   on the shipped batch, then rule), the reviews' follow-ups (`TICKETS-2026-09-22c.md` §2026-09-23c).
-4. **T187 (#449) and T189 (#452) shipped.** Nothing is left unshipped from the sprint except T188
-   (owner-gated) and T173 (owner call, below).
-5. **The run-474 audit is READ** — see item 6 and D-589.
-6. **The run-474 audit is read (D-589):** B8 reads 17.9% on the standing lane because T179's re-key left
-   315 of 434 top-level leads without a live verdict (fail-open until the refresh reaches them); 474's own
-   placements read 8.3%. **Re-read B8 once `refresh_pending_after` (767) nears 0**, and rule the two options
-   in Owner-gated (raise the refresh budget; rank released holds first, T195). Tickets T193 (`five (5)
-   years` undetected) and T194 (`Tianjin, Tianjin` unknown) are written in `TICKETS-2026-09-22c.md`.
+1. **Ship engine batch 3 from `bw-batch3` (`engine-batch-3`, head `51ed4747`, D-592).** Run the Codex
+   verification round (`gpt-6-sol`, medium): confirm the three round-1 blockers are closed (spelled credit
+   sentence = its digit twin; spelled ranges write no row and a0025 is back to `uncertain`; `(preferred only)`
+   still hedges the bar) and rule posting 323521 (accept digit parity, or T202). Then the gate reading
+   (the local `make check` on `51ed4747` is recorded in D-592) and `ship_one.sh batch3 … '### Changed'`
+   with `entry-batch3.md`/`pr-batch3.md`/`sq-batch3.txt` in `.agent/2026-09-23c-session/`, filled with round
+   2's numbers (movers 125, null 4). Batch 3 re-keys `engine_version`; the run after it re-judges the corpus.
+2. **Read run 476 (04:00 on 09-25, on #455):** `refresh_pending_after` should fall from 767, the four Workday
+   boards T192 capped in 475 (T198), and hiring.cafe's recount (T199). Read the store with Python `sqlite3`
+   `?mode=ro` only. The primary is on `main` at #455; pull to batch 3 only between runs.
+3. **Owner calls** (Owner-gated, below): T173 (1,468 clear on yes, D-590), T188 (D1 re-judges every stored
+   gate verdict), the refresh backlog (D-589), `career_field` vs the taxonomy field (D-586), and the
+   follow-ups T195–T202.
+4. **Prune the merged worktrees** (`bw-t162 t168b t171 t170 t170b t172 t179 f10 t185 t184 t186 t190 t191 t192
+   t187 t189 t194 batch2 close close2 close3 close4`); keep `bw-t173`, `bw-t188`, `bw-batch3`, `bw-review`.
 
 **Measured this session (D-574, D-580, D-582, D-583, D-586, D-587):** T170 moves 258 of 126,854 pinned
 verdicts out of `ineligible` with a null control of 0; T185, T186 and T187 each read zero diffs over
@@ -54,9 +54,9 @@ in D-587. Run 472 (2h12m, full re-key): judged 117, apply lane 29, refresh 130 o
 T170's re-key): judged 110, apply lane 24, review 16, identity drift none. Run 473 was killed after 55
 minutes on one SmartRecruiters board whose server trickled bytes (D-584).
 
-**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23c): T173 (measure on the batch, owner call), T188
-(reviewed, gate green, owner-gated on D1's re-key), the nine follow-ups from the reviews (§2026-09-23c
-lists them), T176 refused, T177 closed as already shipped on 09-04.
+**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23c): batch 3 (T193, T196, T197 — built, held, D-592),
+T173 (measured, owner call), T188 (reviewed, gate green, owner-gated on D1's re-key), T195 and T198–T202 (follow-ups),
+the reviews' nine follow-ups (§2026-09-23c lists them), T176 refused, T177 closed as already shipped on 09-04.
 
 ### 2026-09-23b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-24.** Runs 472 and 473/474 read (D-580, D-588); the post-472 pull done; the owner calls it listed are all ruled (D-577); T170 (#439) and T172 (#434) shipped; T171 (#438) and T162 (#441) shipped.
 
@@ -141,7 +141,9 @@ available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies
    `location_class` column still the US reading, cross-check disagreements not soft-alerted, the
    STANDING-FACTS grounding key, T190's test-only drift, T192's trickled-headers limit; from run 475: T198 (the board cap vs slow Workday
    boards) and T199 (hiring.cafe's 9-vs-10 recount); from T173's measurement: T196 (`a plus` without a word
-   boundary) and T197 (an aside about another noun hedges the bar).
+   boundary) and T197 (an aside about another noun hedges the bar) — both now IN batch 3; from batch 3's round 2
+    (D-592): T200 (digit ranges read their high end), T201 (a credit-policy sentence is not a bar), T202
+    (`two (2) year college` is not a second duration).
 10. **The T179 refresh backlog (D-589): 315 top-level leads with no live verdict, 14 of them judged
     `ineligible` on 09-22 and standing in the apply lane.** Options: raise `gate.refresh_budget` above 130
     for a few runs; have the refresh rank released holds first (T195); or let it drain at ~6 runs.
