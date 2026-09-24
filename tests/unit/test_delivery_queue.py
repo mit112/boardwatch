@@ -3807,6 +3807,14 @@ def test_a_lane_copy_hides_only_its_own_POSTING_never_its_jobs_board_winner(
         [own_board, other_board]
     )
 
+    before = _snapshot(root)
+    with engine.connect() as conn:
+        again = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (again.failures, again.created, again.updated, again.moved, again.retired) == (
+        (), 0, 0, 0, 0
+    )
+    assert _snapshot(root) == before
+
 
 def test_an_ineligible_lane_copy_files_under_ineligible_not_lane_copy(
     engine: Engine, root: Path, apps: Path
