@@ -228,8 +228,10 @@ def test_a_lead_held_above_the_tenant_gates_is_not_counted_as_considered(
     def stopped_first(**kwargs: Any) -> LaneDecision:
         # The RUN's pre-tailor split (`runner._lead_lanes`) is the call the tally observes;
         # the queue's own later `lane_decision` is a different call site and is left alone.
-        seen.append(kwargs["title"])
-        if kwargs["title"] == "Software Engineer, Stopped":
+        # The classifier no longer sees a title (T184b: it takes the role verdict), so the
+        # FIRST lead the split puts to it is the one held.
+        seen.append("held" if not seen else "passed")
+        if seen[-1] == "held":
             return LaneDecision(REVIEW_DIR, "form_question_hard_stop")
         return real_classify(**kwargs)
 
@@ -237,7 +239,7 @@ def test_a_lead_held_above_the_tenant_gates_is_not_counted_as_considered(
 
     payload = _run(env, tmp_path / "apps", mode="soft")
 
-    assert seen.count("Software Engineer, Stopped") == 1, seen  # guard: the hold was applied
+    assert seen.count("held") == 1, seen  # guard: the hold was applied exactly once
     split = len(seen)
     assert split >= 2, seen
     review = payload["tenant_assumptions"]["review"]

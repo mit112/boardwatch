@@ -230,7 +230,7 @@ def _lanes(
                 uri=f"/out/{version_id}.typ", generator="boardwatch.tailor",
                 media_type="text/x-tex", meta_json={}, created_at=NOW,
             ))
-    run_lanes, _ = _lead_lanes(
+    run_lanes, _, _tenant = _lead_lanes(
         engine, Settings(data_dir=data_dir, config_dir=data_dir), results.visible
     )
     top = {p.title: (p.role, run_lanes[p.posting_id][0]) for p in results.visible}
