@@ -10,6 +10,7 @@ coordinator alone persists them, transactionally, on complete applies only
 
 from __future__ import annotations
 
+import socket
 import ssl
 import threading
 import time
@@ -208,6 +209,35 @@ class _DeadlineStream(httpcore.NetworkStream):
         return self._stream.get_extra_info(info)
 
 
+def _resolve(host: str, port: int, timeout: float | None) -> list[tuple[Any, ...]]:
+    """`getaddrinfo` as `create_connection` calls it, on a worker thread joined for `timeout`.
+
+    The resolver ignores every socket timeout (T226), and the call itself cannot be cancelled:
+    on expiry the daemon thread is left to finish in the background, bounded only by the OS
+    resolver's own timeout. That, beside the TLS handshake trickle, is a known limit — the
+    request ends at its deadline, but one thread per such lookup outlives it.
+    """
+    outcome: list[list[tuple[Any, ...]] | Exception] = []
+
+    def lookup() -> None:
+        try:
+            outcome.append(socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM))
+        except Exception as exc:
+            outcome.append(exc)
+
+    thread = threading.Thread(target=lookup, name=f"resolve {host}", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    if not outcome:
+        raise httpcore.ConnectTimeout(f"resolving {host} timed out")
+    result = outcome[0]
+    if isinstance(result, OSError):
+        raise httpcore.ConnectError(str(result)) from result
+    if isinstance(result, Exception):
+        raise result
+    return result
+
+
 class _DeadlineBackend(httpcore.NetworkBackend):
     """httpcore's own `SyncBackend`, with every stream it opens bounded by `_bounded`."""
 
@@ -222,10 +252,27 @@ class _DeadlineBackend(httpcore.NetworkBackend):
         local_address: str | None = None,
         socket_options: Iterable[Any] | None = None,
     ) -> httpcore.NetworkStream:
-        return _DeadlineStream(_bounded(
-            lambda t: self._backend.connect_tcp(host, port, t, local_address, socket_options),
-            timeout,
-        ))
+        """`socket.create_connection`'s address loop, run here so each attempt is `_bounded`.
+
+        Handed the time left once, `create_connection` applied it to EACH resolved address in
+        turn, so a host with n black-holed addresses held the call (n-1)×left past its deadline
+        (T226). Each attempt goes to `SyncBackend` by numeric address, which keeps its socket
+        options, `TCP_NODELAY` and exception mapping; as there, an attempt that fails on the
+        caller's own timeout moves on, and all failing raises the last attempt's error.
+        """
+        addresses = _bounded(partial(_resolve, host, port), timeout)
+        if not addresses:
+            raise httpcore.ConnectError("getaddrinfo returns an empty list")
+        failure: httpcore.ConnectError | httpcore.ConnectTimeout
+        for *_, sockaddr in addresses:
+            try:
+                return _DeadlineStream(_bounded(partial(
+                    self._backend.connect_tcp, str(sockaddr[0]), port,
+                    local_address=local_address, socket_options=socket_options,
+                ), timeout))
+            except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:
+                failure = exc
+        raise failure
 
     def connect_unix_socket(
         self,
