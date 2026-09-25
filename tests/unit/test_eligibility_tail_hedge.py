@@ -1053,3 +1053,86 @@ def test_a_hedged_domain_bar_never_yields_ineligible(catalog) -> None:  # type: 
         )
         assert [row[1] for row in _rows(result)] == ["preferred"]
         assert result.verdict != "ineligible"
+
+
+# T211 and T213 on the domain RANGE twins. `domain_range_years_minimum`'s tail is
+# `domain_years_minimum`'s verbatim, so it swallowed its own trailing hedge the same way and now
+# stops before it. Both range twins are `hedged_as` the carrier, as their single siblings are, so a
+# hedged range bar -- on its own line or under a hedge heading -- is carried as a scoped preference
+# instead of read as required or dropped. Store sentences (T173e's twin tail-hedge list, pv 250918).
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        # Both halves: the hedge sat inside the span, so the bar read required.
+        pytest.param(
+            "2-3 years of GreenLake sales preferred.", "2-3 years of GreenLake sales",
+            id="domain-range-tail-hedge",
+        ),
+        pytest.param(
+            "3–5 years forklift/MHE operation preferred", "3–5 years forklift/MHE operation",
+            id="domain-range-tail-hedge-slash-head",
+        ),
+        # The `hedged_as` half alone: the hedge was read, and the bar was dropped with no row.
+        pytest.param(
+            "Preferred:\n- 5 – 7 years in related Business Field",
+            "5 – 7 years in related Business Field", id="domain-range-heading-hedge",
+        ),
+        pytest.param(
+            "Preferred:\n- 3 – 5 years of product supporting a SaaS solution, appliance or "
+            "equivalent experience",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-heading-hedge",
+        ),
+        pytest.param(
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent "
+            "experience preferred",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-tail-hedge",
+        ),
+    ],
+)
+def test_a_hedged_domain_range_bar_is_a_scoped_preference(  # type: ignore[no-untyped-def]
+    catalog, body: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
+
+
+# CONTROLS: a mandate, an unhedged range bar and a hedge on a later list item keep the twin
+# required, exactly as they keep its single sibling.
+@pytest.mark.parametrize(
+    ("body", "rule", "quote"),
+    [
+        pytest.param(
+            "2-3 years of GreenLake sales required.", "domain_range_years_minimum",
+            "2-3 years of GreenLake sales required.", id="domain-range-mandate",
+        ),
+        pytest.param(
+            "minimum 5 – 7 years in related Business Field", "domain_range_years_minimum",
+            "5 – 7 years in related Business Field", id="domain-range-unhedged",
+        ),
+        pytest.param(
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            "domain_list_range_years_minimum",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-unhedged",
+        ),
+        pytest.param(
+            "Minimum 3-5 years of Java development, AWS preferred.", "domain_range_years_minimum",
+            "3-5 years of Java development", id="domain-range-hedge-on-a-later-item",
+        ),
+    ],
+)
+def test_a_domain_range_bar_whose_hedge_is_not_its_own_stays_required(  # type: ignore[no-untyped-def]
+    catalog, body: str, rule: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [[f"experience_years:{rule}", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote

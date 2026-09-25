@@ -954,6 +954,8 @@ families:
       # "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience"
       # had no range reading at all once T200 stopped the single pattern reading the high end.
       # Its tail is the domain list's, verbatim; `years` is the LOW end. Digit ranges only.
+      # Hedged, on its own line or under a hedge heading, it is carried as `scoped_years_preferred`,
+      # as its sibling is (T213), rather than dropped.
       - id: domain_list_range_years_minimum
         requiredness: required
         implies: activity_years_minimum
@@ -963,6 +965,7 @@ families:
         suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
+        hedged_as: scoped_years_preferred
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific skill or domain"
         pattern: '(?<!\d[.,])\b(?P<years>\d{1,2})(?:[.,]\d)?\s*\+?\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?!(?:age|old|experience|equivalent|the|a|an|and|or|to|for|as|on|at)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}?\s*(?:,\s*|\s+(?:and|or)\s+)(?:[\w.+#/-]+\s+){0,3}?experience\b'
@@ -1035,7 +1038,9 @@ families:
 
       # The domain pattern's RANGE twin: "minimum 5 – 7 years in related Business Field",
       # "Minimum of 5 – 8+ years in management consulting". Its tail is the domain pattern's,
-      # verbatim, guards and all; `years` is the LOW end, bounded 2-19 as the sibling's count is.
+      # verbatim, guards and all, T211's stop before its own hedge included; `years` is the LOW
+      # end, bounded 2-19 as the sibling's count is. Hedged, it is carried as
+      # `scoped_years_preferred`, as its sibling is (T213).
       # DIGIT ranges only: the domain pattern stays digits-only for a single number (T193
       # measured spelled domain counts as mostly boilerplate), and a spelled range here would
       # reopen that. No `between` form either. `(?<!next\s)`: "Over the next 3-5 years State
@@ -1049,9 +1054,10 @@ families:
         suppressed_by_predicate: [*credit_predicate]
         suppressed_by_unit: [*bar_hedges]
         hedged_by_tail: [*bar_hedges]
+        hedged_as: scoped_years_preferred
         abstain_by_sentence: [*degree_alternative_to_years]
         requirement_text: "Years of experience scoped to a specific domain"
-        pattern: '(?<!next\s)(?<!\d[.,])\b(?P<years>[2-9]|1[0-9])(?:[.,]\d)?\s*\+?\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to|or|older)\b)[A-Za-z][\w.+#/-]*(?:\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
+        pattern: '(?<!next\s)(?<!\d[.,])\b(?P<years>[2-9]|1[0-9])(?:[.,]\d)?\s*\+?\s*(?:[-–—]|\s+to\s+)\s*\d{1,2}\s*\+?\s*(?:or\s+more\s+)?(?:years?|yrs?)(?!\w)\.?[''’]?(?>\s+(?:of|in|with))?(?>(?:\s+(?:professional|relevant|industry|work|hands-on|total|overall|full-time|demonstrated|proven|solid|extensive|significant|progressive|prior|recent|direct|applied|practical|dedicated)(?:\s*,)?)*)\s+(?![^.\n]{0,80}?\bexperience\b)(?!(?:age|old|experience|equivalent|the|a|an|this|that|our|its|their|his|her|your|my|combined|pioneering|helping|building|developing|writing|designing|shipping|delivering|creating|working|leading|architecting|managing|maintaining|operating|scaling|college|school|university|education|graduation|residency|tenure|innovation|growth|excellence|success|business|history|preferred|desirable|desired|ideally|bonus|plus|is|are|was|were|be|been|must|will|can|may|should|has|have|had|of|in|at|on|for|with|to|or|older)\b)[A-Za-z][\w.+#/-]*(?:(?!\s*[,/](?:[^.\n;:]|\.(?=\S))*?(?:\b(?:preferred|desirable|a\s+plus|nice(?:\s+|-)to(?:\s+|-)have|ideally|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|strongly\s+desired|we\s+(?:would\s+)?prefer|preference\s+for)\b|\bdesired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*))|\s+(?:\b(?:preferred|desirable|a\s+plus|nice(?:\s+|-)to(?:\s+|-)have|ideally|bonus|advantageous|an\s+advantage|would\s+be\s+nice|if\s+possible|strongly\s+desired|we\s+(?:would\s+)?prefer|preference\s+for)\b|\bdesired\b(?!\s+(?:candidate|applicant|profile|skill|qualification|attribute|trait|background|characteristic|competenc|experience|expertise)\w*)))\s*(?:,|/)?\s*(?:and\s+|or\s+)?[\w.+#/-]+){0,4}'
 
       # SHAPE 3, THE NOUN FIRST. "Experience Required: 3 to 5 years", "Experience Required
       # -6+ Years". Every pattern above reads left to right from the NUMBER, so all of them
@@ -1120,7 +1126,7 @@ families:
         subject_suppressors: [*company_side_years]
         suppressed_by_sentence: [*company_tenure_after_bar]
         suppressed_by_predicate: [*credit_predicate]
-      # T173. A hedged scoped, activity or domain bar has no preferred wording of its own: six
+      # T173. A hedged scoped, activity or domain bar has no preferred wording of its own: eight
       # retyped regexes would be needed to give it one. `carrier` declares a preferred pattern
       # that never matches on its own and exists only as a `hedged_as` target, so the hedged bar
       # writes a preferred row instead of none. Its own `implies`, NOT `total_years_preferred`:
