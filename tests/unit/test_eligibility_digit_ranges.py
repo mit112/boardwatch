@@ -237,15 +237,12 @@ def test_a_range_reads_its_low_end_as_the_floor(body: str, years: int, expected,
     assert _read(body, years, catalog) == expected
 
 
-# Controls: a ceiling and a months-to-years range stay rowless, and so do a decimal whose whole part
-# is under the domain pattern's bound, a domain range under that bound, and a time horizon.
+# Controls: a ceiling stays rowless, and so do a decimal whose whole part is under the domain
+# pattern's bound, a domain range under that bound, and a time horizon. A months-to-years range is
+# no longer rowless: the months patterns read its low end (T214b, test_eligibility_months_ranges.py).
 ROWLESS = [
     pytest.param("Up to 5 years of experience in Customer Success", 1, id="up-to-is-a-ceiling"),
     pytest.param("upto 5 years of relevant experience", 1, id="upto-is-a-ceiling"),
-    pytest.param(
-        "6 months to 2 years of experience in healthcare IT, consulting, or related fields.", 1,
-        id="months-to-years-left-rowless",
-    ),
     # pv 32676: a decimal's fraction is not the floor.
     pytest.param("Experience: 0,5- 3 years in SRE and-or DevTools support roles.", 1,
                  id="decimal-low-end-pv32676"),
