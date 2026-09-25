@@ -25,7 +25,8 @@ The scopes, all applied per match:
                           On a pattern with a tail hedge, applied (inline and as a heading)
                           only to a bar no abstain waived, as the tail hedge is.
                           A heading's hedge after its first coordinator reaches nothing
-                          (T215), and an item that states its own mandate takes none (T216).
+                          (T215), and an item that states its own mandate takes none (T216,
+                          or as its last word past the bar's clause, T245).
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
@@ -994,6 +995,7 @@ def _suppressed(
 # and `should ... be`) it binds nothing either. `minimum` is deliberately absent: measured under
 # hedge headings it states a preference's threshold (`Preferred Qualifications:\n- Minimum 5
 # years ...`), not a mandate.
+# A mandate past the bar's clause counts only as the item's last word (`_item_final_mandate`, T245).
 _ITEM_MUST = re.compile(
     r"(?:(?:(?:the|all)\s+)?(?:candidates?|applicants?)\s+|you\s+)?must\s+(?:have|possess|bring|be)(?!\w)",
     re.IGNORECASE,
@@ -1016,9 +1018,11 @@ _PREDICATE_BREAK = re.compile(
 )
 
 
-def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
+def _item_mandates(
+    text: str, lo: int, hi: int, start: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
     """Whether the item at `start` states the bar at [lo, hi)'s own mandate (`_ITEM_MUST`,
-    `_BAR_PREDICATE`)."""
+    `_BAR_PREDICATE`, or `_item_final_mandate` past the bar's clause)."""
     clo, chi = _clause_bounds(text, lo, hi)
     item = _BULLET_LEAD.match(text, start).end()  # type: ignore[union-attr]
     if clo <= item <= lo and _ITEM_MUST.match(text, item):
@@ -1028,7 +1032,50 @@ def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
             return False
         if not _SHOULD_BE.search(text, 0, cue.start()):
             return True
-    return False
+    return _item_final_mandate(text, hi, chi, hedges)
+
+
+# The item's mandate that ENDS it past the bar's clause, over a comma or an `and` (T245): `Minimum 5
+# years of experience in Warehouse and Logistics required.` and `3 years Lean Continuous Improvement
+# experience, required.` stated their own mandate where `_clause_bounds` could not see it, and read
+# as the heading's preference. It is the bar's only when nothing between them could own it: no
+# other bar (a duration or a credential) or second head noun (`..., and prior banking experience is
+# required`), no hedge, no negation or contrast, no `;`/`:`, no sentence break the splitter missed
+# (`teams.Excellent ... skills are required.`), no aside the cue sits inside with words of its own
+# (`(C/C++, Python a must)`; a bare `(required)` is the bar's) and no `_PREDICATE_BREAK`. So
+# `Bachelor's degree preferred, high school diploma or equivalent required.` binds nothing to the
+# bachelor's.
+_ITEM_FINAL_TAIL = re.compile(r"[\s.!?)\]]*")
+_ITEM_FINAL_BLOCK = re.compile(
+    rf"[;:]|(?<!\w)(?:not|no|but|while|whereas|except)(?!\w)"
+    rf"|{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)"
+    r"|(?<!\w)(?:degrees?|diplomas?|GED|certificat\w*|licen[cs]\w*|clearances?|bachelor\w*|"
+    r"masters?|master['’]s|associates?|associate['’]s|MBA|Ph\.?\s?D|doctorate)(?!\w)"
+    r"|(?<!\w)(?:experiences?|background|knowledge|expertise|proficiency|familiarity|understanding|"
+    r"skills?)(?!\w)"
+    r"|(?-i:(?:\s|(?<=[a-z]{2}))\.(?=[A-Z][a-z]))",
+    re.IGNORECASE,
+)
+
+
+def _item_final_mandate(
+    text: str, hi: int, chi: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
+    """Whether the item's LAST word is a mandate past the clause ending at `chi` that binds the bar
+    ending at `hi`."""
+    cues = list(_BAR_PREDICATE.finditer(text, chi))
+    if not cues or _ITEM_FINAL_TAIL.fullmatch(text, cues[-1].end()) is None:
+        return False
+    cue = cues[-1]
+    between = text[hi : cue.start()]
+    aside = between.rfind("(")
+    return not (
+        _ITEM_FINAL_BLOCK.search(between)
+        or _PREDICATE_BREAK.search(between)
+        or _SHOULD_BE.search(text, 0, cue.start())
+        or any(rx.search(between) for rx in hedges)
+        or (aside > between.rfind(")") and between[aside + 1 :].strip())
+    )
 
 
 def _hedged_by_heading(
@@ -1057,7 +1104,7 @@ def _hedged_by_heading(
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
     clo, chi = _clause_bounds(intro, lo, hi)
-    if _item_mandates(intro, lo, hi, len(heading) + 1):
+    if _item_mandates(intro, lo, hi, len(heading) + 1, hedges):
         return None
     return _suppressed(
         intro, lo, hi, hedges,
@@ -1172,7 +1219,11 @@ def detect(
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
                     if join is not None and (
-                        not lo < join < hi or _item_mandates(unit, lo, hi, join)
+                        not lo < join < hi
+                        or _item_mandates(
+                            unit, lo, hi, join,
+                            pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                        )
                     ):
                         continue
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):

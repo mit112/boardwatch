@@ -148,16 +148,21 @@ CONTROLS = [
         [("scoped_years_preferred", "preferred", "unmet", "2-3 years of product sales in the")],
         id="the-desired-specialty-pv116186",
     ),
-    pytest.param(
-        "Preferred Qualifications:\n12-15 years of general knowledge in EFT settlement and transaction "
-        "processing (required)",
-        [("scoped_years_preferred", "preferred", "unmet",
-          "12-15 years of general knowledge in EFT settlement")],
-        id="required-past-the-clause-pv32584",
-    ),
 ]
 
 
 @pytest.mark.parametrize(("body", "rows"), CONTROLS)
 def test_unbuilt_shapes_keep_their_reading(body: str, rows, catalog) -> None:  # type: ignore[no-untyped-def]
     assert _read(body, catalog) == ("eligible", rows)
+
+
+def test_a_required_past_the_clause_is_the_items_mandate(catalog) -> None:  # type: ignore[no-untyped-def]
+    """pv 32584, pinned here unbuilt in batch 8: T245 binds the item-final `(required)` to its bar."""
+    body = (
+        "Preferred Qualifications:\n12-15 years of general knowledge in EFT settlement and transaction "
+        "processing (required)"
+    )
+    assert _read(body, catalog) == ("ineligible", [
+        ("domain_range_years_minimum", "required", "unmet",
+         "12-15 years of general knowledge in EFT settlement"),
+    ])
