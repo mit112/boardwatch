@@ -491,6 +491,19 @@ class Fetcher:
         finally:
             del self._board.deadline
 
+    def request_fits_board_deadline(self) -> bool:
+        """Whether a request started now ends on its own clock, never the board's (T243).
+
+        True outside a board, or while more than one pacing delay plus one fetch deadline is left
+        before the board's instant: the pacing wait precedes the request's own deadline, which
+        then ends it first. Past that point the board's clock could cut the request, and a board
+        its clock cuts is failed and persists nothing, so a provider stops STARTING detail fetches
+        here and returns what it has. A wait on this host's lock behind another thread, or a
+        crawl-delay stricter than the pacing delay, is not counted. Asking never trips the clock.
+        """
+        board: BoardClock | None = getattr(self._board, "deadline", None)
+        return board is None or board.at - time.monotonic() > self._delay + self._deadline
+
     @property
     def effective_delay(self) -> float:
         return self._delay

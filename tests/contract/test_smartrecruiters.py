@@ -290,6 +290,36 @@ def test_budget_exceeded_is_partial(tmp_path: Path) -> None:
     assert snap.detail_deferred == 2
 
 
+@respx.mock
+def test_the_detail_phase_stops_before_the_board_clock_could_end_a_request(
+    tmp_path: Path,
+) -> None:
+    """T243. aecom2 fetched 541 and 476 details on runs 474/475 and then, on 476, was failed at its
+    cap with nothing persisted. Past the point where the board's clock could end a request, the
+    rest are deferred — `partial`, with what was fetched — and the clock is never tripped."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    _mock_all_details()
+    fetcher = _fetcher(tmp_path)
+    listed = _fx_json("list_normal.json")["content"][0]
+    first = str(listed["id"])
+    body = {**_fx_json("detail_normal.json"), **{k: listed[k] for k in ("id", "name", "location")}}
+    with fetcher.under_deadline(time.monotonic() + 1000.0, 1000.0) as clock:
+
+        def _then_one_second_left(request: httpx.Request) -> httpx.Response:
+            clock.at = time.monotonic() + 1.0  # the default 240 s fetch deadline no longer fits
+            return httpx.Response(200, json=body)
+
+        respx.get(_detail_url(first)).mock(side_effect=_then_one_second_left)
+        snap = provider.fetch_board(fetcher, _request())
+
+    assert _detail_calls() == {first}
+    assert [p.provider_posting_id for p in snap.postings] == [first]
+    assert snap.status == "partial"
+    assert snap.detail_deferred == 2
+    assert "2 unseen postings deferred" in (snap.error or "")
+    assert not clock.tripped
+
+
 @pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_one_detail_failure_is_partial(tmp_path: Path) -> None:

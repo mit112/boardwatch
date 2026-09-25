@@ -52,6 +52,15 @@ def count_listed_ids(rows: Iterable[Any], id_key: str) -> int:
     )
 
 
+def board_clock_deferral(deferred: int) -> str:
+    """The `errors` note for a detail phase stopped by `Fetcher.request_fits_board_deadline`
+    (T243). The count itself travels as `BoardSnapshot.detail_deferred`; this is the run log's."""
+    return (
+        f"detail phase stopped before the board deadline: {deferred} unseen postings "
+        "deferred to the next scan"
+    )
+
+
 # Subdomain labels that name a CAREER SITE rather than an employer. CLOSED catalog: a host
 # whose every label is in here derives NO employer name at all, rather than falling through to
 # the next label along and returning a vendor's or a registrar's word for it.

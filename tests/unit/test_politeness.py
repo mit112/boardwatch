@@ -643,6 +643,27 @@ def test_a_request_that_fails_on_its_own_deadline_leaves_the_board_clock_clear(
     assert not clock.tripped
 
 
+def test_a_request_fits_the_board_only_with_a_fetch_deadline_and_a_delay_left(
+    tmp_path: Path,
+) -> None:
+    """T243. A request started with more than one pacing delay plus one fetch deadline left on
+    the board's clock is ended by its own clock, never the board's, so a provider can stop
+    starting detail fetches while the board can still return what it fetched. Asking never trips
+    the clock."""
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 10.0})
+    fetcher = Fetcher(settings)
+    assert fetcher.request_fits_board_deadline()  # no board on this thread
+    with fetcher.under_deadline(time.monotonic() + 30.0, 30.0) as clock:
+        assert fetcher.request_fits_board_deadline()
+        clock.at = time.monotonic() + 10.1  # a fetch deadline left, but not the delay too
+        assert not fetcher.request_fits_board_deadline()
+        clock.at = time.monotonic() + 10.5
+        assert fetcher.request_fits_board_deadline()
+        clock.at = time.monotonic() - 1.0
+        assert not fetcher.request_fits_board_deadline()
+    assert not clock.tripped
+
+
 def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:
     """T192c. One `Fetcher` serves every worker: one board's expired scope must not fail a
     request another thread makes."""

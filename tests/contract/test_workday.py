@@ -6,6 +6,7 @@ tests/fixtures/workday/README.md."""
 from __future__ import annotations
 
 import json
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -694,6 +695,36 @@ def test_detail_budget_is_respected_and_reported(tmp_path: Path) -> None:
     assert snapshot.status == "partial"
     assert "detail budget" in (snapshot.error or "")
     assert len(snapshot.listed_ids) == 3
+
+
+@respx.mock
+def test_the_detail_phase_stops_before_the_board_clock_could_end_a_request(
+    tmp_path: Path,
+) -> None:
+    """T243. Run 476 failed seven boards at `board deadline 600s exceeded` mid-detail-phase, and a
+    board the cap fails persists nothing, so the next scan re-fetched the same details. Past the
+    point where the board's clock could end a request, the rest are deferred — `partial`, with
+    what was fetched — and the clock is never tripped."""
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    _mock_all_details()
+    fetcher = _fetcher(tmp_path)
+    first = _detail_url(str(_fx("list_normal.json")["jobPostings"][0]["externalPath"]))
+    with fetcher.under_deadline(time.monotonic() + 1000.0, 1000.0) as clock:
+
+        def _then_one_second_left(request: httpx.Request) -> httpx.Response:
+            clock.at = time.monotonic() + 1.0  # the default 240 s fetch deadline no longer fits
+            return httpx.Response(200, json=_fx("detail_normal.json"))
+
+        respx.get(first).mock(side_effect=_then_one_second_left)
+        snapshot = provider.fetch_board(fetcher, _request())
+
+    assert [str(c.request.url) for c in respx.calls if "/job/" in str(c.request.url)] == [first]
+    assert [p.provider_posting_id for p in snapshot.postings] == ["JR1000001-1"]
+    assert snapshot.status == "partial"
+    assert snapshot.detail_deferred == 2
+    assert snapshot.listed_ids == {"JR1000001-1", "JR1000002", "JR1000003"}
+    assert "2 unseen postings deferred" in (snapshot.error or "")
+    assert not clock.tripped
 
 
 @respx.mock

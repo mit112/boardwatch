@@ -7,6 +7,7 @@ the coordinator itself, independent of why the worker is stuck.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections.abc import Iterable, Iterator
@@ -17,12 +18,13 @@ from typing import Any
 
 import httpx
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, func, insert, select
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher, FetchFailure, HostPacing
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
+from boardwatch.providers.workday import WorkdayProvider
 from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
@@ -425,3 +427,74 @@ def test_an_abandoned_worker_past_every_clock_is_reported_once(
             ).all()
         )
     assert statuses == {ids["stuck"]: "failed", ids["acme"]: "complete"}
+
+
+_WORKDAY_FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "workday"
+_WORKDAY_SLUG = "acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+def test_a_board_its_cap_would_cut_keeps_its_details_and_the_next_scan_fetches_only_the_rest(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T243. db, hitachi, vfc and mtb failed at `board deadline 600s exceeded` on runs 475 AND
+    476 with one stored posting each: a board the cap fails persists nothing, so its known ids
+    never grow and every scan repeats the one before. Here the board's clock runs out after its
+    first detail: the board is recorded `partial` with that posting, and the second scan fetches
+    only the two it deferred, then completes."""
+    listing = json.loads((_WORKDAY_FIXTURES / "list_normal.json").read_text(encoding="utf-8"))
+    info = json.loads((_WORKDAY_FIXTURES / "detail_normal.json").read_text(encoding="utf-8"))
+    details: list[str] = []
+    out_of_time = [True]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json=listing)
+        details.append(request.url.path)
+        if out_of_time and out_of_time.pop():
+            # The worker thread's own board clock (T192c): past it, as a slow host leaves it.
+            fetcher._board.deadline.at = time.monotonic() - 1.0
+        return httpx.Response(200, json=info)
+
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(
+                insert(tables.companies).values(
+                    name="Acme", provider="workday", slug=_WORKDAY_SLUG, source="user",
+                    watched=True,
+                )
+            ).inserted_primary_key[0]
+        )
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
+        per_host_delay_seconds=0.25,
+    )
+    fetcher = Fetcher(
+        settings, client=httpx.Client(transport=httpx.MockTransport(handler)),
+        pacing=HostPacing(),
+    )
+
+    def _scan() -> tuple[Any, int, Any]:
+        summary = run_scan(
+            engine, settings, providers={"workday": WorkdayProvider()}, fetcher=fetcher
+        )
+        with engine.connect() as conn:
+            stored = conn.execute(
+                select(func.count()).select_from(tables.postings).where(
+                    tables.postings.c.company_id == company_id
+                )
+            ).scalar_one()
+            scan = conn.execute(
+                select(tables.board_scans.c.status, tables.board_scans.c.detail_deferred)
+                .order_by(tables.board_scans.c.id.desc())
+                .limit(1)
+            ).one()
+        return summary, int(stored), tuple(scan)
+
+    first, stored, scan = _scan()
+    assert (first.partial, first.failed, stored, scan) == (1, 0, 1, ("partial", 2))
+    assert len(details) == 1
+
+    second, stored, scan = _scan()
+    assert (second.complete, second.failed, stored, scan) == (1, 0, 3, ("complete", 0))
+    assert len(details) == 3  # the known-id skip: two more, not three
