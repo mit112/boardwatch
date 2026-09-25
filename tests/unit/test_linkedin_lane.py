@@ -48,6 +48,10 @@ from boardwatch.lanes.linkedin import (
     SearchPageError,
 )
 
+# T232: no test in this module asserts pacing, a backoff or a deadline, so `Fetcher`'s per-host
+# delay (floored at 0.25 s by `Settings`) is dead wall clock here. See `no_real_sleep`.
+pytestmark = pytest.mark.usefixtures("no_real_sleep")
+
 _SEARCH_PREFIX = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 
 

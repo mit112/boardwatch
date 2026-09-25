@@ -550,6 +550,7 @@ def test_an_admission_never_asks_for_its_board_to_be_watched(
     assert all(s.watch is False for s in result.snapshots)
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_admits_is_asked_once_per_company_before_any_body_is_fetched(
     respx_mock: respx.Router, tmp_path: Path
@@ -635,6 +636,7 @@ def test_an_out_of_catalog_seed_is_charged_but_costs_no_request(
     assert respx_mock.calls.call_count == 2  # the two list GETs, and nothing else
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_request_budget_bounds_the_gets_and_unspent_seeds_are_uncharged(
     respx_mock: respx.Router, tmp_path: Path
@@ -654,6 +656,7 @@ def test_the_request_budget_bounds_the_gets_and_unspent_seeds_are_uncharged(
     assert result.tally.counts["not_attemptable"] == 2
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_resolved_seed_reports_resolved_and_a_failed_one_does_not(
     respx_mock: respx.Router, tmp_path: Path
@@ -699,6 +702,7 @@ def test_the_outcome_is_body_fetched_not_body_inline(respx_mock: respx.Router, t
     assert result.tally.counts["body_inline"] == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_transport_refusal_and_a_gone_posting_are_different_outcomes(
     respx_mock: respx.Router, tmp_path: Path
@@ -994,6 +998,7 @@ def test_an_alias_is_closed_without_a_request_when_its_twin_resolves(
     assert result.uncharged_resolved == (2,), "the redundant alias must be closed but uncharged"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_dead_alias_does_not_discard_its_live_twin(
     respx_mock: respx.Router, tmp_path: Path
@@ -1021,6 +1026,7 @@ def test_a_dead_alias_does_not_discard_its_live_twin(
     assert result.tally.counts["body_fetched"] == 1
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_snapshot_url_is_one_that_actually_resolved(
     respx_mock: respx.Router, tmp_path: Path

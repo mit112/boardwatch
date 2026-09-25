@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import httpx
+import pytest
 import respx
 from indeed_shape import search_hits, search_response
 from sqlalchemy import Engine, insert
@@ -95,6 +96,7 @@ def test_two_countries_share_one_page_budget_round_robin(tmp_path: Path) -> None
     assert result.search_pages == ((search_url("USA"), 1), (search_url("CAN"), 1))
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_page_budget_is_shared_across_countries_and_facets(tmp_path: Path) -> None:
     """Two facets × two pages is a budget of four whatever the country count: two countries get
     one page per (facet, country) search, not two."""
@@ -114,6 +116,7 @@ def test_the_page_budget_is_shared_across_countries_and_facets(tmp_path: Path) -
     assert (us.call_count, ca.call_count) == (2, 2)
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_one_country_keeps_its_whole_page_budget_per_facet(tmp_path: Path) -> None:
     """CONTROL: the owner's single-country run is unchanged — every facet pages to the ceiling."""
     with respx.mock(assert_all_called=True) as router:

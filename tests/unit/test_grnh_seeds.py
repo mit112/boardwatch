@@ -87,6 +87,7 @@ def test_a_seed_resolves_to_the_board_behind_its_redirect(
     assert result.census.failed == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_seeds_sharing_one_board_collapse_to_a_single_candidate(
     respx_mock: respx.Router, tmp_path: Path
@@ -120,6 +121,7 @@ def test_a_destination_that_is_not_a_supported_board_is_counted_not_dropped(
     assert result.census.failed == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_one_dead_link_does_not_discard_the_boards_resolved_beside_it(
     respx_mock: respx.Router, tmp_path: Path
@@ -229,6 +231,7 @@ def test_a_newline_in_a_resolved_value_cannot_break_out_of_the_header_comment(
 # ------------------------------------------------------------------------------------------
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_two_different_boards_both_survive_the_dedupe(
     respx_mock: respx.Router, tmp_path: Path
@@ -285,6 +288,7 @@ def test_a_short_link_that_dies_before_naming_a_board_is_still_a_failure(
     assert result.census.from_expired_posting == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_census_accounts_for_every_seed_it_read(
     respx_mock: respx.Router, tmp_path: Path
@@ -388,6 +392,7 @@ def test_the_default_stdout_path_emits_a_document_that_still_parses(
     assert yaml.safe_load(invoked.stdout)["companies"][0]["slug"] == "speechify"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_two_expired_postings_on_one_board_are_deduped_and_counted(
     respx_mock: respx.Router, tmp_path: Path
