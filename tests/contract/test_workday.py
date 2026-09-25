@@ -1662,3 +1662,12 @@ def test_a_rescan_of_a_known_posting_keeps_the_country_bearing_locations(tmp_pat
         stored = conn.execute(select(tables.postings.c.locations_json)).scalar_one()
     assert second.listed_ids == known
     assert stored == ["ACM IV, Romania", "ACM P24"]
+
+
+def test_a_primary_that_names_a_place_keeps_the_locations_it_always_had() -> None:
+    # The cross_host identity keys on the whole locations list, and the lane copies of a Workday
+    # posting (Indeed, LinkedIn, job-apps) carry only its primary location. Adding the additional
+    # sites to a posting whose primary already resolved cost 803 open cross_host matches live and
+    # moved no location class, so they join only where the country had to be added.
+    detail = _country_detail("Austin, TX", "United States of America", ["Denver, CO"])
+    assert _country_parse(detail) == ["Austin, TX"]

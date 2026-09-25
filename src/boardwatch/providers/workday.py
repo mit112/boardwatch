@@ -937,8 +937,12 @@ def parse_posting(
     location = str(info.get("location") or listed.get("locationsText") or "").strip()
     primary = _with_country(location, info.get("country"))
     locations = [primary] if primary else []
+    # Only beside a country the primary had to borrow: that is the one place the country can turn
+    # a posting with a US site among its additional ones into a confirmed foreign one. Elsewhere
+    # the list stays the primary alone, because `cross_host` keys on the whole list and a lane's
+    # copy of this posting carries only the primary — 803 open matches lost, live, otherwise.
     additional = info.get("additionalLocations")
-    if isinstance(additional, list):
+    if primary != location and isinstance(additional, list):
         locations += [a.strip() for a in additional if isinstance(a, str) and a.strip()]
     raw: dict[str, Any] = {"listed": listed}
     if detail is not None:
