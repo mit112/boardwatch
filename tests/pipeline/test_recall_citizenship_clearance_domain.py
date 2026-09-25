@@ -201,7 +201,13 @@ DOMAIN_LIST_SPANS = [
 
 @pytest.mark.parametrize("body", DOMAIN_LIST_SPANS)
 def test_domain_list_reaches_the_experience_noun(catalog: RulesCatalog, body: str) -> None:
-    assert "domain_list_years_minimum" in _rules(catalog, body, EAD, "experience_years")
+    """The list is read through to its `experience` noun, by the domain list or, where the scoped
+    tail's `{0,3}` also reaches it, by the scoped row the domain list yields to (T234)."""
+    rows = [
+        r for r in evaluate(body, EAD, BLOCKER_ALL, catalog).requirements
+        if (r.rule_id or "").split(":")[-1] in ("domain_list_years_minimum", "scoped_years_minimum")
+    ]
+    assert [body[slice(*r.jd_locator["span"])].endswith("experience") for r in rows] == [True]
 
 
 #: SHAPE 2: no `experience` noun anywhere. The number and the domain carry the requirement.
