@@ -657,22 +657,28 @@ _HEDGE_HEADING = re.compile(
 )
 
 
-# A FIELD label opening a list item (`- Experience: 5 years ...`). It names what the bar is
-# about, not how binding it is, so a hedge heading reads through it; kept out of the hedge's
-# introducer, it would break the delimiters-only chain and restore the bar. Closed, so
-# `- Required: 5 years ...` is never read through.
-_FIELD_LABEL = re.compile(
-    r"(?:(?:total|work|professional|relevant|industry)\s+)?"
-    r"(?:experience|education|degree|skills?|background|certifications?|training)\s*:\s*",
+# A label opening a list item (`- Experience: 5 years ...`, `Specialist: 2 - 5 years ...`,
+# `Extensive Experience: 12+ years ...`, `Level 2: ...`). It names what the bar is about or which
+# level it belongs to, not how binding it is, so a hedge heading reads through it; kept out of the
+# hedge's introducer, it would break the delimiters-only chain and restore the bar (T241a: only
+# the closed field nouns were read through, and 49 store postings kept a required bar behind any
+# other label). A label that states how binding the bar is, or a notice, is never read through:
+# `- Required: 5 years ...`, `Experience requirement: Minimum 5 years`, `Note: ...`.
+_ITEM_LABEL = re.compile(r"(?!\d)[\w'’&/().+-]+(?:[ \t]+[\w'’&/().+-]+){0,5}[ \t]*:\s*")
+_LABEL_BINDS = re.compile(
+    r"(?<!\w)(?:required|requirements?|requires?|must|mandatory|minimum|essential|necessary|"
+    r"needed|non-?negotiables?|note|important|please|basic)(?!\w)",
     re.IGNORECASE,
 )
 
 
 def _item_start(unit: str) -> int:
-    """Where a governed item's own text starts: past its bullet and any field label."""
+    """Where a governed item's own text starts: past its bullet and any label it reads through."""
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
-    field = _FIELD_LABEL.match(unit, lead)
-    return lead if field is None else field.end()
+    label = _ITEM_LABEL.match(unit, lead)
+    if label is None or _LABEL_BINDS.search(label.group()):
+        return lead
+    return label.end()
 
 
 def _heading_text(head: str) -> str:
@@ -1096,7 +1102,7 @@ def _hedged_by_heading(
 
     "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would. The
     caller passes `_heading_text`, so `Preferred Qualifications:` reads as `Preferred:`, and a
-    field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
+    label opening the item (`- Experience: 5 years`) is read through (`_ITEM_LABEL`).
     `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
     caller's list was never run over that clause, so a match there is not the heading's.
     A hedge after the heading's first coordinator is not the heading's (`_muted_heading`), and an

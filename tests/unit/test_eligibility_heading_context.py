@@ -191,6 +191,18 @@ HEADING_CASES: list[tuple] = [
     ('h104:T246 CONTROL a sentence-case heading is still no heading (not built)', 'Preferred skills and experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h105:T246 a plain Title-case line with a lowercase and is a heading, as Python SQL already is, and ends the hedge', 'Preferred Qualifications:\nPython and SQL\n5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h106:T246 CONTROL a bulleted Title-case line with a lowercase and is no heading', 'Preferred Qualifications:\n- Python and SQL\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h107:T241a a level label does not hide its hedge heading (pv 245092)', 'Preferred Qualifications:\nSpecialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h108:T241a a modified field label is read through as a field label is', 'Preferred Qualifications:\n- Extensive Experience: 12+ years of professional software development experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h109:T241a a numbered level label is read through', 'Desired:\n- Level 3: 5+ years of experience in design of vehicle Avionics systems', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h110:T241a a coordinated field label is read through', 'Preferred Qualifications:\n- Purchasing / Supply Planning Expertise: 5+ years of hands-on purchasing experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h111:T241a a hedged label is read through', 'Preferred Qualifications:\n- Desired Experience: Minimum 8 years of experience related to the labor category', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h112:T241a CONTROL a label naming a requirement keeps its bar', 'Preferred Qualifications:\n- Experience requirement: Minimum 5 years in SaaS solution environment', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('h113:T241a CONTROL a notice label keeps its bar', 'Preferred Qualifications:\n- Note: 8 years of industrial maintenance experience', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h114:T241a CONTROL a non-negotiable label keeps its bar', 'Preferred Qualifications:\n- Non-negotiable: 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h115:T241a CONTROL a label that opens on a number is not read through', 'Preferred Qualifications:\n- 3 year(s): 2-4 years of experience in full stack development', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
+    ('h116:T241a CONTROL a labelled item under a requirements heading keeps its bar', 'Requirements:\n- Specialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:range_years_minimum', 'required', 'unknown']]),
+    ("h117:T241a CONTROL a required label inside the label keeps the item's bar", "Preferred Qualifications:\n- Education (required): Bachelor's degree or equivalent.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_required', 'required', 'met'], ['degree:bachelor_required', 'required', 'met']]),
+    ("h118:T241b CONTROL a hedge ending a flattened line still hedges the next line's bar (pv 130715, 1 store posting, not built)", 'Qualifications\nBachelor’s degree or equivalent preferred 3 - 5 years of experience supporting asset management distribution.', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -303,4 +315,4 @@ def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 106
+    assert len(HEADING_CASES) == 118
