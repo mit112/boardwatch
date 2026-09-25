@@ -136,6 +136,13 @@ HEADING_CASES: list[tuple] = [
     ("h54:T216 a required before the bar is another subject's predicate, not the bar's", 'Preferred:\n- Travel is required with 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ("h55:T216 CONTROL an item opening with its own subject's must beats the heading's hedge", 'Preferred Qualifications:\n- Candidates must have 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ("h56:T216 CONTROL an item opening must be beats the heading's hedge", 'Preferred Qualifications:\n- Must be able to obtain a Public Trust Clearance', P_FACTS, ALL_BLOCKERS, 'ineligible', [['clearance:clearable_leveled_required', 'required', 'unmet'], ['clearance:clearable_required', 'required', 'unmet']]),
+    ("h57:T215 the hyphenated nice-to-have before the heading's coordinator hedges the whole list", 'Nice-to-Have / Bonus\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h58:T215 CONTROL a hedge before a coordinator naming requirements still hedges', 'Bonus / Requirements\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h59:the hyphenated nice-to-have heading carries a total bar as its preference', 'Nice-to-have:\n- 5+ years of experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h60:the hyphenated nice-to-have hedges a degree bar as the spaced form does', 'Qualifications:\n- PhD degree nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met']]),
+    ('h61:the hyphenated nice-to-have hedges a clearance bar as the spaced form does', 'Qualifications:\n- Security clearance nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['clearance:clearance_preferred', 'preferred', 'unmet']]),
+    ('h62:the hyphenated nice-to-have hedges a range bar as the spaced form does', 'Qualifications:\n- 3-5 years of experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h63:the hyphenated nice-to-have hedges an or-equivalent degree bar as the spaced form does', 'Qualifications:\n- Bachelor\'s degree or equivalent experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
