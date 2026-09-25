@@ -46,8 +46,9 @@ AcquisitionOutcome = Literal[
     # A GROUP directory link whose target is gone (T220): the job-apps staging root links
     # groups, and the refresher's link-refresh race leaves one dangling. Counted once per GROUP,
     # because the records behind it are unknowable. Not folded into `not_attemptable`, which
-    # counts records the lane saw and rejected; these records were never seen at all.
-    "dangling_group_links",
+    # counts records the lane saw and rejected; these records were never seen at all. Kept out
+    # of `attempted` (`_GROUP_UNIT`).
+    "dangling_group_link",
 ]
 
 ACQUISITION_OUTCOMES: tuple[str, ...] = get_args(AcquisitionOutcome)
@@ -56,9 +57,9 @@ ACQUISITION_OUTCOMES: tuple[str, ...] = get_args(AcquisitionOutcome)
 # that adding an outcome cannot silently make it count as a success.
 _RESOLVED: frozenset[str] = frozenset({"body_inline", "body_fetched"})
 
-# The outcomes for which no acquisition was attempted, kept off the attempt side of
-# `is_silent_outage`. Named for the same reason `_RESOLVED` is.
-_UNATTEMPTED: frozenset[str] = frozenset({"not_attemptable", "dangling_group_links"})
+# Outcomes counted per source GROUP, not per record, and so left out of `attempted`: that is a
+# record count, published as the funnel's `lanes[].attempted`.
+_GROUP_UNIT: frozenset[str] = frozenset({"dangling_group_link"})
 
 
 class UnknownAcquisitionOutcome(ValueError):
@@ -91,7 +92,7 @@ class AcquisitionTally:
 
     @property
     def attempted(self) -> int:
-        return sum(self._counts.values())
+        return sum(count for name, count in self._counts.items() if name not in _GROUP_UNIT)
 
     @property
     def resolved(self) -> int:
@@ -125,9 +126,9 @@ class AcquisitionTally:
         The predicate itself is unaffected: every one of the three causes is "seen and not
         requested", which is exactly what must be excluded from the attempt side.
 
-        `dangling_group_links` is excluded for the same reason (T220): nothing was requested for
-        the records behind a broken group link, and the next run re-reads the link once the
-        refresher finishes. A run that found only broken links is not an outage.
+        `dangling_group_link` never reaches this subtraction (T220): it counts groups, not
+        records, so `attempted` already leaves it out (`_GROUP_UNIT`). A run that found only
+        broken links attempted nothing and is not an outage; a broken link beside a failed fetch
+        does not mask the failure. The next run re-reads the link once the refresher finishes.
         """
-        unattempted = sum(self._counts[name] for name in _UNATTEMPTED)
-        return self.attempted - unattempted > 0 and self.resolved == 0
+        return self.attempted - self._counts["not_attemptable"] > 0 and self.resolved == 0

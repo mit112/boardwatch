@@ -646,9 +646,11 @@ def test_a_dangling_group_link_is_counted_per_group_and_the_rest_of_the_tree_is_
     assert sorted(posting.title for posting in _postings(result)) == [
         "Linked A", "Linked B", "Plain Role",
     ]
-    assert result.tally.counts["dangling_group_links"] == 1
+    assert result.tally.counts["dangling_group_link"] == 1
     assert result.tally.counts["not_attemptable"] == 0
     assert result.tally.counts["body_inline"] == 3
+    # A record count: the three records, not the broken group beside them.
+    assert result.tally.attempted == 3
 
 
 def test_a_dangling_skip_folder_link_loses_nothing_and_is_not_counted(tmp_path):
@@ -659,7 +661,7 @@ def test_a_dangling_skip_folder_link_loses_nothing_and_is_not_counted(tmp_path):
     (root / "_applied").symlink_to(tmp_path / "gone" / "_applied", target_is_directory=True)
     result = _collect(root, tmp_path)
     assert len(_postings(result)) == 1
-    assert result.tally.counts["dangling_group_links"] == 0
+    assert result.tally.counts["dangling_group_link"] == 0
 
 
 def test_a_tree_of_only_dangling_group_links_still_raises_as_no_group_folder(tmp_path):

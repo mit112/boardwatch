@@ -443,7 +443,7 @@ class JobAppsLane:
         for _ in range(dangling):
             # A group link whose target is gone, once per GROUP: its records were never seen,
             # so this is not `not_attemptable`. See `_records_under`.
-            tally.record("dangling_group_links")
+            tally.record("dangling_group_link")
 
         grouped: dict[tuple[str, str], list[tuple[_Identity, _Record]]] = {}
         names: dict[tuple[str, str], str] = {}

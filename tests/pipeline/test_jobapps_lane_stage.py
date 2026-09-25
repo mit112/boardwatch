@@ -72,7 +72,9 @@ def test_a_dangling_group_link_reaches_the_funnels_lane_row_and_the_lane_does_no
     assert not [error for error in summary.errors if "jobapps" in error], summary.errors
     [lane] = _payload(tmp_path / "apps")["lanes"]
     assert lane["name"] == "jobapps"
-    assert lane["counts"]["dangling_group_links"] == 1
+    assert lane["counts"]["dangling_group_link"] == 1
     assert lane["counts"]["not_attemptable"] == 0
     assert lane["counts"]["body_inline"] == 3
+    # The published record count keeps its meaning: three records, not three plus a group.
+    assert lane["attempted"] == 3
     assert lane["is_silent_outage"] is False

@@ -262,11 +262,12 @@ _TOP_MISSING = 10
 # same precedent: additive keys that change no existing key's meaning. A funnel written before them
 # lacks both, which reads as `null`: NOT MEASURED. T188b's `lanes[].not_attempted` likewise.
 #
-# **T220's `lanes[].counts.dangling_group_links` does NOT bump it either**, on that same precedent:
-# one more key inside `counts`, carried there like every other `AcquisitionOutcome`, and no
-# existing key changes meaning. `is_silent_outage` keeps it off the attempt side as it does
-# `not_attemptable`, and it is 0 for every lane but `jobapps`. A funnel written before it lacks
-# the key, which reads as NOT MEASURED, never as zero broken links.
+# **T220's `lanes[].counts.dangling_group_link` does NOT bump it either**, on that same precedent:
+# one more key inside `counts`, carried there like every other `AcquisitionOutcome`. `attempted`
+# keeps its meaning, the records tallied, because the member counts source GROUPS and is excluded
+# from it; that exclusion also keeps it off `is_silent_outage`'s attempt side. It is 0 for every
+# lane but `jobapps`. A funnel written before it lacks the key, which reads as NOT MEASURED,
+# never as zero broken links.
 #
 # **v9 is a lead's `location_class` read against the run's `target_countries` (T204).** It bumps
 # for the v5 reason: an existing key changed MEANING. Since T186 (D-583) the hard location gate
