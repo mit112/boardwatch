@@ -224,28 +224,70 @@ class _DeadlineStream(httpcore.NetworkStream):
         return self._stream.get_extra_info(info)
 
 
+class ResolverSaturated(httpcore.ConnectError):
+    """A lookup refused at once, without a thread, because `_MAX_LOOKUPS` are already running.
+
+    A `ConnectError`, not a `DeadlineExceeded` (T227): neither the request's clock nor the
+    board's ran out, so it must not be reported as either — the board's would record the board
+    `board deadline exceeded` before its cap (T228). As a transport error it is retried and
+    ends UNREACHABLE, which a host this process cannot resolve now is.
+    """
+
+
+#: The most `getaddrinfo` threads the process runs at once (T227). A fetching thread waits on at
+#: most one lookup, and at most 38 fetch at once: `scan_workers` board threads (32 at the Settings
+#: ceiling), one per lane (five registered) and the main thread. The other 26 are room for
+#: lookups abandoned at a deadline: a resolver outage holds at most 64 threads, and even a
+#: full-width scan is refused a lookup only once 26 are stuck.
+_MAX_LOOKUPS = 64
+
+
+class _Lookup:
+    """One `getaddrinfo(host, port)` on a daemon thread, shared by every caller that asks for the
+    same (host, port) while it runs; the thread removes it from `_LOOKUPS` as it ends."""
+
+    def __init__(self, host: str, port: int) -> None:
+        self.outcome: list[list[tuple[Any, ...]] | Exception] = []
+        self.thread = threading.Thread(
+            target=self._run, args=(host, port), name=f"resolve {host}", daemon=True
+        )
+
+    def _run(self, host: str, port: int) -> None:
+        try:
+            self.outcome.append(socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM))
+        except Exception as exc:
+            self.outcome.append(exc)
+        finally:
+            with _LOOKUPS_GUARD:
+                del _LOOKUPS[(host, port)]
+
+
+_LOOKUPS: dict[tuple[str, int], _Lookup] = {}
+_LOOKUPS_GUARD = threading.Lock()
+
+
 def _resolve(host: str, port: int, timeout: float | None) -> list[tuple[Any, ...]]:
     """`getaddrinfo` as `create_connection` calls it, on a worker thread joined for `timeout`.
 
     The resolver ignores every socket timeout (T226), and the call itself cannot be cancelled:
     on expiry the daemon thread is left to finish in the background, bounded only by the OS
-    resolver's own timeout. That, beside the TLS handshake trickle, is a known limit — the
-    request ends at its deadline, but one thread per such lookup outlives it.
+    resolver's own timeout. So a caller for a (host, port) already being looked up waits on that
+    lookup rather than starting another, and past `_MAX_LOOKUPS` none is started (T227). That,
+    beside the TLS handshake trickle, is a known limit — the request ends at its deadline, but
+    up to `_MAX_LOOKUPS` threads can outlive their requests while a resolver answers nothing.
     """
-    outcome: list[list[tuple[Any, ...]] | Exception] = []
-
-    def lookup() -> None:
-        try:
-            outcome.append(socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM))
-        except Exception as exc:
-            outcome.append(exc)
-
-    thread = threading.Thread(target=lookup, name=f"resolve {host}", daemon=True)
-    thread.start()
-    thread.join(timeout)
-    if not outcome:
+    with _LOOKUPS_GUARD:
+        lookup = _LOOKUPS.get((host, port))
+        if lookup is None:
+            if len(_LOOKUPS) >= _MAX_LOOKUPS:
+                raise ResolverSaturated(f"{len(_LOOKUPS)} lookups running; not resolving {host}")
+            lookup = _Lookup(host, port)
+            lookup.thread.start()  # under the guard: its own removal waits for the entry below
+            _LOOKUPS[(host, port)] = lookup
+    lookup.thread.join(timeout)
+    if not lookup.outcome:
         raise httpcore.ConnectTimeout(f"resolving {host} timed out")
-    result = outcome[0]
+    result = lookup.outcome[0]
     if isinstance(result, OSError):
         raise httpcore.ConnectError(str(result)) from result
     if isinstance(result, Exception):

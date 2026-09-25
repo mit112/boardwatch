@@ -1345,3 +1345,130 @@ def test_a_hundred_fast_connects_leave_no_resolver_thread_behind() -> None:
     listener.close()
     assert len(accepted) == 100
     assert not left_behind, left_behind
+
+
+# --- T227: an unanswered resolver is bounded — one lookup per (host, port), a cap on them all ---
+#
+# A resolver that answers nothing held one abandoned thread per ATTEMPT (T226). These tests hold
+# every lookup on an Event the test itself sets, so every resolver thread started during a test
+# is still alive when it is counted, and no count depends on how fast anything ran.
+
+
+def _resolver_threads(hosts: set[str]) -> list[threading.Thread]:
+    return [t for t in threading.enumerate() if t.name.removeprefix("resolve ") in hosts]
+
+
+@contextmanager
+def _unanswered(patch: pytest.MonkeyPatch, hosts: set[str]) -> Iterator[list[int]]:
+    """Every name in `hosts` resolves only when the block exits; yields one entry per lookup the
+    resolver was asked for. On exit it answers (a gaierror) and every thread it held is joined,
+    so no lookup outlives the test that started it. It first waits out any lookup another test
+    left running: the registry is process-wide, and these tests count against its cap."""
+    for lookup in list(politeness._LOOKUPS.values()):
+        lookup.thread.join(10.0)
+    assert not politeness._LOOKUPS, politeness._LOOKUPS
+    release = threading.Event()
+    asked: list[int] = []
+
+    def hang(port: int) -> list[tuple[Any, ...]]:
+        asked.append(port)
+        release.wait(10.0)  # a watchdog only: the `finally` below is what releases it
+        raise socket.gaierror(socket.EAI_NONAME, "no answer")
+
+    try:
+        with _network(patch, dict.fromkeys(hosts, hang)):
+            yield asked
+    finally:
+        release.set()
+        for thread in _resolver_threads(hosts):
+            thread.join(10.0)
+
+
+def _connect_concurrently(hosts: list[str], timeout: float) -> list[BaseException]:
+    """One `_DeadlineBackend.connect_tcp` per entry of `hosts`, all at once; what each raised."""
+    backend = politeness._DeadlineBackend()
+    raised: list[BaseException] = []
+
+    def connect(host: str) -> None:
+        try:
+            backend.connect_tcp(host, 443, timeout=timeout).close()
+        except Exception as exc:
+            raised.append(exc)
+
+    callers = [threading.Thread(target=connect, args=(host,)) for host in hosts]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join(10.0)
+    assert not any(caller.is_alive() for caller in callers), "a caller outlived its own timeout"
+    return raised
+
+
+def test_fifty_connects_to_one_unanswered_host_share_one_resolver_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. Each caller used to start its own lookup, so a host the resolver never answers left
+    one thread per attempt. A caller for a (host, port) already being looked up now waits on that
+    lookup, within its own timeout, instead of starting another."""
+    with _unanswered(monkeypatch, {"one.invalid"}) as asked:
+        raised = _connect_concurrently(["one.invalid"] * 50, timeout=0.3)
+        alive = _resolver_threads({"one.invalid"})
+        assert len(alive) == 1, len(alive)
+        assert len(asked) == 1, len(asked)
+    assert len(raised) == 50
+    assert all(type(exc) is httpcore.ConnectTimeout for exc in raised), raised
+
+
+def test_connects_to_more_unanswered_hosts_than_the_cap_start_only_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. One lookup per (host, port) still grows with the number of hosts. At most 64 run in
+    the process at once; a caller over that is refused at once, typed, without a thread."""
+    hosts = {f"cap{i}.invalid" for i in range(81)}
+    with _unanswered(monkeypatch, hosts) as asked:
+        raised = _connect_concurrently(sorted(hosts - {"cap80.invalid"}), timeout=0.3)
+        alive = _resolver_threads(hosts)
+        assert len(alive) == 64, len(alive)
+        assert len(asked) == 64, len(asked)
+        refused = [exc for exc in raised if isinstance(exc, politeness.ResolverSaturated)]
+        assert len(refused) == 16, raised
+        assert sum(type(exc) is httpcore.ConnectTimeout for exc in raised) == 64, raised
+
+        # Refused at ONCE: a caller that waited would take its whole 30s here.
+        started = time.monotonic()
+        with pytest.raises(politeness.ResolverSaturated):
+            politeness._DeadlineBackend().connect_tcp("cap80.invalid", 443, timeout=30.0)
+        assert time.monotonic() - started < 5.0
+        assert len(asked) == 64, len(asked)
+
+    # The drain: once the held lookups end, the cap has room again.
+    listener = socket.create_server(("127.0.0.1", 0))
+    try:
+        politeness._DeadlineBackend().connect_tcp(
+            "127.0.0.1", listener.getsockname()[1], timeout=5.0
+        ).close()
+    finally:
+        listener.close()
+
+
+def test_a_saturated_resolver_fails_the_request_without_naming_or_tripping_a_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T227. The refusal is a `ConnectError`, not a `DeadlineExceeded`: neither clock ran out, so
+    the request must not be reported as either deadline, and the board's clock must not read as
+    having ended it (T228) — it would record the board `board deadline exceeded` early."""
+    monkeypatch.setattr(politeness, "_MAX_LOOKUPS", 1)
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _unanswered(monkeypatch, {"held.invalid", "refused.invalid"}) as asked:
+        _connect_concurrently(["held.invalid"], timeout=0.3)  # holds the one slot
+        with fetcher.under_deadline(time.monotonic() + 2.0, 2.0) as clock:
+            with pytest.raises(FetchFailure) as info:
+                fetcher.get("http://refused.invalid/x")
+        assert len(asked) == 1, len(asked)
+    assert "deadline" not in str(info.value), str(info.value)
+    assert info.value.status_code is None
+    assert not clock.tripped
+    cause = info.value.__cause__
+    assert isinstance(cause, httpx.ConnectError), repr(cause)
+    assert isinstance(cause.__cause__, politeness.ResolverSaturated), repr(cause.__cause__)
