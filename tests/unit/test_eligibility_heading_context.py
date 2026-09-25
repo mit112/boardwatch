@@ -189,7 +189,7 @@ HEADING_CASES: list[tuple] = [
     ('h102:T246 CONTROL a required technical and professional heading is no hedge heading', 'Required Technical and Professional Expertise\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ("h103:T246 CONTROL a hedge after the new heading's coordinator is not the heading's (T215)", 'Education and Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h104:T246 CONTROL a sentence-case heading is still no heading (not built)', 'Preferred skills and experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
-    ('h105:T246 a plain Title-case line with a lowercase and is a heading, as Python SQL already is, and ends the hedge', 'Preferred Qualifications:\nPython and SQL\n5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h105:T246 CONTROL a Title-case content line with a lowercase and is no heading, so the hedge still reaches past it', 'Preferred Qualifications:\nPython and SQL\n5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ('h106:T246 CONTROL a bulleted Title-case line with a lowercase and is no heading', 'Preferred Qualifications:\n- Python and SQL\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ('h107:T241a a level label does not hide its hedge heading (pv 245092)', 'Preferred Qualifications:\nSpecialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
     ('h108:T241a a modified field label is read through as a field label is', 'Preferred Qualifications:\n- Extensive Experience: 12+ years of professional software development experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
@@ -203,6 +203,9 @@ HEADING_CASES: list[tuple] = [
     ('h116:T241a CONTROL a labelled item under a requirements heading keeps its bar', 'Requirements:\n- Specialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:range_years_minimum', 'required', 'unknown']]),
     ("h117:T241a CONTROL a required label inside the label keeps the item's bar", "Preferred Qualifications:\n- Education (required): Bachelor's degree or equivalent.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_required', 'required', 'met'], ['degree:bachelor_required', 'required', 'met']]),
     ("h118:T241b CONTROL a hedge ending a flattened line still hedges the next line's bar (pv 130715, 1 store posting, not built)", 'Qualifications\nBachelor’s degree or equivalent preferred 3 - 5 years of experience supporting asset management distribution.', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h119:T246 CONTROL a verb-initial skill line with a lowercase and is no heading (Codex r1)', 'Preferred Skills:\nDesign and Build Pipelines\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h120:T246 CONTROL develop and maintain is a skill line, not a heading', 'Preferred Skills:\nDevelop and Maintain Services\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h121:T246 CONTROL plan and execute is a skill line, not a heading', 'Preferred Skills:\nPlan and Execute Campaigns\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -290,6 +293,9 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
         ("Preferred Skills and Experience", True),
         ("DUTIES and RESPONSIBILITIES:", True),
         ("Compensation and Benefits", True),
+        ("Roles and Responsibilities", True),
+        ("Design and Build Pipelines", False),
+        ("Develop and Maintain Services", False),
         ("Preferred skills and experience", False),
         ("Experience with Python and SQL", False),
         ("Skills and experience", False),
@@ -315,4 +321,4 @@ def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 118
+    assert len(HEADING_CASES) == 121

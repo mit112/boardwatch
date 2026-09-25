@@ -547,6 +547,20 @@ _HEADER_GLUE_WORDS: frozenset[str] = frozenset(
 _SPACED_NICE_TO_HAVE = re.compile(r"(?<![\w-])nice\s+to\s+haves?(?![\w-])", re.IGNORECASE)
 
 
+# The closed words a lowercase-`and` heading may be made of (T246): the section nouns, the hedge
+# and requiredness words, and the few adjectives that qualify a section noun.
+_SECTION_WORD = re.compile(
+    r"qualifications?|skills?|requirements?|experiences?|knowledge|abilities|ability|attributes|"
+    r"competenc(?:y|ies)|education|expertise|background|certifications?|certificates?|"
+    r"licen[cs]es?|licensure|registrations?|credentials?|capabilities|aptitudes|training|"
+    r"responsibilities|duties|tasks|benefits|compensation|perks|traits|interests|"
+    r"preferred|desired|desirable|bonus|nice-to-haves?|required|minimum|basic|mandatory|"
+    r"essential|additional|technical|professional|key|core|other|general|specialized|relevant|"
+    r"work|job|roles?",
+    re.IGNORECASE,
+)
+
+
 def _looks_like_header(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
@@ -560,10 +574,20 @@ def _looks_like_header(line: str) -> bool:
     if not words or len(words) > 6 or not words[0][0].isupper():
         return False
     # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
-    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills"). A lowercase `and` is not a
-    # significant word, as `&` is not (T246): "Preferred Skills and Experience" governed
-    # nothing where "Preferred Skills & Experience" hedged its list.
-    if all(w[0].isupper() or w == "and" for w in words if w[0].isalpha()):
+    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
+    if all(w[0].isupper() for w in words if w[0].isalpha()):
+        return True
+    # Path 1b (T246): a lowercase `and` between section words, "Preferred Skills and
+    # Experience", which governed nothing where "Preferred Skills & Experience" hedged its list.
+    # Only when every other word is `_SECTION_WORD` vocabulary: "Design and Build Pipelines" is
+    # a skill line, and read as a heading it ended its `Preferred Skills:` section and turned the
+    # bars after it required.
+    if all(
+        w == "and" or (w[0].isupper() and _SECTION_WORD.fullmatch(part) is not None)
+        for w in words
+        for part in re.split(r"[/&]", w)
+        if part
+    ):
         return True
     # Path 2: a lowercase-continuation header whose words AFTER the first are all
     # closed-class glue. A genuine qualification line's later words are real content,
