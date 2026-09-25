@@ -388,6 +388,57 @@ def test_the_rejected_count_sums_across_both_roots(tmp_path):
     assert result.tally.counts["not_attemptable"] == 2
 
 
+def _two_roots_sharing_one_record(tmp_path: Path) -> tuple[Path, Path]:
+    """Two roots of two records each, one record in BOTH by the same `posting_id` -- the
+    promotion race, where job-apps has copied a folder into the queue but not yet removed it from
+    discovery. Three distinct employers, so a count of companies and a count of postings are the
+    same number and either one exposes a root read twice or skipped."""
+    discovery = tmp_path / "resumes"
+    promoted = tmp_path / "APPLY_QUEUE"
+    shared = {
+        "company": "Shared Co", "title": "Shared Role", "posting_id": "pst_shared",
+        "direct_url": "https://job-boards.greenhouse.io/sharedco/jobs/3333333333",
+    }
+    _write(
+        discovery, "Greenhouse", "only-discovery", company="Alpha", title="Discovery Role",
+        posting_id="pst_discovery",
+        direct_url="https://job-boards.greenhouse.io/alpha/jobs/1111111111",
+    )
+    _write(discovery, "Greenhouse", "shared", **shared)
+    _write(promoted, "Greenhouse", "shared", **shared)
+    _write(
+        promoted, "Greenhouse", "only-queue", company="Beta", title="Queue Role",
+        posting_id="pst_queue",
+        direct_url="https://job-boards.greenhouse.io/beta/jobs/2222222222",
+    )
+    return discovery, promoted
+
+
+def test_two_roots_are_each_walked_once_and_yield_exactly_the_distinct_set(tmp_path, monkeypatch):
+    """T218: the lane's count over two roots is the DISTINCT set -- three postings from four
+    records, the cross-root duplicate counted once as `not_attemptable` -- and each root is
+    walked exactly once, in order. A walk that reads the discovery root twice (in place of the
+    queue, or in addition to it) either loses "Queue Role" or counts the two extra duplicates."""
+    discovery, promoted = _two_roots_sharing_one_record(tmp_path)
+    walked: list[Path] = []
+    real_walk = JobAppsLane._records_under
+
+    def spy(self, root):
+        walked.append(root)
+        return real_walk(self, root)
+
+    monkeypatch.setattr(JobAppsLane, "_records_under", spy)
+
+    result = _collect_two(discovery, promoted, tmp_path)
+
+    assert walked == [discovery, promoted]
+    assert sorted(posting.title for posting in _postings(result)) == [
+        "Discovery Role", "Queue Role", "Shared Role",
+    ]
+    assert result.tally.counts["not_attemptable"] == 1
+    assert result.tally.counts["body_inline"] == 3
+
+
 def test_an_unknown_acquisition_source_is_skipped_rather_than_trusted(tmp_path):
     """A closed set: a NEW source is counted, not silently assumed direct-apply."""
     root = tmp_path / "queue"
@@ -485,6 +536,47 @@ def test_a_dangling_record_symlink_is_skipped_and_counted(tmp_path):
     result = _collect(root, tmp_path)
     assert len(_postings(result)) == 1
     assert result.tally.counts["not_attemptable"] == 1
+
+
+def test_a_dangling_link_beside_an_incomplete_record_is_counted_once_of_its_own(tmp_path):
+    """T218: one good record, one incomplete record (T168's shape: a required `canonical` field
+    blank) and one `discovery_record.json` linking to nothing. Each rejection is its own count in
+    `not_attemptable` -- the closed tally's member for "seen, never attempted", which both
+    rejections are -- so the two sum to exactly two: the link is neither a candidate that became
+    a posting, nor a crash, nor silence."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    incomplete = _write(root, "Greenhouse", "incomplete", posting_id="pst_incomplete")
+    payload = json.loads((incomplete / "discovery_record.json").read_text())
+    payload["canonical"]["title"] = ""
+    (incomplete / "discovery_record.json").write_text(json.dumps(payload), encoding="utf-8")
+    dangling = root / "Greenhouse" / "dangling"
+    dangling.mkdir()
+    (dangling / "discovery_record.json").symlink_to(tmp_path / "gone" / "discovery_record.json")
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["not_attemptable"] == 2
+    assert result.tally.attempted == 3
+
+
+def test_a_record_symlink_to_an_existing_record_is_read_as_that_record(tmp_path):
+    """Control: a link that resolves is an ordinary record, not a rejection. Linking is a normal
+    shape for a refreshed tree, so admitting links as candidates must not start counting the
+    live ones as unreadable."""
+    root = tmp_path / "queue"
+    target = _write(tmp_path / "elsewhere", "Greenhouse", "real", title="Linked Role")
+    folder = root / "Greenhouse" / "linked"
+    folder.mkdir(parents=True)
+    (folder / "discovery_record.json").symlink_to(target / "discovery_record.json")
+    (folder / "job_description.txt").write_text(f"{_HEADER}{_MARKER}\n\n{_BODY}", encoding="utf-8")
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Linked Role"]
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.counts["body_inline"] == 1
 
 
 def test_a_tree_where_every_candidate_fails_to_parse_still_raises_and_counts_nothing(tmp_path):
