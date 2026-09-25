@@ -126,6 +126,13 @@ CONTROLS = [
     pytest.param(
         "6 months to 2 years of experience preferred.", ("uncertain", []), id="hedged",
     ),
+    # T237b, NOT BUILT: the months patterns are digits-only, so a spelled range writes no row. One
+    # store body carries the shape (pv 308287, an `OR equivalent combination` arm); this pins today's
+    # read so a spelled low end shows up here.
+    pytest.param(
+        "AND six months to one year of related experience and/or training.", ("uncertain", []),
+        id="t237b-spelled-range-unread",
+    ),
 ]
 
 
