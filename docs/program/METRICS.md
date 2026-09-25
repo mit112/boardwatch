@@ -16329,6 +16329,43 @@ T200 moves 454 (2,352 rows removed; 1,947 leave the range's low end, 405 leave n
 
 ### T173 rebased onto batch 4 round 1 (`bw-t173`, D-590 read 1,468 on the old base) — MEASURED, reading in `t173c_aggregate.txt`; one more rebase owed onto batch 4's round 2
 
+
+### T173d — T215 + T216 on the carrier (`bw-t173/.agent/t173d_aggregate.txt`, pinned 126,854, A = batch 4 round 1 `fcd60187`; D-595) — MEASURED, round 2 in flight
+
+| check | result |
+|---|---|
+| T173c (carrier only, same base) | 1,416 unc→elig, **231 wrong (16.3%)**: C1 219 / C2 16 / C3 3 |
+| T173d movers A→B | **1,508**: 1,189 unc→elig, 269 unc→inel, 50 elig→inel |
+| leaving `ineligible` / `ineligible` without a span / on a preference row | 0 / 0 / 0 |
+| C1 / C2 / C3 residual | 0 / 0 / 3 (C3 = batch 4 round 2's) |
+| 20-sample unc→elig (seed 173) / T215+T216 movers (seed 215) | 20/20 / 20/20 |
+| T216 movers read by hand | 28: 25 right, 3 doubtful (degree-or-experience, T221) |
+| Codex r1 (medium) | BLOCKER ×3 on T216 (relative-clause `must`; `should it be required`; the 3 above) → round 2 |
+
+### 0-D repair (T210 `postings refetch`, live store, 19:04–19:11 CDT; D-595)
+
+| population (store, `?mode=ro`) | before | after |
+|---|---|---|
+| open board postings carrying the lane's `raw_json` | 43 | **9** (all `gone`) |
+| all such postings | 122 | 88 |
+| refetch report-only = `--apply` | revised 33 · refreshed 1 · gone 9 · unsupported 0 · failed 0 | identical |
+| run 473 row | `running` (killed 09-23) | `failed` (`doctor --offline`, 24 h mark) |
+
+### Review sweep 2026-09-24 (`bw-review3`, T195–T210 + T188 + T208 read as a whole; D-595)
+
+7 findings, 0 blockers: F1 refetch guard (T222), F2 connect deadline (T226: DNS 3.02 s and 3 addresses 3.00 s
+against 1.0 s), F3 skipped count (T223), F4 live GitHub lists lost (config set), F5 `fired_on_default` (T224),
+F6 revision-released hold (T225, 1 live lead: re-judge-first 56 → 57 of 1,106), F7 T208 re-key before run 476 (298,389
+open postings re-evaluate). Run 475 lane recount re-derived: hiring.cafe 10 vs self-report 9 (`ashby:evenup`, T199).
+Mutations: 10 PRs × 1–6 tests each, every one red.
+
+### Codex reviews today (all `gpt-6-sol`, read-only)
+
+| target | effort | verdict |
+|---|---|---|
+| T173d | medium | BLOCKER ×3 (T216) → round 2 |
+| T226 | high | NO BLOCKER, 3 follow-ups (T227) |
+| bundle C r1 / r2 | medium | BLOCKER ×1 (ensure before lease) / NO BLOCKER, 3/3 verified |
 ### Engine batch 3 (T193, T196, T197; `bw-batch3`, pinned 126,854, A = main `a69d61aa`; D-592, D-593) — SHIPPED (#457, `7f118822`)
 
 | round | head | null N vs A (verdicts / rows) | movers A→B | by direction | row-only | 20-sample |

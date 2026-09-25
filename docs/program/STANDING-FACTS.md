@@ -4319,3 +4319,33 @@ it and ruled up front (D-566).
 **Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23b): T170 (ruling owed), T172 (merge held),
 T171, T162 (parked), T113b (only if a stale-`ineligible` backlog recurs; T161 narrowed it to effort
 changes).
+
+## Settled session block moved out of STATE on 2026-09-24d (verbatim)
+
+### 2026-09-24c — **THE "NO WAITING" SPRINT DAY (D-594): EIGHT OWNER RULINGS ANSWERED, TWELVE TICKETS BUILT AND REVIEWED ON THE SEAT, TWO SHIPPED BY THE CONTEXT CLEAR (T195 #459, BUNDLE B T205–T207 #460), SIX IN THE SEQUENTIAL SHIP CHAIN (T199, BUNDLE A T203–T204, T210, T209, T188, T208), ENGINE BATCH 4 IN ROUND 2, T173 REBASED AND MEASURED, BATCH 5 WRITTEN. WAVE GATING RULED. THE PRIMARY IS ON `main` AT #460.**
+
+**The unattended state at the clear — chain, executors, gates, repair steps — is in
+`.agent/2026-09-23c-session/HANDOFF.md`. Read it FIRST, then `notes.md`'s tail. Then verify against `gh pr list`,
+`git log origin/main`, and the `<tag>.exit` sentinels: the chain and two executors kept running after this file was
+written, so this block is already behind by the time it is read.**
+
+**Next session, in order:**
+1. **Read the chain** (`ship-chain.log`): what merged, whether it STOPPED (a CONFLICTING PR = the changelog collision:
+   close it, re-run the chain from that tag). Pull the primary ff-only between runs after the last merge.
+2. **Batch 4 round 2** (`bw-batch4`): read RESULT "## Round 2" and `batch4_aggregate_v2.txt` — the seven wrong clears
+   must now read `ineligible`; Codex verification (medium); fill the placeholders in `entry/pr/sq-batch4`; **T173**
+   (`bw-t173`): read its rebase-and-remeasure record, Codex review, rebase once more onto batch 4's round-2 head
+   (`T173d`), write its ship texts; gate both as ONE wave-3 stack; ship batch 4 then T173. Then launch **batch 5**
+   (`TB5.md`, base = T173's head).
+3. **0-D repair** once T210 is on main and the primary pulled: HANDOFF §4 (backup, report-only, `--apply`, verify by
+   the raw_json count). A live-store write — between runs only.
+4. **Run 476** (04:00 CDT 09-25): re-keys on the new engine_version; `refresh_pending_after` from 767; T198's
+   prediction (the four Workday boards complete on their second scan); hiring.cafe's recount now attributed by row.
+5. Prune merged worktrees (HANDOFF §5); a final close commit for STATE once the chain and wave 3 land.
+
+**Owner calls answered today (D-594):** T173 yes; T188 all three; refresh backlog → T195 (shipped); career_field →
+taxonomy (T208); 0-D → repair now (T210); résumé (1)(2) dropped, (3) later. **Nothing is owner-gated now except**
+the standing items below (0-D's repair is authorised; the résumé formatting session is Mit's to schedule).
+
+**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23c): in the chain T199, T203, T204, T208, T209, T210, T188;
+in flight batch 4 (T200–T202 round 2), T173; written T211–T213 (batch 5), T214; T198 waits for run 476.
