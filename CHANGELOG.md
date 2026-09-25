@@ -344,6 +344,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A dangling group-folder link in the job-apps staging queue is counted, not silently skipped (2026-09-24,
+  T220).** The refresher links GROUP directories, and a link-refresh race could leave one dangling; the lane
+  listed groups with `is_dir()`, which follows the link, so the whole group and its records vanished with no
+  count and no error (only an all-dangling tree raised). A dangling group link is now its own outcome,
+  `dangling_group_link`, counted once per group (the records behind it are unknowable) and reported in the
+  funnel's `lanes[].counts`; it is not folded into `not_attemptable` (records seen and rejected), it is excluded
+  from `attempted` (which keeps counting records), and on its own it raises no silent-outage alert. The next
+  run re-reads the link once the refresher finishes.
+
 - **A resolver outage holds at most 64 threads, a link-local IPv6 address keeps its scope, and T226's deadline
   tests no longer race the clock (2026-09-24, T227).** T226 ran `getaddrinfo` on a thread it abandons at the
   deadline, so a resolver that hung for every host left one thread per attempt; now a second connect to the same
