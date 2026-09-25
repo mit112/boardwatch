@@ -1006,6 +1006,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Profile-bundle documents parse with libyaml where that is provably identical (2026-09-25, T231).** The
+  restricted `CareerProfileLoader` (aliases, anchors, tags, merge keys and out-of-contract implicit scalars refused)
+  spent most of the profile-bundle tests' time in pure-Python composition. It now composes with libyaml behind a
+  parity screen: a text pre-screen (tab, BOM, `?`, `\u`/`\U` escapes, a `#` touching a block-scalar header — each a
+  class where the two parsers are known to disagree) and a pass over libyaml's events (any alias, anchor, tag or
+  nesting deeper than 64) send the document to the pure loader, and any error on the libyaml path is discarded and
+  the pure loader re-reads the text, so every refusal is the pure loader's own. A differential over ~7M fuzzed and
+  captured inputs found no divergence; a seeded slice runs in the suite and `tools/yaml_loader_fuzz.py` re-runs the
+  full comparison. The profile-bundle half of the suite runs in about half the time.
+
 - **Tests whose subject is not pacing no longer sleep in real time (2026-09-25, T232).** The suite spent ~414 s of
   real `time.sleep` across 346 tests, most of it `Fetcher`'s per-host delay (which `Settings` floors at 0.25 s) and
   tenacity backoff inside provider, lane, scan and pipeline tests that assert neither. A new opt-in `no_real_sleep`
