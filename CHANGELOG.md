@@ -1016,6 +1016,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Eighth engine batch: company tenure and time horizons are not bars, a 0-year floor is met, one row per bar, and a
+  heading's hedge is carried as a preference (2026-09-25, T234, T235, T236).** `Our 3 year strategy` and `Over the
+  next 5 years` no longer write a domain years bar; a 0-year scoped floor now resolves `met` instead of `unknown`; a
+  domain-list row yields to a sibling that wrote the same span (a new `yields_to` catalog key), so one bar writes one
+  row. A bar hedged only by its heading (`Preferred Qualifications:`, a spaced `Nice to Have / Bonus`) is now carried
+  as its preferred twin rather than dropped without a row — the clearance bar under a preference heading among them —
+  so it shows in the evidence chain and can never reject. `ideally from a provider such as …` hedges the adjunct, not
+  the bar before it; `2 year degree preferred` is not a years bar. `engine_version` moves; the two-arm reading is in
+  the merge message.
+
 - **Seventh engine batch: a spaced ASCII range reads its low end, and `equals` ends a domain run (2026-09-25, T233,
   T237).** The unit splitter cut `5 - 7 years of experience` at ` - ` as if it were an inline bullet, so `7 years of
   experience` began a unit of its own and was read as a 7-year bar. `split_units` now keeps a spaced dash together when
