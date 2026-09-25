@@ -71,6 +71,7 @@ def _watch(data_dir: Path, slug: str) -> None:
         )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_funnel_publishes_all_four_board_outcomes_and_they_sum_to_the_total(
     env: Path, tmp_path: Path
 ) -> None:

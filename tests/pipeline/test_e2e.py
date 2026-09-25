@@ -32,6 +32,7 @@ INIT_INPUT = (
 )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_e2e_vertical_slice_with_304_gate(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

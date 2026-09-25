@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import respx
 
 from boardwatch.core.models import BoardRequest, ResponseValidators
@@ -138,6 +139,7 @@ def test_body_text_skips_markup_only_sections_after_conversion() -> None:
     assert _body_text(detail) == "First section.\n\nLast section."
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_complete_snapshot_fetches_a_detail_per_posting(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -148,6 +150,7 @@ def test_complete_snapshot_fetches_a_detail_per_posting(tmp_path: Path) -> None:
     assert snap.listed_ids == {str(e["id"]) for e in _fx_json("list_normal.json")["content"]}
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_smartrecruiters_reports_totalfound_as_board_total(tmp_path: Path) -> None:
     """totalFound is the board's own count; the contract pins totalFound == len(content)."""
@@ -159,6 +162,7 @@ def test_smartrecruiters_reports_totalfound_as_board_total(tmp_path: Path) -> No
     assert snap.detail_deferred == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_company_description_is_excluded_from_body(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -168,6 +172,7 @@ def test_company_description_is_excluded_from_body(tmp_path: Path) -> None:
     assert all("Build synthetic platforms." in p.body_text for p in snap.postings)
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_known_posting_ids_skip_detail_fetches_but_stay_listed(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -193,6 +198,7 @@ def test_not_modified_is_unchanged_with_zero_detail_fetches(tmp_path: Path) -> N
     assert respx.calls[0].request.headers.get("If-None-Match") == 'W/"abc123"'
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_pagination_follows_offsets(tmp_path: Path) -> None:
     def _entry(i: int) -> dict[str, Any]:
@@ -221,6 +227,7 @@ def test_pagination_follows_offsets(tmp_path: Path) -> None:
     assert any(str(c.request.url) == _page_url(100) for c in respx.calls)  # page 2 fetched
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_incomplete_listing_is_partial_not_complete(tmp_path: Path) -> None:
     """Inventory-safety: if totalFound overcounts (or a page is short/filtered), the
@@ -250,6 +257,7 @@ def test_incomplete_listing_is_partial_not_complete(tmp_path: Path) -> None:
     assert len(snap.listed_ids) == 3
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_inactive_postings_are_skipped_and_not_listed(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -259,6 +267,7 @@ def test_inactive_postings_are_skipped_and_not_listed(tmp_path: Path) -> None:
     assert snap.listed_ids == frozenset()   # inactive -> removed from live inventory
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_empty_sections_yield_empty_body_not_an_error(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -281,6 +290,7 @@ def test_budget_exceeded_is_partial(tmp_path: Path) -> None:
     assert snap.detail_deferred == 2
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_one_detail_failure_is_partial(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -292,6 +302,7 @@ def test_one_detail_failure_is_partial(tmp_path: Path) -> None:
     assert first not in {p.provider_posting_id for p in snap.postings}
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_malformed_detail_is_partial_and_skipped(tmp_path: Path) -> None:
     """H2: a detail that isn't a JSON object must not raise; skip it, mark partial."""
@@ -304,6 +315,7 @@ def test_malformed_detail_is_partial_and_skipped(tmp_path: Path) -> None:
     assert first not in {p.provider_posting_id for p in snap.postings}
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_all_detail_failures_is_failed(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
@@ -353,6 +365,7 @@ def test_healthcheck_404_is_error_not_dead(tmp_path: Path) -> None:
     assert result == BoardHealth.ERROR
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_an_id_less_row_lowers_board_enumerated_so_the_shortfall_is_visible(
     tmp_path: Path,
@@ -379,6 +392,7 @@ def test_an_id_less_row_lowers_board_enumerated_so_the_shortfall_is_visible(
     assert "collected 2 of 3" in (snap.error or "")
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_cross_page_duplicate_is_counted_once_in_board_enumerated(tmp_path: Path) -> None:
     """The other half of `len(listed)`: it also counted a posting twice when two pages carried

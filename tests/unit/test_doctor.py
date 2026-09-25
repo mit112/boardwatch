@@ -174,6 +174,7 @@ def _provider_row_count(eng, provider):
         ).scalar_one()
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_scan_complete_and_unchanged_are_not_health_writers(tmp_path) -> None:
     # sole-writer guarantee (complements state test c): NEITHER a complete NOR an unchanged scan
     # touches last_health/last_ok_at. Reuse the run_scan + respx harness.

@@ -139,6 +139,7 @@ def _contend_after_scan(
     assert steps == 0, "the refused contender ran a schema step"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_second_pipeline_is_refused_while_the_first_is_past_its_scan(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -148,6 +149,7 @@ def test_a_second_pipeline_is_refused_while_the_first_is_past_its_scan(
     )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_no_scan_pipeline_is_refused_while_the_first_is_past_its_scan(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -157,6 +159,7 @@ def test_a_no_scan_pipeline_is_refused_while_the_first_is_past_its_scan(
     )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_standalone_scan_is_refused_while_a_pipeline_is_past_its_scan(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -507,6 +507,7 @@ FATAL_ROWS = (
 )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @pytest.mark.parametrize("row", FATAL_ROWS, ids=[row.name for row in FATAL_ROWS])
 def test_each_fatal_cause_exits_1_with_one_failed_row(
     row: Row, env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

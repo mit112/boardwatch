@@ -316,6 +316,7 @@ def _scan_pipeline(env: Path, out_root: Path, *, status: int, extra_board: bool 
         )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_dead_board_is_reported_but_does_not_fail_the_run(env: Path, tmp_path: Path) -> None:
     """A few dead boards are the norm across 85 watched; `scan` itself exits 0 for them.
 
@@ -334,6 +335,7 @@ def test_a_dead_board_is_reported_but_does_not_fail_the_run(env: Path, tmp_path:
     assert summary.fatal is None, "dead boards alongside a healthy one failed the whole run"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_every_board_failing_is_a_systemic_outage_and_IS_fatal(env: Path, tmp_path: Path) -> None:
     """CLAUDE.md: "systemic outage => fatal (prevents the silent empty day)". Bar metric B5.
 
@@ -349,6 +351,7 @@ def test_every_board_failing_is_a_systemic_outage_and_IS_fatal(env: Path, tmp_pa
     assert "systemic" in summary.fatal
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_scan_errors_are_recorded_once_not_twice(env: Path, tmp_path: Path) -> None:
     """The scan stage persists its own errors; finish_run appends, so passing them again dupes."""
     _ready(env)
@@ -1125,6 +1128,7 @@ def _fatal_filesystem_truth(env: Path, out_root: Path, monkeypatch: pytest.Monke
     return _pipeline(env, out_root)
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @pytest.mark.parametrize(
     "make_fatal",
     [
@@ -1555,6 +1559,7 @@ def test_a_morning_write_failure_is_recorded_durably_not_only_printed(
     assert any("morning artifact not written" in e for e in (stored or [])), stored
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_run_surfaces_net_new_intake_as_a_real_number(env: Path, tmp_path: Path) -> None:
     """'0 new across the whole corpus' is intake death that is NOT a scan outage
     (is_systemic_scan_outage stays False on a complete-but-empty listing) and yields zero leads
@@ -2139,6 +2144,7 @@ def _seniority_hold(data_dir: Path) -> None:
     )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_scan_outage_alert_that_cannot_be_recorded_does_not_take_the_digest_with_it(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2176,6 +2182,7 @@ def test_a_scan_outage_alert_that_cannot_be_recorded_does_not_take_the_digest_wi
     assert pings == [1], "the heartbeat decision was never reached"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_scan_outage_alert_that_records_cleanly_behaves_as_before(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2356,6 +2363,7 @@ def _standalone_scan_status(data_dir: Path, body: bytes) -> str:
         )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_a_partial_only_pipeline_run_is_degraded_not_fatal_and_says_so_in_the_run(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2424,6 +2432,7 @@ def test_a_partial_only_pipeline_run_is_degraded_not_fatal_and_says_so_in_the_ru
     assert pings == [1], "a degraded run still succeeded, so the heartbeat must fire"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_D_037_parity_one_scan_outcome_cannot_be_ok_under_run_and_failed_under_scan(  # noqa: N802
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2469,6 +2478,7 @@ def test_D_037_parity_one_scan_outcome_cannot_be_ok_under_run_and_failed_under_s
     )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_degraded_scan_alert_reaches_the_MORNING_DIGEST(  # noqa: N802
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

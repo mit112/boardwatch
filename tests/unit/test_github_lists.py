@@ -251,6 +251,7 @@ def test_each_configured_repo_is_read_at_its_listings_url():
         )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_one_get_per_repo_and_a_failure_is_not_a_quiet_empty_day(tmp_path):
     from boardwatch.core.politeness import FetchFailure

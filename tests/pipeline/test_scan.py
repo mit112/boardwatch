@@ -58,6 +58,7 @@ def _posting(engine: Engine, company_id: int, pid: str | None = None) -> Any:
         return conn.execute(stmt).one()
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_validator_round_trip_across_scans(
     engine: Engine, tmp_path: Path, case: ProviderCase
 ) -> None:
@@ -81,6 +82,7 @@ def test_validator_round_trip_across_scans(
     assert second.unchanged == 1
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_stale_validator_triggers_unconditional_refetch(
     engine: Engine, tmp_path: Path, case: ProviderCase
 ) -> None:
@@ -116,6 +118,7 @@ def test_stale_validator_triggers_unconditional_refetch(
     assert second.complete == 1  # refetched as a full inventory, not `unchanged`
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_d_company_filtered_scan_touches_only_that_board(
     engine: Engine, tmp_path: Path, case: ProviderCase
 ) -> None:
@@ -153,6 +156,7 @@ def test_d_company_filtered_scan_touches_only_that_board(
     assert len(_scan_rows(engine, globex_id)) == 2  # no third scan row for globex
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_failure_isolation_one_failed_board_never_blocks_others(
     engine: Engine, tmp_path: Path, case: ProviderCase
 ) -> None:
@@ -175,6 +179,7 @@ def test_failure_isolation_one_failed_board_never_blocks_others(
     assert run_row.boards_attempted == 2
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_apply_failure_on_one_board_never_aborts_the_scan(
     engine: Engine, tmp_path: Path, case: ProviderCase, monkeypatch: pytest.MonkeyPatch
 ) -> None:

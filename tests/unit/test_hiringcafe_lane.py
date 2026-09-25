@@ -60,6 +60,10 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import get_watched_companies, insert_run
 
+# T232: no test in this module asserts pacing, a backoff or a deadline, so `Fetcher`'s per-host
+# delay (floored at 0.25 s by `Settings`) is dead wall clock here. See `no_real_sleep`.
+pytestmark = pytest.mark.usefixtures("no_real_sleep")
+
 # The UA `pipeline.runner` gives the lane client. Spelled out here rather than imported: the
 # point of `_browser_fetcher` is to reproduce a client whose identity DIFFERS from the one the
 # board route must restore, and importing the runner's constant would make the two agree by

@@ -68,6 +68,7 @@ def _scan_block(env: Path, tmp_path: Path, **kw: object) -> dict[str, object]:
     }
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_scan_block_names_the_watched_board_that_has_never_scanned_complete(
     env: Path, tmp_path: Path
 ) -> None:

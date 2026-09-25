@@ -87,6 +87,7 @@ def test_every_subcommand_has_help(tmp_path, sub) -> None:
     assert result.exit_code == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> None:
     """The whole write path end to end, and the only test that proves the deliverable.
@@ -148,6 +149,7 @@ def test_discover_writes_no_watch_and_emits_a_file_import_accepts(tmp_path) -> N
     )
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_discover_defaults_to_stdout_and_the_cap_from_settings(tmp_path) -> None:
     """No `--out`, no `--limit`: the document goes to stdout unmangled and the cap is the
