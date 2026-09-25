@@ -123,7 +123,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # the count -- gave none of them a tail to anchor on and wrote no row at all.
     # T178: 60 -> 62. `total_years_maximum` and `scoped_years_maximum`, the ceiling readings an
     # upper-bound cue carries a minimum bar into.
-    assert sum(len(f.patterns) for f in catalog.families) == 62
+    # T200: 62 -> 64. `domain_range_years_minimum` and `domain_list_range_years_minimum`, the
+    # range twins of the two domain patterns, which read a digit range's low end.
+    assert sum(len(f.patterns) for f in catalog.families) == 64
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -158,15 +160,18 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # hedge as its years twin, and both also carry the `count as` conversion-note guard.
         # 2026-09-05: +1, `labeled_years_minimum`. "Experience Preferred: 5 years" is the
         # labelled block's own hedge, and it must stand the bar down like any other.
-        "suppressed_by_unit": 21,
+        # T200: +2, the two domain range twins, which carry their siblings' suppressors.
+        "suppressed_by_unit": 23,
         # 2026-09-22 (T157): +13 sentence, one per experience pattern carrying
         # `company_side_years`. That anchor reaches only a subject BEFORE the bar;
         # `company_tenure_after_bar` is its narrow after-span complement.
-        "suppressed_by_sentence": 18,
+        # T200: +2, the domain range twins.
+        "suppressed_by_sentence": 20,
         # T201: one per experience pattern carrying `company_tenure_after_bar`, the same set. A
         # credit or substitution rule whose subject is the bar ("One year of experience will be
         # credited ...") is matched at the span's end, which a sentence scope cannot express.
-        "suppressed_by_predicate": 13,
+        # T200: +2, the domain range twins.
+        "suppressed_by_predicate": 15,
         # P9 added three BEFORE-ONLY subject suppressors. Direction is the discriminator for
         # all three: a staffing word before a contract trigger says whose contract it is, and
         # an ownership verb before an internship mention says the JD runs the programme. The
@@ -181,7 +186,8 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # the same company-side prose the years twins are guarded against.
         # 2026-09-05: +1, `labeled_years_minimum` inherits the same exposure to "Our team has
         # 25 years of experience" as every other pattern in the family.
-        "subject_suppressors": 28,
+        # T200: +2, the domain range twins.
+        "subject_suppressors": 30,
         # 7 on the degree family (degree_equivalence) + 2 on the experience family
         # (degree_alternative_to_years, D-073): a degree-gated disjunctive alternative makes
         # the years bar abstain, not resolve unmet.
@@ -201,7 +207,8 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # Two scopes because one cannot express both answers.
         # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
         # scoped/domain years patterns it mirrors.
-        "abstain_by_sentence": 7,
+        # T200: +2, the domain range twins.
+        "abstain_by_sentence": 9,
         # T104/D-531: ALL ELEVEN document-scoped escapes moved here, so `abstain_by` above is
         # now ZERO -- the field stays in the loader for an override, but no bundled pattern
         # uses it. The pair must move together: an `abstain_by` that climbs off 0 means a new
