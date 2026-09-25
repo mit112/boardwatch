@@ -13,6 +13,7 @@ import re
 from pathlib import Path
 
 import pytest
+import yaml
 
 from boardwatch.eligibility.catalog import (
     CATALOG_REVISION,
@@ -641,3 +642,81 @@ def test_bundled_families_are_all_profile_tier(tmp_path: Path) -> None:
 def test_the_bundled_text_is_readable_without_a_config_dir() -> None:
     assert "families:" in bundled_rules_text()
     assert CATALOG_REVISION == 2
+
+
+# `load_rules` caches the parsed catalog on the file's text (T229). The pipeline calls it about
+# 18 times per run, and each parse of the bundled 210 KB file cost 55 ms in pure Python.
+
+
+def _count_parses(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Count the override parses: an override goes through plain `yaml.safe_load`."""
+    parsed: list[str] = []
+    real = yaml.safe_load
+
+    def counting(text: str) -> object:
+        parsed.append(text)
+        return real(text)
+
+    monkeypatch.setattr(yaml, "safe_load", counting)
+    return parsed
+
+
+def test_the_same_text_is_parsed_once_and_loads_equal_catalogs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    parsed = _count_parses(monkeypatch)
+    _write(tmp_path, MINIMAL)
+    first, second = load_rules(tmp_path), load_rules(tmp_path)
+    assert first == second
+    assert len(parsed) == 1
+
+
+def test_an_edited_override_is_read_again(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    parsed = _count_parses(monkeypatch)
+    _write(tmp_path, MINIMAL)
+    assert load_rules(tmp_path).family("degree").label == "Degree"
+    _write(tmp_path, MINIMAL.replace("label: Degree", "label: Schooling"))
+    assert load_rules(tmp_path).family("degree").label == "Schooling"
+    assert len(parsed) == 2
+
+
+def test_a_caller_writing_into_its_catalog_cannot_change_the_next_callers(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, MINIMAL)
+    first = load_rules(tmp_path)
+    first.family("degree").ranks["bachelor"] = 99
+    object.__setattr__(first, "negation_cues", ("poisoned",))
+    second = load_rules(tmp_path)
+    assert second.family("degree").ranks == {"none": 0, "bachelor": 3}
+    assert second.negation_cues == ("not",)
+
+
+def test_the_bundled_catalogs_dicts_are_not_shared_between_callers(tmp_path: Path) -> None:
+    first = load_rules(tmp_path)
+    for family in first.families:
+        for table in family.season_months_by_hemisphere.values():
+            table.clear()
+        for pattern in family.patterns:
+            pattern.jurisdiction_map.clear()
+    second = load_rules(tmp_path)
+    assert any(family.season_months_by_hemisphere for family in second.families)
+    assert any(p.jurisdiction_map for family in second.families for p in family.patterns)
+    assert all(
+        not table
+        for family in first.families
+        for table in family.season_months_by_hemisphere.values()
+    )
+
+
+def test_a_cached_catalog_is_still_checked_against_the_resolver_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wiring check reads the registry, not the text, so it must run on a cache hit too."""
+    from boardwatch.eligibility import resolve
+
+    _write(tmp_path, MINIMAL)
+    load_rules(tmp_path)
+    monkeypatch.delitem(resolve._REGISTRY, "degree")
+    with pytest.raises(CatalogError, match="family 'degree' has no resolver"):
+        load_rules(tmp_path)

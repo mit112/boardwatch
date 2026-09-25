@@ -17,9 +17,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
+
+from boardwatch.core.yamlio import load_bundled
 
 LEVELING_VERSION = 1
 
@@ -67,11 +69,11 @@ class LevelingCatalog:
     digest: str
 
 
-def _text(config_dir: Path) -> str:
+def _document(config_dir: Path) -> Any:
     override = config_dir / "leveling.yaml"
     if override.is_file():
-        return override.read_text(encoding="utf-8")
-    return (files("boardwatch.rank") / "leveling.yaml").read_text(encoding="utf-8")
+        return yaml.safe_load(override.read_text(encoding="utf-8"))
+    return load_bundled((files("boardwatch.rank") / "leveling.yaml").read_text(encoding="utf-8"))
 
 
 def _band(value: object, where: str) -> SeniorityBand:
@@ -98,7 +100,7 @@ def field_tier(catalog: LevelingCatalog, field: str | None) -> FieldTier | None:
 
 
 def load_leveling(config_dir: Path) -> LevelingCatalog:
-    raw = yaml.safe_load(_text(config_dir)) or {}
+    raw = _document(config_dir) or {}
     if not isinstance(raw, dict):
         raise LevelingError("leveling.yaml: top level must be a mapping")
 

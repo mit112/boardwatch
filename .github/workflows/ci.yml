@@ -97,7 +97,7 @@ jobs:
       # the real threshold is applied once per Python version in `coverage` below.
       - name: Run this shard
         run: |
-          uv run pytest -n auto \
+          uv run pytest -n auto --dist worksteal \
             --shard ${{ matrix.shard }}/${{ needs.plan.outputs.shards }} \
             --shard-manifest "$RUNNER_TEMP/manifest-py${{ matrix.python }}-shard${{ matrix.shard }}.json" \
             --cov-fail-under=0 --cov-report=
@@ -161,7 +161,7 @@ jobs:
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run mypy --strict src tools
-      - run: uv run pytest -n auto --no-cov
+      - run: uv run pytest -n auto --dist worksteal --no-cov
 
   # Ruff is platform- and version-independent, so once is enough.
   lint:

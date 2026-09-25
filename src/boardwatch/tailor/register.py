@@ -16,6 +16,8 @@ from typing import Any
 
 import yaml
 
+from boardwatch.core.yamlio import load_bundled
+
 REGISTER_VERSION = "p4-register-1"
 
 
@@ -69,7 +71,7 @@ def load_register() -> RegisterTable:
     raw = (files("boardwatch.tailor") / "register.yaml").read_bytes()
     version = hashlib.sha256(raw).hexdigest()
     try:
-        data = yaml.safe_load(raw.decode("utf-8"))
+        data = load_bundled(raw.decode("utf-8"))
     except yaml.YAMLError as exc:
         raise RegisterError(f"register.yaml: invalid YAML: {exc}") from exc
     if not isinstance(data, dict):

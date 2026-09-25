@@ -8,6 +8,8 @@ from typing import Any
 
 import yaml
 
+from boardwatch.core.yamlio import load_bundled
+
 
 class EquivalenceError(ValueError):
     """The bundled equivalence table is missing, malformed, or fails an invariant."""
@@ -62,7 +64,7 @@ def load_equivalences() -> EquivalenceTable:
     raw = (files("boardwatch.tailor") / "equivalences.yaml").read_bytes()
     version = hashlib.sha256(raw).hexdigest()
     try:
-        data = yaml.safe_load(raw.decode("utf-8"))
+        data = load_bundled(raw.decode("utf-8"))
     except yaml.YAMLError as exc:
         raise EquivalenceError(f"equivalences.yaml: invalid YAML: {exc}") from exc
     if not isinstance(data, dict):

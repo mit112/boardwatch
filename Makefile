@@ -5,7 +5,7 @@ lint:
 type:
 	uv run mypy --strict src tools
 test:
-	uv run pytest -n auto
+	uv run pytest -n auto --dist worksteal
 # The React tree's own suite (vitest + jsdom), and a prerequisite of `check` — unlike `web`.
 #
 # The distinction is that this REBUILDS NOTHING and compares nothing byte for byte, so none of
