@@ -688,11 +688,14 @@ def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: P
         assert fetcher.request_fits_board_deadline()  # 0.25 s delay + a few ms < 0.5 s
         clock.at = time.monotonic() + 30.0
         fetcher.get("https://slow.example/slow")
-        clock.at = time.monotonic() + 0.5
-        assert not fetcher.request_fits_board_deadline()  # 0.25 s delay + 0.3 s > 0.5 s
-        clock.at = time.monotonic() + 0.7
-        assert not fetcher.request_fits_board_deadline()  # headroom: 0.25 s + 2 x 0.3 s > 0.7 s
-        clock.at = time.monotonic() + 0.95
+        # Margins from the MEASURED slowest request, never fixed ones: a loaded CI runner makes
+        # the 0.3 s request take longer, and a fixed 0.95 s margin failed on macOS.
+        slowest = clock.slowest
+        assert slowest is not None and slowest >= 0.3
+        delay = fetcher.effective_delay
+        clock.at = time.monotonic() + delay + slowest + 0.05
+        assert not fetcher.request_fits_board_deadline()  # room for one slowest, not two
+        clock.at = time.monotonic() + delay + 2 * slowest + 0.5
         assert fetcher.request_fits_board_deadline()
     assert not clock.tripped
 
