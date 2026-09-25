@@ -26,6 +26,7 @@ path, so no column is written by hand here.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.posting_identity import compute_identities
+from boardwatch.core.settings import Settings
 from boardwatch.providers.base import Provider, RefetchUnsupported, posting_refetcher
 from boardwatch.providers.registry import build_providers
 
@@ -46,8 +48,9 @@ from boardwatch.providers.registry import build_providers
 # run the exact function the scan path runs, or it repairs rows into a third, different shape.
 from boardwatch.providers.smartrecruiters import _body_text as _smartrecruiters_body
 from boardwatch.scan.apply import apply_refetched
+from boardwatch.scan.coordinator import ScanLockHeldError, scan_lease
 from boardwatch.store.body_revision import record_body_revision
-from boardwatch.store.db import write_connection
+from boardwatch.store.db import ensure_schema, write_connection
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.queries import RUN_RUNNING
 from boardwatch.store.tables import companies, postings, runs
@@ -149,10 +152,6 @@ class Refetched(StrEnum):
     FAILED = "failed"  # the fetch or the parse failed, or the posting is not in the store
 
 
-class RunInProgressError(Exception):
-    """A `boardwatch run` holds a `running` row. Refused, never waited on."""
-
-
 def _parse_ids(ids: str | None, ids_file: Path | None) -> list[int]:
     if (ids is None) == (ids_file is None):
         raise typer.BadParameter("give exactly one of --ids or --ids-file")
@@ -163,13 +162,12 @@ def _parse_ids(ids: str | None, ids_file: Path | None) -> list[int]:
         raise typer.BadParameter(f"posting ids must be integers: {exc}") from None
 
 
-def _refuse_while_running(engine: Engine) -> None:
-    """The `runs` table's `running` row, the check `doctor` reports on. A run's scan writes the
-    same postings, so a concurrent refetch would race it for the rows it is repairing."""
+def _running_row(engine: Engine) -> int | None:
+    """A `running` row in `runs` — ADVISORY only. A killed run leaves one behind until a reap, so
+    it cannot tell a live run from a dead one; the scan lease is the exclusion (T222)."""
     with engine.connect() as conn:
         running = conn.execute(select(runs.c.id).where(runs.c.status == RUN_RUNNING)).first()
-    if running is not None:
-        raise RunInProgressError(f"run {running.id} is in progress; re-run after it finishes")
+    return None if running is None else int(running.id)
 
 
 @postings_app.command("refetch")
@@ -193,15 +191,27 @@ def refetch(
     posting_ids = _parse_ids(ids, ids_file)[:limit]
     # Report-only must not migrate a behind-schema store: `ensure_schema` runs alembic to head, the
     # reason `doctor` and `coverage` pass `ensure=False` (Codex on T210). `--apply` is a write and
-    # takes the migration like every writing command.
-    app_ctx = build_context(ctx.obj, ensure=apply_)
+    # takes the migration, but inside the lease below, as `run_scan` does: a refused refetch writes
+    # nothing, schema included.
+    app_ctx = build_context(ctx.obj, ensure=False)
     engine = app_ctx.engine
-    try:
-        _refuse_while_running(engine)
-    except RunInProgressError as exc:
-        typer.echo(f"refetch refused: {exc}")
-        raise typer.Exit(code=2) from None
+    with ExitStack() as held_lease:
+        if apply_:
+            # A run's scan writes the same postings, so `--apply` holds T133's scan lease for the
+            # whole command, as `doctor`'s reap does: a run already holding it refuses this repair,
+            # and a run starting mid-loop is refused instead. Report-only writes nothing.
+            try:
+                held_lease.enter_context(scan_lease(app_ctx.settings))
+            except ScanLockHeldError as exc:
+                typer.echo(f"refetch refused: {exc}")
+                raise typer.Exit(code=2) from None
+            ensure_schema(engine)
+        if (run_id := _running_row(engine)) is not None:
+            typer.echo(f"note: run {run_id} is marked running in the runs table")
+        _refetch_all(posting_ids, app_ctx.settings, engine, apply_)
 
+
+def _refetch_all(posting_ids: list[int], settings: Settings, engine: Engine, apply_: bool) -> None:
     with engine.connect() as conn:
         held = {
             row.id: row
@@ -215,7 +225,7 @@ def refetch(
             ).all()
         }
     providers = build_providers()
-    fetcher = Fetcher(app_ctx.settings)
+    fetcher = Fetcher(settings)
     counts = dict.fromkeys(Refetched, 0)
     for posting_id in posting_ids:
         outcome, note = _refetch_one(held.get(posting_id), providers, fetcher, engine, apply_)

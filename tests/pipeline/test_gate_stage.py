@@ -1328,6 +1328,32 @@ def test_every_lead_already_current_sends_nothing_and_that_is_not_a_coverage_fai
 
 
 @_needs_an_executable_fake
+def test_under_band_any_the_funnel_counts_the_unasked_seniority_and_the_split_sums_to_sent(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T223. `init` leaves the band at `any`, so the judge is never asked `seniority_fit` (T188)
+    and the stage counts every verdict `skipped`. The funnel rendered only answered / unclear /
+    unreadable, so its split read `0 · 0 · 0` beside `3 judged` — the zeros T107 exists to make
+    legible, unexplained. A judge that answers anyway is ignored, so it still counts as not asked."""
+    _ready(env)
+    for n in range(3):
+        _seed(env, slug=f"acme-band-any-{n}")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_SENIORITY", "no")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=13)
+
+    assert summary.fatal is None, summary.fatal
+    assert summary.gate_sent == 3 and summary.gate_judged == 3
+    gate = _funnel_gate(summary)
+    assert gate["seniority_skipped"] == 3
+    split = ("seniority_answered", "seniority_unclear", "seniority_unreadable", "seniority_skipped")
+    assert sum(int(gate[key]) for key in split) == gate["sent"] == 3  # type: ignore[call-overload]
+    body = summary.funnel.markdown_path.read_text(encoding="utf-8")
+    assert "3 not asked (band `any`)" in body, body
+
+
+@_needs_an_executable_fake
 def test_a_seniority_field_absent_from_every_answer_raises_a_field_coverage_alarm(
     env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1932,6 +1958,39 @@ def test_the_refresh_keeps_the_callers_order_behind_the_released_holds(
 
     assert (result.candidates, result.sent, result.pending_after) == (3, 3, 0)
     assert _gate_row_order(env)[before:] == [b, a, c]
+
+
+@_needs_an_executable_fake
+def test_a_hold_released_by_a_body_revision_is_ordered_first(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T225. A body revision (a scan, or `postings refetch`) makes a new version with no gate row,
+    so B's judge `ineligible` on the superseded version releases exactly as a re-key does. Read
+    on the current version alone, B was ordered with the never-judged A."""
+    from boardwatch.llm.gate_judge import _stale, run_gate_stage
+    from boardwatch.store.body_revision import record_body_revision
+
+    _ready(env)
+    a, b = (_seed(env, slug=f"acme-revised-{n}") for n in "ab")
+    _arm_gate(env)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ineligible_span")
+    monkeypatch.setenv("GATE_FAKE_TARGET_LABEL", str(b))
+    monkeypatch.setenv("GATE_FAKE_EVIDENCE", EVIDENCE)
+    engine, settings = get_engine(env), load_settings(data_dir=env)
+    run_gate_stage(engine, settings, [SimpleNamespace(posting_id=b)], run_id=None)
+    assert _current_gate_verdict(env, b) == "ineligible"
+    revised = BODY + " The team is hybrid."
+    with engine.begin() as conn:
+        record_body_revision(
+            conn, posting_id=b, body_text=revised, content_hash="h-revised", captured_at=utcnow()
+        )
+    # The verdict read stays on the current version: the hold is released, not re-applied.
+    assert _current_gate_verdict(env, b) is None
+
+    order = _stale(engine, settings, [SimpleNamespace(posting_id=p) for p in (a, b)])
+
+    assert order is not None
+    assert [lead.posting_id for lead in order] == [b, a]
 
 
 @_needs_an_executable_fake

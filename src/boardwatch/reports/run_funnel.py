@@ -230,6 +230,11 @@ _TOP_MISSING = 10
 # a different cause. A funnel written before this lacks the key, which reads as `null` and means
 # "this run did not measure gate-reading staleness", not "this run found none".
 #
+# **T223's `gate.seniority_skipped` does NOT bump it either**, on that same precedent: an additive
+# key inside the `gate` block beside the three-way `seniority_*` split, changing none of their
+# meanings — each still counts what it counted, and a `skipped` verdict was in none of them. A
+# funnel written before this lacks the key, which reads as `null`: not measured, not zero.
+#
 # **T113's four `gate.refresh_*` keys do NOT bump it either**, on the same precedent: additive keys
 # inside the `gate` block, changing no existing key's meaning. `candidates`/`sent` beside them keep
 # counting the SLATE; the refresh is counted apart because its leads were never on it. With the
@@ -999,6 +1004,9 @@ class GateCounters:
     seniority_answered: int = 0
     seniority_unclear: int = 0
     seniority_unreadable: int = 0
+    #: T223. Verdicts whose `seniority_fit` was never asked, because the band is `any` (T188);
+    #: the fourth part of the split, so the four sum to the answered verdicts again.
+    seniority_skipped: int = 0
     readings_absent: int = 0
     #: T113. The standing-queue refresh, apart from the slate counts above because its leads were
     #: never on the slate. `refresh_budget` is the setting itself, so a budget of 0 — not armed —
@@ -1031,6 +1039,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "seniority_answered": None,
             "seniority_unclear": None,
             "seniority_unreadable": None,
+            "seniority_skipped": None,
             "readings_absent": None,
             "refresh_budget": None,
             "refresh_candidates": None,
@@ -1054,6 +1063,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "seniority_answered": gate.seniority_answered,
         "seniority_unclear": gate.seniority_unclear,
         "seniority_unreadable": gate.seniority_unreadable,
+        "seniority_skipped": gate.seniority_skipped,
         "readings_absent": gate.readings_absent,
         "refresh_budget": gate.refresh_budget,
         "refresh_candidates": gate.refresh_candidates if armed else None,
@@ -1090,7 +1100,8 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         "",
         f"`seniority_fit`: {gate.seniority_answered} answered yes/no · "
         f"{gate.seniority_unclear} explicit `unclear` · "
-        f"{gate.seniority_unreadable} absent or out-of-catalog",
+        f"{gate.seniority_unreadable} absent or out-of-catalog · "
+        f"{gate.seniority_skipped} not asked (band `any`)",
         "",
         # T151. Stated in words rather than as a bare number, because the number that matters is
         # ZERO and a reader has to be told that a non-zero one means holds were RELEASED, not

@@ -344,6 +344,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Four follow-ups from the 2026-09-24 whole-sweep review (2026-09-24, T222–T225).** `postings refetch --apply`
+  holds the scan lease for the whole command, so a run that starts mid-loop is the one refused and a leftover
+  `running` row (a killed run's) is a printed note, not a refusal (T222, F1). The judge's `seniority_skipped`
+  count reaches the run summary and the funnel's gate section as `N not asked (band any)`, so the split sums to
+  the verdicts again under band `any` (T223, F3). A tenant with no role taxonomy, whose review gate holds every
+  lead as `role_gate_unmeasured`, now reports those holds as `fired_on_default` instead of 0 (T224, F5). A hold
+  released by a body revision (the old version's off-key `ineligible`, the current version unjudged) is ordered
+  first in the standing-queue refresh like any other released hold; the verdict itself still reads the current
+  version only (T225, F6; one live lead).
+
 - **The connect phase is bounded by the fetch and board deadlines (2026-09-24, T226).** The deadline-aware
   backend clamped one `socket.create_connection` call, which applied that clamp to EACH resolved address in
   turn (three unreachable addresses held a 1 s deadline for 3 s) and never bounded the name lookup at all

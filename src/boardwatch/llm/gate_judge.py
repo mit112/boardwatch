@@ -617,10 +617,11 @@ class GateRefreshResult:
 
 def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
     """`leads` minus every lead with a current gate reading or no current version to judge,
-    RELEASED holds first (T195): a lead whose newest gate row on its current version, under any
-    key, reads `ineligible` was held until its key moved and is back in the apply lane until it is
-    re-judged. The caller's order holds within each part. `None` when the profile is missing or its
-    facts unreadable, `run_gate_stage`'s fail-open cases."""
+    RELEASED holds first (T195): a lead whose newest gate row over any of its versions, under any
+    key, reads `ineligible` was held until its key moved or its body was revised (T225), and is
+    back in the apply lane until it is re-judged. The caller's order holds within each part.
+    `None` when the profile is missing or its facts unreadable, `run_gate_stage`'s fail-open
+    cases."""
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -633,7 +634,7 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
         current = _current_gate_rows(
             conn, settings, facts, profile_row.target_seniority_band, versions
         )
-        newest = newest_gate_verdicts(conn, [v.posting_version_id for v in versions.values()])
+        newest = newest_gate_verdicts(conn, list(versions))
     stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
     released = [p for p in stale if newest.get(p.posting_id) == "ineligible"]
     return released + [p for p in stale if newest.get(p.posting_id) != "ineligible"]

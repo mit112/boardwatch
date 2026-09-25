@@ -629,6 +629,7 @@ class PipelineSummary:
     gate_seniority_answered: int = 0
     gate_seniority_unclear: int = 0
     gate_seniority_unreadable: int = 0
+    gate_seniority_skipped: int = 0
     gate_readings_absent: int = 0
     # T113 — the standing-queue refresh. All-zero when `gate.refresh_budget` is 0; the funnel
     # reads the budget beside them, so "off" and "nothing was stale" do not read alike. `None`
@@ -1696,7 +1697,9 @@ def _lead_lanes(
         if review_gate_reached("role", reason):
             tenant.observe(
                 "role",
-                fired=reason in ("role_vetoed", "role_unconfirmed"),
+                # `role_gate_unmeasured` occurs only while ungrounded, so it moves
+                # `fired_on_default` and never the grounded `fired` (T224).
+                fired=reason in ("role_vetoed", "role_unconfirmed", "role_gate_unmeasured"),
                 # T184: no taxonomy file — the gate held the lead without reading a field.
                 own_abstain=(
                     "missing_profile_field:role_taxonomy"
@@ -1913,6 +1916,7 @@ def _reduce_gate_stage(
     summary.gate_seniority_answered = gate_result.seniority_answered
     summary.gate_seniority_unclear = gate_result.seniority_unclear
     summary.gate_seniority_unreadable = gate_result.seniority_unreadable
+    summary.gate_seniority_skipped = gate_result.seniority_skipped
     summary.gate_excluded_ids = sorted(gate_result.excluded_ids)
     for note in gate_result.errors:
         console.print(f"  ! {note}", markup=False)
@@ -3963,6 +3967,7 @@ def _emit_funnel(
                 seniority_answered=summary.gate_seniority_answered,
                 seniority_unclear=summary.gate_seniority_unclear,
                 seniority_unreadable=summary.gate_seniority_unreadable,
+                seniority_skipped=summary.gate_seniority_skipped,
                 readings_absent=summary.gate_readings_absent,
                 refresh_budget=settings.gate.refresh_budget,
                 refresh_candidates=summary.gate_refresh_candidates,
