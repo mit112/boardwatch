@@ -15,7 +15,8 @@
 > recorded prediction, which was the last condition inside either; the eighteenth, **2026-09-22e**,
 > moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. (2026-09-22f and 2026-09-23 moved
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
-> owner calls were all done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
+> listed was done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -25,34 +26,35 @@
 
 ## Current standing
 
-### 2026-09-24e — **WAVE 3a SHIPPED (T218 #474, T226 #475, BUNDLE C #476, ENGINE BATCH 4 #477); THE PRIMARY IS ON `c45dc0e2`. WAVE 3b (T228, T227, T220, T229, T173, BATCH 5) GATED RED AT CLOSE — ONE TEST, A T173 RE-BASELINE — AND NOTHING OF IT SHIPPED; BATCH 6 IS WAVE 3c (ITS CODEX BLOCKER IS TB6b'S). MAIN'S macOS RED WAS A PRODUCT RACE (T228). THE GATE'S SLOWNESS WAS PURE-PYTHON YAML (T229). D-596.**
+### 2026-09-25a — **WAVE 3b SHIPPED (T228 #479, T227 #480, T220 #481, T173 #482, BATCH 5 #483, T229 #484), THEN ENGINE BATCHES 6–10 (#485, #490, #491, #492, #494), T232 #486, T231 #487, T230 #488, T238 #489, T243 #493. PR CI 21–38 MIN → 6.4 MIN; THE LOCAL GATE ~2.5 MIN. RUNS 476 AND 477 EACH RE-KEYED ONCE. RUN 477's JUDGE WAS STARVED BY THIS SESSION'S OWN SEAT (T247). D-597.**
 
-**Verify first** (the session paused on seat usage with unattended work): `gh pr list --state all --limit 12`,
-`.agent/2026-09-23c-session/arm-wave3b.status`, `chain-wave3b.log`, `gate-wave3b.log`, then
-`.agent/2026-09-23c-session/RESUME-2026-09-24e.md` (every item's branch, base and next step).
+**Verify first:** `gh pr list --state all --limit 20`, `git log --oneline -18 origin/main`, the primary on `main` (pulled
+between runs), `.agent/2026-09-23c-session/RESUME-2026-09-25a.md`. The next run is the 04:00 tick on 09-26; batch 10 moved
+`engine_version`, so it re-evaluates once more.
+
+**Owner calls pending (they change live behaviour — ask, do not decide):**
+1. **T247 — the gate judge runs on the session's seat** (`CLAUDE_CONFIG_DIR=~/.claude-boardwatch` in the plist). A heavy
+   session starved run 477's judge (judged 0; fail-open held). Options: keep session work off the seat in a run's window
+   (the planner's default until ruled), move the judge to another config dir, or accept; plus a whole-run judge-outage alert.
+2. **`board_deadline_seconds` 600 → 1800** in the live config (T243's recommendation; drains the Workday boards in 1–3 runs).
+3. **A posting whose ONLY qualifications section is `Desired/Preferred X and Y`** now reads every bar in it as a preference
+   (T219/T246, ~200 postings, the JD's own words). Keep, or require at least one required section before carrying?
 
 **Next, in order:**
-1. **Fix wave 3b's one red and ship it.** The gate (`gate-wave3b.log`, 22:46, **1 failed / 11,898 passed in 5m03** — the
-   first full gate with T229: 327 s against 945 s) fails
-   `test_recall_citizenship_clearance_domain.py::test_experience_non_requirement_fires_nothing["5+ years of DevOps experience
-   is preferred but not required."]`: T173's carrier (D-590) now writes `scoped_years_preferred` for it (reproduced on
-   `exec-t173` alone). That is the ruled design, so the fix is T173's re-baseline: move the case out of
-   `EXPERIENCE_NON_REQUIREMENTS` into an assertion that it writes ONLY `scoped_years_preferred` (preferred, never required),
-   as a commit on `exec-t173`; rebuild the stack (RESUME file), ONE `make check`, then `arm_wave3b.sh`'s chain (t228, t227,
-   t220, t173, batch5, t229 last). T229 may fail to MERGE (the `gh` token has no `workflow` scope; it edits `ci.yml`):
-   `gh auth refresh -s workflow`, then re-run `ship_one.sh t229 …` with ABSOLUTE paths. Add
-   `tests/pipeline/test_recall_*.py` to every engine executor's narrow suite.
-2. **TB6b** (`.agent/2026-09-23c-session/TB6b.md`, base `83b9d6ef`): batch 6 rebased onto batch 5, the T214a object
-   restriction, re-measure by scan closure; Codex verification; ship.
-3. **Run 476** (04:00 CDT 09-25, on `c45dc0e2`): long by design — T208's facts key and batch 4's re-key together. Read
-   with `read_run.py 476`; D-595's run-476 predictions (T198's four Workday boards, hiring.cafe by row, GitHub lists).
-4. The speed tickets T230–T232, then the engine follow-ups T233–T238 (TICKETS §2026-09-24e).
+1. **Read the 09-26 04:00 run** (batch 10's re-key) with `read_run.py <id>` (`.agent/2026-09-23b-session`): the judge must be
+   back (judged > 0, `failed_open_batches` 0); the Workday boards (db, hitachi, vfc, mtb, aecom2, dxc, Airbus) should now
+   return `partial` and grow each scan (T243); no drain is owed (0 `skipped` dispositions) — re-check.
+2. **Engine batch 11** from T244, T249, T242, T241c (the follow-ups the batches ruled): one executor, the same brief pattern
+   (`TB10.md`), a two-arm over ALL pinned postings when heading/splitter logic moves, Codex round + verification only.
+3. **T248** (T243's other providers: OracleHCM, Eightfold, Phenom, Apple; dominos; a cap-failed board's lost counts), **T240**,
+   **T239**.
 
-**Owner questions (D-596, they change what the gate checks):** Python 3.13 only on PR CI (3.11/3.12 on push); one PR per
-wave instead of per ticket; no local coverage (CI keeps the 85% bar).
+**Rulings this session (D-597):** Mit 22:53 09-24 — all three D-596 owner questions NO for now (3.11/3.12/3.13 on every PR,
+one PR per ticket, coverage in the local gate); Mit 00:31 — the run clock moves to fit the work (prepone = `launchctl
+kickstart`; postpone = `disable`, kick, `enable`). Planner: batch 6 and T243 each took a third Codex round (a reachable
+blocker in the verification round); the other verification-round findings were ruled follow-ups on store counts.
 
-**Correction to 2026-09-24d:** main's macOS red is 17 of 24 pushes since T192, not "4 of 5 since T209" (T228). Of the
-24d block's steps, 1 and 2 are done except batch 6; 3 and 4 remain.
+### 2026-09-24e — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-25a.** Wave 3a shipped; wave 3b's one red (a T173 re-baseline), the ship chain, TB6b, run 476 and T230–T238 — every step it listed is done (D-597).
 
 ### 2026-09-24d — **THE SESSION CLOSED ON MIT'S CALL BEFORE WAVE 3 (D-595). THE CHAIN SHIPPED (T199 #465, BUNDLE A #467, T210 #468, T209 #469, T188 #470, T208 #471) PLUS close6/close7 (#466, #472); THE 0-D REPAIR IS DONE (43 → 9 OPEN DAMAGED, THE NINE ARE `gone`); T173's TWO HEADING CLASSES ARE FIXED ON THE CARRIER (T215/T216, 1,189 CLEARS, ROUND 2 IN FLIGHT); A WHOLE-SWEEP REVIEW READ 0 BLOCKERS AND ITS FOLLOW-UPS ARE BUILT (T222–T226) AND REVIEWED; THE LIVE CONFIG'S GITHUB LISTS ARE RESTORED. THE PRIMARY IS ON `main` AT #472. THE NEXT SESSION IS HEADED BY THE ENTERPRISE SEAT.**
 
