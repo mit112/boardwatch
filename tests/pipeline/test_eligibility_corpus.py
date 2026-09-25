@@ -5,6 +5,11 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+FOUR rows were ADDED 2026-09-25 for engine batch 10: m1246 is T245 (an item-final `required` past an `and`
+beats an inline heading's hedge), m1247 T241a (a level label after an inline bullet no longer hides the hedge
+heading), m1248 and m1249 controls (a label chain with no bullet is no governed item; T241b's flattened-line
+hedge is not built). T245's, T246's and T241a's multi-line shapes are pinned in HEADING_CASES.
+
 SEVEN rows were ADDED and ONE RE-BASELINED 2026-09-25 for engine batch 9 (round 2: m1240 and m1241 now carry a
 college degree, since a degree that names a field keeps its base reading, and m1245 pins that control). m1237's `4 year degree or equivalent`
 is now a four-year degree-or-equivalent bar, `unknown` with no degree declared (T221). m1239-m1244 are T221 (a
@@ -1576,6 +1581,10 @@ CASES: list[tuple] = [
     ('m1243:T221 CONTROL a count that is no degree length keeps its experience bar', '5+ years college degree or equivalent industrial sales experience is required.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_list_years_minimum', 'required', 'unmet']]),
     ('m1244:T221 CONTROL a hedge before the or is neither reading', 'Two year university/Associate degree preferred or equivalent experience.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:domain_list_years_minimum', 'required', 'unknown']]),
     ('m1245:T221 CONTROL a degree length that names a field keeps its base reading', '4 year nursing degree or equivalent experience required.', {'total_years_experience': 1, 'highest_degree': 'master', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("m1246:T245 an item-final required past an and beats an inline heading's hedge", 'Preferred Qualifications: • 5 years of experience in audit and tax required.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('m1247:T241a a level label after an inline bullet does not hide its hedge heading', 'Preferred Qualifications: • Specialist: 2 - 5 years of relevant work experience.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('m1248:T241a CONTROL a label chain with no bullet is no governed item', 'Preferred Qualifications: Specialist: 2 - 5 years of relevant work experience.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:range_years_minimum', 'required', 'unknown']]),
+    ('m1249:T241b CONTROL a hedge ending a flattened line still hedges the next bar (pv 130715, not built)', 'Bachelor’s degree or equivalent preferred 3 - 5 years of experience supporting asset management distribution.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
 ]
 
 
@@ -1595,4 +1604,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1244
+    assert len(CASES) == 1248
