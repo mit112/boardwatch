@@ -179,3 +179,112 @@ def test_an_equivalence_word_that_is_not_the_bars_predicate_keeps_the_bar(  # ty
     body: str, expected: tuple[str, list[tuple[str, str, str]]], catalog
 ) -> None:
     assert _years_rows(body, catalog) == expected
+
+
+# The equivalence arms suppress a bar only when their OBJECT is an education, credit or time-of-study
+# unit. Codex round 1: a level, grade, role or title object is a restatement of the bar, not a
+# conversion, and an unrestricted `is equivalent to` turned a real five-year bar `eligible` for a
+# one-year profile holding the degree.
+FACTS_BACHELOR = Facts(total_years_experience=1, highest_degree="bachelor")
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a senior level"
+            " and is required.",
+            id="is-equivalent-to-a-level",  # the Codex sentence
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience counts toward a senior title"
+            " and is required.",
+            id="counts-toward-a-title",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience will count toward a senior title"
+            " and is required.",
+            id="will-count-toward-a-title",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience counts as senior level experience"
+            " and is required.",
+            id="counts-as-experience",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience equals a senior level and is"
+            " required.",
+            id="equals-a-level",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equal to the GS-11 level and is"
+            " required.",
+            id="is-equal-to-a-grade",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is considered equivalent to a"
+            " Senior Engineer and is required.",
+            id="considered-equivalent-to-a-role",
+        ),
+    ],
+)
+def test_an_equivalence_to_a_level_or_title_keeps_the_bar(  # type: ignore[no-untyped-def]
+    body: str, catalog
+) -> None:
+    result = evaluate(body, FACTS_BACHELOR, POLICY, catalog)
+    assert (result.verdict, sorted(
+        (r.rule_id, r.requiredness, r.disposition) for r in result.requirements
+    )) == ("ineligible", [
+        ("degree:bachelor_required", "required", "met"),
+        ("experience_years:total_years_minimum", "required", "unmet"),
+    ])
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "Education: Bachelor’s degree in Accounting, Finance, Taxation, or a related field; or"
+            " equivalent work experience (Two years’ relevant work experience is equivalent to"
+            " one-year college",
+            id="pv197864",
+        ),
+        pytest.param(
+            "Bachelor’s Degree in Computer Science, Electrical Engineering, Information Systems, or"
+            " closely related field of study or equivalent work experience (two years’ relevant"
+            " work experience is equivalent to one-year college)",
+            id="pv197866-197876-224470-273393",
+        ),
+        pytest.param(
+            "Required Education: Bachelor’s Degree in Business Administration, Healthcare"
+            " Administration, Health Information Management or related field; or equivalent work"
+            " experience (Two years’ relevant experience is equivalent to one-year college);"
+            " Master's degree (MBA, MHA, MPH) strongly preferred.",
+            id="pv197879",
+        ),
+        pytest.param(
+            "Bachelor or International Equivalency degree in Cybersecurity, Computer Science,"
+            " Electrical Engineering, Information Systems, or closely related field of study; or"
+            " equivalent work experience (Two years’ relevant work experience is equivalent to"
+            " one-year college)",
+            id="pv197880",
+        ),
+        pytest.param(
+            "Education: Bachelor’s Degree or equivalent work experience (Two years’ relevant work"
+            " experience is equivalent to one-year college)",
+            id="pv258730",
+        ),
+        pytest.param(
+            "6 years of additional experience is equivalent to a Bachelor’s degree.",
+            id="pv127257",
+        ),
+        pytest.param("2 years of experience is equal to 24 months of education.", id="months-of"),
+        pytest.param("2 years of experience counts toward 30 credit hours.", id="credit-hours"),
+        pytest.param("2 years of experience equals one year of college coursework.", id="coursework"),
+    ],
+)
+def test_an_equivalence_to_education_or_credit_still_writes_no_years_row(  # type: ignore[no-untyped-def]
+    body: str, catalog
+) -> None:
+    result = evaluate(body, FACTS_BACHELOR, POLICY, catalog)
+    assert [r.rule_id for r in result.requirements if r.rule_id.startswith("experience_years:")] == []
