@@ -553,7 +553,7 @@ _SECTION_WORD = re.compile(
     r"qualifications?|skills?|requirements?|experiences?|knowledge|abilities|ability|attributes|"
     r"competenc(?:y|ies)|education|expertise|background|certifications?|certificates?|"
     r"licen[cs]es?|licensure|registrations?|credentials?|capabilities|aptitudes|training|"
-    r"responsibilities|duties|tasks|benefits|compensation|perks|traits|interests|"
+    r"responsibilities|duties|tasks|benefits|compensation|perks|traits|interests|equivalency|"
     r"preferred|desired|desirable|bonus|nice-to-haves?|required|minimum|basic|mandatory|"
     r"essential|additional|technical|professional|key|core|other|general|specialized|relevant|"
     r"work|job|roles?",

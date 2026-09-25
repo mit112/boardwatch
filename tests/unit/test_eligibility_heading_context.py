@@ -220,6 +220,7 @@ HEADING_CASES: list[tuple] = [
     ('h133:T241a CONTROL a minimum label keeps its bar', 'Preferred Qualifications:\n- Minimum: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h134:T241a CONTROL a basic label keeps its bar', 'Preferred Qualifications:\n- Basic: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h135:T241a CONTROL a qualifications required label keeps its bar', 'Preferred Qualifications:\n- Qualifications required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h136:T246 an education-equivalency heading ends the preferred section before it (pv 146917)', 'Preferred Qualifications\nConfiguration management tools.\nRequired Education and Experience Equivalency\nBachelor\'s degree with 9 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -308,6 +309,7 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
         ("DUTIES and RESPONSIBILITIES:", True),
         ("Compensation and Benefits", True),
         ("Roles and Responsibilities", True),
+        ("Required Education and Experience Equivalency", True),
         ("Design and Build Pipelines", False),
         ("Develop and Maintain Services", False),
         ("Preferred skills and experience", False),
@@ -335,4 +337,4 @@ def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 135
+    assert len(HEADING_CASES) == 136
