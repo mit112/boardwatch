@@ -5,6 +5,7 @@ needs the same corpus.
 """
 
 import os
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -286,6 +287,21 @@ def _isolated_host_pacing(monkeypatch: pytest.MonkeyPatch) -> None:
     from boardwatch.core import politeness
 
     monkeypatch.setattr(politeness, "_PROCESS_PACING", politeness.HostPacing())
+
+
+@pytest.fixture()
+def no_real_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make `time.sleep` return at once, for a test whose subject is NOT pacing (T232).
+
+    `Settings` refuses a `per_host_delay_seconds` under the 0.25 s floor, so a test that makes
+    n requests to one fake host otherwise sleeps 0.25 × (n - 1) of real time inside `Fetcher`,
+    plus any tenacity backoff between retries. This is the same seam `test_grnh_seeds.py` and
+    `test_jsonld_lane.py` already patch. Opt-in, never autouse: a test that asserts a delay, a
+    backoff, a deadline or a trickle must keep the real clock, and `test_politeness.py` owns
+    the pacing contract itself. Code that did `from time import sleep` keeps the real one, and a
+    wait bounded by `time.monotonic` would spin for its full length rather than end early.
+    """
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
 
 
 @pytest.fixture()

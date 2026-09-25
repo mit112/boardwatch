@@ -233,6 +233,7 @@ def test_a_career_page_with_no_boot_blob_fails_the_board(tmp_path: Path) -> None
 
 # ---------------------------------------------------------------- single-page board
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_single_page_board_parses_every_posting(tmp_path: Path) -> None:
     payload = _fx("search_normal.json")
@@ -275,6 +276,7 @@ def test_no_listing_request_ever_sends_a_num_parameter(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------- pagination
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_full_page_forces_another_and_a_short_page_ends_the_pager(
     tmp_path: Path,
@@ -293,6 +295,7 @@ def test_a_full_page_forces_another_and_a_short_page_ends_the_pager(
     assert snapshot.board_reported_total == 12
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_an_id_less_row_makes_the_listing_incomplete_not_silently_short(
     tmp_path: Path,
@@ -340,6 +343,7 @@ def test_an_id_less_row_is_never_detail_fetched_or_materialised(tmp_path: Path) 
     assert snapshot.board_enumerated == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_count_is_read_from_the_first_page_only(tmp_path: Path) -> None:
     full, short = _fx("search_page_full.json"), _fx("search_page_short.json")
@@ -351,6 +355,7 @@ def test_the_count_is_read_from_the_first_page_only(tmp_path: Path) -> None:
     assert snapshot.board_reported_total == 12
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_later_page_failing_is_partial_not_failed(tmp_path: Path) -> None:
     _mock_boot()
@@ -397,6 +402,7 @@ def test_the_closed_apply_v2_message_body_fails_cleanly(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------- details
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_known_postings_are_not_re_detailed_but_stay_in_the_inventory(
     tmp_path: Path,
@@ -412,6 +418,7 @@ def test_known_postings_are_not_re_detailed_but_stay_in_the_inventory(
     assert len(snapshot.listed_ids) == 4  # or apply_board closes the three known ones
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_detail_404_keeps_the_posting_listed_rather_than_closing_it(
     tmp_path: Path,
@@ -433,6 +440,7 @@ def test_a_detail_404_keeps_the_posting_listed_rather_than_closing_it(
     assert "1000000000002" in snapshot.listed_ids
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_detail_budget_truncates_and_is_reported(tmp_path: Path) -> None:
     payload = _fx("search_normal.json")
@@ -447,6 +455,7 @@ def test_the_detail_budget_truncates_and_is_reported(tmp_path: Path) -> None:
     assert len(snapshot.listed_ids) == 4
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_every_detail_failing_fails_the_board(tmp_path: Path) -> None:
     payload = _fx("search_normal.json")
@@ -479,6 +488,7 @@ def test_there_is_one_backoff_step_per_retry() -> None:
     assert len(eightfold._THROTTLE_BACKOFF_SECONDS) == eightfold._THROTTLE_RETRIES
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_405_that_clears_on_retry_lists_the_whole_board(
     tmp_path: Path, _no_backoff: None
@@ -502,6 +512,7 @@ def test_a_405_that_clears_on_retry_lists_the_whole_board(
     assert snapshot.throttle_exhausted == 0
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_405_that_never_clears_is_partial_with_a_typed_reason(
     tmp_path: Path, _no_backoff: None
@@ -553,6 +564,7 @@ def test_the_backoff_is_the_fetchers_own_pace_not_a_second_limiter(tmp_path: Pat
     assert seen == [None, None, 0.0, 0.0]
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_the_per_board_retry_budget_caps_a_board_that_405s_everywhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -598,6 +610,7 @@ def test_a_non_405_failure_is_not_retried(
     assert route.call_count == 1
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_a_405_bootstrap_still_reports_what_the_throttle_cost(
     tmp_path: Path, _no_backoff: None

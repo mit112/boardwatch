@@ -151,6 +151,7 @@ def test_healthcheck_status_mapping(tmp_path: Path, status: int, expected: Board
     assert provider.healthcheck(_fetcher(tmp_path), "acme") == expected
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_healthcheck_ok_and_empty(tmp_path: Path) -> None:
     respx.get(BOARD_URL).mock(return_value=httpx.Response(200, content=_fixture_bytes("normal.json")))

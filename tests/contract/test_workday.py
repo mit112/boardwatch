@@ -32,6 +32,10 @@ from boardwatch.providers.workday import (
     split_target,
 )
 
+# T232: no test in this module asserts pacing, a backoff or a deadline, so `Fetcher`'s per-host
+# delay (floored at 0.25 s by `Settings`) is dead wall clock here. See `no_real_sleep`.
+pytestmark = pytest.mark.usefixtures("no_real_sleep")
+
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "workday"
 SLUG = "acme.wd5.myworkdayjobs.com/acme/AcmeCareers"
 LIST_URL = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/AcmeCareers/jobs"

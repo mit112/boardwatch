@@ -269,6 +269,7 @@ def test_healthcheck_transport_failure_maps_to_unreachable(tmp_path: Path) -> No
     assert provider.healthcheck(_fetcher(tmp_path), "acme") == BoardHealth.UNREACHABLE
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
 def test_board_enumerated_counts_listed_ids_not_surviving_postings(tmp_path: Path) -> None:
     """`board_enumerated` means DISTINCT POSTING IDS THE BOARD LISTED, identically across all
