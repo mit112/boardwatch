@@ -1289,6 +1289,21 @@ def detect(
                             abstained=abstained,
                         )
                     )
+    # A row over exactly the span a sibling it `yields_to` wrote, abstained or not alike, is that
+    # sibling's bar read a second way (T234): "5 years of sales or marketing experience" is both a
+    # scoped bar and a domain list, and one bar is one row.
+    found = [
+        detection
+        for detection in found
+        if not detection.pattern.yields_to
+        or not any(
+            other.family == detection.family
+            and other.pattern.id in detection.pattern.yields_to
+            and other.span == detection.span
+            and (other.abstained is None) == (detection.abstained is None)
+            for other in found
+        )
+    ]
     for detection in carried:
         # A carrier has no reading of its own, so a row ANY pattern of its family wrote over the
         # same span is the same bar read another way, and the carrier would only duplicate it.

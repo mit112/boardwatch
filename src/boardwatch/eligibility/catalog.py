@@ -131,6 +131,9 @@ class PatternSpec:
     # A `preferred` pattern with no regex of its own: it never matches, and exists only as a
     # `hedged_as` target for bars with no preferred wording (T173). Its regex is `(?!)`.
     carrier: bool
+    # Sibling patterns of this family whose row over EXACTLY this pattern's span, abstained or not
+    # alike, is the same bar read another way: this pattern then writes no row there (T234).
+    yields_to: tuple[str, ...] = ()
 
     @property
     def rule_id(self) -> str:
@@ -594,6 +597,18 @@ def _family(
                 f"{pattern.bounded_above_as!r} must name a required pattern of this family that "
                 "carries no bounded_above_by itself, beside a non-empty bounded_above_by"
             )
+    for pattern in patterns:
+        for sibling in pattern.yields_to:
+            # Mutual yielding would drop both rows, and the bar with them.
+            if (
+                sibling == pattern.id
+                or sibling not in by_id
+                or pattern.id in by_id[sibling].yields_to
+            ):
+                raise CatalogError(
+                    f"{where}: pattern {pattern.id!r} yields_to {sibling!r}, which must be another "
+                    "pattern of this family that does not yield back to it"
+                )
     named = {pattern.hedged_as for pattern in patterns}
     for pattern in patterns:
         if pattern.carrier and pattern.id not in named:
@@ -892,6 +907,7 @@ def _pattern(
         bounded_above_by=_regex_list(raw.get("bounded_above_by"), at, "bounded_above_by"),
         bounded_above_as=_optional_str(raw.get("bounded_above_as")),
         carrier=carrier,
+        yields_to=tuple(str(x) for x in (raw.get("yields_to") or ())),
     )
 
 
