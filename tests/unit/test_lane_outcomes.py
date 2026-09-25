@@ -9,7 +9,7 @@ from boardwatch.lanes.outcomes import (
 )
 
 
-def test_the_catalog_is_the_ten_outcomes_the_design_names():
+def test_the_catalog_is_the_ten_outcomes_the_design_names_plus_the_dangling_group_link():
     assert set(ACQUISITION_OUTCOMES) == {
         "body_inline",
         "body_fetched",
@@ -21,6 +21,8 @@ def test_the_catalog_is_the_ten_outcomes_the_design_names():
         "rejected_login_wall",
         "rejected_quality_gate",
         "not_attemptable",
+        # T220: counted per GROUP by the job-apps lane, not per posting.
+        "dangling_group_links",
     }
 
 
@@ -104,3 +106,16 @@ def test_rejections_are_attempts_that_resolved_nothing_and_still_flag_an_outage(
     assert tally.attempted == 9
     assert tally.resolved == 0
     assert tally.is_silent_outage
+
+
+def test_a_dangling_group_link_alone_is_seen_not_attempted_and_is_not_an_outage():
+    """T220: a group link whose target is gone hides records the lane never saw, so nothing was
+    attempted for them. Like `not_attemptable` it stays off the attempt side: a run whose only
+    tally entries are dangling group links is not a SILENT OUTAGE, and the next run re-reads
+    the link once the refresher finishes."""
+    tally = AcquisitionTally()
+    for _ in range(3):
+        tally.record("dangling_group_links")
+    assert tally.counts["dangling_group_links"] == 3
+    assert tally.resolved == 0
+    assert not tally.is_silent_outage

@@ -43,6 +43,11 @@ AcquisitionOutcome = Literal[
     # outcome per cause, because what a reader needs from this bucket is that the posting was
     # seen and NOT fetched. Counted, never skipped silently: that is the whole point.
     "not_attemptable",
+    # A GROUP directory link whose target is gone (T220): the job-apps staging root links
+    # groups, and the refresher's link-refresh race leaves one dangling. Counted once per GROUP,
+    # because the records behind it are unknowable. Not folded into `not_attemptable`, which
+    # counts records the lane saw and rejected; these records were never seen at all.
+    "dangling_group_links",
 ]
 
 ACQUISITION_OUTCOMES: tuple[str, ...] = get_args(AcquisitionOutcome)
@@ -50,6 +55,10 @@ ACQUISITION_OUTCOMES: tuple[str, ...] = get_args(AcquisitionOutcome)
 # The only two outcomes that produced a usable body. Named rather than derived by exclusion, so
 # that adding an outcome cannot silently make it count as a success.
 _RESOLVED: frozenset[str] = frozenset({"body_inline", "body_fetched"})
+
+# The outcomes for which no acquisition was attempted, kept off the attempt side of
+# `is_silent_outage`. Named for the same reason `_RESOLVED` is.
+_UNATTEMPTED: frozenset[str] = frozenset({"not_attemptable", "dangling_group_links"})
 
 
 class UnknownAcquisitionOutcome(ValueError):
@@ -61,9 +70,9 @@ class UnknownAcquisitionOutcome(ValueError):
 
 
 class AcquisitionTally:
-    """Counts every acquisition attempt by outcome, with all ten keys always present.
+    """Counts every acquisition attempt by outcome, with all eleven keys always present.
 
-    All ten are instrumented, so a 0 here is a measured zero rather than an absence. That
+    All eleven are instrumented, so a 0 here is a measured zero rather than an absence. That
     distinction is the whole point: an absent key reads as "not measured", and D-022/D-023 record
     a naive attribution of exactly that kind as nearly having cost job-apps a working adapter.
     """
@@ -115,5 +124,10 @@ class AcquisitionTally:
         `lane_posting_budget` to recover those 520, when the lane never reaches the budget it has.
         The predicate itself is unaffected: every one of the three causes is "seen and not
         requested", which is exactly what must be excluded from the attempt side.
+
+        `dangling_group_links` is excluded for the same reason (T220): nothing was requested for
+        the records behind a broken group link, and the next run re-reads the link once the
+        refresher finishes. A run that found only broken links is not an outage.
         """
-        return self.attempted - self._counts["not_attemptable"] > 0 and self.resolved == 0
+        unattempted = sum(self._counts[name] for name in _UNATTEMPTED)
+        return self.attempted - unattempted > 0 and self.resolved == 0
