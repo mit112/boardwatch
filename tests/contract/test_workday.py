@@ -712,7 +712,7 @@ def test_the_detail_phase_stops_before_the_board_clock_could_end_a_request(
     with fetcher.under_deadline(time.monotonic() + 1000.0, 1000.0) as clock:
 
         def _then_one_second_left(request: httpx.Request) -> httpx.Response:
-            clock.at = time.monotonic() + 1.0  # the default 240 s fetch deadline no longer fits
+            clock.at = time.monotonic() + 0.1  # under one 0.25 s pacing delay left
             return httpx.Response(200, json=_fx("detail_normal.json"))
 
         respx.get(first).mock(side_effect=_then_one_second_left)

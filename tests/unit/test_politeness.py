@@ -664,6 +664,35 @@ def test_a_request_fits_the_board_only_with_a_fetch_deadline_and_a_delay_left(
     assert not clock.tripped
 
 
+def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: Path) -> None:
+    """T243 round 2. Once the board has made a request, the estimate is one pacing delay plus
+    the slowest request it has seen — not the whole fetch deadline, which made a valid 30 s cap
+    refuse every detail under the default 240 s one."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/slow":
+            time.sleep(0.3)
+        return httpx.Response(200, content=b"ok")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 240.0})
+    fetcher = Fetcher(
+        settings, client=httpx.Client(transport=httpx.MockTransport(handler)),
+        pacing=politeness.HostPacing(),
+    )
+    with fetcher.under_deadline(time.monotonic() + 30.0, 30.0) as clock:
+        fetcher.get("https://quick.example/fast")
+        assert fetcher.request_fits_board_deadline()  # 30 s left, a quick request seen
+        clock.at = time.monotonic() + 0.5
+        assert fetcher.request_fits_board_deadline()  # 0.25 s delay + a few ms < 0.5 s
+        clock.at = time.monotonic() + 30.0
+        fetcher.get("https://slow.example/slow")
+        clock.at = time.monotonic() + 0.5
+        assert not fetcher.request_fits_board_deadline()  # 0.25 s delay + 0.3 s > 0.5 s
+        clock.at = time.monotonic() + 0.7
+        assert fetcher.request_fits_board_deadline()
+    assert not clock.tripped
+
+
 def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:
     """T192c. One `Fetcher` serves every worker: one board's expired scope must not fail a
     request another thread makes."""

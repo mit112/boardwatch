@@ -145,7 +145,9 @@ class SmartRecruitersProvider:
         detail_failures = 0
         inactive_ids: set[str] = set()
         for index, entry in enumerate(unseen):
-            if not fetcher.request_fits_board_deadline():
+            # Never before the FIRST (round 2): it goes out, and the cap cuts it as before T243,
+            # so a stop never leaves a `partial` with nothing fetched.
+            if index and not fetcher.request_fits_board_deadline():
                 # T243: past here the board's clock could fail the board and discard every
                 # detail already fetched; defer the rest instead (see workday.py).
                 errors.append(board_clock_deferral(len(unseen) - index))

@@ -780,7 +780,9 @@ class WorkdayProvider:
         postings: list[RawPosting] = []
         detail_failures = 0
         for index, (pid, row) in enumerate(unseen):
-            if not fetcher.request_fits_board_deadline():
+            # Never before the FIRST (round 2): it goes out, and the cap cuts it as before T243,
+            # so a stop never leaves a `partial` with nothing fetched.
+            if index and not fetcher.request_fits_board_deadline():
                 # T243: a board its cap cuts is failed and keeps nothing, so a detail phase
                 # longer than the cap re-fetched the same details every scan. Stop starting
                 # them here instead; `unseen` becomes what was attempted, the rest deferred.
