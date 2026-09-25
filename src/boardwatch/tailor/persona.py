@@ -24,6 +24,7 @@ from typing import Any
 
 import yaml
 
+from boardwatch.core.yamlio import load_bundled
 from boardwatch.extract.role_family import ROLE_FAMILIES, classify_role_family
 from boardwatch.tailor.model import Resume, SkillGroup
 
@@ -73,11 +74,11 @@ def load_personas(config_dir: Path) -> PersonaRegistry:
     unique ids, and closed-catalog role_families; any violation raises `PersonaError`."""
     override = config_dir / "personas.yaml"
     if override.is_file():
-        text, origin = override.read_text(encoding="utf-8"), str(override)
+        text, origin, bundled = override.read_text(encoding="utf-8"), str(override), False
     else:
-        text, origin = bundled_personas_text(), "bundled personas.yaml"
+        text, origin, bundled = bundled_personas_text(), "bundled personas.yaml", True
     try:
-        data = yaml.safe_load(text)
+        data = load_bundled(text) if bundled else yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise PersonaError(f"{origin}: invalid YAML: {exc}") from exc
     if not isinstance(data, dict):

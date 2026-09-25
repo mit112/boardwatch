@@ -8,6 +8,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
+from boardwatch.core.yamlio import load_bundled
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 
 _BUNDLED = Path(__file__).resolve().parent / "companies.yaml"
@@ -15,7 +16,10 @@ _BUNDLED = Path(__file__).resolve().parent / "companies.yaml"
 
 def load_catalog_raw(path: Path | None = None) -> list[CompanyEntry]:
     """Parse + schema-validate every entry, WITHOUT the cross-entry duplicate check."""
-    raw = yaml.safe_load((path or _BUNDLED).read_text(encoding="utf-8")) or {}
+    if path is None:
+        raw = load_bundled(_BUNDLED.read_text(encoding="utf-8")) or {}
+    else:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     rows = raw.get("companies") or []
     entries: list[CompanyEntry] = []
     for i, row in enumerate(rows):

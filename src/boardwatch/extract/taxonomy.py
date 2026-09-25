@@ -22,6 +22,7 @@ from sqlalchemy import Connection
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.yamlio import load_bundled
 from boardwatch.store.tables import extractions
 
 EXTRACTOR_REVISION = 1
@@ -73,7 +74,7 @@ def load_taxonomy(config_dir: Path) -> Taxonomy:
     else:
         text, source, origin = bundled_taxonomy_text(), "bundled", "bundled taxonomy.yaml"
     try:
-        data = yaml.safe_load(text)
+        data = load_bundled(text) if source == "bundled" else yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise TaxonomyError(f"{origin}: invalid YAML: {exc}") from exc
     entries = (data or {}).get("patterns") if isinstance(data, dict) else None

@@ -36,6 +36,7 @@ from typing import Any
 
 import yaml
 
+from boardwatch.core.yamlio import load_bundled
 from boardwatch.eligibility.facts import Policy
 
 CATALOG_REVISION = 2
@@ -321,7 +322,7 @@ def load_rules(config_dir: Path) -> RulesCatalog:
     else:
         text, source, origin = bundled_rules_text(), "bundled", "bundled rules.yaml"
     try:
-        document = yaml.safe_load(text)
+        document = load_bundled(text) if source == "bundled" else yaml.safe_load(text)
     except yaml.YAMLError as exc:
         raise CatalogError(f"{origin}: invalid YAML: {exc}") from exc
     if not isinstance(document, dict):
