@@ -218,7 +218,8 @@ def test_a_spelled_policy_sentence_writes_no_required_bar(body: str, catalog) ->
 
 # Round 2, finding 2: a spelled RANGE is not its high end. "Three to five years" read `five` as the
 # minimum through `scoped_years_minimum`, and "Between five and seven years" read `seven`. A spelled
-# count that ends a range (`to <count>`, `between <count> and <count>`) writes no row.
+# count that ends a range (`to <count>`, `between <count> and <count>`) never writes its own row; a
+# `to` range with a spelled low end writes its range row on that low end (T200 round 2).
 def _read_at(body: str, years: int, catalog) -> tuple[str, list[tuple[str, str, str]]]:  # type: ignore[no-untyped-def]
     result = evaluate(body, Facts(total_years_experience=years), POLICY, catalog)
     return result.verdict, sorted((r.rule_id, r.requiredness, r.disposition) for r in result.requirements)
@@ -227,8 +228,6 @@ def _read_at(body: str, years: int, catalog) -> tuple[str, list[tuple[str, str, 
 @pytest.mark.parametrize(
     "body,years",
     [
-        pytest.param("Three to five years of experience with Python", 4, id="to-scoped"),
-        pytest.param("Three to five years of experience", 4, id="to-total"),
         pytest.param("Between five and seven years of relevant experience.", 6, id="between-total"),
         pytest.param("Between five and seven years of experience with Python.", 6, id="between-scoped"),
         pytest.param("Three to 5 (five) years of building web applications", 4, id="to-activity"),
@@ -238,6 +237,21 @@ def _read_at(body: str, years: int, catalog) -> tuple[str, list[tuple[str, str, 
 )
 def test_a_spelled_range_does_not_read_its_high_end(body: str, years: int, catalog) -> None:  # type: ignore[no-untyped-def]
     assert _read_at(body, years, catalog) == ("uncertain", [])
+
+
+@pytest.mark.parametrize(
+    "body,years,expected",
+    [
+        pytest.param("Three to five years of experience with Python", 4,
+                     ("uncertain", [("experience_years:scoped_range_years_minimum", "required",
+                                     "unknown")]), id="to-scoped"),
+        pytest.param("Three to five years of experience", 4,
+                     ("eligible", [("experience_years:range_years_minimum", "required", "met")]),
+                     id="to-total"),
+    ],
+)
+def test_a_spelled_to_range_reads_its_low_end(body: str, years: int, expected, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _read_at(body, years, catalog) == expected
 
 
 # CONTROL: the conjunction alone does not make a range. pv 224384's "... or related and five (5) years
