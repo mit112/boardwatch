@@ -1016,6 +1016,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Ninth engine batch: a preference heading over a list of section nouns, and a degree's length before its
+  or-equivalent (2026-09-25, T219, T221).** `PREFERRED SKILLS AND EXPERIENCE:` and `Preferred Skills & Experience:`
+  were not read as preference headings, so every bar beneath them read as required (690 postings `ineligible` on that
+  alone); a preference word before a coordinated list of the closed section nouns now makes the whole heading one, while
+  `Preferred Candidates Must Have:`, `Preferred Qualifications & Required Skills:`, an item's own `must`/`required` and a
+  `minimum` threshold keep their bars. `4 year college degree or equivalent experience` read as a four-year experience
+  bar; a bare or institution-qualified degree length before `or equivalent` is now a degree bar (bachelor's-level for
+  3–4 years, associate's for 2), met by the degree and `unknown` without it — never `unmet` — and a field-specific
+  degree (`4 year nursing degree …`) keeps its old reading. Four rules added (65 → 69). `engine_version` moves; the
+  two-arm reading is in the merge message.
+
 - **Eighth engine batch: company tenure and time horizons are not bars, a 0-year floor is met, one row per bar, and a
   heading's hedge is carried as a preference (2026-09-25, T234, T235, T236).** `Our 3 year strategy` and `Over the
   next 5 years` no longer write a domain years bar; a 0-year scoped floor now resolves `met` instead of `unknown`; a
