@@ -125,7 +125,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # upper-bound cue carries a minimum bar into.
     # T200: 62 -> 64. `domain_range_years_minimum` and `domain_list_range_years_minimum`, the
     # range twins of the two domain patterns, which read a digit range's low end.
-    assert sum(len(f.patterns) for f in catalog.families) == 64
+    # T173: 64 -> 65. `scoped_years_preferred`, a regex-less carrier: a hedged scoped bar has no
+    # preferred wording, so it wrote no row at all.
+    assert sum(len(f.patterns) for f in catalog.families) == 65
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:

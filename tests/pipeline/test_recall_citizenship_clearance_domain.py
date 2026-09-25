@@ -228,13 +228,25 @@ EXPERIENCE_NON_REQUIREMENTS = [
     "For 25 years it has been a unique legacy of innovation fuelled by great technology.",
     "For 10 years, helping more than half a million families improve their transportation.",
     "Up to 3 years web development is all we expect from a new graduate.",
-    "5+ years of DevOps experience is preferred but not required.",
 ]
 
 
 @pytest.mark.parametrize("body", EXPERIENCE_NON_REQUIREMENTS)
 def test_experience_non_requirement_fires_nothing(catalog: RulesCatalog, body: str) -> None:
     assert _rules(catalog, body, EAD, "experience_years") == set()
+
+
+def test_hedged_scoped_bar_writes_only_the_preferred_carrier(catalog: RulesCatalog) -> None:
+    """A hedged scoped bar is kept as a `preferred` row (T173, D-590), never a required one,
+    so it can never reject anyone."""
+    body = "5+ years of DevOps experience is preferred but not required."
+    result = evaluate(body, EAD, BLOCKER_ALL, catalog)
+    rows = [r for r in result.requirements
+            if (r.rule_id or "").startswith("experience_years:")]
+    assert [(r.rule_id, r.requiredness) for r in rows] == [
+        ("experience_years:scoped_years_preferred", "preferred")
+    ]
+    assert result.verdict != "ineligible"
 
 
 def test_domain_years_defers_when_the_experience_noun_is_present(catalog: RulesCatalog) -> None:

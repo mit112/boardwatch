@@ -110,6 +110,39 @@ HEADING_CASES: list[tuple] = [
     ('h28:CONTROL a Required label inside a hedged list keeps its bar', 'Nice to have:\n- Required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('h29:129842 a hedge heading reaches a bare citizenship bar', PREFERRED_129842, P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown'], ['experience_years:total_years_minimum', 'required', 'unknown']]),
     ('h30:CONTROL the same citizenship line under the posting\'s own Key Qualifications heading keeps its bar', 'Key Qualifications\nU.S. citizenship with the ability to obtain and maintain required security clearances', P_FACTS, ALL_BLOCKERS, 'ineligible', [['work_auth:us_citizen_standalone_required', 'required', 'unmet']]),
+    ("h31:T215 a hedge after a heading's coordinator is not the heading's, so the bar under it rejects", "Education & Preferred Qualifications\nBachelor's degree in finance\n5+ years of experience in audit\n3+ years of Kubernetes experience preferred", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h32:T215 CONTROL a hedge before the heading\'s coordinator still hedges', 'Preferred Skills & Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h33:T215 a heading naming required AND preferred without a colon is not a hedge either', 'Required & Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h34:T215 CONTROL a hedge ending the heading after its own noun hedges the whole list', 'Qualifications/Education Desired\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h35:T216 an item\'s own must beats its heading\'s hedge', 'PREFERRED:\n- Must have 5 years of experience', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ("h36:T216 an item's own required predicate beats its heading's hedge", "Desired:\n- 20+ years' experience in construction supervision required", P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h37:T216 CONTROL the same heading over a bar with no cue still hedges it', 'PREFERRED:\n- 5 years of experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h38:T216 CONTROL required as an adjective is no cue', 'Preferred:\n- 5 years of experience with the required tooling', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h39:T216 CONTROL minimum under a hedge heading states the preference\'s threshold, not a mandate', 'Preferred Qualifications:\n- Minimum 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h40:T216 a mandated item is not read through the heading view either', 'Preferred Qualifications:\n- A minimum of 10 years of experience is required', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h41:T216 CONTROL an item hedged inline stays hedged', 'Preferred:\n- 5 years of experience with Python a plus', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h42:T216 CONTROL a conditional required is no mandate', 'Bonus Points:\n- Ability to obtain security clearance if required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['clearance:clearable_required', 'required', 'unmet'], ['clearance:generic_clearance_required', 'required', 'unmet']]),
+    ('h43:T216 CONTROL to the extent required is no mandate', 'Preferred:\n- 3 years of experience in audit to the extent required by the role', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h44:T216 a must inside a relative clause binds the clause's own verb, not the bar", 'Preferred:\n- 5 years of experience in audit for candidates who must travel to client sites', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h45:T216 should it be required is a conditional, no mandate', 'Preferred:\n- 5 years of experience in audit should it be required by the role', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h46:T216 should ... be required is a conditional whatever its subject', 'Preferred:\n- 5 years of experience in audit should travel be required', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h47:T216 a required reached across a to infinitive is not the bar's predicate", 'Preferred:\n- 5 years of experience in audit with a willingness to travel required', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h48:T216 CONTROL is required as the bar's own predicate beats the heading's hedge", 'Preferred:\n- 5 years of experience in audit is required', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h49:T216 CONTROL a sentence-final required beats the heading's hedge", 'Preferred:\n- 5 years of experience in audit required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h50:T216 CONTROL is a must as the bar's own predicate beats the heading's hedge", 'Preferred:\n- 5 years of experience in audit is a must', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h51:T216 a required reached across a where clause is not the bar's predicate", 'Preferred:\n- 5 years of audit experience in a firm where overtime is required', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h52:T216 a required reached across for candidates is not the bar's predicate", 'Preferred:\n- 5 years of experience in audit for candidates required to travel', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h53:T216 CONTROL a for phrase that names no person keeps the bar's predicate", 'Preferred:\n- 5 years of experience in audit for this role is required', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h54:T216 a required before the bar is another subject's predicate, not the bar's", 'Preferred:\n- Travel is required with 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h55:T216 CONTROL an item opening with its own subject's must beats the heading's hedge", 'Preferred Qualifications:\n- Candidates must have 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h56:T216 CONTROL an item opening must be beats the heading's hedge", 'Preferred Qualifications:\n- Must be able to obtain a Public Trust Clearance', P_FACTS, ALL_BLOCKERS, 'ineligible', [['clearance:clearable_leveled_required', 'required', 'unmet'], ['clearance:clearable_required', 'required', 'unmet']]),
+    ("h57:T215 the hyphenated nice-to-have before the heading's coordinator hedges the whole list", 'Nice-to-Have / Bonus\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h58:T215 CONTROL a hedge before a coordinator naming requirements still hedges', 'Bonus / Requirements\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h59:the hyphenated nice-to-have heading carries a total bar as its preference', 'Nice-to-have:\n- 5+ years of experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h60:the hyphenated nice-to-have hedges a degree bar as the spaced form does', 'Qualifications:\n- PhD degree nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met']]),
+    ('h61:the hyphenated nice-to-have hedges a clearance bar as the spaced form does', 'Qualifications:\n- Security clearance nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['clearance:clearance_preferred', 'preferred', 'unmet']]),
+    ('h62:the hyphenated nice-to-have hedges a range bar as the spaced form does', 'Qualifications:\n- 3-5 years of experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h63:the hyphenated nice-to-have hedges an or-equivalent degree bar as the spaced form does', 'Qualifications:\n- Bachelor\'s degree or equivalent experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -125,7 +158,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "6c6d904bedf66fc27cc923d14f2449b153059671e96c631813c88f89bb45fcf7"
+SPLIT_UNITS_DIGEST = "a260b59acae59b6809ef748a9b1f259068b0773fe4ef602b27d5a9cf9ccb2328"
 
 
 @pytest.fixture(scope="module")
@@ -192,4 +225,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 30
+    assert len(HEADING_CASES) == 63

@@ -549,9 +549,10 @@ def test_a_range_bar_survives_a_parenthetical_that_hedges_a_DIFFERENT_bar(catalo
     assert detection.values["years"] == "0"
     start, end = detection.span
     assert body[start:end] == "0-1 years of professional software development experience"
-    # the aside is a PREFERENCE: nothing inside it may become a second required bar
+    # the aside is a PREFERENCE: nothing inside it may become a second required bar. Its own
+    # hedged scoped bar is carried as a scoped preference (T173).
     aside = body.index("(")
-    assert [d.pattern.id for d in dets if d.span[0] > aside] == []
+    assert [d.pattern.id for d in dets if d.span[0] > aside] == ["scoped_years_preferred"]
 
 
 @pytest.mark.parametrize("body,hedge", [

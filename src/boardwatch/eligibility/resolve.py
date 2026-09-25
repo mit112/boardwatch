@@ -286,8 +286,12 @@ def _resolve_work_auth(detection: Detection, facts: Facts, family: FamilySpec) -
 # Both are a duration scoped to something NARROWER than the whole career -- a skill, or an
 # activity -- so both decide only in the direction the total forces. They are two vocabulary
 # values rather than one because `engine.evaluate` collects exclusive-group presence
-# document-wide, so only `scoped_years_minimum` may sit in that group.
-_SCOPED_YEARS = frozenset({"scoped_years_minimum", "activity_years_minimum"})
+# document-wide, so only `scoped_years_minimum` may sit in that group. A hedged scoped bar
+# (`scoped_years_preferred`, T173) is the same duration stated as a preference, so it takes the
+# same branch: a scoped preference must never resolve `met` on total years.
+_SCOPED_YEARS = frozenset(
+    {"scoped_years_minimum", "activity_years_minimum", "scoped_years_preferred"}
+)
 _CEILING_YEARS = frozenset({"total_years_maximum", "scoped_years_maximum"})
 
 

@@ -24,10 +24,15 @@ The scopes, all applied per match:
                           belongs to THAT bar and reaches nothing outside the aside.
                           On a pattern with a tail hedge, applied (inline and as a heading)
                           only to a bar no abstain waived, as the tail hedge is.
+                          A heading's hedge after its first coordinator reaches nothing
+                          (T215), and an item that states its own mandate takes none (T216).
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
-                          abstain waived: an abstaining bar keeps its UNKNOWN row.
+                          abstain waived: an abstaining bar keeps its UNKNOWN row. A bar
+                          `hedged_as` a CARRIER is carried on its unit-scoped and heading
+                          hedges too, since no preferred wording of its own writes that row
+                          (T173).
                           A pattern declaring this but no `suppressed_by_unit` takes a hedge
                           heading's hedge by the introducer allowance ALONE: its clause is
                           never searched, so "(MBA preferred)" beside the bar cannot drop it.
@@ -606,6 +611,33 @@ def _heading_text(head: str) -> str:
     return head if match is None else f"{head[: match.end()]}:"
 
 
+# The coordinators that join a heading's parts (T215).
+_HEADING_COORDINATOR = re.compile(r"&|/|,|\+|(?<!\w)and(?!\w)", re.IGNORECASE)
+
+
+def _muted_heading(heading: str, hedges: tuple[re.Pattern[str], ...]) -> tuple[int, int] | None:
+    """Where in a heading a hedge governs nothing: from its first coordinator on (T215).
+
+    A hedge before every coordinator modifies the whole list, `Preferred Skills & Experience`; one
+    after a coordinator names only its own part, and `Education & Preferred Qualifications` heads a
+    list that holds the degree and marks its preferences inline, so a bar under it with no hedge of
+    its own is required. A hedge that ENDS the heading after a noun of its own part is postpositive
+    over the whole list, `Qualifications/Education Desired`, and still governs; one that is its part
+    alone, `Required / Preferred`, does not.
+    """
+    coordinators = list(_HEADING_COORDINATOR.finditer(heading))
+    if not coordinators:
+        return None
+    end = len(heading)
+    for rx in hedges:
+        for match in rx.finditer(heading):
+            if not heading[match.end():].strip(" \t:") and heading[
+                coordinators[-1].end():match.start()
+            ].strip():
+                end = min(end, match.start())
+    return coordinators[0].start(), end
+
+
 def governing_headings(text: str, units: list[tuple[int, str]]) -> list[int | None]:
     """For each unit, the index of the heading unit that governs it, or None.
 
@@ -825,6 +857,7 @@ def _suppressed(
     introducer: bool = False,
     inside_span: bool = False,
     aside_owned: bool = False,
+    muted: tuple[int, int] | None = None,
 ) -> str | None:
     """Run a suppressor list against whatever string it is handed, outside the span.
 
@@ -840,11 +873,13 @@ def _suppressed(
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
     `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
-    its own has claimed (`_hedge_owned_by_an_aside`).
+    its own has claimed (`_hedge_owned_by_an_aside`). `muted` is a range in which no match counts.
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
+            if muted is not None and muted[0] <= match.start() < muted[1]:
+                continue
             if aside_owned and _hedge_owned_by_an_aside(
                 text, lo, hi, match.start(), match.end(), suppressors
             ):
@@ -869,6 +904,63 @@ def _suppressed(
     return None
 
 
+# An item's OWN mandate: the heading's hedge does not reach a bar that states one (T216), so
+# `Preferred:\n- Must have 5 years ...` and `Desired:\n- 20+ years' experience ... required` read
+# as they would with no heading. Only the bar's own counts, in two closed forms:
+#   - `_ITEM_MUST`: the item OPENS `must have|possess|bring|be`, in the bar's clause, bare or after
+#     its own subject (`the|all` + `candidate(s)|applicant(s)`, or `you`): `Candidates must have
+#     ...`, `Must be able to obtain ... clearance`;
+#   - `_BAR_PREDICATE`: the bar's clause states `required|mandatory|essential|a must` (`... is
+#     required`, `... required.`, `... is a must`), reached from the bar without crossing
+#     `_PREDICATE_BREAK`: a relative or subordinate opener (`who whom whose that which where if
+#     when unless`) or a phrase that starts a new object (`for` a person, `for candidates|
+#     applicants|individuals|persons|people|those|anyone|employees|hires|staff`, or a `to`
+#     infinitive, `to` before any word but `the a an this these those its their our your`), so
+#     `... for candidates who must travel` and `... with a willingness to travel required` bind
+#     nothing while `... for this role is required` does.
+# `required|mandatory|essential` after a determiner or a relative pronoun is attributive, `the
+# required tooling`, `the essential duties`, and binds nothing; after a conditional (`as if when
+# ever where unless deemed only extent`, the clearance patterns' own guard words plus `extent`,
+# and `should ... be`) it binds nothing either. `minimum` is deliberately absent: measured under
+# hedge headings it states a preference's threshold (`Preferred Qualifications:\n- Minimum 5
+# years ...`), not a mandate.
+_ITEM_MUST = re.compile(
+    r"(?:(?:(?:the|all)\s+)?(?:candidates?|applicants?)\s+|you\s+)?must\s+(?:have|possess|bring|be)(?!\w)",
+    re.IGNORECASE,
+)
+_BAR_PREDICATE = re.compile(
+    r"(?<!\w)(?:a\s+must|(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?<!\ball\s)(?<!\bany\s)(?<!\bof\s)"
+    r"(?<!\bthat\s)(?<!\bwhich\s)(?<!\bwho\s)(?<!\bwith\s)(?<!\bincluding\s)"
+    r"(?<!\bas\s)(?<!\bif\s)(?<!\bwhen\s)(?<!ever\s)(?<!\bwhere\s)(?<!\bunless\s)"
+    r"(?<!\bdeemed\s)(?<!\bonly\s)(?<!\bextent\s)"
+    r"(?:required|mandatory|essential))(?!\w)",
+    re.IGNORECASE,
+)
+_SHOULD_BE = re.compile(r"(?<!\w)should(?:\s+[\w'’-]+){1,3}?\s+be\s+$", re.IGNORECASE)
+_PREDICATE_BREAK = re.compile(
+    r"(?<!\w)(?:(?:who|whom|whose|that|which|where|if|when|unless)(?!\w)"
+    r"|for\s+(?:candidates?|applicants?|individuals?|persons?|people|those|anyone|employees?|"
+    r"hires?|staff)(?!\w)"
+    r"|to\s+(?!(?:the|a|an|this|these|those|its|their|our|your)(?!\w))[a-z])",
+    re.IGNORECASE,
+)
+
+
+def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
+    """Whether the item at `start` states the bar at [lo, hi)'s own mandate (`_ITEM_MUST`,
+    `_BAR_PREDICATE`)."""
+    clo, chi = _clause_bounds(text, lo, hi)
+    item = _BULLET_LEAD.match(text, start).end()  # type: ignore[union-attr]
+    if clo <= item <= lo and _ITEM_MUST.match(text, item):
+        return True
+    for cue in _BAR_PREDICATE.finditer(text, max(clo, item, lo), chi):
+        if _PREDICATE_BREAK.search(text, hi, cue.start()):
+            return False
+        if not _SHOULD_BE.search(text, 0, cue.start()):
+            return True
+    return False
+
+
 def _hedged_by_heading(
     heading: str,
     unit: str,
@@ -884,6 +976,8 @@ def _hedged_by_heading(
     field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
     `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
     caller's list was never run over that clause, so a match there is not the heading's.
+    A hedge after the heading's first coordinator is not the heading's (`_muted_heading`), and an
+    item that states its own mandate takes no hedge from its heading (`_item_mandates`).
     """
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
     start = _item_start(unit)
@@ -893,9 +987,12 @@ def _hedged_by_heading(
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
     clo, chi = _clause_bounds(intro, lo, hi)
+    if _item_mandates(intro, lo, hi, len(heading) + 1):
+        return None
     return _suppressed(
         intro, lo, hi, hedges,
         bounds=(clo, clo if introducer_only else chi), introducer=True, aside_owned=True,
+        muted=_muted_heading(heading, hedges),
     )
 
 
@@ -987,6 +1084,8 @@ def detect(
             continue
         twins = {pattern.id: pattern for pattern in family.patterns}
         for pattern in family.patterns:
+            # A one-line hedge on a bar hedged_as a carrier carries it rather than dropping it.
+            carries = pattern.hedged_as is not None and twins[pattern.hedged_as].carrier
             if (units := units_by_scope.get(pattern.scope)) is None:
                 units = units_by_scope[pattern.scope] = split_units(body_text, pattern.scope)
                 governing = governing_headings(body_text, units)
@@ -1000,7 +1099,9 @@ def detect(
             for index, unit, at, join in _views(units, governing, pattern):
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
-                    if join is not None and not lo < join < hi:
+                    if join is not None and (
+                        not lo < join < hi or _item_mandates(unit, lo, hi, join)
+                    ):
                         continue
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):
                         continue
@@ -1072,29 +1173,35 @@ def detect(
                     # heading hedges after them too, so "Bachelor degree or 5 years of experience
                     # preferred." keeps the `unknown` row its split form keeps (T175).
                     waived = abstained is not None and bool(pattern.hedged_by_tail)
-                    if not waived and _suppressed(
-                        unit, lo, hi, pattern.suppressed_by_unit,
-                        bounds=bounds, introducer=True, aside_owned=True,
-                    ):
-                        continue
                     heading = governing[index]
-                    if not waived and join is None and heading is not None and _hedged_by_heading(
-                        _heading_text(units[heading][1]), unit, lo, hi,
-                        pattern.suppressed_by_unit or pattern.hedged_by_tail,
-                        introducer_only=not pattern.suppressed_by_unit,
-                    ):
+                    hedged = not waived and bool(
+                        _suppressed(
+                            unit, lo, hi, pattern.suppressed_by_unit,
+                            bounds=bounds, introducer=True, aside_owned=True,
+                        )
+                        or join is None and heading is not None and _hedged_by_heading(
+                            _heading_text(units[heading][1]), unit, lo, hi,
+                            pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                            introducer_only=not pattern.suppressed_by_unit,
+                        )
+                    )
+                    if hedged and not carries:
                         continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
                     # dropped row.
-                    if abstained is None and pattern.hedged_by_tail and (
-                        hedged := _hedged_tail_end(
+                    if hedged:
+                        tail: tuple[int, bool] | None = (at(hi), True)
+                    elif abstained is None and pattern.hedged_by_tail:
+                        tail = _hedged_tail_end(
                             body_text, sentences, pattern, unit, lo, hi, at, join, units, index
                         )
-                    ) is not None:
+                    else:
+                        tail = None
+                    if tail is not None:
                         # A bare negated bar drops it: it is not required, and nothing says it
                         # is preferred.
-                        end, preference = hedged
+                        end, preference = tail
                         if preference and pattern.hedged_as is not None:
                             carried.append(
                                 Detection(
@@ -1148,8 +1255,13 @@ def detect(
                         )
                     )
     for detection in carried:
+        # A carrier has no reading of its own, so a row ANY pattern of its family wrote over the
+        # same span is the same bar read another way, and the carrier would only duplicate it.
         if not any(
-            other.pattern is detection.pattern
+            (
+                other.pattern is detection.pattern
+                or (detection.pattern.carrier and other.family == detection.family)
+            )
             and other.span[0] < detection.span[1]
             and detection.span[0] < other.span[1]
             for other in found

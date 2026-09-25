@@ -291,8 +291,8 @@ def test_the_artifact_reports_every_catalog_rule_not_just_the_ones_that_fired(
 
     # 57 -> 59: the two months patterns (2026-09-04).
     # 59 -> 60: `labeled_years_minimum`, the noun-first bar (2026-09-05).
-    assert abstain["rule_count"] == 64  # 62 -> 64: the two domain range twins (T200)
-    assert len(abstain["rules"]) == 64
+    assert abstain["rule_count"] == 65  # 62 -> 64: the two domain range twins (T200); 64 -> 65: the `scoped_years_preferred` carrier (T173)
+    assert len(abstain["rules"]) == 65
     assert abstain["never_fired"] > 0, "a single posting fired every rule in the catalog?"
     # Never-fired rules carry no rate at all, rather than the 0% that would rank them healthy.
     assert any(rule["abstain_rate"] is None for rule in abstain["rules"])
