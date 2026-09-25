@@ -363,6 +363,7 @@ def test_the_funnel_artifact_still_RECONCILES_when_a_lead_is_withheld(  # noqa: 
     assert payload["reconciles"] is True
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_run_COMMAND_actually_wires_a_prober_in(env: Path, tmp_path: Path) -> None:  # noqa: N802
     """The one thing that makes liveness run in production, and every other test bypasses it by
     calling `run_pipeline` directly. Flipping `--check-liveness`'s default, or passing `None`

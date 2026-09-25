@@ -44,6 +44,7 @@ def env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "data"
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_scan_block_names_the_board_the_guard_fired_on(env: Path, tmp_path: Path) -> None:
     _ready(env)
     settings = load_settings(data_dir=env)
@@ -77,6 +78,7 @@ def test_the_scan_block_names_the_board_the_guard_fired_on(env: Path, tmp_path: 
     assert scan["boards_complete"] == 2
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_the_run_log_names_the_board_the_guard_fired_on(env: Path, tmp_path: Path) -> None:
     _ready(env)
     with respx.mock:
