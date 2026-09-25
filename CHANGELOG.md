@@ -344,6 +344,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board whose details outrun its cap keeps what it fetched instead of losing it all (2026-09-25, T243).** Since
+  T228 a board its clock cuts is `failed` and persists nothing, so a Workday or SmartRecruiters board whose detail phase
+  runs past `board_deadline_seconds` repeated the same fetches every scan and never grew (db, hitachi, vfc, mtb on runs
+  475–477; aecom2, dxc and Airbus had progressed only while the cut still returned `partial`). The detail loops now stop
+  STARTING fetches once a request could not end before the board's clock — one pacing delay plus twice the slowest request
+  the board has made — and return `partial` with what they kept, counting the rest as deferred; the next scan fetches only
+  those. The stop never applies before a posting is kept, so a board is never left `partial` with nothing, and a small cap
+  still fetches. A live single-board probe (mtb, scratch store) kept 541 of 805 in one 600 s scan; before, 0.
+
 - **The job-apps lane counts every entry it cannot read, the same on every Python (2026-09-25, T238).** Two shapes
   still vanished uncounted after T220: a group directory that resolves but cannot be listed (or listed but not
   searched), and a dangling link at the posting-folder level. Entries are now classified with explicit `os.stat` /
