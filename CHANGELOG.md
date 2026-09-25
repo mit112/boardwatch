@@ -344,6 +344,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A resolver outage holds at most 64 threads, a link-local IPv6 address keeps its scope, and T226's deadline
+  tests no longer race the clock (2026-09-24, T227).** T226 ran `getaddrinfo` on a thread it abandons at the
+  deadline, so a resolver that hung for every host left one thread per attempt; now a second connect to the same
+  (host, port) waits on the lookup already running, and past 64 in-flight lookups a new one is refused at once
+  as a `ConnectError` (retried, then unreachable — not the deadline error, which would end a board early). A
+  link-local `fe80::` address is handed over with the scope the resolver answered (`fe80::1%5`); a global
+  address is handed over bare, as before. The two 1 s deadline tests run on an injected clock and an Event.
+
 - **A board its own clock cuts short at its cap is recorded `failed`, whichever side sees the cap first
   (2026-09-24, T228).** The coordinator's wait and the board's own clock (T192c) both fire at start + cap;
   when the worker thread returned first, the coordinator collected the board's own outcome (`20 failed`,

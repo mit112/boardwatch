@@ -1,6 +1,7 @@
 import gzip
 import json
 import socket
+import ssl
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -1206,10 +1207,12 @@ def _tcp(address: str, port: int) -> tuple[Any, ...]:
 
 @contextmanager
 def _network(
-    patch: pytest.MonkeyPatch, names: dict[str, Callable[[int], list[tuple[Any, ...]]]]
+    patch: pytest.MonkeyPatch,
+    names: dict[str, Callable[[int], list[tuple[Any, ...]]]],
+    hang: Callable[[float], None] = time.sleep,
 ) -> Iterator[None]:
     """Resolve each name in `names` through its fake; every connect to a `_BLACK_HOLES` address
-    hangs for the socket's own timeout. Anything else goes to the real resolver (numeric only)."""
+    `hang`s for the socket's own timeout. Anything else goes to the real resolver (numeric only)."""
     real_resolve, real_connect = socket.getaddrinfo, socket.socket.connect
 
     def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
@@ -1220,7 +1223,7 @@ def _network(
         if address[0] in _BLACK_HOLES:
             timeout = self.gettimeout()
             assert timeout is not None, "a black hole with no timeout would hang the suite"
-            time.sleep(timeout)
+            hang(timeout)
             raise TimeoutError("timed out")
         real_connect(self, address)
 
@@ -1238,16 +1241,21 @@ def test_three_black_holed_addresses_end_at_the_fetch_deadline(
 ) -> None:
     """T226. `socket.create_connection` applies ONE timeout to EACH resolved address in turn, so
     handing it the time left once let n black holes hold the call (n-1)×left past the deadline
-    (review F2 probe: 3.00s against 1.0s). Each attempt now re-reads what is left."""
-    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
+    (review F2 probe: 3.00s against 1.0s). Each attempt now re-reads what is left.
+
+    On `politeness`'s fake clock (T227): a black hole advances it by exactly the timeout its
+    socket was given and nothing waits, so the attempts' total is read off, not inferred from
+    wall time with a margin a loaded run could eat. A 10s deadline then costs no wall time; it
+    is only how long the real resolver thread, which answers at once, is given to do so."""
+    clock = _FakeTime()
+    monkeypatch.setattr(politeness, "time", clock)
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 10.0})
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
     names = {"many.invalid": lambda port: [_tcp(a, port) for a in _BLACK_HOLES]}
-    with _network(monkeypatch, names):
-        started = time.monotonic()
-        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
+    with _network(monkeypatch, names, hang=clock.advance):
+        with pytest.raises(FetchFailure, match=r"fetch deadline 10s exceeded") as info:
             fetcher.get("http://many.invalid/")
-        elapsed = time.monotonic() - started
-    assert elapsed < 1.5, elapsed
+    assert clock.now == 10.0, clock.now
     _assert_the_backend_fired(info.value)
 
 
@@ -1300,20 +1308,30 @@ def test_a_resolver_that_hangs_ends_at_the_fetch_deadline(
 ) -> None:
     """T226. `getaddrinfo` ignores every socket timeout (review F2 probe: 3.02s against 1.0s). It
     now runs on a worker thread joined for only the time left; the resolver call itself cannot
-    be cancelled, so that thread finishes in the background."""
+    be cancelled, so that thread finishes in the background.
+
+    Pinned by ORDER, not elapsed time (T227): the resolver answers only once the test lets it,
+    so a request that ended with it still unanswered waited for nothing, however loaded the run."""
+    release = threading.Event()
+    answered: list[int] = []
 
     def slow(port: int) -> list[tuple[Any, ...]]:
-        time.sleep(3.0)
+        release.wait(10.0)  # a watchdog only, for code that waits on the resolver
+        answered.append(port)
         return [_tcp("127.0.0.1", port)]
 
     settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
-    with _network(monkeypatch, {"slow-dns.invalid": slow}):
-        started = time.monotonic()
-        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
-            fetcher.get("http://slow-dns.invalid:9/x")
-        elapsed = time.monotonic() - started
-    assert elapsed < 1.5, elapsed
+    try:
+        with _network(monkeypatch, {"slow-dns.invalid": slow}):
+            with pytest.raises(FetchFailure) as info:
+                fetcher.get("http://slow-dns.invalid:9/x")
+            assert answered == [], "the request waited for the resolver to answer"
+    finally:
+        release.set()
+        for thread in _resolver_threads({"slow-dns.invalid"}):
+            thread.join(10.0)
+    info.match(r"fetch deadline 1(\.0)?s exceeded")
     _assert_the_backend_fired(info.value)
 
 
@@ -1345,3 +1363,204 @@ def test_a_hundred_fast_connects_leave_no_resolver_thread_behind() -> None:
     listener.close()
     assert len(accepted) == 100
     assert not left_behind, left_behind
+
+
+# --- T227: an unanswered resolver is bounded — one lookup per (host, port), a cap on them all ---
+#
+# A resolver that answers nothing held one abandoned thread per ATTEMPT (T226). These tests hold
+# every lookup on an Event the test itself sets, so every resolver thread started during a test
+# is still alive when it is counted, and no count depends on how fast anything ran.
+
+
+def _resolver_threads(hosts: set[str]) -> list[threading.Thread]:
+    return [t for t in threading.enumerate() if t.name.removeprefix("resolve ") in hosts]
+
+
+@contextmanager
+def _unanswered(patch: pytest.MonkeyPatch, hosts: set[str]) -> Iterator[list[int]]:
+    """Every name in `hosts` resolves only when the block exits; yields one entry per lookup the
+    resolver was asked for. On exit it answers (a gaierror) and every thread it held is joined,
+    so no lookup outlives the test that started it. It first waits out any lookup another test
+    left running: the registry is process-wide, and these tests count against its cap."""
+    for lookup in list(politeness._LOOKUPS.values()):
+        lookup.thread.join(10.0)
+    assert not politeness._LOOKUPS, politeness._LOOKUPS
+    release = threading.Event()
+    asked: list[int] = []
+
+    def hang(port: int) -> list[tuple[Any, ...]]:
+        asked.append(port)
+        release.wait(10.0)  # a watchdog only: the `finally` below is what releases it
+        raise socket.gaierror(socket.EAI_NONAME, "no answer")
+
+    try:
+        with _network(patch, dict.fromkeys(hosts, hang)):
+            yield asked
+    finally:
+        release.set()
+        for thread in _resolver_threads(hosts):
+            thread.join(10.0)
+
+
+def _connect_concurrently(hosts: list[str], timeout: float) -> list[BaseException]:
+    """One `_DeadlineBackend.connect_tcp` per entry of `hosts`, all at once; what each raised."""
+    backend = politeness._DeadlineBackend()
+    raised: list[BaseException] = []
+
+    def connect(host: str) -> None:
+        try:
+            backend.connect_tcp(host, 443, timeout=timeout).close()
+        except Exception as exc:
+            raised.append(exc)
+
+    callers = [threading.Thread(target=connect, args=(host,)) for host in hosts]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join(10.0)
+    assert not any(caller.is_alive() for caller in callers), "a caller outlived its own timeout"
+    return raised
+
+
+def test_fifty_connects_to_one_unanswered_host_share_one_resolver_thread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. Each caller used to start its own lookup, so a host the resolver never answers left
+    one thread per attempt. A caller for a (host, port) already being looked up now waits on that
+    lookup, within its own timeout, instead of starting another."""
+    with _unanswered(monkeypatch, {"one.invalid"}) as asked:
+        raised = _connect_concurrently(["one.invalid"] * 50, timeout=0.3)
+        alive = _resolver_threads({"one.invalid"})
+        assert len(alive) == 1, len(alive)
+        assert len(asked) == 1, len(asked)
+    assert len(raised) == 50
+    assert all(type(exc) is httpcore.ConnectTimeout for exc in raised), raised
+
+
+def test_connects_to_more_unanswered_hosts_than_the_cap_start_only_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. One lookup per (host, port) still grows with the number of hosts. At most 64 run in
+    the process at once; a caller over that is refused at once, typed, without a thread."""
+    hosts = {f"cap{i}.invalid" for i in range(81)}
+    with _unanswered(monkeypatch, hosts) as asked:
+        raised = _connect_concurrently(sorted(hosts - {"cap80.invalid"}), timeout=0.3)
+        alive = _resolver_threads(hosts)
+        assert len(alive) == 64, len(alive)
+        assert len(asked) == 64, len(asked)
+        refused = [exc for exc in raised if isinstance(exc, politeness.ResolverSaturated)]
+        assert len(refused) == 16, raised
+        assert sum(type(exc) is httpcore.ConnectTimeout for exc in raised) == 64, raised
+
+        # Refused at ONCE: a caller that waited would take its whole 30s here.
+        started = time.monotonic()
+        with pytest.raises(politeness.ResolverSaturated):
+            politeness._DeadlineBackend().connect_tcp("cap80.invalid", 443, timeout=30.0)
+        assert time.monotonic() - started < 5.0
+        assert len(asked) == 64, len(asked)
+
+    # The drain: once the held lookups end, the cap has room again.
+    listener = socket.create_server(("127.0.0.1", 0))
+    try:
+        politeness._DeadlineBackend().connect_tcp(
+            "127.0.0.1", listener.getsockname()[1], timeout=5.0
+        ).close()
+    finally:
+        listener.close()
+
+
+def test_a_saturated_resolver_fails_the_request_without_naming_or_tripping_a_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T227. The refusal is a `ConnectError`, not a `DeadlineExceeded`: neither clock ran out, so
+    the request must not be reported as either deadline, and the board's clock must not read as
+    having ended it (T228) — it would record the board `board deadline exceeded` early."""
+    monkeypatch.setattr(politeness, "_MAX_LOOKUPS", 1)
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 30.0})
+    fetcher = Fetcher(settings, pacing=politeness.HostPacing())
+    with _unanswered(monkeypatch, {"held.invalid", "refused.invalid"}) as asked:
+        _connect_concurrently(["held.invalid"], timeout=0.3)  # holds the one slot
+        with fetcher.under_deadline(time.monotonic() + 2.0, 2.0) as clock:
+            with pytest.raises(FetchFailure) as info:
+                fetcher.get("http://refused.invalid/x")
+        assert len(asked) == 1, len(asked)
+    assert "deadline" not in str(info.value), str(info.value)
+    assert info.value.status_code is None
+    assert not clock.tripped
+    cause = info.value.__cause__
+    assert isinstance(cause, httpx.ConnectError), repr(cause)
+    assert isinstance(cause.__cause__, politeness.ResolverSaturated), repr(cause.__cause__)
+
+
+def test_a_link_local_address_is_connected_on_its_own_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. Each attempt hands httpcore the numeric address, which `create_connection` resolves
+    again — and an IPv6 address string carries no zone, so a link-local `fe80::` address came
+    back with scope 0, which is no interface. The socket must be connected on the scope the
+    resolver answered with."""
+    real_resolve = socket.getaddrinfo
+    connected: list[Any] = []
+
+    def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+        if host == "scoped.invalid":
+            return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1", int(port), 0, 5))]
+        return real_resolve(host, port, *args, **kwargs)  # numeric only: parsed, no DNS
+
+    def connect(self: socket.socket, address: Any) -> None:
+        connected.append(address)  # records the sockaddr, connects nowhere
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    politeness._DeadlineBackend().connect_tcp("scoped.invalid", 8080, timeout=5.0).close()
+    assert connected == [("fe80::1", 8080, 0, 5)], connected
+
+
+def test_a_global_ipv6_address_is_connected_without_a_zone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control for T227 (Codex r1): only a LINK-LOCAL address carries its scope across. macOS's
+    `getaddrinfo` answers a global address with the scope it was asked for too, and that address
+    must be handed over bare, exactly as before T227."""
+    real_resolve = socket.getaddrinfo
+    connected: list[Any] = []
+
+    def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+        if host == "global.invalid":
+            return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", int(port), 0, 5))]
+        return real_resolve(host, port, *args, **kwargs)  # numeric only: parsed, no DNS
+
+    def connect(self: socket.socket, address: Any) -> None:
+        connected.append(address)  # records the sockaddr, connects nowhere
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    politeness._DeadlineBackend().connect_tcp("global.invalid", 8080, timeout=5.0).close()
+    assert connected == [("2001:db8::1", 8080, 0, 0)], connected
+
+
+def test_tls_is_offered_the_origin_name_not_the_address_connected_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for T227: the address each attempt connects to is the TCP layer's alone; the TLS
+    handshake is still offered the request's own host name."""
+    offered: list[str | None] = []
+
+    def wrap_socket(
+        self: ssl.SSLContext, sock: socket.socket, *args: Any, server_hostname: str | None = None,
+        **kwargs: Any,
+    ) -> ssl.SSLSocket:
+        offered.append(server_hostname)
+        raise ssl.SSLError("stopped before the handshake")
+
+    monkeypatch.setattr(ssl.SSLContext, "wrap_socket", wrap_socket)
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    fetcher = Fetcher(_settings(tmp_path, retries=1), pacing=politeness.HostPacing())
+    try:
+        with _network(monkeypatch, {"tls.invalid": lambda p: [_tcp("127.0.0.1", p)]}):
+            with pytest.raises(FetchFailure):
+                fetcher.get(f"https://tls.invalid:{port}/x")
+    finally:
+        listener.close()
+    assert offered == ["tls.invalid"], offered
