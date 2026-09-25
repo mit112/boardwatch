@@ -84,7 +84,7 @@ def test_a_dangling_group_link_reaches_the_funnels_lane_row_and_the_lane_does_no
 
 
 def test_an_unlistable_group_reaches_the_funnels_lane_row_and_the_lane_does_not_fail(
-    env: Path, tmp_path: Path, lock_dir: Callable[[Path], None]
+    env: Path, tmp_path: Path, lock_dir: Callable[..., None]
 ) -> None:
     """T238, end to end: one group that resolves but cannot be listed, beside a readable one.
     The lane raises nothing and the count reaches the funnel artifact's lane row, read back off

@@ -49,11 +49,13 @@ AcquisitionOutcome = Literal[
     # counts records the lane saw and rejected; these records were never seen at all. Kept out
     # of `attempted` (`_GROUP_UNIT`).
     "dangling_group_link",
-    # A GROUP directory that resolves but cannot be listed (T238): a permission or I/O error on
-    # the listing itself. Counted once per GROUP for `dangling_group_link`'s reason -- the
-    # records behind it are unknowable -- and not folded into it, because its target is there:
-    # a broken link wants the refresher, an unlistable group wants its permissions. Kept out of
-    # `attempted` (`_GROUP_UNIT`).
+    # A GROUP directory that is there but cannot be read (T238): its stat, its listing, or the
+    # stat of one of its entries raises for a reason other than absence -- a permission or I/O
+    # error. Counted once per GROUP for `dangling_group_link`'s reason -- the records behind it
+    # are unknowable -- and a partly readable group still yields its readable records. Not
+    # folded into `dangling_group_link`, because its target is there: a broken link wants the
+    # refresher, an unreadable group wants its permissions. Kept out of `attempted`
+    # (`_GROUP_UNIT`).
     "unreadable_group",
 ]
 

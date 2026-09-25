@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -711,28 +712,32 @@ def test_a_tree_of_only_dangling_group_links_still_raises_as_no_group_folder(tmp
 
 
 @pytest.fixture
-def lock_dir() -> Iterator[Callable[[Path], None]]:
-    """Make a directory unlistable for one test, and restore it so `tmp_path` can be removed.
+def lock_dir() -> Iterator[Callable[..., None]]:
+    """Lock a directory for one test, and restore it so `tmp_path` can be removed.
 
-    Skips where permissions do not stop a listing (root, or a filesystem that ignores mode
-    bits): there the shape cannot be built, and a green test would prove nothing."""
+    `mode=0` denies the listing itself; `mode=0o600` allows the listing but denies SEARCH, so
+    every entry's stat raises PermissionError (T238 round 2). Skips where permissions do not stop
+    a search (root, or a filesystem that ignores mode bits): there the shape cannot be built, and
+    a green test would prove nothing."""
     locked: list[Path] = []
 
-    def lock(path: Path) -> None:
-        path.chmod(0)
+    def lock(path: Path, mode: int = 0) -> None:
+        path.chmod(mode)
         locked.append(path)
         try:
-            next(path.iterdir(), None)
+            os.stat(path / "probe")
         except PermissionError:
             return
-        pytest.skip("directory permissions do not stop a listing here")
+        except FileNotFoundError:
+            pass
+        pytest.skip("directory permissions do not stop a search here")
 
     yield lock
-    for path in locked:
+    for path in reversed(locked):
         path.chmod(0o755)
 
 
-def _tree_with_one_unlistable_group(tmp_path: Path, lock: Callable[[Path], None]) -> Path:
+def _tree_with_one_unlistable_group(tmp_path: Path, lock: Callable[..., None]) -> Path:
     """A root with one readable group (one record) and one group that RESOLVES -- `is_dir()` is
     True -- but cannot be listed, with a record behind it. `_skipped` is locked too: it is never
     listed, so it loses nothing and must not be counted."""
@@ -777,6 +782,95 @@ def test_a_root_whose_every_group_is_unlistable_raises_as_unreadable(tmp_path, l
     lock_dir(root / "Greenhouse")
     with pytest.raises(JobAppsSourceError, match="no group folder under .* could be listed"):
         _collect(root, tmp_path)
+
+
+def test_a_group_that_lists_but_denies_search_is_counted_as_unreadable(tmp_path, lock_dir):
+    """T238 round 2: a group that can be LISTED but not SEARCHED (mode 0600) names its folders,
+    and every stat of one raises PermissionError. Python 3.13's `Path.is_dir()` raises that, and
+    3.14's reads it as False -- so on 3.14 the folders vanished, the group counted as listed,
+    and nothing was recorded. Classified with explicit stat calls, it is `unreadable_group` on
+    every interpreter."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    _write(
+        root, "Searchless", "hidden", title="Hidden Role", posting_id="pst_hidden",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/5555555555",
+    )
+    lock_dir(root / "Searchless", 0o600)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["unreadable_group"] == 1
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.attempted == 1
+
+
+def test_a_root_whose_every_group_denies_search_raises_as_unreadable(tmp_path, lock_dir):
+    """The all-unlistable raise covers the search-denied shape too: nothing was read."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    lock_dir(root / "Greenhouse", 0o600)
+    with pytest.raises(JobAppsSourceError, match="no group folder under .* could be listed"):
+        _collect(root, tmp_path)
+
+
+def test_a_group_link_whose_target_cannot_be_searched_is_an_unreadable_group(tmp_path, lock_dir):
+    """A ROOT entry whose stat raises PermissionError -- a group link into a directory that
+    denies search -- is a group the lane cannot read, not a broken link and not the whole root:
+    3.13 raised the root as unreadable, 3.14 read it as a dangling link. Now it is one
+    `unreadable_group` on both, and the other group reads as before."""
+    elsewhere = tmp_path / "elsewhere"
+    _write(elsewhere, "Ashby", "hidden", title="Hidden Role", posting_id="pst_hidden")
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    (root / "Ashby").symlink_to(elsewhere / "Ashby", target_is_directory=True)
+    lock_dir(elsewhere, 0o600)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["unreadable_group"] == 1
+    assert result.tally.counts["dangling_group_link"] == 0
+    assert result.tally.attempted == 1
+
+
+def test_a_partly_readable_group_reads_what_it_can_and_counts_the_group_once(tmp_path, lock_dir):
+    """One group, one readable record and one folder link into a directory that denies search.
+    The readable record is ingested AND the group is counted once in `unreadable_group`: the
+    folder behind the link is unknowable, so it is not a record in `not_attemptable`, and the
+    readable one is not thrown away with it. No double count: one posting, one group."""
+    elsewhere = tmp_path / "elsewhere"
+    target = _write(elsewhere, "Greenhouse", "hidden", title="Hidden Role", posting_id="pst_h")
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    (root / "Greenhouse" / "linked").symlink_to(target, target_is_directory=True)
+    lock_dir(elsewhere / "Greenhouse", 0o600)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["unreadable_group"] == 1
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.counts["body_inline"] == 1
+    assert result.tally.attempted == 1
+
+
+def test_a_posting_folder_that_denies_search_is_one_unread_record(tmp_path, lock_dir):
+    """A posting FOLDER that denies search: its `discovery_record.json` cannot be stat'ed. It is
+    one record, seen and not read, so `not_attemptable` -- never a crash (3.13's `is_file()`
+    raised out of the lane) and never silence (3.14's read False)."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    hidden = _write(root, "Greenhouse", "hidden", title="Hidden Role", posting_id="pst_hidden")
+    lock_dir(hidden, 0o600)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["not_attemptable"] == 1
+    assert result.tally.counts["unreadable_group"] == 0
+    assert result.tally.attempted == 2
 
 
 # ---------------------------------------------------------------------------------------

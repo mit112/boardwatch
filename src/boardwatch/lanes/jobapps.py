@@ -64,11 +64,14 @@ rate on this population is not small.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting, SecondhandField
@@ -139,6 +142,35 @@ _DIRECT_APPLY_SOURCES = frozenset(
     }
 )
 _DIRECT_APPLY_SUFFIX = "_api"
+
+
+# The stat errors that mean "nothing is there", the set `pathlib` itself treats as absence. Any
+# OTHER error -- a PermissionError above all -- means something is there that cannot be read.
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
+
+def _classify(entry: Path) -> Literal["dir", "dangling", "other"]:
+    """What one listed entry is, from explicit `os.stat`/`os.lstat` calls. Raises `OSError`
+    when it cannot tell -- the caller counts that; it never reads as absence.
+
+    Not `Path.is_dir()`/`is_symlink()`/`exists()`, because WHICH errors those swallow differs by
+    interpreter (T238): a PermissionError on an entry's stat raises on 3.13 and reads as False
+    on 3.14, so on 3.14 a group that lists but denies search lost every folder in silence.
+
+    `"dangling"` is a link whose target is absent. An entry gone between the listing and this
+    stat is `"other"`: it moved away (the owner working a posting), and nothing is lost.
+    """
+    try:
+        mode = os.stat(entry).st_mode
+    except OSError as error:
+        if error.errno not in _ABSENT_ERRNOS:
+            raise
+        try:
+            is_link = stat.S_ISLNK(os.lstat(entry).st_mode)
+        except FileNotFoundError:
+            return "other"
+        return "dangling" if is_link else "other"
+    return "dir" if stat.S_ISDIR(mode) else "other"
 
 
 class JobAppsSourceError(ValueError):
@@ -558,28 +590,40 @@ class JobAppsLane:
         would let a moved discovery tree hide behind a healthy queue tree, which is the exact
         failure this lane's structural check exists to catch.
         """
-        if not root.is_dir():
-            raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
         try:
+            if _classify(root) != "dir":
+                raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
             entries = sorted(root.iterdir())
-            groups = [entry for entry in entries if entry.is_dir()]
-            # The owner's staging root links GROUP directories, and a link whose target is gone
-            # (the refresher's link-refresh race) fails `is_dir()`, so without this its whole
-            # group would drop out here uncounted. Counted per group, since its records are
-            # unknowable. It does not stand in for a group below: a tree of only broken links
-            # still has none. A skip folder is never read, so a broken one loses nothing and is
-            # not counted.
-            dangling = sum(
-                1
-                for entry in entries
-                if entry.name not in _SKIP_DIRS and entry.is_symlink() and not entry.exists()
-            )
         except OSError as error:
             raise JobAppsSourceError(f"source directory is unreadable: {root}: {error}") from error
+        groups: list[Path] = []
+        # The owner's staging root links GROUP directories, and a link whose target is gone (the
+        # refresher's link-refresh race) is not a directory, so without this its whole group
+        # would drop out here uncounted. Counted per group, since its records are unknowable. It
+        # does not stand in for a group below: a tree of only broken links still has none.
+        dangling = 0
+        # Groups that are there but cannot be read -- an entry here whose stat raises, or (below)
+        # a group whose listing or whose entries' stats raise. Counted once per group, since its
+        # records are unknowable (T238); until then these dropped with no trace. A skip folder is
+        # never read, so a broken or unreadable one loses nothing and is counted as neither.
+        unreadable = 0
+        for entry in entries:
+            skip = entry.name in _SKIP_DIRS
+            try:
+                kind = _classify(entry)
+            except OSError:
+                if not skip:
+                    unreadable += 1
+                continue
+            if kind == "dir":
+                groups.append(entry)
+            elif kind == "dangling" and not skip:
+                dangling += 1
         # `_SKIP_DIRS` (`_applied`, `_skipped`) are job-apps' own bookkeeping, never a group the
         # owner adds postings under, so their presence alone cannot stand in for the queue being
-        # there. If NEITHER a group folder nor a skip folder exists, the layout itself is gone.
-        if not groups:
+        # there. If NEITHER a group folder nor a skip folder exists, the layout itself is gone. A
+        # root whose every group is unreadable is the raise below, with its own message.
+        if not groups and not unreadable:
             raise JobAppsSourceError(
                 f"no group folder anywhere under {root} -- the source directory is probably not "
                 f"job-apps' queue, or the queue has moved"
@@ -590,39 +634,55 @@ class JobAppsLane:
         # want completely different fixes; a single line reading "no readable record" is the
         # difference between a five-minute and a fifty-minute diagnosis on return.
         candidates = 0
-        # Groups that resolve (`is_dir()` held) but whose listing raised -- a permission or I/O
-        # error on the group itself. Counted per group, since its records are unknowable
-        # (T238); until then `continue` dropped the whole group with no trace.
-        unreadable = 0
+        # Groups that yielded a readable listing. A group whose every entry failed to stat read
+        # nothing, so it is not one.
         listable = 0
         for group in groups:
             if group.name in _SKIP_DIRS:
                 continue
             try:
                 listed = sorted(group.iterdir())
-                folders = [entry for entry in listed if entry.is_dir()]
-                # A posting-FOLDER link whose target is gone fails `is_dir()` and would fall out
-                # here uncounted (T238). One folder is one record, seen and never read, so it is
-                # a candidate `_read_record` never gets to parse -- a rejection, like a dangling
-                # record link below.
-                candidates += sum(
-                    1 for entry in listed if entry.is_symlink() and not entry.exists()
-                )
             except OSError:
                 unreadable += 1
                 continue
-            listable += 1
+            folders: list[Path] = []
+            failed = 0
+            for entry in listed:
+                try:
+                    kind = _classify(entry)
+                except OSError:
+                    failed += 1
+                    continue
+                if kind == "dir":
+                    folders.append(entry)
+                elif kind == "dangling":
+                    # A posting-FOLDER link whose target is gone (T238). One folder is one
+                    # record, seen and never read, so it is a candidate `_read_record` never
+                    # gets to parse -- a rejection, like a dangling record link below.
+                    candidates += 1
+            # An entry that cannot be stat'ed hides a folder whose record count is unknowable, so
+            # the GROUP is counted once in `unreadable_group` -- not a record in
+            # `not_attemptable` -- while its readable folders are still read below. A partly
+            # readable group therefore yields its readable records AND one group count.
+            if failed:
+                unreadable += 1
+            if failed < len(listed) or not listed:
+                listable += 1
             for folder in folders:
                 record_path = folder / _RECORD_NAME
-                # `is_file()` alone stats through a symlink and reads False for one that is
-                # dangling, so a folder present in the listing with nothing but a broken link
-                # at `_RECORD_NAME` fell out here before it ever became a candidate -- the one
-                # rejection `_read_record`'s OSError catch cannot cover, because it is never
-                # called. `is_symlink()` (an lstat, never resolved) admits it as a candidate so
-                # `_read_record`'s existing OSError handling counts it like any other unreadable
-                # record.
-                if not (record_path.is_file() or record_path.is_symlink()):
-                    continue
+                # An lstat, never resolved: a `_RECORD_NAME` that is a file or a link of any
+                # kind -- a dangling one included -- is a candidate, so `_read_record`'s OSError
+                # handling counts it like any other unreadable record. So is one whose stat
+                # raises for any reason but absence (a folder that denies search, T238): the
+                # record is there and cannot be read. Only a truly absent one is no candidate.
+                try:
+                    record_mode = os.lstat(record_path).st_mode
+                except OSError as error:
+                    if error.errno in _ABSENT_ERRNOS:
+                        continue
+                else:
+                    if not (stat.S_ISREG(record_mode) or stat.S_ISLNK(record_mode)):
+                        continue
                 candidates += 1
                 record = _read_record(folder)
                 if record is not None:
