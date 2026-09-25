@@ -25,7 +25,8 @@ The scopes, all applied per match:
                           On a pattern with a tail hedge, applied (inline and as a heading)
                           only to a bar no abstain waived, as the tail hedge is.
                           A heading's hedge after its first coordinator reaches nothing
-                          (T215), and an item that states its own mandate takes none (T216).
+                          (T215), and an item that states its own mandate takes none (T216,
+                          or as its last word past the bar's clause, T245).
   hedged_by_tail          UNIT-scoped, but only a hedge that is the sentence-final PREDICATE
                           of the bar's own phrase (`_hedged_tail`). Drops the bar, or carries
                           it as the `hedged_as` preferred pattern. Applied only to a bar no
@@ -546,6 +547,20 @@ _HEADER_GLUE_WORDS: frozenset[str] = frozenset(
 _SPACED_NICE_TO_HAVE = re.compile(r"(?<![\w-])nice\s+to\s+haves?(?![\w-])", re.IGNORECASE)
 
 
+# The closed words a lowercase-`and` heading may be made of (T246): the section nouns, the hedge
+# and requiredness words, and the few adjectives that qualify a section noun.
+_SECTION_WORD = re.compile(
+    r"qualifications?|skills?|requirements?|experiences?|knowledge|abilities|ability|attributes|"
+    r"competenc(?:y|ies)|education|expertise|background|certifications?|certificates?|"
+    r"licen[cs]es?|licensure|registrations?|credentials?|capabilities|aptitudes|training|"
+    r"responsibilities|duties|tasks|benefits|compensation|perks|traits|interests|equivalency|"
+    r"preferred|desired|desirable|bonus|nice-to-haves?|required|minimum|basic|mandatory|"
+    r"essential|additional|technical|professional|key|core|other|general|specialized|relevant|"
+    r"work|job|roles?",
+    re.IGNORECASE,
+)
+
+
 def _looks_like_header(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
@@ -561,6 +576,18 @@ def _looks_like_header(line: str) -> bool:
     # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
     # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
     if all(w[0].isupper() for w in words if w[0].isalpha()):
+        return True
+    # Path 1b (T246): a lowercase `and` between section words, "Preferred Skills and
+    # Experience", which governed nothing where "Preferred Skills & Experience" hedged its list.
+    # Only when every other word is `_SECTION_WORD` vocabulary: "Design and Build Pipelines" is
+    # a skill line, and read as a heading it ended its `Preferred Skills:` section and turned the
+    # bars after it required.
+    if all(
+        w == "and" or (w[0].isupper() and _SECTION_WORD.fullmatch(part) is not None)
+        for w in words
+        for part in re.split(r"[/&]", w)
+        if part
+    ):
         return True
     # Path 2: a lowercase-continuation header whose words AFTER the first are all
     # closed-class glue. A genuine qualification line's later words are real content,
@@ -637,10 +664,14 @@ _LEADING_LABEL = re.compile(r"[^:\n]{1,60}:")
 # and `Preferred Skills & Experience:` read as `Preferred:`, where with the colon the hedge could
 # reach no bullet at all. `Preferred Candidates Must Have:` names no section noun, and `Preferred
 # Qualifications & Required Skills:` a part that is not one, so both stay as they are. No comma:
-# a heading with one is never a heading to `_looks_like_header`.
+# a heading with one is never a heading to `_looks_like_header`. Once `Preferred Education and
+# Experience` is a heading at all (T246) it must hedge, or it ENDS an earlier hedge heading's reach
+# and its own bars read required; so the nouns hold the section nouns those headings name, and a
+# part may open with `technical`/`professional` (`Preferred Technical and Professional Experience`).
 _HEDGE_HEADING_NOUN = (
-    r"(?:qualifications?|skills?|requirements?|experience|knowledge|abilities|attributes|"
-    r"competencies)"
+    r"(?:(?:technical|professional)\s+(?:and\s+)?)*"
+    r"(?:qualifications?|skills?|requirements?|experiences?|knowledge|abilities|attributes|"
+    r"competencies|education|expertise|background|certifications?|capabilities|aptitudes|training)"
 )
 _HEDGE_HEADING = re.compile(
     r"^[\s•‣●\-\*]*(?:preferred|desired|desirable|bonus|nice[\s-]to[\s-]have)"
@@ -650,22 +681,30 @@ _HEDGE_HEADING = re.compile(
 )
 
 
-# A FIELD label opening a list item (`- Experience: 5 years ...`). It names what the bar is
-# about, not how binding it is, so a hedge heading reads through it; kept out of the hedge's
-# introducer, it would break the delimiters-only chain and restore the bar. Closed, so
-# `- Required: 5 years ...` is never read through.
-_FIELD_LABEL = re.compile(
-    r"(?:(?:total|work|professional|relevant|industry)\s+)?"
-    r"(?:experience|education|degree|skills?|background|certifications?|training)\s*:\s*",
+# A label opening a list item (`- Experience: 5 years ...`, `Specialist: 2 - 5 years ...`,
+# `Extensive Experience: 12+ years ...`, `Level 2: ...`). It names what the bar is about or which
+# level it belongs to, not how binding it is, so a hedge heading reads through it; kept out of the
+# hedge's introducer, it would break the delimiters-only chain and restore the bar (T241a: only
+# the closed field nouns were read through, and 49 store postings kept a required bar behind any
+# other label). A label that states how binding the bar is, or a notice, is never read through:
+# `- Required: 5 years ...`, `Experience requirement: Minimum 5 years`, `Prerequisite: ...`,
+# `Note: ...`.
+_ITEM_LABEL = re.compile(r"(?!\d)[\w'’&/().+-]+(?:[ \t]+[\w'’&/().+-]+){0,5}[ \t]*:\s*")
+_LABEL_BINDS = re.compile(
+    r"(?<!\w)(?:required|requirements?|requires?|must|mandatory|minimum|essential|necessary|"
+    r"needed|non-?negotiables?|prerequisites?|pre-requisites?|compulsory|note|"
+    r"important|please|basic)(?!\w)",
     re.IGNORECASE,
 )
 
 
 def _item_start(unit: str) -> int:
-    """Where a governed item's own text starts: past its bullet and any field label."""
+    """Where a governed item's own text starts: past its bullet and any label it reads through."""
     lead = _BULLET_LEAD.match(unit).end()  # type: ignore[union-attr]
-    field = _FIELD_LABEL.match(unit, lead)
-    return lead if field is None else field.end()
+    label = _ITEM_LABEL.match(unit, lead)
+    if label is None or _LABEL_BINDS.search(label.group()):
+        return lead
+    return label.end()
 
 
 def _heading_text(head: str) -> str:
@@ -994,6 +1033,7 @@ def _suppressed(
 # and `should ... be`) it binds nothing either. `minimum` is deliberately absent: measured under
 # hedge headings it states a preference's threshold (`Preferred Qualifications:\n- Minimum 5
 # years ...`), not a mandate.
+# A mandate past the bar's clause counts only as the item's last word (`_item_final_mandate`, T245).
 _ITEM_MUST = re.compile(
     r"(?:(?:(?:the|all)\s+)?(?:candidates?|applicants?)\s+|you\s+)?must\s+(?:have|possess|bring|be)(?!\w)",
     re.IGNORECASE,
@@ -1016,9 +1056,11 @@ _PREDICATE_BREAK = re.compile(
 )
 
 
-def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
+def _item_mandates(
+    text: str, lo: int, hi: int, start: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
     """Whether the item at `start` states the bar at [lo, hi)'s own mandate (`_ITEM_MUST`,
-    `_BAR_PREDICATE`)."""
+    `_BAR_PREDICATE`, or `_item_final_mandate` past the bar's clause)."""
     clo, chi = _clause_bounds(text, lo, hi)
     item = _BULLET_LEAD.match(text, start).end()  # type: ignore[union-attr]
     if clo <= item <= lo and _ITEM_MUST.match(text, item):
@@ -1028,7 +1070,65 @@ def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
             return False
         if not _SHOULD_BE.search(text, 0, cue.start()):
             return True
-    return False
+    return _item_final_mandate(text, hi, chi, hedges)
+
+
+# The item's mandate that ENDS it past the bar's clause, over a comma or an `and` (T245): `Minimum 5
+# years of experience in Warehouse and Logistics required.` and `3 years Lean Continuous Improvement
+# experience, required.` stated their own mandate where `_clause_bounds` could not see it, and read
+# as the heading's preference. It is the bar's only when nothing between them could own it: no
+# other bar (a duration or a credential) or second head noun (`..., and prior banking experience is
+# required`), no hedge, no negation or contrast, no `;`/`:`, no sentence break the splitter missed
+# (`teams.Excellent ... skills are required.`), no aside the cue sits inside with words of its own
+# (`(C/C++, Python a must)`; a bare `(required)` is the bar's) and no `_PREDICATE_BREAK`. So
+# `Bachelor's degree preferred, high school diploma or equivalent required.` binds nothing to the
+# bachelor's.
+_ITEM_FINAL_TAIL = re.compile(r"[\s.!?)\]]*")
+_ITEM_FINAL_BLOCK = re.compile(
+    rf"[;:]|(?<!\w)(?:not|no|but|while|whereas|except)(?!\w)"
+    rf"|{_COUNT}\s*\+?\s*(?:years?|yrs?|months?|mos?)(?!\w)"
+    r"|(?<!\w)(?:degrees?|diplomas?|GED|certificat\w*|licen[cs]\w*|clearances?|bachelor\w*|"
+    r"masters?|master['’]s|associates?|associate['’]s|MBA|Ph\.?\s?D|doctorate)(?!\w)"
+    r"|(?<!\w)(?:experiences?|background|knowledge|expertise|proficiency|familiarity|understanding|"
+    r"skills?)(?!\w)"
+    r"|(?-i:(?:\s|(?<=[a-z]{2}))\.(?=[A-Z][a-z]))",
+    re.IGNORECASE,
+)
+
+
+_AFTER_COMMA = re.compile(
+    r"\s*(?:(?:and|which|that|this|it)\s+)?(?:(?:is|are)\s+)?(?:(?:also|absolutely|strictly)\s+)?",
+    re.IGNORECASE,
+)
+
+
+def _item_final_mandate(
+    text: str, hi: int, chi: int, hedges: tuple[re.Pattern[str], ...]
+) -> bool:
+    """Whether the item's LAST word is a mandate past the clause ending at `chi` that binds the bar
+    ending at `hi`."""
+    cues = list(_BAR_PREDICATE.finditer(text, chi))
+    if not cues or _ITEM_FINAL_TAIL.fullmatch(text, cues[-1].end()) is None:
+        return False
+    cue = cues[-1]
+    between = text[hi : cue.start()]
+    # Past a comma outside an aside the cue may govern a NEW noun phrase (`5 years of experience in
+    # retail, reliable transportation required.`), so it binds only straight after the comma or
+    # after a bare connector (`..., required.`, `..., which is required`, `..., and is required`).
+    listed = _ASIDE.sub(lambda m: " " * len(m.group()), between)
+    comma = listed.rfind(",")
+    if comma >= 0:
+        if _AFTER_COMMA.fullmatch(between, comma + 1) is None:
+            return False
+        between = between[:comma]
+    aside = between.rfind("(")
+    return not (
+        _ITEM_FINAL_BLOCK.search(between)
+        or _PREDICATE_BREAK.search(between)
+        or _SHOULD_BE.search(text, 0, cue.start())
+        or any(rx.search(between) for rx in hedges)
+        or (aside > between.rfind(")") and between[aside + 1 :].strip())
+    )
 
 
 def _hedged_by_heading(
@@ -1043,7 +1143,7 @@ def _hedged_by_heading(
 
     "Nice to have:\n- 5 years" then drops exactly when "Nice to have: - 5 years" would. The
     caller passes `_heading_text`, so `Preferred Qualifications:` reads as `Preferred:`, and a
-    field label opening the item (`- Experience: 5 years`) is read through (`_FIELD_LABEL`).
+    label opening the item (`- Experience: 5 years`) is read through (`_ITEM_LABEL`).
     `introducer_only` admits the heading's hedge and nothing inside the item's clause: the
     caller's list was never run over that clause, so a match there is not the heading's.
     A hedge after the heading's first coordinator is not the heading's (`_muted_heading`), and an
@@ -1057,7 +1157,7 @@ def _hedged_by_heading(
     shift = len(heading) + 1 - (start - lead)
     lo, hi = lo + shift, hi + shift
     clo, chi = _clause_bounds(intro, lo, hi)
-    if _item_mandates(intro, lo, hi, len(heading) + 1):
+    if _item_mandates(intro, lo, hi, len(heading) + 1, hedges):
         return None
     return _suppressed(
         intro, lo, hi, hedges,
@@ -1172,7 +1272,11 @@ def detect(
                 for match in pattern.regex.finditer(unit):
                     lo, hi = match.start(), match.end()
                     if join is not None and (
-                        not lo < join < hi or _item_mandates(unit, lo, hi, join)
+                        not lo < join < hi
+                        or _item_mandates(
+                            unit, lo, hi, join,
+                            pattern.suppressed_by_unit or pattern.hedged_by_tail,
+                        )
                     ):
                         continue
                     if _cue_outside(unit, lo, hi, catalog.negation_cues, pattern.cue_idioms):

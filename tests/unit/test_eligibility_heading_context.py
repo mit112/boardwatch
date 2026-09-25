@@ -21,7 +21,12 @@ import hashlib
 import pytest
 
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.detect import governing_headings, split_units
+from boardwatch.eligibility.detect import (
+    _heading_text,
+    _looks_like_header,
+    governing_headings,
+    split_units,
+)
 from boardwatch.eligibility.engine import evaluate
 from boardwatch.eligibility.facts import Facts, Policy
 from tests.pipeline.test_eligibility_corpus import CASES
@@ -152,6 +157,70 @@ HEADING_CASES: list[tuple] = [
     ('h70:T219 CONTROL a preference word before no section noun is no hedge heading', 'Preferred Candidates Must Have:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h71:T219 CONTROL a coordinated part that names a requirement is no hedge heading', 'Preferred Qualifications & Required Skills:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('h72:T219 CONTROL a coordinated required heading is no hedge heading', 'REQUIRED SKILLS AND EXPERIENCE:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h73:T245 an item-final required past an and beats the heading's hedge (pv 156487)", 'DESIRED SKILLS AND EXPERIENCE\nMinimum 5 years of experience in Warehouse and Logistics required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h74:T245 an item-final required past a comma beats the heading's hedge (pv 152199)", 'DESIRED SKILLS AND EXPERIENCE\n3 years Lean Continuous Improvement experience, required. Lead kaizen events, conduct time studies.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ("h75:T245 an item-final required past an and/or and a comma beats the heading's hedge (pv 156503)", 'DESIRED SKILLS AND EXPERIENCE\n3 years’ experience as a Quality Assistant or similar role in a fast-paced manufacturing and/or lab environment, required', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ("h76:T245 an item-final required past an and/or beats the heading's hedge (pv 156568)", 'DESIRED SKILLS AND EXPERIENCE\n5+ years’ experience designing or engineering prefabricated wood trusses and/or engineered wood products (EWP) required', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h77:T245 an item-final (required) past an and beats the heading's hedge (pv 32584)", 'Preferred Qualifications:\n- 12-15 years of general knowledge in EFT settlement and transaction processing (required)', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:domain_range_years_minimum', 'required', 'unmet']]),
+    ('h78:T245 CONTROL a required past a hedge and a second credential binds nothing to the first', "Preferred Qualifications:\n- Bachelor's degree preferred, high school diploma or equivalent required.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met']]),
+    ('h79:T245 CONTROL a required past a second credential binds nothing to the first', "Preferred Qualifications:\n- Bachelor's degree, high school diploma or equivalent required.", P_FACTS, ALL_BLOCKERS, 'uncertain', []),
+    ("h80:T245 CONTROL a required past a second duration is that bar's, not the first's", 'Preferred Qualifications:\n- 5 years of experience in audit, 2 years of SQL required.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:domain_years_minimum', 'required', 'unknown'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h81:T245 CONTROL a required past an inline hedge binds nothing to the bar', 'Preferred Qualifications:\n- 5 years of experience in audit, Python preferred, SQL required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h82:T245 CONTROL a negated required past the clause is no mandate', 'Preferred Qualifications:\n- 5 years of experience in audit, not required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h83:T245 CONTROL a required that does not end the item is no item-final mandate', 'Preferred Qualifications:\n- 5 years of experience in audit, required for the senior level.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h84:T245 CONTROL a required past a semicolon is the next item's", 'Preferred Qualifications:\n- 5 years of experience in audit; SOX required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h85:T245 CONTROL an item-final required past a contrast is no mandate on the bar', 'Preferred Qualifications:\n- 5 years of experience in audit, but SOX is required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h86:T245 CONTROL a required past a relative clause binds that clause, not the bar', 'Preferred Qualifications:\n- 5 years of experience in audit, with candidates who travel required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h87:T245 CONTROL an item-final conditional required is no mandate', 'Preferred Qualifications:\n- 5 years of experience in audit and travel if required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h88:T245 CONTROL will not be considered is no bar predicate (pv 326450, not built)', 'Desired Skills & Experience\n5+ years of Amazon marketing experience with demonstrated ownership of both demand generation AND on-site content/SEO — candidates with expertise in only one area will not be considered.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h89:T245 CONTROL a required past a credential is the credential\'s, not the bar\'s', 'Preferred Qualifications:\n- 5 years of experience in audit, CPA license required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h90:T245 CONTROL an item-final should ... be required is a conditional, no mandate', 'Preferred Qualifications:\n- 5 years of experience in audit, should travel be required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h91:T245 CONTROL a required past a degree is the degree\'s, not the bar\'s', 'Preferred Qualifications:\n- 5 years of experience in audit, bachelor\'s degree required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_required', 'required', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h92:T245 CONTROL a must inside an aside of its own binds the aside's noun (pv 140845)", 'Preferred Qualifications:\n- 10+ years of strong automation experience with test case development (C/C++, Python a must).', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h93:T245 CONTROL a required past a second experience head is that head's (pv 346998)", 'Nice to haves\n- 4+ years of product management experience with a clear track record of shipping meaningful consumer-facing products, and prior crypto, Web3, trading, gaming or banking experience is required', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h94:T245 CONTROL a required past a sentence break the splitter missed is the next sentence's (pv 318063)", 'Preferred Qualifications\n5+ years of people-management experience, including leading managers and/or operational teams.Proven leadership in building large teams.Excellent negotiation is required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h95:T246 a Title-case heading with a lowercase and is a heading, and its hedge governs its list', 'Preferred Skills and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h96:T246 the same heading with a colon', 'Desired Skills and Experience:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h97:T246 an ALL-CAPS heading with a lowercase and ends nothing it should not, and the hedge heading after it governs', 'DUTIES and RESPONSIBILITIES:\n- Lead audits\nPreferred Skills and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h98:T246 a hedge before technical and professional nouns governs the whole heading', 'Preferred Technical and Professional Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h99:T246 a hedge before education and experience governs the whole heading', 'Preferred Education and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h100:T246 a new hedge heading keeps the hedge an earlier one gave its plain lines (pv 352300)', "Preferred Skills\nExperience with Python.\nPreferred Education and Experience\nMaster's degree preferred.\n12+ years of digital design verification experience.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h101:T246 a single education noun after the hedge is a hedge heading too', 'Preferred Education:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h102:T246 CONTROL a required technical and professional heading is no hedge heading', 'Required Technical and Professional Expertise\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h103:T246 CONTROL a hedge after the new heading's coordinator is not the heading's (T215)", 'Education and Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h104:T246 CONTROL a sentence-case heading is still no heading (not built)', 'Preferred skills and experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h105:T246 CONTROL a Title-case content line with a lowercase and is no heading, so the hedge still reaches past it', 'Preferred Qualifications:\nPython and SQL\n5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h106:T246 CONTROL a bulleted Title-case line with a lowercase and is no heading', 'Preferred Qualifications:\n- Python and SQL\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h107:T241a a level label does not hide its hedge heading (pv 245092)', 'Preferred Qualifications:\nSpecialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h108:T241a a modified field label is read through as a field label is', 'Preferred Qualifications:\n- Extensive Experience: 12+ years of professional software development experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h109:T241a a numbered level label is read through', 'Desired:\n- Level 3: 5+ years of experience in design of vehicle Avionics systems', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h110:T241a a coordinated field label is read through', 'Preferred Qualifications:\n- Purchasing / Supply Planning Expertise: 5+ years of hands-on purchasing experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h111:T241a a hedged label is read through', 'Preferred Qualifications:\n- Desired Experience: Minimum 8 years of experience related to the labor category', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h112:T241a CONTROL a label naming a requirement keeps its bar', 'Preferred Qualifications:\n- Experience requirement: Minimum 5 years in SaaS solution environment', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('h113:T241a CONTROL a notice label keeps its bar', 'Preferred Qualifications:\n- Note: 8 years of industrial maintenance experience', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h114:T241a CONTROL a non-negotiable label keeps its bar', 'Preferred Qualifications:\n- Non-negotiable: 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h115:T241a CONTROL a label that opens on a number is not read through', 'Preferred Qualifications:\n- 3 year(s): 2-4 years of experience in full stack development', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
+    ('h116:T241a CONTROL a labelled item under a requirements heading keeps its bar', 'Requirements:\n- Specialist: 2 - 5 years of relevant work experience.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:range_years_minimum', 'required', 'unknown']]),
+    ("h117:T241a CONTROL a required label inside the label keeps the item's bar", "Preferred Qualifications:\n- Education (required): Bachelor's degree or equivalent.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_required', 'required', 'met'], ['degree:bachelor_required', 'required', 'met']]),
+    ("h118:T241b CONTROL a hedge ending a flattened line still hedges the next line's bar (pv 130715, 1 store posting, not built)", 'Qualifications\nBachelor’s degree or equivalent preferred 3 - 5 years of experience supporting asset management distribution.', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h119:T246 CONTROL a verb-initial skill line with a lowercase and is no heading (Codex r1)', 'Preferred Skills:\nDesign and Build Pipelines\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h120:T246 CONTROL develop and maintain is a skill line, not a heading', 'Preferred Skills:\nDevelop and Maintain Services\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h121:T246 CONTROL plan and execute is a skill line, not a heading', 'Preferred Skills:\nPlan and Execute Campaigns\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ("h122:T245 CONTROL a required after a comma and a new noun phrase is that phrase's (Codex r1)", 'Preferred Qualifications:\n- 5 years of experience in retail, reliable transportation required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h123:T245 a required after a comma and a bare which is is the bar's", 'Preferred Qualifications:\n- 5 years of experience in audit, which is required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h124:T245 a required after a comma and a bare and is is the bar's", 'Preferred Qualifications:\n- 5 years of experience in audit, and is required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h125:T245 CONTROL a comma inside the bar's own list stops the bind too (pv 276749, the rule's measured cost)", "EDUCATION AND EXPERIENCE YOU'LL BRING\nMasters Degree Preferred\nMinimum 5 years Experience in business, finance or strategic pricing and contracting is required.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h126:T245 a comma inside an aside is not the item's comma", 'Preferred Qualifications:\n- 2+ year of experience with Big Data technologies (Hadoop, Spark) is required.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ('h127:T241a CONTROL a prerequisite label keeps its bar (Codex r1)', 'Preferred Qualifications:\n- Prerequisite: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h128:T241a CONTROL a compulsory label keeps its bar (Codex r1)', 'Preferred Qualifications:\n- Compulsory: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h129:T241a CONTROL a pre-requisites label keeps its bar', 'Preferred Qualifications:\n- Pre-requisites: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h130:T241a CONTROL a must-have label keeps its bar', 'Preferred Qualifications:\n- Must-have: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h131:T241a CONTROL a mandatory label keeps its bar', 'Preferred Qualifications:\n- Mandatory: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h132:T241a CONTROL a key requirement label keeps its bar', 'Preferred Qualifications:\n- Key requirement: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h133:T241a CONTROL a minimum label keeps its bar', 'Preferred Qualifications:\n- Minimum: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h134:T241a CONTROL a basic label keeps its bar', 'Preferred Qualifications:\n- Basic: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h135:T241a CONTROL a qualifications required label keeps its bar', 'Preferred Qualifications:\n- Qualifications required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h136:T246 an education-equivalency heading ends the preferred section before it (pv 146917)', 'Preferred Qualifications\nConfiguration management tools.\nRequired Education and Experience Equivalency\nBachelor\'s degree with 9 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -167,7 +236,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "c723af3079f9172e4e44e492e32be5959d6e84f465d202d48328d7f17634da14"
+SPLIT_UNITS_DIGEST = "164de1524892efd9872561cbff5ac41c0f61f4ed6c2cb41224c1d99187756ec7"
 
 
 @pytest.fixture(scope="module")
@@ -233,5 +302,39 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
     assert running.hexdigest() == SPLIT_UNITS_DIGEST
 
 
+@pytest.mark.parametrize(
+    ("line", "header"),
+    [
+        ("Preferred Skills and Experience", True),
+        ("DUTIES and RESPONSIBILITIES:", True),
+        ("Compensation and Benefits", True),
+        ("Roles and Responsibilities", True),
+        ("Required Education and Experience Equivalency", True),
+        ("Design and Build Pipelines", False),
+        ("Develop and Maintain Services", False),
+        ("Preferred skills and experience", False),
+        ("Experience with Python and SQL", False),
+        ("Skills and experience", False),
+    ],
+)
+def test_a_lowercase_and_between_capitalised_words_is_glue(line: str, header: bool) -> None:
+    """T246: `and` is not a significant word to the Title-case test, as `&` is not."""
+    assert _looks_like_header(line) is header
+
+
+@pytest.mark.parametrize(
+    "noun",
+    ["Experiences", "Education", "Expertise", "Background", "Certifications", "Capabilities",
+     "Aptitudes", "Training", "Technical Expertise", "Professional and Technical Experience"],
+)
+def test_each_section_noun_a_new_heading_names_is_hedged(noun: str) -> None:
+    """T246: every noun the newly detected hedge headings name reads as the hedge alone."""
+    assert _heading_text(f"Preferred Skills and {noun}:") == "Preferred:"
+
+
+def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
+    assert _heading_text("Preferred Skills and Tools:") == "Preferred Skills and Tools:"
+
+
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 72
+    assert len(HEADING_CASES) == 136
