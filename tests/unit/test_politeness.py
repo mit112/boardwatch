@@ -1516,6 +1516,29 @@ def test_a_link_local_address_is_connected_on_its_own_scope(
     assert connected == [("fe80::1", 8080, 0, 5)], connected
 
 
+def test_a_global_ipv6_address_is_connected_without_a_zone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Control for T227 (Codex r1): only a LINK-LOCAL address carries its scope across. macOS's
+    `getaddrinfo` answers a global address with the scope it was asked for too, and that address
+    must be handed over bare, exactly as before T227."""
+    real_resolve = socket.getaddrinfo
+    connected: list[Any] = []
+
+    def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+        if host == "global.invalid":
+            return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("2001:db8::1", int(port), 0, 5))]
+        return real_resolve(host, port, *args, **kwargs)  # numeric only: parsed, no DNS
+
+    def connect(self: socket.socket, address: Any) -> None:
+        connected.append(address)  # records the sockaddr, connects nowhere
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    politeness._DeadlineBackend().connect_tcp("global.invalid", 8080, timeout=5.0).close()
+    assert connected == [("2001:db8::1", 8080, 0, 0)], connected
+
+
 def test_tls_is_offered_the_origin_name_not_the_address_connected_to(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

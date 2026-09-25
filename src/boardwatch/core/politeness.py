@@ -10,6 +10,7 @@ coordinator alone persists them, transactionally, on complete applies only
 
 from __future__ import annotations
 
+import ipaddress
 import socket
 import ssl
 import threading
@@ -323,10 +324,11 @@ class _DeadlineBackend(httpcore.NetworkBackend):
         failure: httpcore.ConnectError | httpcore.ConnectTimeout
         for *_, sockaddr in addresses:
             address = str(sockaddr[0])
-            if len(sockaddr) == 4 and sockaddr[3]:
+            if len(sockaddr) == 4 and sockaddr[3] and ipaddress.ip_address(address).is_link_local:
                 # An IPv6 address string carries no zone, so re-resolved bare, a link-local
                 # `fe80::` address comes back on scope 0, which is no interface (T227). A numeric
-                # `%scope` is parsed locally, like the address itself.
+                # `%scope` is parsed locally, like the address itself. Only a link-local address
+                # needs one: a global address is handed over bare, as before.
                 address = f"{address}%{sockaddr[3]}"
             try:
                 return _DeadlineStream(_bounded(partial(
