@@ -672,8 +672,8 @@ def test_the_a_plus_hedge_needs_a_word_boundary(catalog) -> None:  # type: ignor
 @pytest.mark.parametrize(
     "body",
     [
-        # CONTROLS: the two-word hedge still hedges. (The ticket's "3+ years of Kubernetes a plus"
-        # is NOT hedged on main: domain_years_minimum's span swallows its own hedge. A follow-up.)
+        # CONTROLS: the two-word hedge still hedges. (The domain form, "3+ years of Kubernetes a
+        # plus", is T211's, below.)
         pytest.param("3+ years of Kubernetes experience a plus", id="bar-then-a-plus"),
         pytest.param("3+ years of experience with Kubernetes a plus", id="scoped-bar-then-a-plus"),
     ],
@@ -908,3 +908,300 @@ def test_a_carried_scoped_bar_is_not_written_over_a_row_another_pattern_wrote(ca
     it would claim the same 3-year bar is a scoped preference: the rows must stay the base's."""
     result = evaluate("3 years of experience, banking experience preferred.", FACTS, POLICY, catalog)
     assert _rows(result) == [["experience_years:total_years_minimum", "required", "unmet"]]
+
+
+# T211: `domain_years_minimum`'s `{0,4}`-token domain tail swallowed its own trailing hedge, so the
+# hedge sat INSIDE the span, where neither the clause hedge nor the tail predicate looks, and the bar
+# stayed required. A tail token with a hedge ahead of it in its clause now ends the span, and the
+# hedge is read exactly as it is after any other bar: here, carried as a scoped preference (T173).
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("3+ years of Kubernetes preferred", id="preferred"),
+        pytest.param("3+ years of Kubernetes a plus", id="a-plus"),
+        pytest.param("3+ years of Kubernetes, strongly preferred.", id="comma-intensified"),
+        pytest.param("3+ years of Kubernetes and Terraform preferred", id="coordinated-list"),
+        pytest.param("3+ years of Kubernetes nice-to-have", id="hyphenated-nice-to-have"),
+    ],
+)
+def test_a_domain_bar_does_not_swallow_its_own_hedge(catalog, body: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+
+
+def test_a_domain_bar_keeps_its_tail_up_to_the_hedge(catalog) -> None:  # type: ignore[no-untyped-def]
+    """The span stops before the hedge, not at the head: the carried row quotes the whole bar."""
+    body = "5 years of direct project management preferred."
+    (row,) = evaluate(body, FACTS, POLICY, catalog).requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == "5 years of direct project management"
+
+
+# CONTROLS for T211. A mandate, a plain two-token tail, and a hedge on a LATER list item keep the
+# bar required: the hedge is not the whole bar's predicate, as `3+ years of experience with Java,
+# Python preferred` is not (the tail's comma opens an open list, `_hedged_tail`).
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        pytest.param("3+ years of Kubernetes required", "3+ years of Kubernetes required", id="mandate"),
+        pytest.param(
+            "3+ years of Kubernetes and Terraform", "3+ years of Kubernetes and Terraform",
+            id="two-token-tail",
+        ),
+        pytest.param(
+            "Minimum 5 years of Java development, AWS preferred.", "5 years of Java development",
+            id="hedge-on-a-later-item",
+        ),
+        pytest.param("5 years of SQL, Tableau a plus", "5 years of SQL", id="a-plus-on-a-later-item"),
+    ],
+)
+def test_a_domain_bar_whose_hedge_is_not_its_own_stays_required(  # type: ignore[no-untyped-def]
+    catalog, body: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:domain_years_minimum", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
+
+
+# T212: T196 bounded `a plus` in `bar_hedges` alone. `&degree_hedges` and the preferred patterns'
+# inline hedge lists read it with no leading boundary too, so the end of "diploma" and the
+# conjunction `plus` were a hedge: the degree bar beside it dropped, or a preferred twin was written
+# over a bar that states no preference.
+@pytest.mark.parametrize(
+    ("body", "required"),
+    [
+        pytest.param(
+            "High school diploma plus a Bachelor's degree or equivalent.",
+            "degree:bachelor_or_equivalent_required", id="degree-hedges",
+        ),
+        pytest.param(
+            "Master's degree or equivalent experience or a diploma plus 6 years.",
+            "degree:master_or_equivalent_required", id="master-or-equivalent-preferred-list",
+        ),
+        pytest.param(
+            "Bachelor's degree or equivalent experience, or a high school diploma plus 4 years of "
+            "experience.",
+            "degree:bachelor_or_equivalent_required", id="bachelor-or-equivalent-preferred-list",
+        ),
+        pytest.param(
+            "5 years of experience or a diploma plus training.",
+            "experience_years:total_years_minimum", id="total-years-preferred-list",
+        ),
+        pytest.param(
+            "3-5 years of experience or a diploma plus training.",
+            "experience_years:range_years_minimum", id="range-years-preferred-list",
+        ),
+    ],
+)
+def test_diploma_plus_is_not_the_a_plus_hedge(catalog, body: str, required: str) -> None:  # type: ignore[no-untyped-def]
+    rows = _rows(evaluate(body, FACTS, POLICY, catalog))
+    assert [required, "required"] in [row[:2] for row in rows]
+    assert not [row for row in rows if row[1] == "preferred"]
+
+
+# CONTROLS for T212: the two-word hedge still hedges at every site bounded.
+@pytest.mark.parametrize(
+    ("body", "preferred"),
+    [
+        pytest.param("Bachelor's degree a plus.", "degree:degree_preferred", id="degree-preferred"),
+        pytest.param(
+            "Bachelor's degree or equivalent a plus.", "degree:bachelor_or_equivalent_preferred",
+            id="bachelor-or-equivalent-preferred",
+        ),
+        pytest.param(
+            "Security clearance a plus.", "clearance:clearance_preferred", id="clearance-preferred"
+        ),
+        pytest.param(
+            "5+ years of experience a plus.", "experience_years:total_years_preferred",
+            id="total-years-preferred",
+        ),
+        pytest.param(
+            "3-5 years of experience a plus.", "experience_years:range_years_preferred",
+            id="range-years-preferred",
+        ),
+    ],
+)
+def test_a_two_word_a_plus_still_hedges_every_list(catalog, body: str, preferred: str) -> None:  # type: ignore[no-untyped-def]
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert [row[:2] for row in _rows(result)] == [[preferred, "preferred"]]
+    assert result.verdict == "eligible"
+
+
+# T213: a hedged domain bar lands in `scoped_years_preferred`, the carrier `domain_years_minimum` is
+# already `hedged_as` (T173) -- no sibling of its own. It resolves as a scoped preference: `unmet`
+# under the bar, and never `met` on total years, which say nothing about Kubernetes.
+@pytest.mark.parametrize(("years", "disposition"), [(1, "unmet"), (5, "unknown")])
+def test_a_hedged_domain_bar_is_a_scoped_preference(  # type: ignore[no-untyped-def]
+    catalog, years: int, disposition: str
+) -> None:
+    result = evaluate(
+        "3+ years of Kubernetes preferred.", Facts(total_years_experience=years), POLICY, catalog
+    )
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", disposition]]
+    assert result.verdict == "eligible"
+
+
+def test_a_hedged_domain_bar_never_yields_ineligible(catalog) -> None:  # type: ignore[no-untyped-def]
+    """A `preference` row never blocks, at any profile: only a `required` row can reject."""
+    for years in range(21):
+        result = evaluate(
+            "10+ years of Kubernetes a plus", Facts(total_years_experience=years), POLICY, catalog
+        )
+        assert [row[1] for row in _rows(result)] == ["preferred"]
+        assert result.verdict != "ineligible"
+
+
+# T211 and T213 on the domain RANGE twins. `domain_range_years_minimum`'s tail is
+# `domain_years_minimum`'s verbatim, so it swallowed its own trailing hedge the same way and now
+# stops before it. Both range twins are `hedged_as` the carrier, as their single siblings are, so a
+# hedged range bar -- on its own line or under a hedge heading -- is carried as a scoped preference
+# instead of read as required or dropped. Store sentences (T173e's twin tail-hedge list, pv 250918).
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        # Both halves: the hedge sat inside the span, so the bar read required.
+        pytest.param(
+            "2-3 years of GreenLake sales preferred.", "2-3 years of GreenLake sales",
+            id="domain-range-tail-hedge",
+        ),
+        pytest.param(
+            "3–5 years forklift/MHE operation preferred", "3–5 years forklift/MHE operation",
+            id="domain-range-tail-hedge-slash-head",
+        ),
+        # The `hedged_as` half alone: the hedge was read, and the bar was dropped with no row.
+        pytest.param(
+            "Preferred:\n- 5 – 7 years in related Business Field",
+            "5 – 7 years in related Business Field", id="domain-range-heading-hedge",
+        ),
+        pytest.param(
+            "Preferred:\n- 3 – 5 years of product supporting a SaaS solution, appliance or "
+            "equivalent experience",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-heading-hedge",
+        ),
+        pytest.param(
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent "
+            "experience preferred",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-tail-hedge",
+        ),
+    ],
+)
+def test_a_hedged_domain_range_bar_is_a_scoped_preference(  # type: ignore[no-untyped-def]
+    catalog, body: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
+
+
+# CONTROLS: a mandate, an unhedged range bar and a hedge on a later list item keep the twin
+# required, exactly as they keep its single sibling.
+@pytest.mark.parametrize(
+    ("body", "rule", "quote"),
+    [
+        pytest.param(
+            "2-3 years of GreenLake sales required.", "domain_range_years_minimum",
+            "2-3 years of GreenLake sales required.", id="domain-range-mandate",
+        ),
+        pytest.param(
+            "minimum 5 – 7 years in related Business Field", "domain_range_years_minimum",
+            "5 – 7 years in related Business Field", id="domain-range-unhedged",
+        ),
+        pytest.param(
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            "domain_list_range_years_minimum",
+            "3 – 5 years of product supporting a SaaS solution, appliance or equivalent experience",
+            id="domain-list-range-unhedged",
+        ),
+        pytest.param(
+            "Minimum 3-5 years of Java development, AWS preferred.", "domain_range_years_minimum",
+            "3-5 years of Java development", id="domain-range-hedge-on-a-later-item",
+        ),
+    ],
+)
+def test_a_domain_range_bar_whose_hedge_is_not_its_own_stays_required(  # type: ignore[no-untyped-def]
+    catalog, body: str, rule: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [[f"experience_years:{rule}", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
+
+
+# Codex round 1 on T211: its comma branch also cut the tail at a COORDINATE-ADJECTIVE comma, and
+# `_hedged_tail`'s open-list rule then read the sentence-final hedge as a later item's, a wrong
+# `ineligible` (pv 224183). An article and ONE word before the comma cannot be a whole list item,
+# so where a hedge lies ahead that pair and the word after the comma are one tail token -- if a head
+# word follows, and the word after the comma is not itself a hedge. The range twin reads the same.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment preferred",
+            id="pv224183",
+        ),
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment preferred.",
+            id="pv224183-full-stop",
+        ),
+        pytest.param(
+            "3-5 years of development in a large-scale, mission-critical environment preferred.",
+            id="range-twin",
+        ),
+    ],
+)
+def test_a_coordinate_adjective_comma_does_not_cut_the_domain_tail(  # type: ignore[no-untyped-def]
+    catalog, body: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end].endswith(" in a large-scale, mission-critical environment")
+
+
+# CONTROLS for the pair. A list item with no head word after it, a hedge word straight after the
+# comma (pv 46573's `ideally` adjunct), a third item (pv 162556) and an unhedged tail are all read
+# as before: the first three stay required at the comma, and the last keeps its span.
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        pytest.param(
+            "5+ years of sales in a startup, fintech preferred.", "5+ years of sales in a startup",
+            id="no-head-after-the-item",
+        ),
+        pytest.param(
+            "3+ years running social for a brand, ideally tech and AI.",
+            "3+ years running social for a brand", id="a-hedge-after-the-comma",
+        ),
+        pytest.param(
+            "5+ years hands-on as a Mechanical, Manufacturing, or Design Engineer on mechanical or "
+            "electromechanical systems, ideally with time spent taking a product from prototype to "
+            "volume production", "5+ years hands-on as a Mechanical", id="a-third-item",
+        ),
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment",
+            "5+ years of development in a large-scale, mission-critical", id="no-hedge-ahead",
+        ),
+    ],
+)
+def test_a_pair_that_is_not_coordinate_adjectives_reads_as_before(  # type: ignore[no-untyped-def]
+    catalog, body: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:domain_years_minimum", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
