@@ -1006,6 +1006,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Fifth engine batch: a domain bar stops before its own hedge, and `a plus` is a whole word in every hedge
+  list (2026-09-24, T211, T212).** `3+ years of Kubernetes preferred` / `… a plus` read as a required domain bar,
+  because the domain tail's four tokens swallowed the hedge; each tail token now stops before a hedge word (or a
+  comma/slash with a hedge ahead in its clause), so the bar is carried as a `scoped_years_preferred` preference,
+  exactly as `3+ years of experience preferred` is — while `Java development, AWS preferred` keeps its bar (the
+  hedge is a later item's) and a coordinate-adjective pair (`in a large-scale, mission-critical environment`)
+  stays one tail. The same applies to batch 4's domain range twins, which are now also carried under a hedge
+  heading. `\ba\s+plus\b` bounds every remaining hedge list, so `diploma plus a Bachelor's` no longer hedges a
+  degree bar. T213's `domain_years_preferred` was not built: T173's carrier already carries a hedged domain bar.
+  `rules_hash` moves; the two-arm reading is in the merge message.
+
 - **A skill-scoped years bar stated as a preference is carried as a preference row, and a heading's hedge
   is read only where it governs (2026-09-24, T173, T215, T216).** `3+ years of power-electronics experience`
   under `Preferred Qualifications:` (or with `preferred` in its own sentence) had no `preferred` twin, so it
