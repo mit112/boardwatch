@@ -669,11 +669,16 @@ def test_a_supplied_parent_snapshot_is_used_instead_of_the_one_on_disk(
     ],
 )
 def test_an_unreadable_pointer_names_the_file_and_not_the_filesystem_path(
-    promoted_tree: PromotedRevisionTree, filename: str, code: str
+    promoted_tree: PromotedRevisionTree, filename: str, code: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`reports.py` states a diagnostic never carries a value like an absolute path, and this repo
     runs a generalization checker about home paths in its bytes. `str(OSError)` appends the path it
     failed on, so the reason is taken from the exception and the logical name supplies the rest."""
+    # A mode-000 `CURRENT` is denied until the pointer-swap wait gives up. The wait's bound is
+    # `test_a_denial_that_outlives_the_deadline_is_still_a_refusal`'s subject, not this one's.
+    monkeypatch.setattr(
+        "boardwatch.profile_bundle.validation.digest._POINTER_SWAP_DEADLINE_SECONDS", 0.0
+    )
     path = (
         current_path(promoted_tree.bundle_root)
         if filename == "CURRENT"
