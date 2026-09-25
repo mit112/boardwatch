@@ -16,17 +16,31 @@ would never find out. Quoting is the documented escape hatch and is tested as su
 
 Anchors, aliases, and merge keys are refused wholesale: they make one logical record expressible
 in two byte sequences, which is exactly what content addressing must not have to reason about.
+
+libyaml parses when it is installed, for speed only: every input must get the pure loader's
+outcome, the same value or the same error. Three things hold that. A screen sends text in a
+construct the two parsers read differently straight to the pure loader. A pass over libyaml's
+events hands over any document with an alias, anchor or tag, or deep nesting. And any exception on
+the libyaml side is discarded and the text re-read by the pure loader, so every error a caller
+sees is the pure loader's own. `tests/profile_bundle/test_profile_bundle_yaml_loader_parity.py`
+and `tools/yaml_loader_fuzz.py` compare the two paths.
 """
 
 from __future__ import annotations
 
+import contextlib
 import re
+from functools import cache
 from pathlib import PurePosixPath
 from typing import Any, Final, cast
 
 import yaml
+from yaml.constructor import SafeConstructor
+from yaml.events import AliasEvent, CollectionEndEvent, CollectionStartEvent, NodeEvent
 from yaml.nodes import MappingNode, Node, ScalarNode
+from yaml.resolver import Resolver
 
+from boardwatch.core.yamlio import has_libyaml
 from boardwatch.profile_bundle.errors import IssueCode, ProfileBundleError, RestrictedYamlError
 
 _STR_TAG: Final = "tag:yaml.org,2002:str"
@@ -45,8 +59,8 @@ _ACCEPTED_NULL: Final = frozenset({"", "null", "~"})
 _ACCEPTED_BOOL: Final = frozenset({"true", "false"})
 
 
-class CareerProfileLoader(yaml.SafeLoader):
-    """`SafeLoader` narrowed to the bundle's authoring contract.
+class _AuthoringContract(SafeConstructor, Resolver):
+    """The scalar and mapping rules. The pure loader and its libyaml twin both inherit them.
 
     The narrowing happens in `resolve`, which is the single place PyYAML decides what an
     unquoted scalar means. Overriding it — rather than deleting entries from
@@ -91,28 +105,6 @@ class CareerProfileLoader(yaml.SafeLoader):
             )
         return _STR_TAG
 
-    def compose_node(self, parent: Node | None, index: Any) -> Node | None:
-        if self.check_event(yaml.events.AliasEvent):  # type: ignore[no-untyped-call]
-            raise RestrictedYamlError(
-                IssueCode.RESTRICTED_YAML_VIOLATION,
-                "YAML aliases are not permitted: one record must have one byte sequence"
-            )
-        event = self.peek_event()  # type: ignore[no-untyped-call]
-        tag = getattr(event, "tag", None)
-        if tag is not None:
-            raise RestrictedYamlError(
-                IssueCode.RESTRICTED_YAML_VIOLATION,
-                f"explicit YAML tag {tag!r} is not permitted: the restricted loader alone "
-                "decides scalar and collection types"
-            )
-        anchor = getattr(event, "anchor", None)
-        if anchor is not None:
-            raise RestrictedYamlError(
-                IssueCode.RESTRICTED_YAML_VIOLATION,
-                f"YAML anchor {anchor!r} is not permitted: an anchor is the first half of an alias"
-            )
-        return super().compose_node(parent, index)
-
     def construct_mapping(self, node: MappingNode, deep: bool = False) -> dict[Any, Any]:
         """Reject duplicate and non-string keys before the mapping exists.
 
@@ -143,6 +135,98 @@ class CareerProfileLoader(yaml.SafeLoader):
         return super().construct_mapping(node, deep=deep)
 
 
+class CareerProfileLoader(_AuthoringContract, yaml.SafeLoader):
+    """`SafeLoader` narrowed to the bundle's authoring contract."""
+
+    def compose_node(self, parent: Node | None, index: Any) -> Node | None:
+        if self.check_event(yaml.events.AliasEvent):  # type: ignore[no-untyped-call]
+            raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
+                "YAML aliases are not permitted: one record must have one byte sequence"
+            )
+        event = self.peek_event()  # type: ignore[no-untyped-call]
+        tag = getattr(event, "tag", None)
+        if tag is not None:
+            raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
+                f"explicit YAML tag {tag!r} is not permitted: the restricted loader alone "
+                "decides scalar and collection types"
+            )
+        anchor = getattr(event, "anchor", None)
+        if anchor is not None:
+            raise RestrictedYamlError(
+                IssueCode.RESTRICTED_YAML_VIOLATION,
+                f"YAML anchor {anchor!r} is not permitted: an anchor is the first half of an alias"
+            )
+        return super().compose_node(parent, index)
+
+
+@cache
+def _libyaml_loader() -> type[yaml.CSafeLoader]:
+    """The same contract over libyaml's parser and composer.
+
+    Built on first use: `yaml.CSafeLoader` exists only when libyaml is installed. libyaml's
+    composer is C and never calls `compose_node`, so the alias, anchor and tag refusals are
+    enforced by `_libyaml_can_compose` instead.
+    """
+
+    class _LibyamlCareerProfileLoader(_AuthoringContract, yaml.CSafeLoader):
+        pass
+
+    return _LibyamlCareerProfileLoader
+
+
+#: Text the libyaml path never sees. Each alternative covers a construct the two parsers read
+#: differently (T229's record in `tests/unit/test_yamlio.py`, and `tools/yaml_loader_fuzz.py`):
+#: a tab anywhere, a BOM anywhere, `?` anywhere (libyaml allows it inside a flow plain scalar,
+#: which can span lines), a `\u`/`\U` escape (a surrogate escape parses only in the pure
+#: parser), and `#` after a `|`/`>` with no space between. A false positive costs only speed, so
+#: each alternative is wider than the cases found.
+_PURE_ONLY: Final = re.compile(r"[\t\ufeff?]|\\[uU]|[|>]\S*#")
+
+#: Deeper nesting goes to the pure loader. Its composer recurses, so enough depth raises
+#: `RecursionError`; libyaml's does not, and would return a value instead.
+_LIBYAML_MAX_DEPTH: Final = 64
+
+
+def _libyaml_can_compose(text: str, loader: type[yaml.CSafeLoader]) -> bool:
+    """False if a node carries an alias, anchor or tag, or nesting passes `_LIBYAML_MAX_DEPTH`.
+
+    Each of these is either refused by `CareerProfileLoader.compose_node` or read differently by
+    the two composers, and the pure loader reports it in document order with its own message.
+    """
+    depth = 0
+    for event in yaml.parse(text, Loader=loader):
+        if isinstance(event, NodeEvent) and (
+            isinstance(event, AliasEvent)
+            or event.anchor is not None
+            or getattr(event, "tag", None) is not None
+        ):
+            return False
+        if isinstance(event, CollectionStartEvent):
+            depth += 1
+            if depth > _LIBYAML_MAX_DEPTH:
+                return False
+        elif isinstance(event, CollectionEndEvent):
+            depth -= 1
+    return True
+
+
+def _load_documents(text: str) -> list[Any]:
+    """Every document in `text`, with exactly the outcome `CareerProfileLoader` gives it.
+
+    Any exception on the libyaml side is discarded, and the pure loader reads the text again. It
+    then returns the value or raises its own error, so an invalid file reports the violation the
+    pure loader meets first. Errors are rare, so the second read costs little.
+    """
+    if has_libyaml() and not _PURE_ONLY.search(text):
+        loader = _libyaml_loader()
+        with contextlib.suppress(Exception):
+            if _libyaml_can_compose(text, loader):
+                return list(yaml.load_all(text, Loader=loader))
+    return list(yaml.load_all(text, Loader=CareerProfileLoader))
+
+
 def load_yaml_bytes(raw: bytes, *, logical_path: PurePosixPath) -> object:
     """Parse one bundle document. Raises `RestrictedYamlError` for anything out of contract.
 
@@ -157,7 +241,7 @@ def load_yaml_bytes(raw: bytes, *, logical_path: PurePosixPath) -> object:
             f"{logical_path}: not valid UTF-8 ({exc.reason})",
         ) from exc
     try:
-        documents = list(yaml.load_all(text, Loader=CareerProfileLoader))
+        documents = _load_documents(text)
     except RestrictedYamlError as exc:
         raise RestrictedYamlError(exc.code, f"{logical_path}: {exc}") from exc
     except yaml.YAMLError as exc:
