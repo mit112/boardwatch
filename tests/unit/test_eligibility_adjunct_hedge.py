@@ -115,8 +115,9 @@ DEGREE_LENGTHS = [
     pytest.param("2 year degree or technical degree preferred", "eligible", id="domain-hedged-pv338776"),
     pytest.param("Associate's degree or 2 year degree required.", "uncertain", id="domain-required"),
     pytest.param("Associate's degree or 2-4 year degree required.", "uncertain", id="domain-range-required"),
-    pytest.param("4 year degree or equivalent experience", "uncertain", id="scoped-and-domain-list"),
-    pytest.param("4 Year Degree or equivalent experience", "uncertain", id="capitalised"),
+    # T221: the degree family reads these as a four-year degree or equivalent, met by the bachelor's.
+    pytest.param("4 year degree or equivalent experience", "eligible", id="scoped-and-domain-list"),
+    pytest.param("4 Year Degree or equivalent experience", "eligible", id="capitalised"),
     pytest.param("3 years Diploma in Electronics.", "uncertain", id="diploma"),
     pytest.param("Any 3 years degree (BBA, Bcom, BCA).", "uncertain", id="plural-years"),
     pytest.param("4-5 year degree or equivalent experience", "uncertain", id="range-twins"),
