@@ -34,14 +34,15 @@ followed — keep incidents out of this file.
 | `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. Kept near 170 lines. |
 | `docs/program/STANDING-FACTS.md` | Facts a fresh session should not re-derive, in six sections. Read the section for the subsystem you are about to touch — not the whole file. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
-| `docs/program/ROADMAP.md` | **The focus view.** Five milestones in order with exit criteria, what is deliberately off the path. Read it to pick what to work on; rewrite it only when a milestone closes. |
+| `docs/program/ROADMAP.md` | **The focus view and the finish line.** What "complete" means (B1–B8 for 14 frozen daily runs, D-598), the freeze rule, and what is deliberately off the path. Read it to pick what to work on; rewrite it only when the finish line moves. |
 | `docs/program/LINKEDIN-CLOSURE-PLAN.md` | **LinkedIn is the whole retirement residual.** The measured decomposition, the JobSpy refusal and three sized tracks. Read before proposing ANY LinkedIn work — it exists so the JobSpy comparison is never re-derived. |
-| `docs/program/RETIREMENT-PLAN.md` | **The job-apps retirement plan.** The finished gap analysis, job-apps' full source list, the phases, and what is already settled. Read before proposing any discovery work — it exists so the comparison is never re-derived. |
+| `docs/program/RETIREMENT-PLAN.md` | **The job-apps retirement plan** (its switch-off end state is retired — job-apps stays on as a source, D-566 §4, D-598). The finished gap analysis, job-apps' full source list, the phases, and what is already settled. Read before proposing any discovery work — it exists so the comparison is never re-derived. |
 | `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |
 | `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim. **Closed** — never append here. |
 | `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. Holds the live tables, the P6-era records, and **the index for both metrics files**. |
 | `docs/program/METRICS-ARCHIVE.md` | The closed P0–P5 session records. **Closed** — never append here. |
 | `CHANGELOG.md` | Authoritative for what actually shipped. |
+| `docs/program/archive/`, `docs/archive/` | **Consumed** handoffs, reports, reviews, shipped designs, closed ticket files, the August plans/specs. Do not read them to pick work; open one only when a decision or code comment cites it (each folder's README maps old paths). |
 
 **Neither log is read end to end** — together they are ~100k tokens. **Nor is the index**: the one in
 `DECISIONS.md` is 114 KB (~28.6k tokens) on its own, so reading it to find a single entry costs more than
