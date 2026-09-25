@@ -1136,3 +1136,72 @@ def test_a_domain_range_bar_whose_hedge_is_not_its_own_stays_required(  # type: 
     (row,) = result.requirements
     start, end = row.jd_locator["span"]
     assert body[start:end] == quote
+
+
+# Codex round 1 on T211: its comma branch also cut the tail at a COORDINATE-ADJECTIVE comma, and
+# `_hedged_tail`'s open-list rule then read the sentence-final hedge as a later item's, a wrong
+# `ineligible` (pv 224183). An article and ONE word before the comma cannot be a whole list item,
+# so where a hedge lies ahead that pair and the word after the comma are one tail token -- if a head
+# word follows, and the word after the comma is not itself a hedge. The range twin reads the same.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment preferred",
+            id="pv224183",
+        ),
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment preferred.",
+            id="pv224183-full-stop",
+        ),
+        pytest.param(
+            "3-5 years of development in a large-scale, mission-critical environment preferred.",
+            id="range-twin",
+        ),
+    ],
+)
+def test_a_coordinate_adjective_comma_does_not_cut_the_domain_tail(  # type: ignore[no-untyped-def]
+    catalog, body: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:scoped_years_preferred", "preferred", "unmet"]]
+    assert result.verdict == "eligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end].endswith(" in a large-scale, mission-critical environment")
+
+
+# CONTROLS for the pair. A list item with no head word after it, a hedge word straight after the
+# comma (pv 46573's `ideally` adjunct), a third item (pv 162556) and an unhedged tail are all read
+# as before: the first three stay required at the comma, and the last keeps its span.
+@pytest.mark.parametrize(
+    ("body", "quote"),
+    [
+        pytest.param(
+            "5+ years of sales in a startup, fintech preferred.", "5+ years of sales in a startup",
+            id="no-head-after-the-item",
+        ),
+        pytest.param(
+            "3+ years running social for a brand, ideally tech and AI.",
+            "3+ years running social for a brand", id="a-hedge-after-the-comma",
+        ),
+        pytest.param(
+            "5+ years hands-on as a Mechanical, Manufacturing, or Design Engineer on mechanical or "
+            "electromechanical systems, ideally with time spent taking a product from prototype to "
+            "volume production", "5+ years hands-on as a Mechanical", id="a-third-item",
+        ),
+        pytest.param(
+            "5+ years of development in a large-scale, mission-critical environment",
+            "5+ years of development in a large-scale, mission-critical", id="no-hedge-ahead",
+        ),
+    ],
+)
+def test_a_pair_that_is_not_coordinate_adjectives_reads_as_before(  # type: ignore[no-untyped-def]
+    catalog, body: str, quote: str
+) -> None:
+    result = evaluate(body, FACTS, POLICY, catalog)
+    assert _rows(result) == [["experience_years:domain_years_minimum", "required", "unmet"]]
+    assert result.verdict == "ineligible"
+    (row,) = result.requirements
+    start, end = row.jd_locator["span"]
+    assert body[start:end] == quote
