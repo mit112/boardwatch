@@ -1006,6 +1006,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A skill-scoped years bar stated as a preference is carried as a preference row, and a heading's hedge
+  is read only where it governs (2026-09-24, T173, T215, T216).** `3+ years of power-electronics experience`
+  under `Preferred Qualifications:` (or with `preferred` in its own sentence) had no `preferred` twin, so it
+  was dropped and a posting whose only requirement rows were such bars read `uncertain` on zero rows; it now
+  writes a `scoped_years_preferred` row, which never blocks. Two heading defects the carrier would have
+  amplified are fixed first: a heading's hedge counts only before its first coordinator (`Education &
+  Preferred Qualifications` no longer hedges every bar beneath it; `Qualifications/Education Desired` still
+  does), and an item's own mandate — item-initial `Must have|possess|bring|be`, optionally after its own
+  subject, or the bar's own predicate `… is required|mandatory|essential|a must` not crossing a relative
+  clause, a `for <person>` phrase or a `to` infinitive — beats its heading's hedge. The hyphenated
+  `nice-to-have` is read wherever `nice to have` is. Owner ruled ship (D-590, D-595). `engine_version` and
+  `rules_hash` move once; the two-arm reading is in the merge message.
+
 - **Fourth engine batch: digit ranges never read their high end, a credit or substitution rule's
   count is no bar, and a degree's length is not a second duration (2026-09-24, T200, T201, T202).**
   `3 to 5 years`, `between 5 and 7 years` and the spaced-dash `5 – 7 years` now write only their range
