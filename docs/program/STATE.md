@@ -14,7 +14,8 @@
 > 2026-09-21 and 2026-09-22b blocks WHOLE once run 470 had been read against the 2026-09-21 block's
 > recorded prediction, which was the last condition inside either; the eighteenth, **2026-09-22e**,
 > moved the 2026-09-22d block WHOLE once its run-471 expectation was restated above. (2026-09-22f and 2026-09-23 moved
-> nothing.) The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
+> owner calls were all done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -24,33 +25,33 @@
 
 ## Current standing
 
-### 2026-09-24c — **THE "NO WAITING" SPRINT DAY (D-594): EIGHT OWNER RULINGS ANSWERED, TWELVE TICKETS BUILT AND REVIEWED ON THE SEAT, TWO SHIPPED BY THE CONTEXT CLEAR (T195 #459, BUNDLE B T205–T207 #460), SIX IN THE SEQUENTIAL SHIP CHAIN (T199, BUNDLE A T203–T204, T210, T209, T188, T208), ENGINE BATCH 4 IN ROUND 2, T173 REBASED AND MEASURED, BATCH 5 WRITTEN. WAVE GATING RULED. THE PRIMARY IS ON `main` AT #460.**
+### 2026-09-24d — **THE SESSION CLOSED ON MIT'S CALL BEFORE WAVE 3 (D-595). THE CHAIN SHIPPED (T199 #465, BUNDLE A #467, T210 #468, T209 #469, T188 #470, T208 #471) PLUS close6/close7 (#466, #472); THE 0-D REPAIR IS DONE (43 → 9 OPEN DAMAGED, THE NINE ARE `gone`); T173's TWO HEADING CLASSES ARE FIXED ON THE CARRIER (T215/T216, 1,189 CLEARS, ROUND 2 IN FLIGHT); A WHOLE-SWEEP REVIEW READ 0 BLOCKERS AND ITS FOLLOW-UPS ARE BUILT (T222–T226) AND REVIEWED; THE LIVE CONFIG'S GITHUB LISTS ARE RESTORED. THE PRIMARY IS ON `main` AT #472. THE NEXT SESSION IS HEADED BY THE ENTERPRISE SEAT.**
 
-**The unattended state at the clear — chain, executors, gates, repair steps — is in
-`.agent/2026-09-23c-session/HANDOFF.md`. Read it FIRST, then `notes.md`'s tail. Then verify against `gh pr list`,
-`git log origin/main`, and the `<tag>.exit` sentinels: the chain and two executors kept running after this file was
-written, so this block is already behind by the time it is read.**
+**Read `.agent/2026-09-23c-session/HANDOFF.md` FIRST — §0 says how the seat-headed session differs (memory by symlink,
+executors share its window), §2 the four executors left RUNNING at close, §4 the wave-3 recipe.** Verify against
+`git log origin/main`, `gh pr list` and the `<tag>.exit` sentinels before believing any of it.
 
-**Next session, in order:**
-1. **Read the chain** (`ship-chain.log`): what merged, whether it STOPPED (a CONFLICTING PR = the changelog collision:
-   close it, re-run the chain from that tag). Pull the primary ff-only between runs after the last merge.
-2. **Batch 4 round 2** (`bw-batch4`): read RESULT "## Round 2" and `batch4_aggregate_v2.txt` — the seven wrong clears
-   must now read `ineligible`; Codex verification (medium); fill the placeholders in `entry/pr/sq-batch4`; **T173**
-   (`bw-t173`): read its rebase-and-remeasure record, Codex review, rebase once more onto batch 4's round-2 head
-   (`T173d`), write its ship texts; gate both as ONE wave-3 stack; ship batch 4 then T173. Then launch **batch 5**
-   (`TB5.md`, base = T173's head).
-3. **0-D repair** once T210 is on main and the primary pulled: HANDOFF §4 (backup, report-only, `--apply`, verify by
-   the raw_json count). A live-store write — between runs only.
-4. **Run 476** (04:00 CDT 09-25): re-keys on the new engine_version; `refresh_pending_after` from 767; T198's
-   prediction (the four Workday boards complete on their second scan); hiring.cafe's recount now attributed by row.
-5. Prune merged worktrees (HANDOFF §5); a final close commit for STATE once the chain and wave 3 land.
+**Next session, in order (do not start wave 3 until Mit says so — ruled 19:23 on 09-24):**
+1. **Read the four executors' results** (HANDOFF §2): batch 4 round 2 (`bw-batch4`, the seven wrong clears must read
+   `ineligible`), T173d round 2 (`bw-t173`, Codex's two T216 sentences must return to preference), batch 5
+   (`bw-batch5`, T211–T213), batch 6 (`bw-batch6`, T214). Run the owed Codex rounds (batch 4 verification, T173d2
+   verification, batch 5 and 6 review). Then T173e (rebase onto batch 4's round-2 head), rebase batch 5 and 6 behind it.
+2. **Wave 3** (HANDOFF §4): stack t218, t226, fu3 (T222–T225), batch 4, T173, batch 5, batch 6 on `origin/main`; ONE
+   `make check`; ship sequentially. Every engine ship re-keys `engine_version`.
+3. **Read run 476** (04:00 CDT 09-25, on `6a7e548e`): LONG by design — T208 moves the facts key, so 298,389 open
+   postings re-evaluate and gate verdicts re-judge through the refresh (D-595 F7). Also T198's prediction (db, hitachi,
+   vfc, mtb complete on their second scan), hiring.cafe's recount by row, the GitHub lists fetching again.
+4. Docs after wave 3: D-596 (what shipped, the two-arm readings), METRICS, this file.
 
-**Owner calls answered today (D-594):** T173 yes; T188 all three; refresh backlog → T195 (shipped); career_field →
-taxonomy (T208); 0-D → repair now (T210); résumé (1)(2) dropped, (3) later. **Nothing is owner-gated now except**
-the standing items below (0-D's repair is authorised; the résumé formatting session is Mit's to schedule).
+**Rulings today (D-595):** do not start wave 3 this session; the seat heads the next; the planner's fix-first call on
+T173 (D-590's 1,468 → 1,189 with the heading classes fixed) stood unopposed. **Config changed:** `lane_github_lists`
+set to the two former defaults (review F4). **Store changed:** the 0-D repair (34 bodies), run 473 reaped.
 
-**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23c): in the chain T199, T203, T204, T208, T209, T210, T188;
-in flight batch 4 (T200–T202 round 2), T173; written T211–T213 (batch 5), T214; T198 waits for run 476.
+**Open tickets** (`TICKETS-2026-09-22c.md` §2026-09-23c): READY for wave 3 — T218, T226, T222–T225; IN FLIGHT — batch 4
+round 2 (T200–T202), T173 + T215/T216 (round 2), batch 5 (T211–T213), batch 6 (T214); WRITTEN — T219 (1,752 postings,
+the largest engine lever left), T220, T221, T227; T198 waits for run 476.
+
+### 2026-09-24c — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-24d.** The "no waiting" sprint day (D-594): eight rulings, the chain, wave gating. Every step it listed is done or restated above.
 
 ### 2026-09-23b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-24.** Runs 472 and 473/474 read (D-580, D-588); the post-472 pull done; the owner calls it listed are all ruled (D-577); T170 (#439) and T172 (#434) shipped; T171 (#438) and T162 (#441) shipped.
 
@@ -120,26 +121,24 @@ available if Mit wants it. **D-498's rule (b) IS BUILT** (`_suppress_lane_copies
    the 113.
 3. **Mit's résumé calls** — whether to send a document at all; the D-220 prose rewrite of the submitted "sole iOS developer" answer (outside the bundle); the per-lens formatting session.
 4. **P2 item 8 — SHIPPED as T184 (#444, D-581).** 5. **The bundle lock — already shipped 2026-09-04 (`ae64c0ee`); closed.**
-6. **T173 — a hedged SCOPED years bar carried as a `scoped_years_preferred` row: MEASURED (D-590).**
+6. **T173 — RULED YES (D-594); re-measured with its heading classes fixed (D-595): 1,189 clears, ships in wave 3.** (History:
    Yes ⇒ 1,468 postings move `uncertain` → `eligible` (about five times today's `eligible`), all stated
    preferences (20/20 sampled), ~13 wrong clears inherited from two main-side defects (T196, T197). No ⇒ they
-   stay `uncertain` with no row. Rebased on the batch in `bw-t173`; gate not yet run.
-7. **T188 — the judge's seniority question against the profile's band, the Indeed country and the
-   GitHub lists from tenant data** (`bw-t188`, reviewed twice, gate green): D1 moves `PROMPT_VERSION`,
-   so EVERY stored gate verdict re-judges once through the refresh at 130 a run. Ship as is, ship E1+E2
-   alone, or hold.
-8. **`career_field` vs the taxonomy field** (D-586): the ranker's field gates read the taxonomy's field;
+   stay `uncertain` with no row. Rebased on the batch in `bw-t173`; gate not yet run.)
+7. **T188 — SHIPPED (#470, all three; D-594).** (History: D1 moves `PROMPT_VERSION`,
+   so EVERY stored gate verdict re-judges once through the refresh at 130 a run; the owner accepted it.)
+8. **`career_field` vs the taxonomy field — RULED and SHIPPED as T208 (#471, D-594): the taxonomy is the one source.** (History, D-586: the ranker's field gates read the taxonomy's field;
    `Facts.career_field` is NULL on the live profile and its catalog accepts only `software`. Reconcile
-   (one source), or retire `career_field` from the eligibility facts.
+   (one source), or retire `career_field` from the eligibility facts.)
 9. **The reviews' follow-ups** (§2026-09-23c): the `_recovered` reserved-name collision, the funnel's
    `location_class` column still the US reading, cross-check disagreements not soft-alerted, the
    STANDING-FACTS grounding key, T190's test-only drift, T192's trickled-headers limit; from run 475: T198 (the board cap vs slow Workday
    boards) and T199 (hiring.cafe's 9-vs-10 recount); from T173's measurement: T196 (`a plus` without a word
    boundary) and T197 (an aside about another noun hedges the bar) — both now IN batch 3; from batch 3's round 2
     (D-592): T200, T201, T202 — engine batch 4, round 2 in flight (D-594); T211–T214 written.
-10. **The T179 refresh backlog (D-589): 315 top-level leads with no live verdict, 14 of them judged
-    `ineligible` on 09-22 and standing in the apply lane.** Options: raise `gate.refresh_budget` above 130
-    for a few runs; have the refresh rank released holds first (T195); or let it drain at ~6 runs.
+10. **The T179 refresh backlog — RULED: fixed by ORDER, T195 SHIPPED (#459, D-594).** (History, D-589: 315 top-level leads with no live verdict, 14 of them judged
+    `ineligible` on 09-22 and standing in the apply lane. Options: raise `gate.refresh_budget` above 130
+    for a few runs; have the refresh rank released holds first (T195); or let it drain at ~6 runs.)
 
 ## Open questions — Mit's, not to be resolved by fiat
 
