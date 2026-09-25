@@ -119,6 +119,7 @@ def test_retry_after_honored_on_429(tmp_path: Path) -> None:
     assert elapsed >= 1.0, elapsed
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_retries_exhausted_surface_typed_failure(tmp_path: Path) -> None:
     with respx.mock:
         route = respx.get("https://down.example/x").mock(return_value=httpx.Response(503))
@@ -223,6 +224,7 @@ def test_post_json_paces_the_same_host(tmp_path: Path) -> None:
     assert time.monotonic() - started >= 0.25  # PER_HOST_DELAY_FLOOR
 
 
+@pytest.mark.usefixtures("no_real_sleep")
 def test_post_json_retries_retryable_status(tmp_path: Path) -> None:
     with respx.mock:
         route = respx.post("https://api.example.com/jobs").mock(
