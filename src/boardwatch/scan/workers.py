@@ -32,8 +32,27 @@ def fetch_board_job(
     `deadline_at` is the coordinator's own `board_deadline_seconds` instant for this board, passed
     in rather than recomputed so the thread's clock and the coordinator's agree (T192c): once the
     coordinator has failed the board, every further request of this thread fails at once.
+
+    That clock ends the thread AT the cap, so the thread can return before the coordinator looks,
+    which it did on a loaded macOS runner (T228); its snapshot is then the provider's account of
+    the clock's failures — "20 failed", or a `partial` the coordinator would apply. A board the
+    clock cut short returns the cap's verdict instead, so it reads the same whichever side sees
+    the cap first.
     """
     started = perf_counter()
-    with fetcher.under_deadline(deadline_at, cap):
+    with fetcher.under_deadline(deadline_at, cap) as clock:
         snapshot = provider.fetch_board(fetcher, request)
+    if clock.tripped:
+        snapshot = board_deadline_snapshot(request.url, cap)
     return snapshot.model_copy(update={"fetch_seconds": perf_counter() - started})
+
+
+def board_deadline_snapshot(
+    url: str, cap: float, fetch_seconds: float | None = None
+) -> BoardSnapshot:
+    """The verdict on a board `board_deadline_seconds` cut short, for both halves of the cap:
+    the coordinator failing it at the cap, and its own thread cut short by the same clock."""
+    return BoardSnapshot(
+        status="failed", postings=[], url=url, observed_validators=None,
+        error=f"board deadline {cap:g}s exceeded", fetch_seconds=fetch_seconds,
+    )
