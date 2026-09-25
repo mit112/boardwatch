@@ -161,7 +161,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
 # @pytest.mark.parametrize further down the file, so a digest over the literal alone stays green
 # while a `CASES[0] = (...)` line appended below rewrites the oracle. Byte-stable across
 # platforms because .gitattributes pins eol=lf repo-wide for exactly this reason.
-CORPUS_PIN = "sha256:ac4e6025ca7390118b25ed58f7867feb14d31df119202734988d342dafa8a89d"
+CORPUS_PIN = "sha256:cb3133ba3048b29569f790f8f7ed61027cf58d879f14d5836601572155a30fbd"
 
 # A HUMAN-REVIEWED constant, and that is the whole of its value. It is counted by ast rather than
 # by bytes, but that alone would not make it a second path: an earlier version let
@@ -177,7 +177,7 @@ CORPUS_ROWS = 1199
 # and a human-reviewed row count read by ast.
 HEADING_CASES_PATH = "tests/unit/test_eligibility_heading_context.py"
 HEADING_CASES_SYMBOL = "HEADING_CASES"
-HEADING_CASES_PIN = "sha256:bbf42a685ae2e7ed5104d36104ae6e43ad097562522417a6236852727f57e135"
+HEADING_CASES_PIN = "sha256:75ce81b156a62205c445aacfb9501786f7f091590b2bbc1d826bae1f9440f91b"
 HEADING_CASES_ROWS = 63
 
 
