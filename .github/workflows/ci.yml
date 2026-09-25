@@ -37,10 +37,18 @@ jobs:
   plan:
     name: plan
     runs-on: ubuntu-latest
+    # The push-only step below reads this workflow's PR runs and their jobs (`actions`), and the
+    # PRs a commit belongs to (`pull-requests`) and those PRs' issue events (`issues`).
+    permissions:
+      actions: read
+      contents: read
+      issues: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       shards: ${{ steps.plan.outputs.shards }}
       pythons: ${{ steps.plan.outputs.pythons }}
+      skip_ubuntu_tests: ${{ steps.skip.outputs.skip_ubuntu_tests || 'false' }}
     steps:
       - id: plan
         shell: bash
@@ -65,11 +73,39 @@ jobs:
           echo "shards=$SHARDS" >> "$GITHUB_OUTPUT"
           echo "pythons=$PYTHONS" >> "$GITHUB_OUTPUT"
           echo "matrix={\"python\":$pythons_json,\"shard\":$shards_json}" >> "$GITHUB_OUTPUT"
+      # Push only: skip the Ubuntu shards (and the two jobs that read their artifacts) when a green
+      # PR run already tested this exact tree. A squash of a PR rebuilt on main just before has the
+      # PR head's tree, so the push would re-test byte-identical code — and its 28 jobs against a
+      # 20-job ceiling make the next PR in a ship chain queue 12–15 min behind it.
+      #
+      # Speed-only, so it fails SAFE: tools/ci_skip.py prints `true` only when every check holds,
+      # and anything else — a crash, an API error, output that is not exactly `true` — runs the
+      # tests. macOS still runs on every push; the `ci` job accepts these skips only on a push
+      # whose plan said `true`.
+      - if: ${{ github.event_name == 'push' }}
+        uses: actions/checkout@v4
+      - id: skip
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PYTHONS: ${{ steps.plan.outputs.pythons }}
+          SHARDS: ${{ steps.plan.outputs.shards }}
+        run: |
+          set -euo pipefail
+          decision=$(python3 -m tools.ci_skip --event "$EVENT" --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" --workflow ci.yml --branch "$GITHUB_REF_NAME" \
+            --pythons "$PYTHONS" --shards "$SHARDS") \
+            || decision=false
+          [ "$decision" = true ] || decision=false
+          echo "skip_ubuntu_tests=$decision" >> "$GITHUB_OUTPUT"
 
   # The suite, split across jobs. Ubuntu only — see `test-other-os` for why.
   test-ubuntu:
     name: test (${{ matrix.python }}, shard ${{ matrix.shard }}/${{ needs.plan.outputs.shards }})
     needs: plan
+    if: ${{ needs.plan.outputs.skip_ubuntu_tests != 'true' }}
     strategy:
       # Keep this false. With fail-fast, one failing shard cancels its queued siblings, and the
       # diagnostic value of "which other shards also failed" is lost — the aggregate below still
@@ -203,6 +239,7 @@ jobs:
   shard-audit:
     name: shard-audit
     needs: [plan, test-ubuntu]
+    if: ${{ needs.plan.outputs.skip_ubuntu_tests != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -230,6 +267,7 @@ jobs:
   coverage:
     name: coverage
     needs: [plan, test-ubuntu]
+    if: ${{ needs.plan.outputs.skip_ubuntu_tests != 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -371,7 +409,8 @@ jobs:
   #    GitHub exposes only success/failure/cancelled/skipped and never the REASON for a skip, so
   #    "skipped because this event does not run macOS" is indistinguishable from "skipped because
   #    its dependency failed" by inspection. The event is the only honest source for which jobs
-  #    were supposed to run.
+  #    were supposed to run — together with `plan`'s `skip_ubuntu_tests` on a push, which is
+  #    likewise decided before any gate runs (tests/unit/test_ci_aggregator.py holds the table).
   #
   # Two standing rules for anyone editing this file:
   #   - Do NOT add an `if:` to this job beyond `always()`. A skipped required check reads as
@@ -404,6 +443,7 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           EVENT: ${{ github.event_name }}
+          SKIP_UBUNTU_TESTS: ${{ needs.plan.outputs.skip_ubuntu_tests }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -415,6 +455,10 @@ jobs:
           # macOS/Windows do not run on pull_request, by design (D-151 and the job's own comment).
           # Everything else must run on every event.
           expected_skipped = {"test-other-os"} if event == "pull_request" else set()
+          # A push whose plan found a green PR run on the same tree skips the Ubuntu shards and the
+          # two jobs that read their artifacts (tools/ci_skip.py). Only then, and only as skips.
+          if event == "push" and os.environ["SKIP_UBUNTU_TESTS"] == "true":
+              expected_skipped |= {"test-ubuntu", "shard-audit", "coverage"}
 
           problems = []
           for name, result in sorted(results.items()):
