@@ -344,6 +344,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The job-apps lane counts every entry it cannot read, the same on every Python (2026-09-25, T238).** Two shapes
+  still vanished uncounted after T220: a group directory that resolves but cannot be listed (or listed but not
+  searched), and a dangling link at the posting-folder level. Entries are now classified with explicit `os.stat` /
+  `os.lstat` instead of pathlib's checks, whose error handling differs between Python versions (on 3.14
+  `Path.is_dir()` reads a permission error as "not a directory"). An unreadable group is counted once in a new
+  `unreadable_group` tally member (a group unit, like `dangling_group_link`, so it is not in `attempted`), and its
+  readable folders are still read; a dangling or search-denied posting folder is one `not_attemptable` record; a root
+  whose every group is unreadable fails the lane loudly, as an unreadable root already does. Neither shape exists on
+  the live tree today (0 of each).
+
 - **A dangling group-folder link in the job-apps staging queue is counted, not silently skipped (2026-09-24,
   T220).** The refresher links GROUP directories, and a link-refresh race could leave one dangling; the lane
   listed groups with `is_dir()`, which follows the link, so the whole group and its records vanished with no

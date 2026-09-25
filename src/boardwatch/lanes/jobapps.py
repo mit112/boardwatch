@@ -64,11 +64,14 @@ rate on this population is not small.
 
 from __future__ import annotations
 
+import errno
 import json
+import os
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting, SecondhandField
@@ -139,6 +142,35 @@ _DIRECT_APPLY_SOURCES = frozenset(
     }
 )
 _DIRECT_APPLY_SUFFIX = "_api"
+
+
+# The stat errors that mean "nothing is there", the set `pathlib` itself treats as absence. Any
+# OTHER error -- a PermissionError above all -- means something is there that cannot be read.
+_ABSENT_ERRNOS = frozenset({errno.ENOENT, errno.ENOTDIR, errno.ELOOP})
+
+
+def _classify(entry: Path) -> Literal["dir", "dangling", "other"]:
+    """What one listed entry is, from explicit `os.stat`/`os.lstat` calls. Raises `OSError`
+    when it cannot tell -- the caller counts that; it never reads as absence.
+
+    Not `Path.is_dir()`/`is_symlink()`/`exists()`, because WHICH errors those swallow differs by
+    interpreter (T238): a PermissionError on an entry's stat raises on 3.13 and reads as False
+    on 3.14, so on 3.14 a group that lists but denies search lost every folder in silence.
+
+    `"dangling"` is a link whose target is absent. An entry gone between the listing and this
+    stat is `"other"`: it moved away (the owner working a posting), and nothing is lost.
+    """
+    try:
+        mode = os.stat(entry).st_mode
+    except OSError as error:
+        if error.errno not in _ABSENT_ERRNOS:
+            raise
+        try:
+            is_link = stat.S_ISLNK(os.lstat(entry).st_mode)
+        except FileNotFoundError:
+            return "other"
+        return "dangling" if is_link else "other"
+    return "dir" if stat.S_ISDIR(mode) else "other"
 
 
 class JobAppsSourceError(ValueError):
@@ -432,7 +464,7 @@ class JobAppsLane:
         `search_pages` is empty, which is honest -- there is no search and nothing paginated.
         """
         del fetcher  # on disk; see the docstring
-        records, rejected, dangling = self._records()
+        records, rejected, dangling, unreadable = self._records()
         tally = AcquisitionTally()
         for _ in range(rejected):
             # Seen (a candidate folder existed) and never attempted: `_read_record` could not
@@ -444,6 +476,10 @@ class JobAppsLane:
             # A group link whose target is gone, once per GROUP: its records were never seen,
             # so this is not `not_attemptable`. See `_records_under`.
             tally.record("dangling_group_link")
+        for _ in range(unreadable):
+            # A group that resolves but could not be listed, once per GROUP, for the same
+            # reason. See `_records_under`.
+            tally.record("unreadable_group")
 
         grouped: dict[tuple[str, str], list[tuple[_Identity, _Record]]] = {}
         names: dict[tuple[str, str], str] = {}
@@ -516,18 +552,18 @@ class JobAppsLane:
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
 
-    def _records(self) -> tuple[list[_Record], int, int]:
-        """Every readable record in the tree, how many candidates `_read_record` rejected, and
-        how many group links were dangling.
+    def _records(self) -> tuple[list[_Record], int, int, int]:
+        """Every readable record in the tree, how many candidates `_read_record` rejected, how
+        many group links were dangling, and how many groups could not be listed.
 
         Two levels deep and never recursive: `<queue>/<ATS>/<posting folder>/`. Recursing would
         reach `_skipped/<reason>/`, whose directory names are job-apps' verdicts.
 
         Raises `JobAppsSourceError` only for a STRUCTURAL break -- the source is absent,
-        unreadable, holds no group folder at all, or holds candidate records none of which
-        parse. A tree that exists and holds group folders but currently has zero records in
-        them is the owner having caught up, not a break, and returns an empty list with a zero
-        rejected count.
+        unreadable, holds no group folder at all, holds no group folder that can be listed, or
+        holds candidate records none of which parse. A tree that exists and holds group folders
+        but currently has zero records in them is the owner having caught up, not a break, and
+        returns an empty list with a zero rejected count.
         """
         if not self._roots:
             raise JobAppsSourceError(
@@ -537,43 +573,57 @@ class JobAppsLane:
         records: list[_Record] = []
         rejected = 0
         dangling = 0
+        unreadable = 0
         for root in self._roots:
-            root_records, root_rejected, root_dangling = self._records_under(root)
+            root_records, root_rejected, root_dangling, root_unreadable = self._records_under(root)
             records.extend(root_records)
             rejected += root_rejected
             dangling += root_dangling
-        return records, rejected, dangling
+            unreadable += root_unreadable
+        return records, rejected, dangling, unreadable
 
-    def _records_under(self, root: Path) -> tuple[list[_Record], int, int]:
-        """One root's readable records plus its rejected-candidate and dangling-group-link
-        counts, with that root's own structural check.
+    def _records_under(self, root: Path) -> tuple[list[_Record], int, int, int]:
+        """One root's readable records plus its rejected-candidate, dangling-group-link and
+        unreadable-group counts, with that root's own structural check.
 
         Per root rather than across them: a break in EITHER tree has to be visible. Folding them
         would let a moved discovery tree hide behind a healthy queue tree, which is the exact
         failure this lane's structural check exists to catch.
         """
-        if not root.is_dir():
-            raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
         try:
+            if _classify(root) != "dir":
+                raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
             entries = sorted(root.iterdir())
-            groups = [entry for entry in entries if entry.is_dir()]
-            # The owner's staging root links GROUP directories, and a link whose target is gone
-            # (the refresher's link-refresh race) fails `is_dir()`, so without this its whole
-            # group would drop out here uncounted. Counted per group, since its records are
-            # unknowable. It does not stand in for a group below: a tree of only broken links
-            # still has none. A skip folder is never read, so a broken one loses nothing and is
-            # not counted.
-            dangling = sum(
-                1
-                for entry in entries
-                if entry.name not in _SKIP_DIRS and entry.is_symlink() and not entry.exists()
-            )
         except OSError as error:
             raise JobAppsSourceError(f"source directory is unreadable: {root}: {error}") from error
+        groups: list[Path] = []
+        # The owner's staging root links GROUP directories, and a link whose target is gone (the
+        # refresher's link-refresh race) is not a directory, so without this its whole group
+        # would drop out here uncounted. Counted per group, since its records are unknowable. It
+        # does not stand in for a group below: a tree of only broken links still has none.
+        dangling = 0
+        # Groups that are there but cannot be read -- an entry here whose stat raises, or (below)
+        # a group whose listing or whose entries' stats raise. Counted once per group, since its
+        # records are unknowable (T238); until then these dropped with no trace. A skip folder is
+        # never read, so a broken or unreadable one loses nothing and is counted as neither.
+        unreadable = 0
+        for entry in entries:
+            skip = entry.name in _SKIP_DIRS
+            try:
+                kind = _classify(entry)
+            except OSError:
+                if not skip:
+                    unreadable += 1
+                continue
+            if kind == "dir":
+                groups.append(entry)
+            elif kind == "dangling" and not skip:
+                dangling += 1
         # `_SKIP_DIRS` (`_applied`, `_skipped`) are job-apps' own bookkeeping, never a group the
         # owner adds postings under, so their presence alone cannot stand in for the queue being
-        # there. If NEITHER a group folder nor a skip folder exists, the layout itself is gone.
-        if not groups:
+        # there. If NEITHER a group folder nor a skip folder exists, the layout itself is gone. A
+        # root whose every group is unreadable is the raise below, with its own message.
+        if not groups and not unreadable:
             raise JobAppsSourceError(
                 f"no group folder anywhere under {root} -- the source directory is probably not "
                 f"job-apps' queue, or the queue has moved"
@@ -584,28 +634,68 @@ class JobAppsLane:
         # want completely different fixes; a single line reading "no readable record" is the
         # difference between a five-minute and a fifty-minute diagnosis on return.
         candidates = 0
+        # Groups that yielded a readable listing. A group whose every entry failed to stat read
+        # nothing, so it is not one.
+        listable = 0
         for group in groups:
             if group.name in _SKIP_DIRS:
                 continue
             try:
-                folders = sorted(entry for entry in group.iterdir() if entry.is_dir())
+                listed = sorted(group.iterdir())
             except OSError:
+                unreadable += 1
                 continue
+            folders: list[Path] = []
+            failed = 0
+            for entry in listed:
+                try:
+                    kind = _classify(entry)
+                except OSError:
+                    failed += 1
+                    continue
+                if kind == "dir":
+                    folders.append(entry)
+                elif kind == "dangling":
+                    # A posting-FOLDER link whose target is gone (T238). One folder is one
+                    # record, seen and never read, so it is a candidate `_read_record` never
+                    # gets to parse -- a rejection, like a dangling record link below.
+                    candidates += 1
+            # An entry that cannot be stat'ed hides a folder whose record count is unknowable, so
+            # the GROUP is counted once in `unreadable_group` -- not a record in
+            # `not_attemptable` -- while its readable folders are still read below. A partly
+            # readable group therefore yields its readable records AND one group count.
+            if failed:
+                unreadable += 1
+            if failed < len(listed) or not listed:
+                listable += 1
             for folder in folders:
                 record_path = folder / _RECORD_NAME
-                # `is_file()` alone stats through a symlink and reads False for one that is
-                # dangling, so a folder present in the listing with nothing but a broken link
-                # at `_RECORD_NAME` fell out here before it ever became a candidate -- the one
-                # rejection `_read_record`'s OSError catch cannot cover, because it is never
-                # called. `is_symlink()` (an lstat, never resolved) admits it as a candidate so
-                # `_read_record`'s existing OSError handling counts it like any other unreadable
-                # record.
-                if not (record_path.is_file() or record_path.is_symlink()):
-                    continue
+                # An lstat, never resolved: a `_RECORD_NAME` that is a file or a link of any
+                # kind -- a dangling one included -- is a candidate, so `_read_record`'s OSError
+                # handling counts it like any other unreadable record. So is one whose stat
+                # raises for any reason but absence (a folder that denies search, T238): the
+                # record is there and cannot be read. Only a truly absent one is no candidate.
+                try:
+                    record_mode = os.lstat(record_path).st_mode
+                except OSError as error:
+                    if error.errno in _ABSENT_ERRNOS:
+                        continue
+                else:
+                    if not (stat.S_ISREG(record_mode) or stat.S_ISLNK(record_mode)):
+                        continue
                 candidates += 1
                 record = _read_record(folder)
                 if record is not None:
                     records.append(record)
+        # Every group there but none listable: nothing was read, which is this root being
+        # unreadable one level down -- a structural break, raised like the root itself failing
+        # to list, never counted into a zero that reads like an owner who caught up. A root of
+        # skip folders only is not this: it has no group to list.
+        if unreadable and not listable:
+            raise JobAppsSourceError(
+                f"no group folder under {root} could be listed ({unreadable} unreadable) -- "
+                f"check the permissions on the source tree"
+            )
         if not records and candidates:
             raise JobAppsSourceError(
                 f"found {candidates} discovery record(s) under {root}, none readable at "
@@ -617,7 +707,7 @@ class JobAppsLane:
         # than raised -- see the module docstring. Whatever the cause, every candidate this root
         # held that did not become a record is one `_read_record` rejected, and the caller counts
         # it rather than dropping it silently.
-        return records, candidates - len(records), dangling
+        return records, candidates - len(records), dangling, unreadable
 
     def _body(self, record: _Record) -> str | None:
         try:
