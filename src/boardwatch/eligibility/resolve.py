@@ -406,6 +406,11 @@ def _resolve_experience_years(
         # produce -- so it keeps abstaining. Abstaining in BOTH directions is what let a
         # 1-year profile read `eligible` against "Minimum of 12 years of experience in
         # software development"; this is the highest-volume pattern in the family.
+        # A floor of 0 is the one scoped bar every declared total clears: "0-2 years in the
+        # medical device industry" asks for nothing, and abstaining on it held new-grad postings
+        # at `uncertain` (T234, pv 10645 and 75422).
+        if need == 0:
+            return Resolution(MET, "a 0-year floor is met by any declared total", support)
         if total < need:
             if _is_near_miss(need, family, pattern):
                 return Resolution(

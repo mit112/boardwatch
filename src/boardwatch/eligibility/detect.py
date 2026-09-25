@@ -32,7 +32,8 @@ The scopes, all applied per match:
                           abstain waived: an abstaining bar keeps its UNKNOWN row. A bar
                           `hedged_as` a CARRIER is carried on its unit-scoped and heading
                           hedges too, since no preferred wording of its own writes that row
-                          (T173).
+                          (T173); any other `hedged_as` bar is carried on a heading that states
+                          a preference, and absorbed by a family row over the same bar (T235).
                           A pattern declaring this but no `suppressed_by_unit` takes a hedge
                           heading's hedge by the introducer allowance ALONE: its clause is
                           never searched, so "(MBA preferred)" beside the bar cannot drop it.
@@ -204,11 +205,25 @@ _TAIL_INTRODUCER = re.compile(
     re.IGNORECASE,
 )
 # A comma then a subordinator or a preposition opens an ADJUNCT, and a hedge after it is its own.
-_TAIL_ADJUNCT = re.compile(
-    r",\s*(?:with|plus|along|where|which|who|whose|that|as|while|but|in|within|at|for|on|from|"
-    r"across|to|of|through|under|by)(?!\w)",
-    re.IGNORECASE,
+_ADJUNCT_WORDS = (
+    r"(?:with|plus|along|where|which|who|whose|that|as|while|but|in|within|at|for|on|from|"
+    r"across|to|of|through|under|by)(?!\w)"
 )
+_TAIL_ADJUNCT = re.compile(rf",\s*{_ADJUNCT_WORDS}", re.IGNORECASE)
+# The same adjunct opened by an introducer adverb with no comma, AFTER the bar in its own clause:
+# "5+ years of experience in a full-cycle closing role ideally from SaaS" hedges SaaS, not the bar,
+# and the clause hedge read `ideally` as the bar's (T236, pv 221193 and 19 more store postings).
+_ADJUNCT_AFTER_ADVERB = re.compile(rf"\s+{_ADJUNCT_WORDS}", re.IGNORECASE)
+
+
+def _hedge_opens_an_adjunct(text: str, hi: int, start: int, end: int) -> bool:
+    """Is the hedge at [start, end) an introducer adverb after the bar ending at `hi` that opens a
+    prepositional adjunct, so that it hedges the adjunct's object and not the bar?"""
+    return (
+        start >= hi
+        and _TAIL_INTRODUCER.fullmatch(text, start, end) is not None
+        and _ADJUNCT_AFTER_ADVERB.match(text, end) is not None
+    )
 _TAIL_NEW_HEAD = re.compile(
     r"(?<!\w)experiences?\s+(?:in|with|of|on|at|using|as|for|across|within)(?!\w)", re.IGNORECASE
 )
@@ -524,12 +539,20 @@ _HEADER_GLUE_WORDS: frozenset[str] = frozenset(
 )
 
 
+# The spaced `nice to have`, read as the one word its hyphenated twin is (T235): `Nice to Have /
+# Bonus` and `Nice to Have Skills:` failed the capitalisation test on the lowercase `to`, where
+# `Nice-to-Have / Bonus` passed it, so the spaced heading governed nothing and its bars read
+# required.
+_SPACED_NICE_TO_HAVE = re.compile(r"(?<![\w-])nice\s+to\s+haves?(?![\w-])", re.IGNORECASE)
+
+
 def _looks_like_header(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
         return False
     if _QUAL_HEADER.match(stripped):
         return True
+    stripped = _SPACED_NICE_TO_HAVE.sub(lambda m: "-".join(m.group(0).split()), stripped)
     if not _ANY_HEADER.match(stripped):
         return False
     words = stripped.rstrip(":").split()
@@ -908,15 +931,17 @@ def _suppressed(
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
     `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
-    its own has claimed (`_hedge_owned_by_an_aside`). `muted` is a range in which no match counts.
+    its own has claimed (`_hedge_owned_by_an_aside`), or an adverb after the bar opening an adjunct
+    (`_hedge_opens_an_adjunct`). `muted` is a range in which no match counts.
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
             if muted is not None and muted[0] <= match.start() < muted[1]:
                 continue
-            if aside_owned and _hedge_owned_by_an_aside(
-                text, lo, hi, match.start(), match.end(), suppressors
+            if aside_owned and (
+                _hedge_owned_by_an_aside(text, lo, hi, match.start(), match.end(), suppressors)
+                or _hedge_opens_an_adjunct(text, hi, match.start(), match.end())
             ):
                 continue
             inside = clo <= match.start() and match.end() <= chi
@@ -1102,8 +1127,10 @@ def detect(
     found: list[Detection] = []
     # Tail-hedged bars carried as their family's `preferred` twin, and bounded bars carried as its
     # ceiling, merged after the loop so a row that already reached the same span is not written
-    # twice.
+    # twice. A bar carried on its HEADING's hedge alone is also absorbed by any row of its family
+    # over the same bar, as a carrier is, because a sibling that read the bar decided it (T235).
     carried: list[Detection] = []
+    heading_carried: list[Detection] = []
     # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
     # never mutating the list or the tuples, so one split per scope is shared across every
     # pattern instead of being recomputed once per pattern (~55 times per posting).
@@ -1209,18 +1236,29 @@ def detect(
                     # preferred." keeps the `unknown` row its split form keeps (T175).
                     waived = abstained is not None and bool(pattern.hedged_by_tail)
                     heading = governing[index]
-                    hedged = not waived and bool(
-                        _suppressed(
-                            unit, lo, hi, pattern.suppressed_by_unit,
-                            bounds=bounds, introducer=True, aside_owned=True,
-                        )
-                        or join is None and heading is not None and _hedged_by_heading(
+                    inline = not waived and _suppressed(
+                        unit, lo, hi, pattern.suppressed_by_unit,
+                        bounds=bounds, introducer=True, aside_owned=True,
+                    )
+                    headed = (
+                        not waived and not inline and join is None and heading is not None
+                        and _hedged_by_heading(
                             _heading_text(units[heading][1]), unit, lo, hi,
                             pattern.suppressed_by_unit or pattern.hedged_by_tail,
                             introducer_only=not pattern.suppressed_by_unit,
                         )
                     )
-                    if hedged and not carries:
+                    hedged = bool(inline or headed)
+                    # A bar only its HEADING hedges is carried as its `hedged_as` twin whenever the
+                    # heading states a preference, not only when the twin is a carrier: the twin's
+                    # own wording may not read the heading form ("Preferred Qualifications:\n-
+                    # Ability to obtain a Secret clearance" wrote no row at all), and a row the twin
+                    # did write over the same bar absorbs the carried one below (T235).
+                    carried_by_heading = (
+                        bool(headed) and pattern.hedged_as is not None
+                        and any(rx.search(str(headed)) for rx in pattern.hedged_by_tail)
+                    )
+                    if hedged and not (carries or carried_by_heading):
                         continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
@@ -1238,7 +1276,7 @@ def detect(
                         # is preferred.
                         end, preference = tail
                         if preference and pattern.hedged_as is not None:
-                            carried.append(
+                            (heading_carried if headed and not carries else carried).append(
                                 Detection(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
@@ -1289,13 +1327,29 @@ def detect(
                             abstained=abstained,
                         )
                     )
-    for detection in carried:
+    # A row over exactly the span a sibling it `yields_to` wrote, abstained or not alike, is that
+    # sibling's bar read a second way (T234): "5 years of sales or marketing experience" is both a
+    # scoped bar and a domain list, and one bar is one row.
+    found = [
+        detection
+        for detection in found
+        if not detection.pattern.yields_to
+        or not any(
+            other.family == detection.family
+            and other.pattern.id in detection.pattern.yields_to
+            and other.span == detection.span
+            and (other.abstained is None) == (detection.abstained is None)
+            for other in found
+        )
+    ]
+    for detection in carried + heading_carried:
         # A carrier has no reading of its own, so a row ANY pattern of its family wrote over the
         # same span is the same bar read another way, and the carrier would only duplicate it.
+        by_family = detection.pattern.carrier or any(d is detection for d in heading_carried)
         if not any(
             (
                 other.pattern is detection.pattern
-                or (detection.pattern.carrier and other.family == detection.family)
+                or (by_family and other.family == detection.family)
             )
             and other.span[0] < detection.span[1]
             and detection.span[0] < other.span[1]
