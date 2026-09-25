@@ -206,6 +206,11 @@ HEADING_CASES: list[tuple] = [
     ('h119:T246 CONTROL a verb-initial skill line with a lowercase and is no heading (Codex r1)', 'Preferred Skills:\nDesign and Build Pipelines\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h120:T246 CONTROL develop and maintain is a skill line, not a heading', 'Preferred Skills:\nDevelop and Maintain Services\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
     ('h121:T246 CONTROL plan and execute is a skill line, not a heading', 'Preferred Skills:\nPlan and Execute Campaigns\n5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ("h122:T245 CONTROL a required after a comma and a new noun phrase is that phrase's (Codex r1)", 'Preferred Qualifications:\n- 5 years of experience in retail, reliable transportation required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h123:T245 a required after a comma and a bare which is is the bar's", 'Preferred Qualifications:\n- 5 years of experience in audit, which is required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h124:T245 a required after a comma and a bare and is is the bar's", 'Preferred Qualifications:\n- 5 years of experience in audit, and is required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h125:T245 CONTROL a comma inside the bar's own list stops the bind too (pv 276749, the rule's measured cost)", "EDUCATION AND EXPERIENCE YOU'LL BRING\nMasters Degree Preferred\nMinimum 5 years Experience in business, finance or strategic pricing and contracting is required.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ("h126:T245 a comma inside an aside is not the item's comma", 'Preferred Qualifications:\n- 2+ year of experience with Big Data technologies (Hadoop, Spark) is required.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -321,4 +326,4 @@ def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 121
+    assert len(HEADING_CASES) == 126

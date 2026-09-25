@@ -1094,6 +1094,12 @@ _ITEM_FINAL_BLOCK = re.compile(
 )
 
 
+_AFTER_COMMA = re.compile(
+    r"\s*(?:(?:and|which|that|this|it)\s+)?(?:(?:is|are)\s+)?(?:(?:also|absolutely|strictly)\s+)?",
+    re.IGNORECASE,
+)
+
+
 def _item_final_mandate(
     text: str, hi: int, chi: int, hedges: tuple[re.Pattern[str], ...]
 ) -> bool:
@@ -1104,6 +1110,15 @@ def _item_final_mandate(
         return False
     cue = cues[-1]
     between = text[hi : cue.start()]
+    # Past a comma outside an aside the cue may govern a NEW noun phrase (`5 years of experience in
+    # retail, reliable transportation required.`), so it binds only straight after the comma or
+    # after a bare connector (`..., required.`, `..., which is required`, `..., and is required`).
+    listed = _ASIDE.sub(lambda m: " " * len(m.group()), between)
+    comma = listed.rfind(",")
+    if comma >= 0:
+        if _AFTER_COMMA.fullmatch(between, comma + 1) is None:
+            return False
+        between = between[:comma]
     aside = between.rfind("(")
     return not (
         _ITEM_FINAL_BLOCK.search(between)
