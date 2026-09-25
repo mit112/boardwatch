@@ -1006,6 +1006,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Tests whose subject is not pacing no longer sleep in real time (2026-09-25, T232).** The suite spent ~414 s of
+  real `time.sleep` across 346 tests, most of it `Fetcher`'s per-host delay (which `Settings` floors at 0.25 s) and
+  tenacity backoff inside provider, lane, scan and pipeline tests that assert neither. A new opt-in `no_real_sleep`
+  fixture (never autouse) makes `time.sleep` return at once for those tests; every test that asserts a delay, a
+  backoff, a deadline or a trickle keeps the real clock. Real sleep falls to ~59 s; no production code changes and
+  no assertion changes.
+
 - **Sixth engine batch: an equivalence rule is not a bar, and `N months to M years` reads its low end in months
   (2026-09-25, T214a, T214b).** `One year of college is equivalent to one year of experience` and its `equals` /
   `counts as|toward` wordings wrote a years bar; the credit predicate now suppresses an equivalence — but only when
