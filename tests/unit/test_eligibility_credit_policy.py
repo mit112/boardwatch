@@ -331,3 +331,41 @@ def test_an_equivalence_to_education_or_credit_still_writes_no_years_row(  # typ
 ) -> None:
     result = evaluate(body, FACTS_BACHELOR, POLICY, catalog)
     assert [r.rule_id for r in result.requirements if r.rule_id.startswith("experience_years:")] == []
+
+
+# T237a. "one year equals six months of experience" is an equivalence's subject too, but the scoped
+# pattern took `equals six months of` as its domain, so the predicate sat INSIDE the span, where a
+# span-end escape cannot see it, and the posting carried a spurious `unknown` row. `equals` now opens
+# no domain run, as `equivalent` never did.
+@pytest.mark.parametrize(
+    "body",
+    [
+        pytest.param("one year equals six months of experience.", id="bare"),
+        pytest.param(
+            "Part-time experience is credited as half time for experience equivalency, meaning one year"
+            " equals six months of experience.",
+            id="store-boilerplate",  # pv 214661
+        ),
+    ],
+)
+def test_an_equals_conversion_opens_no_domain_run(body: str, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _years_rows(body, catalog) == ("uncertain", [])
+
+
+@pytest.mark.parametrize(
+    "body,expected",
+    [
+        pytest.param(
+            "2 years of Equal Employment Opportunity experience.",
+            ("ineligible", [("experience_years:scoped_years_minimum", "required", "unmet")]),
+            id="an-equal-domain-keeps-its-bar",
+        ),
+        pytest.param(
+            "2 years of retail experience.",
+            ("ineligible", [("experience_years:scoped_years_minimum", "required", "unmet")]),
+            id="a-domain-bar",
+        ),
+    ],
+)
+def test_a_domain_run_that_does_not_open_on_equals_keeps_its_bar(body: str, expected, catalog) -> None:  # type: ignore[no-untyped-def]
+    assert _years_rows(body, catalog) == expected

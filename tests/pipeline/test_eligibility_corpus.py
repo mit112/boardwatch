@@ -5,6 +5,13 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+NINE rows were ADDED 2026-09-25 for engine batch 7, and every pre-existing row passes unchanged.
+m1219-m1225 are T233 (a spaced ASCII ` - ` between two numbers is a range the splitter no longer cuts,
+so `5 - 7 years` and `between 5 - 7 years` read their low end and `6 months - 2 years` its low end in
+months; a word, a label or a requisition id before the dash keeps the inline-bullet cut), m1226-m1227
+T237a (`equals` opens no scoped domain run, so a part-time equivalency is no bar; an `Equal ...` domain
+keeps its bar).
+
 NINE rows were ADDED and ONE RE-BASELINED 2026-09-24 for engine batch 6. m1195, which batch 4 round 2
 left rowless on purpose (`6 months to 2 years of experience in healthcare IT, ...`), now writes T214b's
 scoped months row on the low end (6 months, `unknown` in the near-miss band); every other pre-existing
@@ -1525,6 +1532,15 @@ CASES: list[tuple] = [
     ('m1216:T214b a months low end under 36 months sits in the near-miss band and never rejects', '18 months to 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_months_minimum', 'required', 'unknown']]),
     ('m1217:T214b CONTROL a hedged months range drops, as every hedged months bar does', '6 months to 2 years of experience preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1218:T214b CONTROL a months-only range keeps its current read', '6 to 24 months of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1219:T233 a spaced ASCII ` - ` range reads its low end', '5 - 7 years of experience.', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:range_years_minimum', 'required', 'met']]),
+    ('m1220:T233 `between N - M` is the same range', 'Typically between 5 - 7 years of relevant experience and post-secondary degree in related field.', {'total_years_experience': 6}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:range_years_minimum', 'required', 'met']]),
+    ('m1221:T233 a spaced ASCII months-to-years range reads its low end in months, and its high end is no scoped bar', '6 months - 2 years of experience in U.S. banking and international markets.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_months_minimum', 'required', 'unknown']]),
+    ('m1222:T233 a months-to-years range with no experience noun writes no high-end bar', '3 months - 2 years of technical work to include technical internship.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1223:T233 CONTROL a word before the dash keeps the inline-bullet cut', 'Python - 5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1224:T233 CONTROL a labelled number before the dash keeps the cut', "Option 3 - 5 years' experience in an analytics or related field.", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('m1225:T233 CONTROL a requisition id before the dash keeps the cut', '10047 - 3+ years of engineering team management experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ('m1226:T237a `equals` opens no scoped domain run, so a part-time equivalency is no bar', 'Part-time experience is credited as half time for experience equivalency, meaning one year equals six months of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1227:T237a CONTROL an `Equal ...` domain keeps its scoped bar', '2 years of Equal Employment Opportunity experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
 ]
 
 
@@ -1544,4 +1560,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1217
+    assert len(CASES) == 1226

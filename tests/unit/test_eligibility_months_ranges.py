@@ -62,7 +62,7 @@ RANGES = [
         "6 months – 2 years of experience in U.S. banking and international markets.",
         ("uncertain", [("scoped_months_minimum", "required", "unknown",
                         "6 months – 2 years of experience in")]),
-        id="spaced-en-dash-scoped",  # pv 20860's shape; its ASCII ` - ` is cut by the splitter
+        id="spaced-en-dash-scoped",  # pv 20860's shape; its ASCII ` - ` form is T233's (range_dash)
     ),
     pytest.param(
         "6 months – 2 years of relevant experience.",
@@ -125,6 +125,13 @@ CONTROLS = [
     # arm (see total_months_minimum in rules.yaml). What matters here is that it never rejects.
     pytest.param(
         "6 months to 2 years of experience preferred.", ("uncertain", []), id="hedged",
+    ),
+    # T237b, NOT BUILT: the months patterns are digits-only, so a spelled range writes no row. One
+    # store body carries the shape (pv 308287, an `OR equivalent combination` arm); this pins today's
+    # read so a spelled low end shows up here.
+    pytest.param(
+        "AND six months to one year of related experience and/or training.", ("uncertain", []),
+        id="t237b-spelled-range-unread",
     ),
 ]
 
