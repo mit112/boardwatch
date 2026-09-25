@@ -25,11 +25,13 @@ report green while dropping the rest. Two of those drops were prototype findings
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
@@ -321,6 +323,25 @@ def load_rules(config_dir: Path) -> RulesCatalog:
         text, source, origin = override.read_text(encoding="utf-8"), "override", str(override)
     else:
         text, source, origin = bundled_rules_text(), "bundled", "bundled rules.yaml"
+    # A deep copy per call, because the cached catalog is frozen only at its top level.
+    # `FieldSpec.ranks`, `PatternSpec.jurisdiction_map`, `superset_relations` and both
+    # `season_months` tables are dicts, and a caller that wrote into one would change every later
+    # caller's catalog. deepcopy shares the compiled regexes, which are immutable. The wiring
+    # check reads the resolver registry and `Facts`, not the text, so it runs on every call and a
+    # cached catalog cannot skip it.
+    catalog = copy.deepcopy(_parse_rules(text, source, origin))
+    _verify_families_are_wired(catalog, origin)
+    return catalog
+
+
+@lru_cache(maxsize=8)
+def _parse_rules(text: str, source: str, origin: str) -> RulesCatalog:
+    """Parse and validate one catalog document. Pure in its arguments, so it is cached on them.
+
+    The key is the text itself, so an edited or a different override is a different key. `source`
+    is carried on the catalog and `origin` names it in every error, so both are part of the key.
+    A document that raises is not cached.
+    """
     try:
         document = load_bundled(text) if source == "bundled" else yaml.safe_load(text)
     except yaml.YAMLError as exc:
@@ -391,7 +412,6 @@ def load_rules(config_dir: Path) -> RulesCatalog:
             raise CatalogError(
                 f"{origin}: family {family.id!r} applies_to values not in career_fields: {outside}"
             )
-    _verify_families_are_wired(catalog, origin)
     return catalog
 
 

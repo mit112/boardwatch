@@ -198,6 +198,10 @@ def test_each_bundled_file_is_parsed_through_load_bundled(
         return yamlio.load_bundled(text)
 
     monkeypatch.setattr(f"{module}.load_bundled", spy)
+    if site == "catalog":
+        from boardwatch.eligibility.catalog import _parse_rules
+
+        _parse_rules.cache_clear()  # an earlier test may have cached the bundled catalog
     load(tmp_path)
     assert len(texts) == 1
 
