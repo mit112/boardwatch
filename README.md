@@ -15,7 +15,8 @@ as evidence. Nothing is guessed, nothing phones home, and it all runs on your ow
 
 > **Status: pre-release, under active development.** boardwatch does not submit
 > applications: it finds and evaluates postings, and you decide what to do with them.
-> No telemetry. No accounts, no API keys. Your data stays in a local SQLite file.
+> No telemetry. The default install needs no accounts and no API keys (the LLM tiers are opt-in).
+> Your data stays in a local SQLite file.
 
 ```console
 $ boardwatch top
@@ -42,9 +43,10 @@ Job boards optimize for their advertisers, not for you. LinkedIn/Indeed bury fre
 under sponsored noise and stale reposts; paid trackers put a subscription (and their
 servers, and your search history) between you and postings that are **already public**.
 
-boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, SmartRecruiters and
-Workday each expose a **public, keyless JSON endpoint** for every board they host, the same data
-the company's own careers page renders. boardwatch polls those endpoints politely, on
+boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, SmartRecruiters,
+Workday, Eightfold, Oracle HCM, Phenom and Jibe each expose a **public, keyless JSON endpoint**
+for every board they host (as do Amazon's and Apple's own career sites), the same data the
+company's own careers page renders. boardwatch polls those endpoints politely, on
 your schedule, and tells you what's *new* since last time.
 
 |                          | boardwatch            | LinkedIn/Indeed        | Paid trackers          |
@@ -56,9 +58,11 @@ your schedule, and tells you what's *new* since last time.
 | Cost                     | free (self-hosted)    | free-ish (ad-driven)   | subscription           |
 | Auto-apply / spam        | never                 | no comment             | sometimes              |
 
-**Honest limits.** boardwatch only covers companies hosted on **Greenhouse, Lever, Ashby,
-Workable, SmartRecruiters or Workday** (a large slice of tech, but not everyone, no
-Taleo/etc. yet). It reads exactly what those APIs expose. It is pre-release:
+**Honest limits.** boardwatch's boards cover companies hosted on **Greenhouse, Lever, Ashby,
+Workable, SmartRecruiters, Workday, Eightfold, Oracle HCM, Phenom or Jibe**, plus Amazon and
+Apple (a large slice of tech, but not everyone, no Taleo/etc. yet). Opt-in discovery lanes
+(`lanes_enabled`, off by default) can add postings from public listings such as LinkedIn and
+Indeed guest pages, hiring.cafe, GitHub new-grad lists and schema.org JSON-LD pages. It reads exactly what those APIs expose. It is pre-release:
 expect rough edges, and read [Responsible use](#responsible-use--legality) before
 pointing it at boards you don't own.
 

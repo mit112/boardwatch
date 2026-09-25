@@ -1,143 +1,66 @@
-# Roadmap — what boardwatch is driving toward, in order, and how each step is known to be done
+# Roadmap — what "complete" means, how it is measured, and what is deliberately off the path
 
-**Written 2026-09-05 (session 2026-09-06b) at the owner's request: "are we making progress, what is
-the goal for the time being, and a roadmap so we don't lose focus."** This file is the FOCUS view.
-It does not replace `PROGRAM.md` (the bar and the phases), `RETIREMENT-PLAN.md` (the job-apps
-switch-off condition) or `STATE.md` (where things stand today); it orders them into milestones
-with exit criteria, and says what is deliberately NOT on the path. Rewrite it when a milestone
-closes, not every session.
-
-## 2026-09-21 — the priority between these milestones INVERTED, and the file below has not been rewritten for it
-
-**Read D-532 before using this file to pick work.** M4 ("find what job-apps finds") is written as
-though recall were the binding constraint. Measured over runs 467–469 it is not: `capped_by_top_n`
-is **10,533** postings that clear every filter and lose only on rank, against a **40**-slot slate,
-and a 2.8× board expansion settled at ~5 of 40 leads/day once its recency bulge passed. **Adding
-eligible postings behind a cap that already binds does not add leads.**
-
-So the milestone ORDER below still stands, but the expected VALUE of M4-style discovery work is
-much lower than when this file was written, and precision work on the delivered 40 (B8's precision
-half) now converts one-for-one into applyable leads. This file is not rewritten here because a
-milestone has not closed — that is its own rule — but do not size discovery work from it.
+**Rewritten 2026-09-25b (D-598)** at the owner's request — "get me to a state where you can confidently say, yes this is a
+complete product" — after all five milestones of the 2026-09-05 roadmap had closed and its end state ("job-apps is switched
+off") had been retired by D-566 §4. The 2026-09-05 version is in `archive/ROADMAP-2026-09-05.md`. This file is the FOCUS
+view: `PROGRAM.md` holds the bars, `STATE.md` where things stand today. Rewrite it only when the finish line moves.
 
 ## The goal, in one line
 
-**Every morning, one unattended command hands Mit a queue of live, deduplicated, profile-eligible
-new-grad roles, each with a one-page tailored résumé PDF, and job-apps is switched off because
-boardwatch finds what it found.** Two bars measure that, and they are different:
+**Every morning, one unattended command hands the owner a queue of live, deduplicated, profile-eligible new-grad roles,
+each with a one-page tailored résumé PDF — and it has done so, meeting every bar, for 14 frozen days in a row.**
+job-apps stays on as an upstream source (D-566 §4); boardwatch is the one queue the owner reads.
 
-| bar | what it measures | where it is written | standing |
+## The finish line (D-598)
+
+boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14 consecutive frozen daily runs**:
+
+| # | bar | how it is read each day | latest reading (2026-09-25) |
 |---|---|---|---|
-| **B1–B7, 14 frozen days** (`PROGRAM.md` §1) | boardwatch WORKS unattended | provisional pass = 3 frozen clean runs, then a 14-day background confirm | **3 of 3 — MET (runs 6–8, D-483 discharged 2026-09-05)**; 14-day confirm day 1 = run 9 (2026-09-06). **B8 first reading (D-487): 17.2% unapplyable on n = 128, 14.7% on the gate-judged cohort, bar ≤ 16%.** Every `rules_hash` bump restarts the confirm |
-| **Gate 1, per-source recall** (`RETIREMENT-PLAN.md` §1) | boardwatch FINDS what job-apps finds | the owner sets a per-source threshold; job-apps runs until it is met | **28.8%** (5,838 / 20,289, pre-reset). Structure RULED (D-482): employer boards ≥ 85%, LinkedIn no bar; Indeed/hiring.cafe numbers at the first post-reset reading (~09-17) |
+| B1 | ≥ 10 net-new eligible, live, deduped leads | funnel `leads` | 40 per run (474–477) |
+| B2 | 100% of apply-lane leads have a PDF | funnel `pdf` advanced / entered | 100% |
+| B3 | 100% pass the résumé QA gate | `tailor_failed` 0, one page | 100% |
+| B4 | 0 fabrications, independently read, n ≥ 100 | every delivered PDF read back and matched to the approved bundle | **0 on 177** |
+| B5 | 0 silent empty days | status ok, no fatal, leads > 0 | 0 |
+| B6 | 100% funnel reconciliation | funnel `reconciles` | met on 476/477 |
+| B7 | work authorization decided, never abstained | `us_authorization_required` abstain % | 0% |
+| B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | `pdf.entered`; a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 25–36/day; 4.3% on 92 (sonnet — the opus census is owed) |
 
-Applying is Mit's own work and is deliberately not chased by the program (D-351). The program's
-job is to make the queue worth his morning.
+**Frozen means (D-598 ruling 5):** during the 14 days only a fix for a defect in a lead actually DELIVERED may ship. A change
+to eligibility, the profile or the résumé gate restarts the count; a scan/board fix does not; everything else waits.
+**Day 1 is the 2026-09-26 04:00 run; day 14 is the 2026-10-09 run** if nothing restarts it. Each day's row goes in
+`METRICS.md` "Acceptance run".
 
-## Where we actually are (2026-09-05, rewritten at M1's close — D-482)
+## Milestones
 
-- **Everything buildable on the path is built and on `main`.** M1 is DONE: `main` moved, runs 3
-  and 4 ran the merged code, `boards_failed` 0. M2's build is DONE: T40 and T41 merged. M3's
-  build is DONE: T42–T46 merged, T47 carries the ≤ 1-YoE floor as per-user policy and it is LIVE
-  (`rules_hash` `033ea489f254`), the judge is ARMED on haiku, T50 reads its fenced output.
-- **What has not happened is a scheduled run on that configuration.** Run 4 (hand-launched)
-  showed the floor working — 4,254 hidden as ineligible — and the judge judging NOTHING (fixed,
-  T50). No run in the post-reset store has been tick-fired on a valid configuration. **Run 5 at
-  06:00 CDT on 2026-09-06 is the first counted run; the provisional pass is 0 of 3** — run 5 then FAILED on a T42 integration defect while the judge worked, fixed as T54/T55 (D-483); runs 6–8 are chained.
-- **The product numbers: run 4 delivered 40 leads, all `eligible`**, against 3–5 apply-lane leads
-  per run before T43/T45. The apply lane is CUMULATIVE 36; run-scoped apply/review is what run 5
-  must report. The 33-of-120 "no requirement rows" class is displaced from the slate by verdict
-  tiering and measured at the population (32,602, 33.9%) — T51, not before the third clean run.
-- **The owner-gated queue is mostly CLEARED (D-480, D-482).** Left: the Indeed and hiring.cafe
-  threshold numbers at the first post-reset reading (~2026-09-17), the reboot that moves the tick
-  to 04:00, and the résumé calls.
-
-## The milestones, in order — each has an exit criterion you can read off the store
-
-### M1 — Land what is built, and run it once. **DONE 2026-09-05 (D-482).**
-The merge of `close-2026-09-06` and the projection re-approval in one sitting (`STATE.md` §0),
-then one `--project` run on the merged code, read against run 4 (the last pre-merge tick).
-**Exit:** `main` moved; `boards_failed` 0; the smartrecruiters tail ≤ 3 min; T39's guard readable
-in the funnel; the T36 rule applied (`HANDOFF-2026-09-07.md` §5). **Why first:** nothing after
-this is measurable on unmerged code, and the tick runs whatever `main` is parked on.
-
-### M2 — Close the store-contention class and freeze. **DONE — provisional pass MET 3 of 3 on runs 6–8 (D-483); the 14-day confirm runs passively from run 9.**
-T40 (`apply_board` on the write lock) and, on Mit's word, T41 (one per-host pacing clock per
-process). Then **stop changing eligibility, the profile and the résumé gate**, and let the
-launchd cadence deliver the **provisional pass: 3 consecutive frozen clean runs**, each meeting
-B1–B7 and P5b (≥ 30 considered, 0 preflight fatals, 0 résumé-QA failures). **Exit:** three such
-runs in `METRICS.md`; the 14-day confirm starts passively. **Rule during the freeze:** a
-`rules_hash` change restarts the count — so every eligibility change waits for M3's window or
-is batched.
-
-### M3 — Make the apply lane bigger than five. **EXIT MET on runs 6–8 (apply-lane 40 / 33 / 13, review composition in METRICS); B8's precision half read at 14.7% on the gate-judged lane (D-487).**
-The 2026-09-08 session landed all five D-477 tickets (D-478). The shape of this milestone has
-changed: the build is done and the open items are rulings.
-
-**What landed.** T43 splits the lane BEFORE the tailor loop, so the render is spent on apply-lane
-leads only and a review-lane lead is delivered pending-tailor. T45 tiers the shortlist by verdict.
-T42 — the judge — is built, gated and **OFF by default**, fail-open at every seam. T46's B8
-instrument is the funnel's `pdf` stage `entered`, now apply-lane-only, with its column on the
-acceptance table. The judge model is **ruled haiku** (92.6% head-to-head, kappa 0.847, 2.04x
-cheaper; METRICS `Session — 2026-09-08`).
-
-**The biggest lever is RULED AND LIVE (T47 merged `2d677aed`, ceiling set, `rules_hash` `033ea489f254` — D-481).** The owner ruled on 2026-09-05 that the
-experience bar's **floor must be <= 1 year** — `0`, `1`, `0-1`, `0-2`, `0-3` qualify, `2+` does
-not. The engine already reads ranges by floor, so this is a threshold change, not a parser change.
-But `near_miss_years_ceiling = 3` makes the engine ABSTAIN on exactly the 2-3 year bars now
-rejected: **31-35% of the delivered slate**. The fix is **T47** (D-479): the ceiling becomes
-per-user POLICY data beside `Policy.families`, never the bundled catalog and not a whole-file
-`rules.yaml` override (which replaces the bundled file outright and has no drift detector). It
-re-keys `rules_hash` once when the value is set (83,308 postings re-judged at the next preflight);
-the ledger drain is declined (80 `built`, 0 `skipped`); no repo pin and no corpus row moves; the 91
-month-stated bars turn over in the live store. **This is the M3 lever, and run 4 read it: 4,254
-hidden as ineligible.**
-
-**All three decisions are RULED (D-480, 2026-09-05): D1 = T47, D2 = floor first then arm, D3 = keep hidden. The two below are kept as the record of what was weighed:**
-1. **Arm T42, or fix the band deterministically first?** Arming rejects the same 2-3 year bars at
-   LLM cost every run; the override does it for free. They are not exclusive, but the order
-   changes what run 4 reads.
-2. **Should above-band leads be surfaced instead of hidden?** T44 routes `above_band` to review,
-   but the ranker drops those leads upstream (`include_over_seniority` is never passed), so the
-   rule cannot fire. Surfacing them raises delivered volume with postings currently withheld —
-   possibly the wrong direction for an entry-band, <=1-YoE target. A guard test pins the current
-   behaviour.
-
-**Still open:** **no requirement rows — MEASURED (D-482):** 33 of 120 delivered, 0 of run 4's 40
-(verdict tiering displaces them); 32,602 of 96,266 evaluations (33.9%) at the population, half
-with a lexical cue, "N years … experience" phrasings 5.5%. Real detection gaps: **T51 SHIPPED 2026-09-05 before the freeze (D-484)**, reaching ~0.9% of
-the class — the rest is genuinely requirement-free by the catalog's standard. **Role-unconfirmed (6 of 80)** — title taxonomy, small, unchanged.
-
-**Exit:** apply lane >= 10 per run on three consecutive runs, with the review lane's composition in
-METRICS. **This restarts the freeze**, which is why it is after M2's provisional pass and before
-the 14-day confirm is relied on. All five D-477 tickets restart the provisional-pass count, so the
-count begins from run 6 (run 4 disqualified, D-482; run 5 failed, D-483).
-
-### M4 — Find what job-apps finds. **Threshold STRUCTURE ruled and Track 1 CLOSED (D-482); the Indeed/hiring.cafe numbers are owed at the first post-reset reading (~2026-09-17). The tier-aware Indeed cap is BUILT (T53, D-484) and inert until `"indeed.tier1"` is set.**
-`RETIREMENT-PLAN.md` holds the finished analysis; do not re-derive it. In order: **set the
-per-source thresholds** (owner; D-450 on the page); **Track 1** — the 108 already-admissible
-LinkedIn boards, 113 postings on the gate-survivor basis, ~5.8 min per run forever (owner's
-yes); the **Gate 1 re-measure due ~2026-09-09** (T35); then the remaining LinkedIn tracks per
-`LINKEDIN-CLOSURE-PLAN.md`. The unreached 230 are 60.7% aggregator-only, 21.1% unsupported
-employer host, 1.8% board-addable — **the gap is lanes, not boards**. **Exit:** every source at
-or above its threshold on the re-measure script, two readings a week apart. Then job-apps is
-switched off.
-
-### M5 — The 14-day confirm, and calling it done.
-The same B1–B7 bar, on true daily cadence, in the background, on a frozen system after M3.
-**Exit:** 14 consecutive clean days in METRICS. Nothing new is built in this window.
+- **M1 — land what is built and run it once.** DONE 2026-09-05 (D-482).
+- **M2 — close the store-contention class, provisional pass.** DONE, runs 6–8 (D-483).
+- **M3 — an apply lane bigger than five.** DONE; 25–36 apply-lane leads per run on the 1,807+ board fleet.
+- **M4 — find what job-apps finds.** Gate 1 per-source recall met, 100% for each employer-board source (D-521, re-read
+  2026-09-25); the switch-off it was for is retired (D-566 §4, D-598).
+- **M5 — the 14-day confirm of B1–B7.** DONE at run 447 (D-521 §5).
+- **M6 — B8, and all eight bars together, for 14 frozen days.** OPEN — the finish line above.
 
 ## What is deliberately NOT on the path
 
-Cover letters, outreach, auto-apply or any browser automation (`CLAUDE.md`); the tier-D lanes
-(D-451); the refused-aggregator filter (D-463); the residual-zero chrome class (D-472); the
-field-taxonomy gatherer (P2 item 8, deferred by Mit); scan speed beyond T36's rule (the scan is
-not the bottleneck to any bar above once M1 lands). Speed work after M1 is a distraction unless a
-bar says otherwise.
+- **More eligibility-engine batches.** Batches 7–10 changed 880 verdicts and none of those postings was ever delivered;
+  the slate cap binds (D-532), and every batch restarted the 14 days. Parked: T239, T240, T241c, T242, T244, T249 (D-598).
+- **Discovery / coverage work** (new lanes, boards, LinkedIn tracks): the slate cap binds (D-532); read
+  `RETIREMENT-PLAN.md` and `LINKEDIN-CLOSURE-PLAN.md` before proposing any.
+- **v2 — parked on purpose (D-598 ruling 4):** multi-user eligibility (field-dependent rules as data, so a non-software user
+  needs no code), a real second user, a public release beyond the version cut, community launch, the v2 decision doc's
+  product metrics (setup time, review time, retention).
+- Cover letters, outreach, auto-apply or any browser automation (`CLAUDE.md`).
+
+## In scope, small, not a bar
+
+- An accurate README (done 2026-09-25b), the numbers recorded (METRICS), the v0.6.0 version cut (T255 — the PyPI publish is
+  an owner confirmation).
+- Keep the run healthy: the seat stays quiet from ~03:00 through a run's gate stage (T247 ruling); Windows is best-effort
+  (T251).
 
 ## How to use this file
 
-At the top of a session: which milestone is open? Work only tickets that move its exit criterion
-or the next one's. If a session's whole output is measurement apparatus, say so in the report
-and say which exit criterion it protects. When a milestone closes, record it in `DECISIONS.md`
-and rewrite this file's "where we are".
+At the top of a session: is M6 still counting? If yes, read the latest run against the table and record the day. Work only
+on a defect a delivered lead proved, or on the run's health. If a session's output is anything else, say which bar it
+protects — or park it.
