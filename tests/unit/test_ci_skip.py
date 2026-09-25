@@ -37,6 +37,23 @@ def compare_path(head: str) -> str:
     return f"repos/{REPO}/compare/{PARENT}...{head}"
 
 
+def pulls_path(head: str) -> str:
+    return f"repos/{REPO}/commits/{head}/pulls?per_page=100"
+
+
+def _pull(
+    number: int, base: str = "main", base_repo: str = REPO, head_repo: str | None = REPO
+) -> Any:
+    return {
+        "number": number,
+        "base": {"ref": base, "repo": {"full_name": base_repo}},
+        "head": {
+            "ref": f"branch-{number}",
+            "repo": None if head_repo is None else {"full_name": head_repo},
+        },
+    }
+
+
 def jobs_path(run_id: int) -> str:
     return f"repos/{REPO}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
 
@@ -83,6 +100,7 @@ def _api() -> dict[str, Any]:
         COMMIT_PATH: {"sha": PUSH_SHA, "tree": {"sha": TREE}, "parents": [{"sha": PARENT}]},
         RUNS_PATH: {"total_count": 1, "workflow_runs": [_run(7, PR_HEAD, TREE)]},
         compare_path(PR_HEAD): {"status": "ahead"},
+        pulls_path(PR_HEAD): [_pull(480)],
         jobs_path(7): _green_jobs(),
     }
 
@@ -108,6 +126,7 @@ def _decide(api: FakeAPI, event: str = "push") -> Decision:
         repo=REPO,
         sha=PUSH_SHA,
         workflow=WORKFLOW,
+        branch="main",
         pythons=PYTHONS,
         shards=SHARDS,
         fetch=api,
@@ -258,6 +277,7 @@ def test_the_newest_green_run_on_the_tree_is_the_one_checked() -> None:
     api = _api()
     api[RUNS_PATH]["workflow_runs"] = [_run(6, OLDER_PR_HEAD, TREE), _run(7, PR_HEAD, TREE)]
     api[compare_path(OLDER_PR_HEAD)] = {"status": "ahead"}
+    api[pulls_path(OLDER_PR_HEAD)] = [_pull(479)]
     api[jobs_path(6)] = {"total_count": 0, "jobs": []}
     decision = _decide(FakeAPI(api))
     assert decision.skip is True, decision.reason
@@ -278,6 +298,30 @@ def test_a_pr_head_that_does_not_descend_from_the_pushs_parent_runs(status: str)
     assert f"is {status} of the push's parent" in decision.reason
 
 
+@pytest.mark.parametrize(
+    ("pulls", "problem"),
+    [
+        # Its run tested the merge into THAT branch, not the pushed tree.
+        ([_pull(480, base="release")], "480 targets owner/repo:release"),
+        ([_pull(480), _pull(481, base="exec-t229")], "481 targets owner/repo:exec-t229"),
+        ([_pull(480, base_repo="other/repo")], "480 targets other/repo:main"),
+        ([_pull(480, head_repo="fork/repo")], "480 comes from fork/repo"),
+        ([_pull(480, head_repo=None)], "could not decide"),
+        ([], "no pull request is associated with"),
+        ([_pull(n) for n in range(100)], "100 pull requests"),
+        ({"message": "Not Found"}, "could not decide"),
+    ],
+)
+def test_a_pr_run_not_established_as_a_same_repo_pr_into_this_branch_runs(
+    pulls: Any, problem: str
+) -> None:
+    api = _api()
+    api[pulls_path(PR_HEAD)] = pulls
+    decision = _decide(FakeAPI(api))
+    assert decision.skip is False
+    assert problem in decision.reason
+
+
 def test_a_push_commit_without_a_parent_runs() -> None:
     api = _api()
     api[COMMIT_PATH]["parents"] = []
@@ -294,7 +338,9 @@ def test_a_run_whose_event_is_not_pull_request_is_not_evidence() -> None:
     assert "no completed pull_request run" in decision.reason
 
 
-@pytest.mark.parametrize("path", [COMMIT_PATH, RUNS_PATH, compare_path(PR_HEAD), jobs_path(7)])
+@pytest.mark.parametrize(
+    "path", [COMMIT_PATH, RUNS_PATH, compare_path(PR_HEAD), pulls_path(PR_HEAD), jobs_path(7)]
+)
 def test_an_api_failure_at_any_call_runs(path: str) -> None:
     decision = _decide(FakeAPI(_api(), fail=frozenset({path})))
     assert decision.skip is False
@@ -316,7 +362,7 @@ def test_an_unexpected_response_shape_runs() -> None:
 
 def _argv(event: str = "push") -> list[str]:
     return [
-        "--event", event, "--repo", REPO, "--sha", PUSH_SHA, "--workflow", WORKFLOW,
+        "--event", event, "--repo", REPO, "--sha", PUSH_SHA, "--workflow", WORKFLOW, "--branch", "main",
         "--pythons", " ".join(PYTHONS), "--shards", str(SHARDS),
     ]  # fmt: skip
 

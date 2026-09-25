@@ -37,10 +37,12 @@ jobs:
   plan:
     name: plan
     runs-on: ubuntu-latest
-    # `actions: read` lets the push-only step below read this workflow's PR runs and their jobs.
+    # The push-only step below reads this workflow's PR runs and their jobs (`actions`), and the
+    # PRs a commit belongs to (`pull-requests`).
     permissions:
       actions: read
       contents: read
+      pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       shards: ${{ steps.plan.outputs.shards }}
@@ -92,7 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           decision=$(python3 -m tools.ci_skip --event "$EVENT" --repo "$GITHUB_REPOSITORY" \
-            --sha "$GITHUB_SHA" --workflow ci.yml --pythons "$PYTHONS" --shards "$SHARDS") \
+            --sha "$GITHUB_SHA" --workflow ci.yml --branch "$GITHUB_REF_NAME" \
+            --pythons "$PYTHONS" --shards "$SHARDS") \
             || decision=false
           [ "$decision" = true ] || decision=false
           echo "skip_ubuntu_tests=$decision" >> "$GITHUB_OUTPUT"

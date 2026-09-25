@@ -11,14 +11,16 @@ and `false` on anything else, including any API error, a missing field or an une
     a completed `pull_request` run of this workflow has a head commit with the push commit's tree
     no completed `pull_request` run on that tree concluded anything but success or cancelled
     the newest green one's head descends from the push commit's parent
+    every PR associated with that head is a same-repo PR into the branch pushed to (at least one)
     in that run, every shard of THIS push's matrix, `shard-audit`, `coverage` and `ci` succeeded
 
-The descent check is what makes a tree match mean "tested". A PR run does not test its head; it
-tests the merge of its head into the base branch as the base then was. That merge's tree is the
-head's own tree only if the head already contained that base — which holds when the head descends
-from the push's parent, because main only moves forward, so the base the PR run saw is an ancestor
-of that parent. Without it, a head whose tree matches could have been tested merged with commits
-main has since reverted.
+The descent and base checks together are what make a tree match mean "tested". A PR run does not
+test its head; it tests the merge of its head into its BASE branch as that branch then was. With the
+base established as the pushed branch (main), and main only moving forward, the main tip that PR
+run merged with is an ancestor of the push's parent — and so, by the descent check, of the head.
+Merging an ancestor into the head yields the head's own tree. Drop either check and a head whose
+tree matches could have been tested merged with something else: another branch's extra commits, or
+main commits since reverted.
 
 Stdlib only: it runs on the bare runner before any environment is installed.
 """
@@ -78,12 +80,36 @@ def _check_jobs(body: Any, required: frozenset[str]) -> str | None:
     return None
 
 
+def _check_pulls(pulls: Any, repo: str, branch: str) -> str | None:
+    """None when every PR on the head is a same-repo PR into `branch`; otherwise what is wrong.
+
+    A run's own `pull_requests` is emptied once its PR merges, so the association is read from
+    the commit instead, which still lists merged PRs.
+    """
+    if not isinstance(pulls, list):
+        raise TypeError(f"expected a list of pull requests, got {type(pulls).__name__}")
+    if not pulls:
+        return "no pull request is associated with its head"
+    if len(pulls) >= PER_PAGE:
+        return f"{len(pulls)} pull requests on its head; the list may be truncated"
+    for pull in pulls:
+        number, base, head = pull["number"], pull["base"], pull["head"]
+        if base["repo"]["full_name"] != repo or base["ref"] != branch:
+            return (
+                f"#{number} targets {base['repo']['full_name']}:{base['ref']}, not {repo}:{branch}"
+            )
+        if head["repo"]["full_name"] != repo:
+            return f"#{number} comes from {head['repo']['full_name']}, not {repo}"
+    return None
+
+
 def _decide(
     *,
     event: str,
     repo: str,
     sha: str,
     workflow: str,
+    branch: str,
     pythons: Sequence[str],
     shards: int,
     fetch: Fetch,
@@ -130,6 +156,12 @@ def _decide(
             False, f"run {run_id}'s head {head} is {status} of the push's parent {parent}"
         )
 
+    problem = _check_pulls(
+        fetch(f"repos/{repo}/commits/{head}/pulls?per_page={PER_PAGE}"), repo, branch
+    )
+    if problem is not None:
+        return Decision(False, f"run {run_id}: {problem}")
+
     required = shard_job_names(pythons, shards) | frozenset(GATE_JOBS)
     problem = _check_jobs(
         fetch(f"repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page={PER_PAGE}"),
@@ -147,6 +179,7 @@ def decide(
     repo: str,
     sha: str,
     workflow: str,
+    branch: str,
     pythons: Sequence[str],
     shards: int,
     fetch: Fetch,
@@ -158,6 +191,7 @@ def decide(
             repo=repo,
             sha=sha,
             workflow=workflow,
+            branch=branch,
             pythons=pythons,
             shards=shards,
             fetch=fetch,
@@ -186,6 +220,7 @@ def main(argv: Sequence[str] | None = None, fetch: Fetch = gh_fetch) -> int:
     parser.add_argument("--repo", required=True, help="owner/name")
     parser.add_argument("--sha", required=True, help="the pushed commit")
     parser.add_argument("--workflow", required=True, help="this workflow's file name")
+    parser.add_argument("--branch", required=True, help="the branch the push landed on")
     parser.add_argument("--pythons", required=True, help="space-separated, as `plan` emits them")
     parser.add_argument("--shards", type=int, required=True)
     args = parser.parse_args(argv)
@@ -195,6 +230,7 @@ def main(argv: Sequence[str] | None = None, fetch: Fetch = gh_fetch) -> int:
         repo=args.repo,
         sha=args.sha,
         workflow=args.workflow,
+        branch=args.branch,
         pythons=args.pythons.split(),
         shards=args.shards,
         fetch=fetch,
