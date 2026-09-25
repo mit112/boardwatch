@@ -579,6 +579,39 @@ def test_a_record_symlink_to_an_existing_record_is_read_as_that_record(tmp_path)
     assert result.tally.counts["body_inline"] == 1
 
 
+def test_a_dangling_posting_folder_link_is_counted_as_one_unread_record(tmp_path):
+    """T238: a posting FOLDER that is a link to nothing fails `is_dir()`, so it fell out of the
+    group listing before it became a candidate -- not counted anywhere. One folder is one
+    record, seen in the listing and never read, so it is `not_attemptable` like T218's dangling
+    record link, and it stays a record in `attempted`."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    (root / "Greenhouse" / "dangling").symlink_to(
+        tmp_path / "gone" / "dangling", target_is_directory=True
+    )
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["not_attemptable"] == 1
+    assert result.tally.counts["dangling_group_link"] == 0
+    assert result.tally.attempted == 2
+
+
+def test_a_posting_folder_link_that_resolves_is_read_as_that_record(tmp_path):
+    """Control: a folder link whose target exists is an ordinary record, not a rejection."""
+    root = tmp_path / "queue"
+    target = _write(tmp_path / "elsewhere", "Greenhouse", "real", title="Linked Role")
+    (root / "Greenhouse").mkdir(parents=True)
+    (root / "Greenhouse" / "linked").symlink_to(target, target_is_directory=True)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Linked Role"]
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.attempted == 1
+
+
 def test_a_tree_where_every_candidate_fails_to_parse_still_raises_and_counts_nothing(tmp_path):
     """The control the ticket asks for: mixing two different `_read_record` rejection causes in
     one tree, with NO parseable record anywhere, must still raise `JobAppsSourceError` with its

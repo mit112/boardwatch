@@ -588,7 +588,15 @@ class JobAppsLane:
             if group.name in _SKIP_DIRS:
                 continue
             try:
-                folders = sorted(entry for entry in group.iterdir() if entry.is_dir())
+                listed = sorted(group.iterdir())
+                folders = [entry for entry in listed if entry.is_dir()]
+                # A posting-FOLDER link whose target is gone fails `is_dir()` and would fall out
+                # here uncounted (T238). One folder is one record, seen and never read, so it is
+                # a candidate `_read_record` never gets to parse -- a rejection, like a dangling
+                # record link below.
+                candidates += sum(
+                    1 for entry in listed if entry.is_symlink() and not entry.exists()
+                )
             except OSError:
                 continue
             for folder in folders:
