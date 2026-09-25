@@ -904,29 +904,61 @@ def _suppressed(
     return None
 
 
-# An item's OWN mandatory predicate: the heading's hedge does not reach a bar whose clause carries
-# one (T216), so `Preferred:\n- Must have 5 years ...` and `Desired:\n- 20+ years' experience ...
-# required` read as they would with no heading. Closed. `required`, `mandatory` and `essential`
-# after a determiner or a relative pronoun are attributive, `the required tooling`, `that required
-# fine work`, `the essential duties`, and bind nothing; after a conditional, `if required`, `as
-# required`, `to the extent required` (the clearance patterns' own guard words, plus `extent`),
-# they bind nothing either. `minimum` is deliberately absent: measured under hedge headings it
-# states a preference's threshold (`Preferred Qualifications:\n- Minimum 5 years ...`), not a
-# mandate.
-_MANDATORY_CUE = re.compile(
-    r"(?<!\w)(?:must|(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?<!\ball\s)(?<!\bany\s)(?<!\bof\s)"
+# An item's OWN mandate: the heading's hedge does not reach a bar that states one (T216), so
+# `Preferred:\n- Must have 5 years ...` and `Desired:\n- 20+ years' experience ... required` read
+# as they would with no heading. Only the bar's own counts, in two closed forms:
+#   - `_ITEM_MUST`: the item OPENS `must have|possess|bring|be`, in the bar's clause, bare or after
+#     its own subject (`the|all` + `candidate(s)|applicant(s)`, or `you`): `Candidates must have
+#     ...`, `Must be able to obtain ... clearance`;
+#   - `_BAR_PREDICATE`: the bar's clause states `required|mandatory|essential|a must` (`... is
+#     required`, `... required.`, `... is a must`), reached from the bar without crossing
+#     `_PREDICATE_BREAK`: a relative or subordinate opener (`who whom whose that which where if
+#     when unless`) or a phrase that starts a new object (`for` a person, `for candidates|
+#     applicants|individuals|persons|people|those|anyone|employees|hires|staff`, or a `to`
+#     infinitive, `to` before any word but `the a an this these those its their our your`), so
+#     `... for candidates who must travel` and `... with a willingness to travel required` bind
+#     nothing while `... for this role is required` does.
+# `required|mandatory|essential` after a determiner or a relative pronoun is attributive, `the
+# required tooling`, `the essential duties`, and binds nothing; after a conditional (`as if when
+# ever where unless deemed only extent`, the clearance patterns' own guard words plus `extent`,
+# and `should ... be`) it binds nothing either. `minimum` is deliberately absent: measured under
+# hedge headings it states a preference's threshold (`Preferred Qualifications:\n- Minimum 5
+# years ...`), not a mandate.
+_ITEM_MUST = re.compile(
+    r"(?:(?:(?:the|all)\s+)?(?:candidates?|applicants?)\s+|you\s+)?must\s+(?:have|possess|bring|be)(?!\w)",
+    re.IGNORECASE,
+)
+_BAR_PREDICATE = re.compile(
+    r"(?<!\w)(?:a\s+must|(?<!\bthe\s)(?<!\ba\s)(?<!\ban\s)(?<!\ball\s)(?<!\bany\s)(?<!\bof\s)"
     r"(?<!\bthat\s)(?<!\bwhich\s)(?<!\bwho\s)(?<!\bwith\s)(?<!\bincluding\s)"
     r"(?<!\bas\s)(?<!\bif\s)(?<!\bwhen\s)(?<!ever\s)(?<!\bwhere\s)(?<!\bunless\s)"
     r"(?<!\bdeemed\s)(?<!\bonly\s)(?<!\bextent\s)"
     r"(?:required|mandatory|essential))(?!\w)",
     re.IGNORECASE,
 )
+_SHOULD_BE = re.compile(r"(?<!\w)should(?:\s+[\w'’-]+){1,3}?\s+be\s+$", re.IGNORECASE)
+_PREDICATE_BREAK = re.compile(
+    r"(?<!\w)(?:(?:who|whom|whose|that|which|where|if|when|unless)(?!\w)"
+    r"|for\s+(?:candidates?|applicants?|individuals?|persons?|people|those|anyone|employees?|"
+    r"hires?|staff)(?!\w)"
+    r"|to\s+(?!(?:the|a|an|this|these|those|its|their|our|your)(?!\w))[a-z])",
+    re.IGNORECASE,
+)
 
 
 def _item_mandates(text: str, lo: int, hi: int, start: int) -> bool:
-    """Whether the bar's clause, from the item's own text at `start` on, carries a mandatory cue."""
+    """Whether the item at `start` states the bar at [lo, hi)'s own mandate (`_ITEM_MUST`,
+    `_BAR_PREDICATE`)."""
     clo, chi = _clause_bounds(text, lo, hi)
-    return _MANDATORY_CUE.search(text[:chi], max(clo, start)) is not None
+    item = _BULLET_LEAD.match(text, start).end()  # type: ignore[union-attr]
+    if clo <= item <= lo and _ITEM_MUST.match(text, item):
+        return True
+    for cue in _BAR_PREDICATE.finditer(text, max(clo, item, lo), chi):
+        if _PREDICATE_BREAK.search(text, hi, cue.start()):
+            return False
+        if not _SHOULD_BE.search(text, 0, cue.start()):
+            return True
+    return False
 
 
 def _hedged_by_heading(
