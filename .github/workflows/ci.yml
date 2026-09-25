@@ -38,10 +38,11 @@ jobs:
     name: plan
     runs-on: ubuntu-latest
     # The push-only step below reads this workflow's PR runs and their jobs (`actions`), and the
-    # PRs a commit belongs to and those PRs' events (`pull-requests`).
+    # PRs a commit belongs to (`pull-requests`) and those PRs' issue events (`issues`).
     permissions:
       actions: read
       contents: read
+      issues: read
       pull-requests: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
