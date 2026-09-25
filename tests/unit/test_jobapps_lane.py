@@ -806,6 +806,32 @@ def test_a_group_that_lists_but_denies_search_is_counted_as_unreadable(tmp_path,
     assert result.tally.attempted == 1
 
 
+def test_a_search_denied_group_is_counted_even_where_pathlib_swallows_the_error(
+    tmp_path, lock_dir, monkeypatch
+):
+    """The same shape with `Path`'s predicates patched to swallow every OSError into False, as
+    3.14's do, so a suite on 3.11-3.13 still fails if classification goes back to them."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    _write(root, "Searchless", "hidden", title="Hidden Role", posting_id="pst_hidden")
+    lock_dir(root / "Searchless", 0o600)
+    for name in ("is_dir", "is_file", "is_symlink", "exists"):
+        real = getattr(Path, name)
+
+        def swallowing(self, *args, _real=real, **kwargs):
+            try:
+                return _real(self, *args, **kwargs)
+            except OSError:
+                return False
+
+        monkeypatch.setattr(Path, name, swallowing)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["unreadable_group"] == 1
+
+
 def test_a_root_whose_every_group_denies_search_raises_as_unreadable(tmp_path, lock_dir):
     """The all-unlistable raise covers the search-denied shape too: nothing was read."""
     root = tmp_path / "queue"
