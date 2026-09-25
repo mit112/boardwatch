@@ -87,6 +87,7 @@ from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.providers.base import BoardHealth, detail_phase_stops, health_from_failure
+from boardwatch.rank.location_gate import resolve_countries
 
 _HOST_SUFFIX = ".myworkdayjobs.com"
 _PAGE_LIMIT = 20  # HARD server maximum: limit=21 returns HTTP 400, it is not clamped
@@ -934,7 +935,11 @@ def parse_posting(
     if not title:
         raise ValueError("empty title")
     location = str(info.get("location") or listed.get("locationsText") or "").strip()
-    locations = [location] if location else []
+    primary = _with_country(location, info.get("country"))
+    locations = [primary] if primary else []
+    additional = info.get("additionalLocations")
+    if isinstance(additional, list):
+        locations += [a.strip() for a in additional if isinstance(a, str) and a.strip()]
     raw: dict[str, Any] = {"listed": listed}
     if detail is not None:
         raw["detail"] = detail
@@ -945,12 +950,36 @@ def parse_posting(
         url=str(info.get("externalUrl") or f"https://{host}/{site}{external_path}"),
         locations=locations,
         department=None,  # CXS exposes no department on either endpoint
-        remote_policy=_remote_policy(info.get("remoteType") or listed.get("remoteType"), locations),
+        remote_policy=_remote_policy(
+            info.get("remoteType") or listed.get("remoteType"), [location] if location else []
+        ),
         posted_at=_iso_to_naive_utc(info.get("startDate")),
         updated_at=None,  # no update timestamp on either endpoint
         body_text=html_to_text(str(info.get("jobDescription") or "")),
         raw_json=raw,
     )
+
+
+def _with_country(location: str, country: Any) -> str:
+    """The primary location, with the detail's structured country appended when its text names
+    no place of its own.
+
+    `jobPostingInfo.country.descriptor` is the PRIMARY location's country; `additionalLocations`
+    carries bare strings and no country anywhere. A tenant's office code ("BUH IV") names no
+    place, so without the country a foreign requisition resolves nowhere and the fail-open
+    location gate keeps it. The country is a FALLBACK, not an override, because the two disagree
+    on live data in both directions: one tenant tags Quezon City and Chihuahua requisitions with
+    the USA (an always-appended country would turn those into US postings, since any US location
+    wins), while "Bangalore, IN" carries India. Where the text already names a place it keeps
+    deciding exactly as before. The adapter only records the country; the profile's target
+    countries decide what it means.
+    """
+    descriptor = country.get("descriptor") if isinstance(country, dict) else None
+    if not isinstance(descriptor, str) or not descriptor.strip():
+        return location
+    if resolve_countries([location]):
+        return location
+    return f"{location}, {descriptor.strip()}" if location else descriptor.strip()
 
 
 def _posting_id(external_path: str) -> str:
