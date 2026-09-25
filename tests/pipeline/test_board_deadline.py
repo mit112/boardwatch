@@ -618,7 +618,10 @@ class _CountedStuckProvider(_StuckProvider):
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         if request.slug == "stuck":
-            self.release.wait(timeout=5.0)
+            # A deadlock bound, not a race bound: the coordinator's own wait releases it, and a
+            # short timeout here would let a descheduled CI worker return the board before the
+            # coordinator could see it overdue.
+            self.release.wait(timeout=120.0)
             return _counted(request.url)
         return super().fetch_board(fetcher, request)
 
