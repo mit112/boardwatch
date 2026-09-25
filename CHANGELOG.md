@@ -344,6 +344,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board its own clock cuts short at its cap is recorded `failed`, whichever side sees the cap first
+  (2026-09-24, T228).** The coordinator's wait and the board's own clock (T192c) both fire at start + cap;
+  when the worker thread returned first, the coordinator collected the board's own outcome (`20 failed`,
+  or on a real detail loop a `partial` snapshot) instead of the cap's `failed` (D-584). The clock now
+  records whether it ended one of the board's requests, and that board takes the cap's verdict through
+  the same snapshot the coordinator builds; a board that finished before its clock ended any request is
+  still recorded as its own result. This was `main`'s macOS CI failure on 17 of 24 pushes since T192.
+
 - **Four follow-ups from the 2026-09-24 whole-sweep review (2026-09-24, T222–T225).** `postings refetch --apply`
   holds the scan lease for the whole command, so a run that starts mid-loop is the one refused and a leftover
   `running` row (a killed run's) is a printed note, not a refusal (T222, F1). The judge's `seniority_skipped`
