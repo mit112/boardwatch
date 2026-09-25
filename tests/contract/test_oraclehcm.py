@@ -445,6 +445,54 @@ def test_detail_budget_caps_the_fetches_and_is_reported(tmp_path: Path) -> None:
 
 
 @respx.mock
+def test_the_detail_phase_stops_once_the_board_clock_could_end_a_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248. eklm was failed at `board deadline 600s exceeded` on its first scan (run 477), and a
+    board its cap fails keeps nothing. Past the point where the board's clock could end a
+    request, the rest are deferred — `partial`, with what was fetched — as Workday and
+    SmartRecruiters do since T243. The clock is scripted, never waited on: it has room for a
+    request until the first detail has gone out."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    _mock_all_details()
+    fetcher = _fetcher(tmp_path)
+    monkeypatch.setattr(fetcher, "request_fits_board_deadline", lambda: not _detail_ids())
+
+    snapshot = provider.fetch_board(fetcher, _request())
+
+    assert _detail_ids() == {"1001"}
+    assert [p.provider_posting_id for p in snapshot.postings] == ["1001"]
+    assert snapshot.status == "partial"
+    assert snapshot.detail_deferred == 2
+    assert "2 unseen postings deferred" in (snapshot.error or "")
+    assert snapshot.listed_ids == frozenset({"1001", "1002", "1003"})
+
+
+@respx.mock
+def test_the_detail_phase_never_defers_before_it_has_kept_a_posting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248, T243's progress guarantee. A WITHDRAWN first detail keeps nothing, and a stop right
+    after it would leave a `partial` with 0 kept and the rest deferred — every scan, because a
+    withdrawn id is not remembered. Until a posting is kept the stop does not apply."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    _mock_all_details()
+    respx.get(_detail_url("1001")).mock(
+        return_value=httpx.Response(200, content=_fx("detail_gone.json"))
+    )
+    fetcher = _fetcher(tmp_path)
+    monkeypatch.setattr(fetcher, "request_fits_board_deadline", lambda: not _detail_ids())
+
+    snapshot = provider.fetch_board(fetcher, _request())
+
+    assert _detail_ids() == {"1001", "1002"}
+    assert [p.provider_posting_id for p in snapshot.postings] == ["1002"]
+    assert snapshot.status == "partial"
+    assert snapshot.detail_deferred == 1
+    assert snapshot.listed_ids == frozenset({"1002", "1003"})
+
+
+@respx.mock
 def test_pagination_follows_a_full_page_and_stops_on_a_short_one(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(
         return_value=httpx.Response(200, content=_fx("list_page_full.json"))

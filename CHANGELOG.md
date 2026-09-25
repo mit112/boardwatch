@@ -344,6 +344,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **OracleHCM, Eightfold, Phenom and Apple boards keep what they fetched when their details outrun the cap, and a board
+  failed at its cap keeps its listing and throttle counts (2026-09-25, T248).** T243's stop — no new detail fetch once a
+  request could not end before the board's clock, and only after a posting is kept — is now one shared helper used by all
+  six detail loops, so these four providers return `partial` with the rest deferred instead of `failed` with nothing
+  (eklm, OracleHCM, was cut at the cap on run 477; a scratch-store probe kept 518 of 772 in one scan). A board failed at
+  its cap, by its own clock or by the coordinator, now records the provider's listing size, deferral and throttle counts
+  on the `failed` verdict, so it can be measured afterwards; the verdict and the postings kept are unchanged.
+
 - **A board whose details outrun its cap keeps what it fetched instead of losing it all (2026-09-25, T243).** Since
   T228 a board its clock cuts is `failed` and persists nothing, so a Workday or SmartRecruiters board whose detail phase
   runs past `board_deadline_seconds` repeated the same fetches every scan and never grew (db, hitachi, vfc, mtb on runs

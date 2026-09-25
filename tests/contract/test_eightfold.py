@@ -442,6 +442,36 @@ def test_a_detail_404_keeps_the_posting_listed_rather_than_closing_it(
 
 @pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
+def test_the_detail_phase_stops_once_the_board_clock_could_end_a_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248. A board its cap fails keeps nothing (northropgrumman, runs 476/477), so past the
+    point where the board's clock could end a request the rest are deferred — `partial`, with
+    what was fetched — as Workday and SmartRecruiters do since T243. The clock is scripted,
+    never waited on: it has room for a request until the first detail has gone out."""
+    payload = _fx("search_normal.json")
+    rows = payload["data"]["positions"]
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=payload))
+    _mock_details(*rows)
+    fetcher = _fetcher(tmp_path)
+
+    def details() -> list[str]:
+        return [str(c.request.url) for c in respx.calls if "position_details" in str(c.request.url)]
+
+    monkeypatch.setattr(fetcher, "request_fits_board_deadline", lambda: not details())
+    snapshot = provider.fetch_board(fetcher, _request())
+
+    assert details() == [_detail_url(str(rows[0]["id"]))]
+    assert [p.provider_posting_id for p in snapshot.postings] == [str(rows[0]["id"])]
+    assert snapshot.status == "partial"
+    assert snapshot.detail_deferred == 3
+    assert "3 unseen postings deferred" in (snapshot.error or "")
+    assert len(snapshot.listed_ids) == 4
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
 def test_the_detail_budget_truncates_and_is_reported(tmp_path: Path) -> None:
     payload = _fx("search_normal.json")
     rows = payload["data"]["positions"]

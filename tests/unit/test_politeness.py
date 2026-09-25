@@ -18,6 +18,7 @@ from boardwatch.core import politeness
 from boardwatch.core.models import ResponseValidators
 from boardwatch.core.politeness import PER_HOST_DELAY_FLOOR, Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
+from boardwatch.providers.base import detail_phase_stops
 
 
 def _settings(tmp_path: Path, delay: float = 0.25, retries: int = 3) -> Settings:
@@ -698,6 +699,27 @@ def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: P
         clock.at = time.monotonic() + delay + 2 * slowest + 0.5
         assert fetcher.request_fits_board_deadline()
     assert not clock.tripped
+
+
+def test_a_detail_phase_stops_only_once_a_posting_is_kept_and_no_request_fits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248. The one stop every detail loop shares (Workday, SmartRecruiters, OracleHCM,
+    Eightfold, Phenom, Apple). It fires only when BOTH hold: the board's clock has no room for a
+    request, and a posting has been kept (T243's progress guarantee: a stop before that would
+    leave a `partial` that kept nothing, every scan). Firing notes the deferral in `errors`."""
+    fetcher = _fetcher(tmp_path)
+    fits = [True]
+    monkeypatch.setattr(fetcher, "request_fits_board_deadline", lambda: fits[0])
+    errors: list[str] = []
+
+    assert not detail_phase_stops(fetcher, kept=True, left=3, errors=errors)
+    fits[0] = False
+    assert not detail_phase_stops(fetcher, kept=False, left=3, errors=errors)
+    assert errors == []
+    assert detail_phase_stops(fetcher, kept=True, left=3, errors=errors)
+    assert len(errors) == 1
+    assert "3 unseen postings deferred to the next scan" in errors[0]
 
 
 def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:

@@ -3318,7 +3318,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
                 "throttle.** "
                 + (
                     f"*{len(funnel.scan.throttle_exhausted)} board(s) still lost rows to it and "
-                    "are counted `partial` above, so nothing they failed to list was closed: "
+                    "are counted `partial` or `failed` above, so nothing they failed to list was "
+                    "closed: "
                     f"{', '.join(sorted(funnel.scan.throttle_exhausted))}.*"
                     if funnel.scan.throttle_exhausted
                     else "*Every one of them cleared; no board lost rows.*"
