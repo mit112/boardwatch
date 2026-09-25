@@ -5,6 +5,14 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+NINE rows were ADDED 2026-09-24 for engine batch 5, and every pre-existing row passes unchanged.
+m1201-m1205 are T211 (a domain bar's `{0,4}` tail no longer swallows its own trailing hedge, so
+`preferred` and `a plus` carry it as a scoped preference; a mandate, a plain two-token tail and a hedge
+on a later open-list item keep it required), m1206-m1208 T212 (`diploma plus` is not the `a plus`
+hedge in the degree list or a preferred twin's list; the two-word hedge still hedges a degree), m1209
+T213 (a hedged domain bar the total clears reads `unknown`, never `met`: it lands in T173's
+`scoped_years_preferred`, and no sibling was added).
+
 TWELVE rows were RE-BASELINED 2026-09-24 for T173, a hedged scoped years bar carried as a
 `scoped_years_preferred` row instead of dropped: m0670, m0677, m1046, m1056, m1102-m1107, m1165
 and m1167. Each gains exactly that one preferred row and loses none; ten read `eligible` where
@@ -1490,6 +1498,15 @@ CASES: list[tuple] = [
     ('m1198:T200 a decimal low end reads its whole part', "2.2–3 years' experience in AI, software development, digitalization, or process automation projects.", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
     ('m1199:T200 WILL NOT a decimal low end with a plus high end reads its whole part', 'Minimum of 3.5 to 8+ years of relevant experience in the MEP field working with projects such as Aviation, Healthcare, Commercial, and Mission Critical.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
     ('m1200:T200 a time horizon is not a domain range bar', 'Over the next 3-5 years State Street will deploy a next generation platform infrastructure that will be the foundation of our custody operating model.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1201:T211 a domain bar does not swallow its own trailing hedge, CARRIED as a scoped preference', '5+ years of Kubernetes preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('m1202:T211 a domain bar does not swallow its own trailing `a plus`', '5+ years of Kubernetes a plus', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('m1203:T211 CONTROL a mandate in the domain tail keeps the bar', '5+ years of Kubernetes required', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('m1204:T211 CONTROL a two-token domain tail keeps the bar', '5+ years of Kubernetes and Terraform', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('m1205:T211 WILL NOT a hedge on a later open-list item does not hedge the domain bar', 'Minimum 5 years of Java development, AWS preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ("m1206:T212 `diploma plus a Bachelor's` is not the `a plus` hedge, so the degree bar stays required", "High school diploma plus a Bachelor's degree or equivalent.", {'highest_degree': 'none'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:bachelor_or_equivalent_required', 'required', 'unknown']]),
+    ('m1207:T212 `diploma plus` writes no preferred twin over a total bar', '5 years of experience or a diploma plus training.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1208:T212 CONTROL the two-word `a plus` still hedges a degree', "Bachelor's degree a plus.", {'highest_degree': 'none'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:degree_preferred', 'preferred', 'unmet']]),
+    ('m1209:T213 a hedged domain bar the total clears is a scoped preference, unknown and never met', '5+ years of Kubernetes preferred.', {'total_years_experience': 10}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unknown']]),
 ]
 
 
@@ -1509,4 +1526,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1199
+    assert len(CASES) == 1208
