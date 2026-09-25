@@ -1207,10 +1207,12 @@ def _tcp(address: str, port: int) -> tuple[Any, ...]:
 
 @contextmanager
 def _network(
-    patch: pytest.MonkeyPatch, names: dict[str, Callable[[int], list[tuple[Any, ...]]]]
+    patch: pytest.MonkeyPatch,
+    names: dict[str, Callable[[int], list[tuple[Any, ...]]]],
+    hang: Callable[[float], None] = time.sleep,
 ) -> Iterator[None]:
     """Resolve each name in `names` through its fake; every connect to a `_BLACK_HOLES` address
-    hangs for the socket's own timeout. Anything else goes to the real resolver (numeric only)."""
+    `hang`s for the socket's own timeout. Anything else goes to the real resolver (numeric only)."""
     real_resolve, real_connect = socket.getaddrinfo, socket.socket.connect
 
     def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
@@ -1221,7 +1223,7 @@ def _network(
         if address[0] in _BLACK_HOLES:
             timeout = self.gettimeout()
             assert timeout is not None, "a black hole with no timeout would hang the suite"
-            time.sleep(timeout)
+            hang(timeout)
             raise TimeoutError("timed out")
         real_connect(self, address)
 
@@ -1239,16 +1241,21 @@ def test_three_black_holed_addresses_end_at_the_fetch_deadline(
 ) -> None:
     """T226. `socket.create_connection` applies ONE timeout to EACH resolved address in turn, so
     handing it the time left once let n black holes hold the call (n-1)×left past the deadline
-    (review F2 probe: 3.00s against 1.0s). Each attempt now re-reads what is left."""
-    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
+    (review F2 probe: 3.00s against 1.0s). Each attempt now re-reads what is left.
+
+    On `politeness`'s fake clock (T227): a black hole advances it by exactly the timeout its
+    socket was given and nothing waits, so the attempts' total is read off, not inferred from
+    wall time with a margin a loaded run could eat. A 10s deadline then costs no wall time; it
+    is only how long the real resolver thread, which answers at once, is given to do so."""
+    clock = _FakeTime()
+    monkeypatch.setattr(politeness, "time", clock)
+    settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 10.0})
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
     names = {"many.invalid": lambda port: [_tcp(a, port) for a in _BLACK_HOLES]}
-    with _network(monkeypatch, names):
-        started = time.monotonic()
-        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
+    with _network(monkeypatch, names, hang=clock.advance):
+        with pytest.raises(FetchFailure, match=r"fetch deadline 10s exceeded") as info:
             fetcher.get("http://many.invalid/")
-        elapsed = time.monotonic() - started
-    assert elapsed < 1.5, elapsed
+    assert clock.now == 10.0, clock.now
     _assert_the_backend_fired(info.value)
 
 
@@ -1301,20 +1308,30 @@ def test_a_resolver_that_hangs_ends_at_the_fetch_deadline(
 ) -> None:
     """T226. `getaddrinfo` ignores every socket timeout (review F2 probe: 3.02s against 1.0s). It
     now runs on a worker thread joined for only the time left; the resolver call itself cannot
-    be cancelled, so that thread finishes in the background."""
+    be cancelled, so that thread finishes in the background.
+
+    Pinned by ORDER, not elapsed time (T227): the resolver answers only once the test lets it,
+    so a request that ended with it still unanswered waited for nothing, however loaded the run."""
+    release = threading.Event()
+    answered: list[int] = []
 
     def slow(port: int) -> list[tuple[Any, ...]]:
-        time.sleep(3.0)
+        release.wait(10.0)  # a watchdog only, for code that waits on the resolver
+        answered.append(port)
         return [_tcp("127.0.0.1", port)]
 
     settings = _settings(tmp_path, retries=1).model_copy(update={"fetch_deadline_seconds": 1.0})
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
-    with _network(monkeypatch, {"slow-dns.invalid": slow}):
-        started = time.monotonic()
-        with pytest.raises(FetchFailure, match=r"fetch deadline 1(\.0)?s exceeded") as info:
-            fetcher.get("http://slow-dns.invalid:9/x")
-        elapsed = time.monotonic() - started
-    assert elapsed < 1.5, elapsed
+    try:
+        with _network(monkeypatch, {"slow-dns.invalid": slow}):
+            with pytest.raises(FetchFailure) as info:
+                fetcher.get("http://slow-dns.invalid:9/x")
+            assert answered == [], "the request waited for the resolver to answer"
+    finally:
+        release.set()
+        for thread in _resolver_threads({"slow-dns.invalid"}):
+            thread.join(10.0)
+    info.match(r"fetch deadline 1(\.0)?s exceeded")
     _assert_the_backend_fired(info.value)
 
 
