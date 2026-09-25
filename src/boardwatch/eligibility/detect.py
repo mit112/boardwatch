@@ -32,7 +32,8 @@ The scopes, all applied per match:
                           abstain waived: an abstaining bar keeps its UNKNOWN row. A bar
                           `hedged_as` a CARRIER is carried on its unit-scoped and heading
                           hedges too, since no preferred wording of its own writes that row
-                          (T173).
+                          (T173); any other `hedged_as` bar is carried on a heading that states
+                          a preference, and absorbed by a family row over the same bar (T235).
                           A pattern declaring this but no `suppressed_by_unit` takes a hedge
                           heading's hedge by the introducer allowance ALONE: its clause is
                           never searched, so "(MBA preferred)" beside the bar cannot drop it.
@@ -524,12 +525,20 @@ _HEADER_GLUE_WORDS: frozenset[str] = frozenset(
 )
 
 
+# The spaced `nice to have`, read as the one word its hyphenated twin is (T235): `Nice to Have /
+# Bonus` and `Nice to Have Skills:` failed the capitalisation test on the lowercase `to`, where
+# `Nice-to-Have / Bonus` passed it, so the spaced heading governed nothing and its bars read
+# required.
+_SPACED_NICE_TO_HAVE = re.compile(r"(?<![\w-])nice\s+to\s+haves?(?![\w-])", re.IGNORECASE)
+
+
 def _looks_like_header(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
         return False
     if _QUAL_HEADER.match(stripped):
         return True
+    stripped = _SPACED_NICE_TO_HAVE.sub(lambda m: "-".join(m.group(0).split()), stripped)
     if not _ANY_HEADER.match(stripped):
         return False
     words = stripped.rstrip(":").split()
@@ -1102,8 +1111,10 @@ def detect(
     found: list[Detection] = []
     # Tail-hedged bars carried as their family's `preferred` twin, and bounded bars carried as its
     # ceiling, merged after the loop so a row that already reached the same span is not written
-    # twice.
+    # twice. A bar carried on its HEADING's hedge alone is also absorbed by any row of its family
+    # over the same bar, as a carrier is, because a sibling that read the bar decided it (T235).
     carried: list[Detection] = []
+    heading_carried: list[Detection] = []
     # `split_units` is pure in (text, scope) and this loop only READS `offset` and `unit`,
     # never mutating the list or the tuples, so one split per scope is shared across every
     # pattern instead of being recomputed once per pattern (~55 times per posting).
@@ -1209,18 +1220,29 @@ def detect(
                     # preferred." keeps the `unknown` row its split form keeps (T175).
                     waived = abstained is not None and bool(pattern.hedged_by_tail)
                     heading = governing[index]
-                    hedged = not waived and bool(
-                        _suppressed(
-                            unit, lo, hi, pattern.suppressed_by_unit,
-                            bounds=bounds, introducer=True, aside_owned=True,
-                        )
-                        or join is None and heading is not None and _hedged_by_heading(
+                    inline = not waived and _suppressed(
+                        unit, lo, hi, pattern.suppressed_by_unit,
+                        bounds=bounds, introducer=True, aside_owned=True,
+                    )
+                    headed = (
+                        not waived and not inline and join is None and heading is not None
+                        and _hedged_by_heading(
                             _heading_text(units[heading][1]), unit, lo, hi,
                             pattern.suppressed_by_unit or pattern.hedged_by_tail,
                             introducer_only=not pattern.suppressed_by_unit,
                         )
                     )
-                    if hedged and not carries:
+                    hedged = bool(inline or headed)
+                    # A bar only its HEADING hedges is carried as its `hedged_as` twin whenever the
+                    # heading states a preference, not only when the twin is a carrier: the twin's
+                    # own wording may not read the heading form ("Preferred Qualifications:\n-
+                    # Ability to obtain a Secret clearance" wrote no row at all), and a row the twin
+                    # did write over the same bar absorbs the carried one below (T235).
+                    carried_by_heading = (
+                        bool(headed) and pattern.hedged_as is not None
+                        and any(rx.search(str(headed)) for rx in pattern.hedged_by_tail)
+                    )
+                    if hedged and not (carries or carried_by_heading):
                         continue
                     # After the abstains: an escape that waived the bar keeps its `unknown` row
                     # whatever the tail says, so an abstain is never folded into a carried or
@@ -1238,7 +1260,7 @@ def detect(
                         # is preferred.
                         end, preference = tail
                         if preference and pattern.hedged_as is not None:
-                            carried.append(
+                            (heading_carried if headed and not carries else carried).append(
                                 Detection(
                                     family=family.id,
                                     pattern=twins[pattern.hedged_as],
@@ -1304,13 +1326,14 @@ def detect(
             for other in found
         )
     ]
-    for detection in carried:
+    for detection in carried + heading_carried:
         # A carrier has no reading of its own, so a row ANY pattern of its family wrote over the
         # same span is the same bar read another way, and the carrier would only duplicate it.
+        by_family = detection.pattern.carrier or any(d is detection for d in heading_carried)
         if not any(
             (
                 other.pattern is detection.pattern
-                or (detection.pattern.carrier and other.family == detection.family)
+                or (by_family and other.family == detection.family)
             )
             and other.span[0] < detection.span[1]
             and detection.span[0] < other.span[1]

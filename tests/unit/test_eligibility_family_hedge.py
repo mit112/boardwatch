@@ -51,15 +51,19 @@ CITIZENSHIP_129842 = (
 # (body, verdict, rows). A DROP that leaves nothing is `uncertain`, never a clear by silence.
 HEDGED = [
     pytest.param(
-        f"Preferred Qualifications:\n- {CITIZENSHIP_129842}", "uncertain", [],
+        # T235: the heading's hedge now CARRIES the clearance bar as its preference, the row its
+        # one-line form writes, instead of dropping it with no row.
+        f"Preferred Qualifications:\n- {CITIZENSHIP_129842}", "eligible",
+        [["clearance:clearance_preferred", "preferred", "unmet"]],
         id="work_auth-hedge-heading-pv129842",
     ),
     pytest.param(
         "Nice to have:\n- US citizenship", "uncertain", [], id="work_auth-nice-to-have-heading",
     ),
     pytest.param(
-        "Nice to have:\n- Ability to obtain a Secret clearance", "uncertain", [],
-        id="clearance-hedge-heading",
+        "Nice to have:\n- Ability to obtain a Secret clearance", "eligible",
+        [["clearance:clearance_preferred", "preferred", "unmet"]],
+        id="clearance-hedge-heading",  # T235: carried, as above
     ),
     # Clause-scoped: the comma puts the predicate in another unit, so it is read over the sentence.
     pytest.param(
@@ -104,8 +108,9 @@ HEDGED = [
         "US citizenship, preferred.", "uncertain", [], id="work_auth-tail-hedge-held-by-the-anchor",
     ),
     pytest.param(
-        "Preferred Qualifications:\n- Bachelor's degree or equivalent experience", "uncertain", [],
-        id="degree-hedge-heading",
+        "Preferred Qualifications:\n- Bachelor's degree or equivalent experience", "eligible",
+        [["degree:bachelor_or_equivalent_preferred", "preferred", "met"]],
+        id="degree-hedge-heading",  # T235: carried, as above
     ),
 ]
 
