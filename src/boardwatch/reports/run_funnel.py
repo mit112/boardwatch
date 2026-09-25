@@ -262,6 +262,13 @@ _TOP_MISSING = 10
 # same precedent: additive keys that change no existing key's meaning. A funnel written before them
 # lacks both, which reads as `null`: NOT MEASURED. T188b's `lanes[].not_attempted` likewise.
 #
+# **T220's `lanes[].counts.dangling_group_link` does NOT bump it either**, on that same precedent:
+# one more key inside `counts`, carried there like every other `AcquisitionOutcome`. `attempted`
+# keeps its meaning, the records tallied, because the member counts source GROUPS and is excluded
+# from it; that exclusion also keeps it off `is_silent_outage`'s attempt side. It is 0 for every
+# lane but `jobapps`. A funnel written before it lacks the key, which reads as NOT MEASURED,
+# never as zero broken links.
+#
 # **v9 is a lead's `location_class` read against the run's `target_countries` (T204).** It bumps
 # for the v5 reason: an existing key changed MEANING. Since T186 (D-583) the hard location gate
 # asks "is this posting in the tenant's target countries", while `location_class` went on
@@ -1483,8 +1490,8 @@ class LaneReport:
     corpus, so its attempts do not enter at any stage's `entered` and cannot be reconciled
     against one. Chaining it into the funnel would be arithmetic that is wrong on every run.
 
-    `counts` carries all ten `AcquisitionOutcome` keys, always, because `AcquisitionTally`
-    instruments all ten: a 0 here is a MEASURED zero. Dropping the empty ones would turn it back
+    `counts` carries all eleven `AcquisitionOutcome` keys, always, because `AcquisitionTally`
+    instruments all eleven: a 0 here is a MEASURED zero. Dropping the empty ones would turn it back
     into an absence, which is the confusion that hid the prior art's browser tier for 11 runs.
 
     `is_silent_outage` is carried rather than left to the reader to derive. It is deliberately
@@ -2908,7 +2915,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         "lanes": [
             {
                 "name": lane.name,
-                # All ten catalog keys, in catalog order, every time. A zero here is measured.
+                # All eleven catalog keys, in catalog order, every time. A zero here is measured.
                 "counts": dict(lane.counts),
                 "attempted": lane.attempted,
                 "resolved": lane.resolved,
@@ -3080,7 +3087,7 @@ def _lane_cost_line(lane: LaneReport) -> str:
 
     `NOT MEASURED` rather than `0.0s` when either half is absent. A lane that raised before it
     was timed has to be distinguishable from a lane that genuinely cost nothing — the same
-    reason the ten `AcquisitionOutcome` zeros are all printed.
+    reason the eleven `AcquisitionOutcome` zeros are all printed.
     """
     if lane.fetch_seconds is None or lane.apply_seconds is None:
         return "Cost: **NOT MEASURED**"
@@ -3101,8 +3108,8 @@ def _lane_cost_line(lane: LaneReport) -> str:
 def _lane_section(lanes: Sequence[LaneReport]) -> list[str]:
     """The `## Lanes` section, or nothing at all when no lane ran.
 
-    Every one of the ten outcomes gets a row, including the zeros, because `AcquisitionTally`
-    measured all ten — a table that listed only the non-zero rows would make an outcome that
+    Every one of the eleven outcomes gets a row, including the zeros, because `AcquisitionTally`
+    measured all eleven — a table that listed only the non-zero rows would make an outcome that
     was measured at 0 indistinguishable from one that is not instrumented. `SILENT OUTAGE` is
     spelled out rather than left as a bool, because it is the line a reader is meant to act on.
     """

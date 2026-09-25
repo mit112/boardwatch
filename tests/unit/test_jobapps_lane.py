@@ -606,6 +606,76 @@ def test_a_tree_of_only_valid_records_reports_the_same_counts_as_before(tmp_path
     assert result.tally.attempted == 2
 
 
+def _staging_with_one_dangling_group_link(tmp_path: Path) -> Path:
+    """A staging root shaped like the owner's: GROUP directories linked in, not record files.
+
+    One group link that resolves (two records behind it), one whose target is gone -- the
+    refresher's link-refresh race -- and one plain group directory with one record. Distinct
+    posting URLs, so no record dedups against another and every readable one becomes a posting.
+    """
+    queue = tmp_path / "APPLY_QUEUE"
+    _write(
+        queue, "Greenhouse", "linked-a", title="Linked A", posting_id="pst_linked_a",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/1111111111",
+    )
+    _write(
+        queue, "Greenhouse", "linked-b", title="Linked B", posting_id="pst_linked_b",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/2222222222",
+    )
+    staging = tmp_path / "jobapps-staging"
+    staging.mkdir()
+    (staging / "Greenhouse").symlink_to(queue / "Greenhouse", target_is_directory=True)
+    (staging / "Ashby").symlink_to(queue / "Ashby", target_is_directory=True)  # never created
+    _write(
+        staging, "Lever", "plain", title="Plain Role", posting_id="pst_plain",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/3333333333",
+    )
+    return staging
+
+
+def test_a_dangling_group_link_is_counted_per_group_and_the_rest_of_the_tree_is_read(tmp_path):
+    """T220: the owner's refresher links GROUP directories into the staging root. A group link
+    whose target is gone used to fail `is_dir()` and drop out of the listing with its whole
+    group -- not counted, not raised. It is counted once, per GROUP, in its own tally member:
+    the records behind it are unknowable, so it is NOT folded into `not_attemptable`, which
+    counts records the lane saw and rejected. The resolving and plain groups read as before."""
+    staging = _staging_with_one_dangling_group_link(tmp_path)
+
+    result = _collect(staging, tmp_path)
+
+    assert sorted(posting.title for posting in _postings(result)) == [
+        "Linked A", "Linked B", "Plain Role",
+    ]
+    assert result.tally.counts["dangling_group_link"] == 1
+    assert result.tally.counts["not_attemptable"] == 0
+    assert result.tally.counts["body_inline"] == 3
+    # A record count: the three records, not the broken group beside them.
+    assert result.tally.attempted == 3
+
+
+def test_a_dangling_skip_folder_link_loses_nothing_and_is_not_counted(tmp_path):
+    """`_applied` and `_skipped` are never read, so a broken link at either name hides no record
+    the lane would have ingested; counting it would report a loss that did not happen."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    (root / "_applied").symlink_to(tmp_path / "gone" / "_applied", target_is_directory=True)
+    result = _collect(root, tmp_path)
+    assert len(_postings(result)) == 1
+    assert result.tally.counts["dangling_group_link"] == 0
+
+
+def test_a_tree_of_only_dangling_group_links_still_raises_as_no_group_folder(tmp_path):
+    """Control, green by design: with EVERY group link dangling there is no group folder to
+    read at all, which is the structural break this lane raises for -- the count must not turn
+    it into a quiet zero."""
+    staging = tmp_path / "jobapps-staging"
+    staging.mkdir()
+    (staging / "Greenhouse").symlink_to(tmp_path / "gone" / "Greenhouse", target_is_directory=True)
+    (staging / "Ashby").symlink_to(tmp_path / "gone" / "Ashby", target_is_directory=True)
+    with pytest.raises(JobAppsSourceError, match="no group folder anywhere"):
+        _collect(staging, tmp_path)
+
+
 # ---------------------------------------------------------------------------------------
 # Identity: the three-tier ladder.
 # ---------------------------------------------------------------------------------------

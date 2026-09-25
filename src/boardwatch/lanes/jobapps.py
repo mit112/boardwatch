@@ -432,7 +432,7 @@ class JobAppsLane:
         `search_pages` is empty, which is honest -- there is no search and nothing paginated.
         """
         del fetcher  # on disk; see the docstring
-        records, rejected = self._records()
+        records, rejected, dangling = self._records()
         tally = AcquisitionTally()
         for _ in range(rejected):
             # Seen (a candidate folder existed) and never attempted: `_read_record` could not
@@ -440,6 +440,10 @@ class JobAppsLane:
             # `canonical` field. Same bucket and same reason as every other drop in this method:
             # a silent drop is indistinguishable from a record the lane never saw.
             tally.record("not_attemptable")
+        for _ in range(dangling):
+            # A group link whose target is gone, once per GROUP: its records were never seen,
+            # so this is not `not_attemptable`. See `_records_under`.
+            tally.record("dangling_group_link")
 
         grouped: dict[tuple[str, str], list[tuple[_Identity, _Record]]] = {}
         names: dict[tuple[str, str], str] = {}
@@ -512,8 +516,9 @@ class JobAppsLane:
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
 
-    def _records(self) -> tuple[list[_Record], int]:
-        """Every readable record in the tree, and how many candidates `_read_record` rejected.
+    def _records(self) -> tuple[list[_Record], int, int]:
+        """Every readable record in the tree, how many candidates `_read_record` rejected, and
+        how many group links were dangling.
 
         Two levels deep and never recursive: `<queue>/<ATS>/<posting folder>/`. Recursing would
         reach `_skipped/<reason>/`, whose directory names are job-apps' verdicts.
@@ -531,15 +536,17 @@ class JobAppsLane:
             )
         records: list[_Record] = []
         rejected = 0
+        dangling = 0
         for root in self._roots:
-            root_records, root_rejected = self._records_under(root)
+            root_records, root_rejected, root_dangling = self._records_under(root)
             records.extend(root_records)
             rejected += root_rejected
-        return records, rejected
+            dangling += root_dangling
+        return records, rejected, dangling
 
-    def _records_under(self, root: Path) -> tuple[list[_Record], int]:
-        """One root's readable records plus its rejected-candidate count, with that root's own
-        structural check.
+    def _records_under(self, root: Path) -> tuple[list[_Record], int, int]:
+        """One root's readable records plus its rejected-candidate and dangling-group-link
+        counts, with that root's own structural check.
 
         Per root rather than across them: a break in EITHER tree has to be visible. Folding them
         would let a moved discovery tree hide behind a healthy queue tree, which is the exact
@@ -548,7 +555,19 @@ class JobAppsLane:
         if not root.is_dir():
             raise JobAppsSourceError(f"source directory is absent or not a directory: {root}")
         try:
-            groups = sorted(entry for entry in root.iterdir() if entry.is_dir())
+            entries = sorted(root.iterdir())
+            groups = [entry for entry in entries if entry.is_dir()]
+            # The owner's staging root links GROUP directories, and a link whose target is gone
+            # (the refresher's link-refresh race) fails `is_dir()`, so without this its whole
+            # group would drop out here uncounted. Counted per group, since its records are
+            # unknowable. It does not stand in for a group below: a tree of only broken links
+            # still has none. A skip folder is never read, so a broken one loses nothing and is
+            # not counted.
+            dangling = sum(
+                1
+                for entry in entries
+                if entry.name not in _SKIP_DIRS and entry.is_symlink() and not entry.exists()
+            )
         except OSError as error:
             raise JobAppsSourceError(f"source directory is unreadable: {root}: {error}") from error
         # `_SKIP_DIRS` (`_applied`, `_skipped`) are job-apps' own bookkeeping, never a group the
@@ -598,7 +617,7 @@ class JobAppsLane:
         # than raised -- see the module docstring. Whatever the cause, every candidate this root
         # held that did not become a record is one `_read_record` rejected, and the caller counts
         # it rather than dropping it silently.
-        return records, candidates - len(records)
+        return records, candidates - len(records), dangling
 
     def _body(self, record: _Record) -> str | None:
         try:

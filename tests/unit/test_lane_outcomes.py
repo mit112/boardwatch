@@ -9,7 +9,7 @@ from boardwatch.lanes.outcomes import (
 )
 
 
-def test_the_catalog_is_the_ten_outcomes_the_design_names():
+def test_the_catalog_is_the_ten_outcomes_the_design_names_plus_the_dangling_group_link():
     assert set(ACQUISITION_OUTCOMES) == {
         "body_inline",
         "body_fetched",
@@ -21,6 +21,8 @@ def test_the_catalog_is_the_ten_outcomes_the_design_names():
         "rejected_login_wall",
         "rejected_quality_gate",
         "not_attemptable",
+        # T220: counted per GROUP by the job-apps lane, not per posting.
+        "dangling_group_link",
     }
 
 
@@ -53,12 +55,18 @@ def test_counts_is_a_copy_so_a_reader_cannot_mutate_the_tally():
     assert tally.counts["body_inline"] == 1
 
 
-def test_attempted_partitions_into_the_ten_counters():
+def test_attempted_is_the_sum_of_the_record_unit_outcomes():
+    """`attempted` counts RECORDS, the unit the funnel publishes as `lanes[].attempted`: the sum of
+    every outcome except `dangling_group_link`, which counts source GROUPS (T220)."""
     tally = AcquisitionTally()
-    for outcome in ("body_inline", "body_inline", "fetch_gone", "rejected_login_wall"):
+    for outcome in (
+        "body_inline", "body_inline", "fetch_gone", "rejected_login_wall", "dangling_group_link",
+    ):
         tally.record(outcome)
     assert tally.attempted == 4
-    assert sum(tally.counts.values()) == tally.attempted
+    assert tally.attempted == sum(
+        count for name, count in tally.counts.items() if name != "dangling_group_link"
+    )
 
 
 def test_resolved_counts_only_the_two_body_bearing_outcomes():
@@ -102,5 +110,39 @@ def test_rejections_are_attempts_that_resolved_nothing_and_still_flag_an_outage(
     for _ in range(9):
         tally.record("rejected_login_wall")
     assert tally.attempted == 9
+    assert tally.resolved == 0
+    assert tally.is_silent_outage
+
+
+def test_a_dangling_group_link_alone_is_seen_not_attempted_and_is_not_an_outage():
+    """T220: a group link whose target is gone hides records the lane never saw, so nothing was
+    attempted for them. Like `not_attemptable` it stays off the attempt side: a run whose only
+    tally entries are dangling group links is not a SILENT OUTAGE, and the next run re-reads
+    the link once the refresher finishes."""
+    tally = AcquisitionTally()
+    for _ in range(3):
+        tally.record("dangling_group_link")
+    assert tally.counts["dangling_group_link"] == 3
+    assert tally.resolved == 0
+    assert not tally.is_silent_outage
+
+
+def test_a_dangling_group_link_leaves_attempted_unchanged():
+    """T220: one broken group link adds a GROUP to the tally, never a record, so the record count
+    `lanes[].attempted` publishes does not move."""
+    tally = AcquisitionTally()
+    tally.record("body_inline")
+    tally.record("fetch_gone")
+    before = tally.attempted
+    tally.record("dangling_group_link")
+    assert tally.attempted == before == 2
+
+
+def test_a_dangling_group_link_beside_a_failed_fetch_is_still_an_outage():
+    """The other half of the pair: a broken group link neither raises the alert nor masks one. A
+    fetch that failed with nothing resolved is still a SILENT OUTAGE."""
+    tally = AcquisitionTally()
+    tally.record("dangling_group_link")
+    tally.record("fetch_unavailable")
     assert tally.resolved == 0
     assert tally.is_silent_outage
