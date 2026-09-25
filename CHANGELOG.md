@@ -344,6 +344,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The connect phase is bounded by the fetch and board deadlines (2026-09-24, T226).** The deadline-aware
+  backend clamped one `socket.create_connection` call, which applied that clamp to EACH resolved address in
+  turn (three unreachable addresses held a 1 s deadline for 3 s) and never bounded the name lookup at all
+  (a 3 s resolver ran to completion against the same deadline). The backend now resolves the host itself and
+  connects to each address through its own clamp, so every attempt gets only the time left, and the lookup
+  runs on a thread joined with the time left (and the client's connect timeout when shorter). Remaining known
+  limit, recorded beside the TLS trickle: a lookup cannot be cancelled, so its thread outlives the request,
+  bounded by the OS resolver's own timeout. Review 2026-09-24, F2.
+
 - **A host that trickles bytes is bounded by the fetch and board deadlines (2026-09-24, T209).** The
   `Fetcher`'s client runs on its own `httpx.BaseTransport` over a public `httpcore.ConnectionPool` whose
   network backend clamps every connect, read, write and TLS step to the seconds left on the request's
