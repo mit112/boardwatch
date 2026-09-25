@@ -143,6 +143,15 @@ HEADING_CASES: list[tuple] = [
     ('h61:the hyphenated nice-to-have hedges a clearance bar as the spaced form does', 'Qualifications:\n- Security clearance nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['clearance:clearance_preferred', 'preferred', 'unmet']]),
     ('h62:the hyphenated nice-to-have hedges a range bar as the spaced form does', 'Qualifications:\n- 3-5 years of experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
     ('h63:the hyphenated nice-to-have hedges an or-equivalent degree bar as the spaced form does', 'Qualifications:\n- Bachelor\'s degree or equivalent experience nice-to-have', P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:bachelor_or_equivalent_preferred', 'preferred', 'met']]),
+    ('h64:T219 a hedge before an and-coordinated colon heading governs the whole heading', 'PREFERRED SKILLS AND EXPERIENCE:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h65:T219 a hedge before an ampersand-coordinated colon heading governs the whole heading', 'Preferred Skills & Experience:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h66:T219 a hedge before a slash-coordinated colon heading governs the whole heading', 'Preferred Skills/Experience:\n- 3-5 years of experience', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:range_years_preferred', 'preferred', 'unmet']]),
+    ('h67:T219 a coordinated hedge heading carries a total bar as its preference', 'PREFERRED QUALIFICATIONS AND SKILLS:\n- 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:total_years_preferred', 'preferred', 'unmet']]),
+    ('h68:T219 minimum under a coordinated hedge heading states the preference\'s threshold, as under Preferred Qualifications', 'PREFERRED SKILLS AND EXPERIENCE:\n- Minimum 5 years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h69:T219 CONTROL a coordinated hedge heading over an item\'s own must keeps the bar', 'Preferred Skills & Experience:\n- Must have 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h70:T219 CONTROL a preference word before no section noun is no hedge heading', 'Preferred Candidates Must Have:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h71:T219 CONTROL a coordinated part that names a requirement is no hedge heading', 'Preferred Qualifications & Required Skills:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h72:T219 CONTROL a coordinated required heading is no hedge heading', 'REQUIRED SKILLS AND EXPERIENCE:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -158,7 +167,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "cd2cc47ab1ac7b3b5eb3c81e6f17c3b3db867f222d30eb3664889e0472144c08"
+SPLIT_UNITS_DIGEST = "c723af3079f9172e4e44e492e32be5959d6e84f465d202d48328d7f17634da14"
 
 
 @pytest.fixture(scope="module")
@@ -225,4 +234,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 63
+    assert len(HEADING_CASES) == 72

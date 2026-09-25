@@ -5,6 +5,14 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+SEVEN rows were ADDED and ONE RE-BASELINED 2026-09-25 for engine batch 9 (round 2: m1240 and m1241 now carry a
+college degree, since a degree that names a field keeps its base reading, and m1245 pins that control). m1237's `4 year degree or equivalent`
+is now a four-year degree-or-equivalent bar, `unknown` with no degree declared (T221). m1239-m1244 are T221 (a
+degree's length before its `or equivalent` is a degree bar met by the degree and abstaining without one, a
+three-to-four-year range is a four-year length, a hedged one is carried as its preference; a count that is no
+degree length and a hedge before the `or` keep their base reading). T219's shapes are headings and are pinned
+in HEADING_CASES.
+
 ELEVEN rows were ADDED and THREE RE-BASELINED 2026-09-25 for engine batch 8. m1046's `0-1 years` floor is a
 0-year floor, met by any declared total, so it reads `eligible` (T234); m1048 and m1117 lose the domain-list row
 that duplicated their scoped row on the same span (T234 `yields_to`). m1228-m1233 are T234 (a possessive
@@ -1559,8 +1567,15 @@ CASES: list[tuple] = [
     ('m1234:T236 an adverb opening an adjunct after the bar hedges the adjunct, not the bar', '5+ years of experience in a full-cycle closing role ideally from SaaS', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ('m1235:T236 CONTROL a sentence-final ideally still hedges the bar', '5+ years of experience in Python ideally', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ('m1236:T236 a degree length is no domain years bar', "Associate's degree or 2 year degree required.", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
-    ('m1237:T236 a degree length is no scoped or domain-list years bar', '4 year degree or equivalent experience', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1237:T236 a degree length is no scoped or domain-list years bar', '4 year degree or equivalent experience', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:bachelor_length_or_equivalent_required', 'required', 'unknown']]),
     ('m1238:T236 CONTROL a program management bar is no degree length', '5 years of program management experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('m1239:T221 a four-year degree length before its or-equivalent is a degree bar the degree meets', '4 year college degree or equivalent experience required.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_length_or_equivalent_required', 'required', 'met']]),
+    ('m1240:T221 a two-year degree length abstains without a degree and is never unmet', '2 year college degree or equivalent experience', {'total_years_experience': 10, 'highest_degree': 'none'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:associate_length_or_equivalent_required', 'required', 'unknown']]),
+    ('m1241:T221 a three-to-four-year range before a degree is a four-year degree bar', '3-4 year college degree or equivalent experience', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_length_or_equivalent_required', 'required', 'met']]),
+    ('m1242:T221 a hedged degree length is carried as its preference', '4 year college degree or equivalent experience preferred.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_length_or_equivalent_preferred', 'preferred', 'met']]),
+    ('m1243:T221 CONTROL a count that is no degree length keeps its experience bar', '5+ years college degree or equivalent industrial sales experience is required.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_list_years_minimum', 'required', 'unmet']]),
+    ('m1244:T221 CONTROL a hedge before the or is neither reading', 'Two year university/Associate degree preferred or equivalent experience.', {'total_years_experience': 1, 'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:domain_list_years_minimum', 'required', 'unknown']]),
+    ('m1245:T221 CONTROL a degree length that names a field keeps its base reading', '4 year nursing degree or equivalent experience required.', {'total_years_experience': 1, 'highest_degree': 'master', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
 ]
 
 
@@ -1580,4 +1595,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1237
+    assert len(CASES) == 1244

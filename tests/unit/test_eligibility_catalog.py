@@ -128,7 +128,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # range twins of the two domain patterns, which read a digit range's low end.
     # T173: 64 -> 65. `scoped_years_preferred`, a regex-less carrier: a hedged scoped bar has no
     # preferred wording, so it wrote no row at all.
-    assert sum(len(f.patterns) for f in catalog.families) == 65
+    # T221: 65 -> 69. `bachelor_length_or_equivalent_required` and `associate_length_or_equivalent_required`,
+    # a degree's length before its `or equivalent` read as the degree bar it is, and their two carriers.
+    assert sum(len(f.patterns) for f in catalog.families) == 69
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -164,7 +166,8 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-05: +1, `labeled_years_minimum`. "Experience Preferred: 5 years" is the
         # labelled block's own hedge, and it must stand the bar down like any other.
         # T200: +2, the two domain range twins, which carry their siblings' suppressors.
-        "suppressed_by_unit": 23,
+        # T221: +2, the two degree-length patterns' hedge lists.
+        "suppressed_by_unit": 25,
         # 2026-09-22 (T157): +13 sentence, one per experience pattern carrying
         # `company_side_years`. That anchor reaches only a subject BEFORE the bar;
         # `company_tenure_after_bar` is its narrow after-span complement.
