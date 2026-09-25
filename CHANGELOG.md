@@ -981,6 +981,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Fourth engine batch: digit ranges never read their high end, a credit or substitution rule's
+  count is no bar, and a degree's length is not a second duration (2026-09-24, T200, T201, T202).**
+  `3 to 5 years`, `between 5 and 7 years` and the spaced-dash `5 – 7 years` now write only their range
+  row (the low end) or no row, never a seven-year floor; a years count that is the SUBJECT of `will be
+  credited` / `may be substituted` / `can be counted` writes no required row (a new catalog key,
+  `suppressed_by_predicate`, anchored at the span's end so a sentence that substitutes something ELSE
+  keeps its bar); `two (2) year college` no longer stops a tail hedge from reaching the bar. A range the
+  heads did not read before is now read at its LOW end — `eight to 10 years`, `5 – 8+ years`, `5+ to 12`,
+  `between 5 and 7`, `2.2–3 years` (whole part) — and two range twins (`domain_range_years_minimum`,
+  `domain_list_range_years_minimum`) read `3 – 5 years in <domain>`; a spelled low end with a dash stays
+  unread so a range never writes both ends. From batch 3's round 2. `engine_version` and `rules_hash` move once; the two-arm reading is in the merge message.
+
 - **The role taxonomy's field is the one source of the user's career field (2026-09-24, T208).** The
   engine's `Facts.career_field` is resolved at one seam from the loaded `role-taxonomy.yaml`, never from
   the stored profile fact; no taxonomy ⇒ the field-tier families abstain with
