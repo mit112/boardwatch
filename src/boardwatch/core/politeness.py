@@ -322,9 +322,15 @@ class _DeadlineBackend(httpcore.NetworkBackend):
             raise httpcore.ConnectError("getaddrinfo returns an empty list")
         failure: httpcore.ConnectError | httpcore.ConnectTimeout
         for *_, sockaddr in addresses:
+            address = str(sockaddr[0])
+            if len(sockaddr) == 4 and sockaddr[3]:
+                # An IPv6 address string carries no zone, so re-resolved bare, a link-local
+                # `fe80::` address comes back on scope 0, which is no interface (T227). A numeric
+                # `%scope` is parsed locally, like the address itself.
+                address = f"{address}%{sockaddr[3]}"
             try:
                 return _DeadlineStream(_bounded(partial(
-                    self._backend.connect_tcp, str(sockaddr[0]), port,
+                    self._backend.connect_tcp, address, port,
                     local_address=local_address, socket_options=socket_options,
                 ), timeout))
             except (httpcore.ConnectError, httpcore.ConnectTimeout) as exc:

@@ -1,6 +1,7 @@
 import gzip
 import json
 import socket
+import ssl
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -1472,3 +1473,54 @@ def test_a_saturated_resolver_fails_the_request_without_naming_or_tripping_a_dea
     cause = info.value.__cause__
     assert isinstance(cause, httpx.ConnectError), repr(cause)
     assert isinstance(cause.__cause__, politeness.ResolverSaturated), repr(cause.__cause__)
+
+
+def test_a_link_local_address_is_connected_on_its_own_scope(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T227. Each attempt hands httpcore the numeric address, which `create_connection` resolves
+    again — and an IPv6 address string carries no zone, so a link-local `fe80::` address came
+    back with scope 0, which is no interface. The socket must be connected on the scope the
+    resolver answered with."""
+    real_resolve = socket.getaddrinfo
+    connected: list[Any] = []
+
+    def resolve(host: Any, port: Any, *args: Any, **kwargs: Any) -> Any:
+        if host == "scoped.invalid":
+            return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("fe80::1", int(port), 0, 5))]
+        return real_resolve(host, port, *args, **kwargs)  # numeric only: parsed, no DNS
+
+    def connect(self: socket.socket, address: Any) -> None:
+        connected.append(address)  # records the sockaddr, connects nowhere
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    politeness._DeadlineBackend().connect_tcp("scoped.invalid", 8080, timeout=5.0).close()
+    assert connected == [("fe80::1", 8080, 0, 5)], connected
+
+
+def test_tls_is_offered_the_origin_name_not_the_address_connected_to(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control for T227: the address each attempt connects to is the TCP layer's alone; the TLS
+    handshake is still offered the request's own host name."""
+    offered: list[str | None] = []
+
+    def wrap_socket(
+        self: ssl.SSLContext, sock: socket.socket, *args: Any, server_hostname: str | None = None,
+        **kwargs: Any,
+    ) -> ssl.SSLSocket:
+        offered.append(server_hostname)
+        raise ssl.SSLError("stopped before the handshake")
+
+    monkeypatch.setattr(ssl.SSLContext, "wrap_socket", wrap_socket)
+    listener = socket.create_server(("127.0.0.1", 0))
+    port = listener.getsockname()[1]
+    fetcher = Fetcher(_settings(tmp_path, retries=1), pacing=politeness.HostPacing())
+    try:
+        with _network(monkeypatch, {"tls.invalid": lambda p: [_tcp("127.0.0.1", p)]}):
+            with pytest.raises(FetchFailure):
+                fetcher.get(f"https://tls.invalid:{port}/x")
+    finally:
+        listener.close()
+    assert offered == ["tls.invalid"], offered
