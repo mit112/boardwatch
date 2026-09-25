@@ -1006,6 +1006,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`main`'s push run skips the Ubuntu test shards a green PR run already ran on the identical tree (2026-09-25,
+  T230).** Every ship squash-merges a PR whose branch was rebuilt on `main` just before, so the push run re-tested
+  byte-identical code and its 23 jobs queued the next PR 12–15 min behind a 20-job ceiling. `plan` now asks
+  `tools/ci_skip.py` (read-only API calls) whether a completed green `pull_request` run of this workflow tested the
+  pushed tree: same tree, no failed run on it, its head descends from the push's parent, every PR on that head is a
+  same-repo PR into the pushed branch that never changed its base, and every Ubuntu shard, `shard-audit`, `coverage`
+  and `ci` succeeded in it. Only then do the Ubuntu shards, `shard-audit` and `coverage` skip, and `ci` accepts that
+  skip only on a push with the answer exactly `true`. Any doubt or API error runs the tests. macOS still runs on
+  every push; pull requests, the nightly schedule and manual dispatch are unchanged.
+
 - **Profile-bundle documents parse with libyaml where that is provably identical (2026-09-25, T231).** The
   restricted `CareerProfileLoader` (aliases, anchors, tags, merge keys and out-of-contract implicit scalars refused)
   spent most of the profile-bundle tests' time in pure-Python composition. It now composes with libyaml behind a
