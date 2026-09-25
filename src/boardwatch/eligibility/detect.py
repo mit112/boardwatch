@@ -205,11 +205,25 @@ _TAIL_INTRODUCER = re.compile(
     re.IGNORECASE,
 )
 # A comma then a subordinator or a preposition opens an ADJUNCT, and a hedge after it is its own.
-_TAIL_ADJUNCT = re.compile(
-    r",\s*(?:with|plus|along|where|which|who|whose|that|as|while|but|in|within|at|for|on|from|"
-    r"across|to|of|through|under|by)(?!\w)",
-    re.IGNORECASE,
+_ADJUNCT_WORDS = (
+    r"(?:with|plus|along|where|which|who|whose|that|as|while|but|in|within|at|for|on|from|"
+    r"across|to|of|through|under|by)(?!\w)"
 )
+_TAIL_ADJUNCT = re.compile(rf",\s*{_ADJUNCT_WORDS}", re.IGNORECASE)
+# The same adjunct opened by an introducer adverb with no comma, AFTER the bar in its own clause:
+# "5+ years of experience in a full-cycle closing role ideally from SaaS" hedges SaaS, not the bar,
+# and the clause hedge read `ideally` as the bar's (T236, pv 221193 and 19 more store postings).
+_ADJUNCT_AFTER_ADVERB = re.compile(rf"\s+{_ADJUNCT_WORDS}", re.IGNORECASE)
+
+
+def _hedge_opens_an_adjunct(text: str, hi: int, start: int, end: int) -> bool:
+    """Is the hedge at [start, end) an introducer adverb after the bar ending at `hi` that opens a
+    prepositional adjunct, so that it hedges the adjunct's object and not the bar?"""
+    return (
+        start >= hi
+        and _TAIL_INTRODUCER.fullmatch(text, start, end) is not None
+        and _ADJUNCT_AFTER_ADVERB.match(text, end) is not None
+    )
 _TAIL_NEW_HEAD = re.compile(
     r"(?<!\w)experiences?\s+(?:in|with|of|on|at|using|as|for|across|within)(?!\w)", re.IGNORECASE
 )
@@ -917,15 +931,17 @@ def _suppressed(
     cancellation, so admitting a match inside the span can only turn a decided row into
     `unknown`, never the reverse, and the in-field patterns swallow the escape into the span.
     `aside_owned` is for the hedge path alone: it drops a hedge that a parenthetical aside of
-    its own has claimed (`_hedge_owned_by_an_aside`). `muted` is a range in which no match counts.
+    its own has claimed (`_hedge_owned_by_an_aside`), or an adverb after the bar opening an adjunct
+    (`_hedge_opens_an_adjunct`). `muted` is a range in which no match counts.
     """
     clo, chi = bounds if bounds is not None else (0, len(text))
     for rx in suppressors:
         for match in rx.finditer(text):
             if muted is not None and muted[0] <= match.start() < muted[1]:
                 continue
-            if aside_owned and _hedge_owned_by_an_aside(
-                text, lo, hi, match.start(), match.end(), suppressors
+            if aside_owned and (
+                _hedge_owned_by_an_aside(text, lo, hi, match.start(), match.end(), suppressors)
+                or _hedge_opens_an_adjunct(text, hi, match.start(), match.end())
             ):
                 continue
             inside = clo <= match.start() and match.end() <= chi
