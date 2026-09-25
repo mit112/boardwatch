@@ -86,7 +86,7 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, board_clock_deferral, health_from_failure
 
 _HOST_SUFFIX = ".myworkdayjobs.com"
 _PAGE_LIMIT = 20  # HARD server maximum: limit=21 returns HTTP 400, it is not clamped
@@ -779,7 +779,17 @@ class WorkdayProvider:
         # comprehension here lets a ValueError escape fetch_board.
         postings: list[RawPosting] = []
         detail_failures = 0
-        for pid, row in unseen:
+        for index, (pid, row) in enumerate(unseen):
+            # Never before a posting is KEPT (rounds 2-3): until then each detail goes out and the
+            # cap cuts it as before T243, so a stop never leaves a `partial` that kept nothing (an
+            # inactive or failed first detail is not remembered, so it would repeat every scan).
+            if postings and not fetcher.request_fits_board_deadline():
+                # T243: a board its cap cuts is failed and keeps nothing, so a detail phase
+                # longer than the cap re-fetched the same details every scan. Stop starting
+                # them here instead; `unseen` becomes what was attempted, the rest deferred.
+                errors.append(board_clock_deferral(len(unseen) - index))
+                unseen = unseen[:index]
+                break
             path = str(row["externalPath"])
             try:
                 detail_res = fetcher.get(self._detail_url(host, tenant, site, path))
@@ -809,7 +819,7 @@ class WorkdayProvider:
             listed_ids=listed_ids,
             board_reported_total=board_total,
             board_enumerated=len(listed_ids),
-            detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
+            detail_deferred=len(unseen_before_truncation) - len(unseen),
             board_total_censored=board_censored,
         )
 

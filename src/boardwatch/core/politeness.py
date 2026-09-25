@@ -153,6 +153,9 @@ class BoardClock:
     at: float
     seconds: float
     tripped: bool = False
+    #: The longest one request of this board has taken, its retries included and its pacing and
+    #: host-lock wait not (T243 round 2); None until the first one ends.
+    slowest: float | None = None
 
 
 _T = TypeVar("_T")
@@ -491,6 +494,27 @@ class Fetcher:
         finally:
             del self._board.deadline
 
+    def request_fits_board_deadline(self) -> bool:
+        """Whether a request started now ends on its own clock, never the board's (T243).
+
+        True outside a board, or while more than one pacing delay plus one request's latency is
+        left before the board's instant. The latency is TWICE the slowest request this board has
+        made so far — headroom for a request slower than any before it, which a cap-600 probe
+        missed by 3.3 s at one — and the whole fetch deadline before its first one ends (round 2:
+        the fetch deadline alone refused every request under a valid 30 s cap). Past
+        that point the board's clock would likely cut the request, and a board its clock cuts is
+        failed and persists nothing, so a provider stops STARTING detail fetches here and returns
+        what it has. It is an estimate: a request slower than any before it can still be cut, and
+        the board is then failed as it was before T243. A wait on this host's lock behind another
+        thread, or a crawl-delay stricter than the pacing delay, is not counted. Asking never
+        trips the clock.
+        """
+        board: BoardClock | None = getattr(self._board, "deadline", None)
+        if board is None:
+            return True
+        latency = self._deadline if board.slowest is None else 2 * board.slowest
+        return board.at - time.monotonic() > self._delay + latency
+
     @property
     def effective_delay(self) -> float:
         return self._delay
@@ -576,6 +600,7 @@ class Fetcher:
             # healthy one.
             if self._pace_from_start:
                 self._pacing.last_request_at[host] = time.monotonic()
+            sent = time.monotonic()
             try:
                 return self._send_with_retries(
                     method, url, validators, json_body, headers, min_host_delay
@@ -583,6 +608,10 @@ class Fetcher:
             finally:
                 if not self._pace_from_start:
                     self._pacing.last_request_at[host] = time.monotonic()
+                board: BoardClock | None = getattr(self._board, "deadline", None)
+                if board is not None:  # a failed request's time counts too (T243 round 2)
+                    took = time.monotonic() - sent
+                    board.slowest = took if board.slowest is None else max(board.slowest, took)
 
     def _host_lock(self, host: str) -> threading.Lock:
         with self._pacing.guard:
