@@ -226,6 +226,42 @@ FACTS_BACHELOR = Facts(total_years_experience=1, highest_degree="bachelor")
             " Senior Engineer and is required.",
             id="considered-equivalent-to-a-role",
         ),
+        # Codex round 2: an education word that BEGINS a level or role object is not the object.
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a master's level"
+            " position and is required.",
+            id="education-word-begins-a-level",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a college professor"
+            " role and is required.",
+            id="education-word-begins-a-role",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a bachelor's-level"
+            " role and is required.",
+            id="hyphenated-education-level",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a PhD-level scientist"
+            " and is required.",
+            id="phd-level-scientist",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience counts as a degree-level position and"
+            " is required.",
+            id="degree-level-position",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience equals a high school teacher role and"
+            " is required.",
+            id="high-school-teacher",
+        ),
+        pytest.param(
+            "Bachelor's degree required. 5 years of experience is equivalent to a university lecturer"
+            " position and is required.",
+            id="university-lecturer",
+        ),
     ],
 )
 def test_an_equivalence_to_a_level_or_title_keeps_the_bar(  # type: ignore[no-untyped-def]
@@ -281,6 +317,13 @@ def test_an_equivalence_to_a_level_or_title_keeps_the_bar(  # type: ignore[no-un
         pytest.param("2 years of experience is equal to 24 months of education.", id="months-of"),
         pytest.param("2 years of experience counts toward 30 credit hours.", id="credit-hours"),
         pytest.param("2 years of experience equals one year of college coursework.", id="coursework"),
+        pytest.param(
+            "2 years of experience is equivalent to a bachelor's degree in computer science.",
+            id="degree-in-a-field",
+        ),
+        pytest.param("2 years of experience is equivalent to a graduate degree.", id="graduate-degree"),
+        pytest.param("2 years of experience is equivalent to one year of college education.",
+                     id="college-education"),
     ],
 )
 def test_an_equivalence_to_education_or_credit_still_writes_no_years_row(  # type: ignore[no-untyped-def]
