@@ -5,6 +5,15 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+NINE rows were ADDED and ONE RE-BASELINED 2026-09-24 for engine batch 6. m1195, which batch 4 round 2
+left rowless on purpose (`6 months to 2 years of experience in healthcare IT, ...`), now writes T214b's
+scoped months row on the low end (6 months, `unknown` in the near-miss band); every other pre-existing
+row passes unchanged. m1210-m1213 are T214a (a count that is the subject of `equals` / `is equivalent to` is a conversion,
+not a bar; `equals` in an earlier clause and `equivalent to` without a copula keep the bar),
+m1214-m1218 T214b (`N months to M years`, `to` or a spaced en dash, reads its low end in months, and a
+low end under 36 months sits in the near-miss band; a hedged months range drops and a months-only range
+keeps its read).
+
 NINE rows were ADDED 2026-09-24 for engine batch 5, and every pre-existing row passes unchanged.
 m1201-m1205 are T211 (a domain bar's `{0,4}` tail no longer swallows its own trailing hedge, so
 `preferred` and `a plus` carry it as a scoped preference; a mandate, a plain two-token tail and a hedge
@@ -1492,7 +1501,7 @@ CASES: list[tuple] = [
     ('m1192:T200 WILL NOT a plus on the low end reads its range row', '5+ to 12 years of hands-on experience in Software development experience with object-oriented languages (C++, Java, Python, etc.) in an industrial setting', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_range_years_minimum', 'required', 'unmet']]),
     ('m1193:T200 WILL NOT between N and M is a range floor on its low end', 'Requires between 5 and 9 years of related experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_range_years_minimum', 'required', 'unmet']]),
     ('m1194:T200 up to N stays a ceiling with no row', 'Up to 5 years of experience in Customer Success, Account Management, Sales, Renewals, or other customer-facing roles', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
-    ('m1195:T200 N months to M years stays rowless', '6 months to 2 years of experience in healthcare IT, consulting, technical support, clinical operations, or related fields.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1195:T200 T214b N months to M years reads its low end in months', '6 months to 2 years of experience in healthcare IT, consulting, technical support, clinical operations, or related fields.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_months_minimum', 'required', 'unknown']]),
     ('m1196:T200 a decimal low end is not read as its fraction', 'Experience: 0,5- 3 years in SRE and-or DevTools support roles.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1197:T200 a domain range under the domain bound writes no row', 'Industry Experience: 7+ years in software development, with at least 1-2 years specifically passionate about Generative AI or LLM integration.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet'], ['experience_years:labeled_years_minimum', 'required', 'unmet']]),
     ('m1198:T200 a decimal low end reads its whole part', "2.2–3 years' experience in AI, software development, digitalization, or process automation projects.", {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_range_years_minimum', 'required', 'unknown']]),
@@ -1507,6 +1516,15 @@ CASES: list[tuple] = [
     ('m1207:T212 `diploma plus` writes no preferred twin over a total bar', '5 years of experience or a diploma plus training.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
     ('m1208:T212 CONTROL the two-word `a plus` still hedges a degree', "Bachelor's degree a plus.", {'highest_degree': 'none'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:degree_preferred', 'preferred', 'unmet']]),
     ('m1209:T213 a hedged domain bar the total clears is a scoped preference, unknown and never met', '5+ years of Kubernetes preferred.', {'total_years_experience': 10}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unknown']]),
+    ("m1210:T214a a count that is an equivalence's subject is no bar", 'Two years’ relevant work experience is equivalent to one-year college.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1211:T214a `equals` is the same credit rule, so a one-year count writes no met row', '1 year of experience equals 12 months of education.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1212:T214a CONTROL `equals` in an earlier clause does not reach the bar', 'Pay equals market rate; 5 years of experience required.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1213:T214a CONTROL `equivalent to` without a copula keeps the bar', 'Five years of specialized experience equivalent to the GS-11 level is required.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('m1214:T214b `N months to M years` reads its low end in months', '6 months to 2 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['experience_years:total_months_minimum', 'required', 'met']]),
+    ('m1215:T214b a spaced en dash is the same range, and its high end is no scoped bar', '6 months – 2 years of experience in U.S. banking and international markets.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:scoped_months_minimum', 'required', 'unknown']]),
+    ('m1216:T214b a months low end under 36 months sits in the near-miss band and never rejects', '18 months to 3 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['experience_years:total_months_minimum', 'required', 'unknown']]),
+    ('m1217:T214b CONTROL a hedged months range drops, as every hedged months bar does', '6 months to 2 years of experience preferred.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1218:T214b CONTROL a months-only range keeps its current read', '6 to 24 months of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
 ]
 
 
@@ -1526,4 +1544,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1208
+    assert len(CASES) == 1217

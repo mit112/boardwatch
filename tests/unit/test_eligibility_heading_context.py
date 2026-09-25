@@ -158,7 +158,7 @@ INLINE_TWINS: list[tuple[str, str]] = [
 
 # sha256 over repr((scope, body, split_units(body, scope))) for every corpus body and every
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
-SPLIT_UNITS_DIGEST = "da2f1c31ba08021d18ad8a763186c59f275bab4556af1dee0f12a07b2f588f5b"
+SPLIT_UNITS_DIGEST = "10d15aefaf8f27012b0a8ad45ba72cb47b8975024036ca15fb770f61f8654bf7"
 
 
 @pytest.fixture(scope="module")
