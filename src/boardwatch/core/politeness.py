@@ -498,9 +498,10 @@ class Fetcher:
         """Whether a request started now ends on its own clock, never the board's (T243).
 
         True outside a board, or while more than one pacing delay plus one request's latency is
-        left before the board's instant. The latency is the slowest request this board has made so
-        far (its own deadline already bounds it), and the whole fetch deadline before its first one
-        ends (round 2: the fetch deadline alone refused every request under a valid 30 s cap). Past
+        left before the board's instant. The latency is TWICE the slowest request this board has
+        made so far — headroom for a request slower than any before it, which a cap-600 probe
+        missed by 3.3 s at one — and the whole fetch deadline before its first one ends (round 2:
+        the fetch deadline alone refused every request under a valid 30 s cap). Past
         that point the board's clock would likely cut the request, and a board its clock cuts is
         failed and persists nothing, so a provider stops STARTING detail fetches here and returns
         what it has. It is an estimate: a request slower than any before it can still be cut, and
@@ -511,7 +512,7 @@ class Fetcher:
         board: BoardClock | None = getattr(self._board, "deadline", None)
         if board is None:
             return True
-        latency = self._deadline if board.slowest is None else board.slowest
+        latency = self._deadline if board.slowest is None else 2 * board.slowest
         return board.at - time.monotonic() > self._delay + latency
 
     @property

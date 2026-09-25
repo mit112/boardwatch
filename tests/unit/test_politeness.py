@@ -666,8 +666,10 @@ def test_a_request_fits_the_board_only_with_a_fetch_deadline_and_a_delay_left(
 
 def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: Path) -> None:
     """T243 round 2. Once the board has made a request, the estimate is one pacing delay plus
-    the slowest request it has seen — not the whole fetch deadline, which made a valid 30 s cap
-    refuse every detail under the default 240 s one."""
+    TWICE the slowest request it has seen — not the whole fetch deadline, which made a valid 30 s
+    cap refuse every detail under the default 240 s one. The doubling is headroom: a live mtb
+    probe at cap 600 ended 3.3 s under the cap with the estimate at one slowest request, and a
+    request slower than every earlier one is then cut and the board keeps nothing."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/slow":
@@ -689,6 +691,8 @@ def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: P
         clock.at = time.monotonic() + 0.5
         assert not fetcher.request_fits_board_deadline()  # 0.25 s delay + 0.3 s > 0.5 s
         clock.at = time.monotonic() + 0.7
+        assert not fetcher.request_fits_board_deadline()  # headroom: 0.25 s + 2 x 0.3 s > 0.7 s
+        clock.at = time.monotonic() + 0.95
         assert fetcher.request_fits_board_deadline()
     assert not clock.tripped
 
