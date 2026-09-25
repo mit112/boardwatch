@@ -62,7 +62,7 @@ RANGES = [
         "6 months – 2 years of experience in U.S. banking and international markets.",
         ("uncertain", [("scoped_months_minimum", "required", "unknown",
                         "6 months – 2 years of experience in")]),
-        id="spaced-en-dash-scoped",  # pv 20860's shape; its ASCII ` - ` is cut by the splitter
+        id="spaced-en-dash-scoped",  # pv 20860's shape; its ASCII ` - ` form is T233's (range_dash)
     ),
     pytest.param(
         "6 months – 2 years of relevant experience.",

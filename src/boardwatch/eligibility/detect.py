@@ -423,10 +423,39 @@ def jd_locator(detection: Detection) -> dict[str, object]:
     return {"field": "body_text", "span": [start, end]}
 
 
+# T233. A spaced ASCII ` - ` between two numbers is a RANGE, not an inline bullet: cut there,
+# `5 - 7 years of experience` put `7 years of experience` in a unit of its own, where no lookbehind
+# sees the low end, and wrote a 7-year bar. The cut is undone only when the piece before it ends in
+# a number (optionally `+`, optionally `months`) that is no label's (`Option 3 - 5 years`), and the
+# piece after it opens on a LARGER number that a time unit follows within two words. So a real
+# inline bullet keeps its cut: `Python - 5 years`, `10047 - 3+ years`, `Level 7 - 2+ years`.
+_RANGE_LOW = re.compile(
+    r"(?<![\w.,$])(?<!option\s)(?<!level\s)(?<!grade\s)(?<!tier\s)(?<!step\s)(?<!phase\s)"
+    r"(?<!stage\s)(?P<low>\d{1,2}(?:\.\d{1,2})?)\s*\+?(?:\s*(?P<months>months?))?[ \t]*\Z",
+    re.IGNORECASE,
+)
+_RANGE_HIGH = re.compile(
+    r"(?P<high>\d{1,2}(?:\.\d{1,2})?)(?![\d.,])\s*\+?\s*(?:[\w'’-]+\s+){0,2}?"
+    r"(?P<unit>years?|yrs?|months?)(?!\w)",
+    re.IGNORECASE,
+)
+
+
+def _range_dash(text: str, before: tuple[int, str], start: int, piece: str) -> bool:
+    """Whether the cut between the piece `before` and `piece` (at `start`) is a range's dash."""
+    offset, prior = before
+    low, high = _RANGE_LOW.search(prior), _RANGE_HIGH.match(piece)
+    if low is None or high is None or not _INLINE_DASH.fullmatch(text, offset + len(prior), start):
+        return False
+    in_months = high["unit"].lower().startswith("m")
+    low_months = float(low["low"]) * (1 if low["months"] or in_months else 12)
+    return low_months < float(high["high"]) * (1 if in_months else 12)
+
+
 def split_units(text: str, scope: str) -> list[tuple[int, str]]:
     """(absolute offset, unit text) pairs. Offsets index into `text` unchanged, because a
     span is persisted as a locator and must stay sliceable from the stored version."""
-    units: list[tuple[int, str]] = []
+    pieces: list[tuple[int, str]] = []
     cursor = 0
     for piece in _SENTENCE_SPLIT.split(text):
         if not piece:
@@ -435,6 +464,12 @@ def split_units(text: str, scope: str) -> list[tuple[int, str]]:
         if start < 0:
             continue
         cursor = start + len(piece)
+        if pieces and _range_dash(text, pieces[-1], start, piece):
+            pieces[-1] = (pieces[-1][0], text[pieces[-1][0] : cursor])
+        else:
+            pieces.append((start, piece))
+    units: list[tuple[int, str]] = []
+    for start, piece in pieces:
         if scope == "sentence":
             units.append((start, piece))
             continue
