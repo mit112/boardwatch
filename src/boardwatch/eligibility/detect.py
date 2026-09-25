@@ -631,11 +631,21 @@ _LEADING_LABEL = re.compile(r"[^:\n]{1,60}:")
 # `Desired Skills:`. Replayed through the introducer as the full label, the noun is not a
 # delimiter, so the hedge could never reach a bullet, and these are the commonest hedge headings
 # there are. Closed on both words, anchored at both ends, so `Required and Preferred
-# Qualifications:` and `Minimum Qualifications:` are not hedges.
+# Qualifications:` and `Minimum Qualifications:` are not hedges. The hedge before the heading's
+# first coordinator governs the whole heading (T219, the other half of T215's positional rule), so
+# the nouns may be a coordinated list of the same closed nouns: `PREFERRED SKILLS AND EXPERIENCE:`
+# and `Preferred Skills & Experience:` read as `Preferred:`, where with the colon the hedge could
+# reach no bullet at all. `Preferred Candidates Must Have:` names no section noun, and `Preferred
+# Qualifications & Required Skills:` a part that is not one, so both stay as they are. No comma:
+# a heading with one is never a heading to `_looks_like_header`.
+_HEDGE_HEADING_NOUN = (
+    r"(?:qualifications?|skills?|requirements?|experience|knowledge|abilities|attributes|"
+    r"competencies)"
+)
 _HEDGE_HEADING = re.compile(
     r"^[\s•‣●\-\*]*(?:preferred|desired|desirable|bonus|nice[\s-]to[\s-]have)"
-    r"(?=(?:\s+(?:qualifications?|skills?|requirements?|experience|knowledge|abilities|"
-    r"attributes|competencies))?\s*:?\s*$)",
+    rf"(?=(?:\s+{_HEDGE_HEADING_NOUN}(?:(?:\s*[&/+]\s*|\s+and\s+){_HEDGE_HEADING_NOUN})*)?"
+    r"\s*:?\s*$)",
     re.IGNORECASE,
 )
 
