@@ -1006,6 +1006,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Sixth engine batch: an equivalence rule is not a bar, and `N months to M years` reads its low end in months
+  (2026-09-25, T214a, T214b).** `One year of college is equivalent to one year of experience` and its `equals` /
+  `counts as|toward` wordings wrote a years bar; the credit predicate now suppresses an equivalence — but only when
+  its object is education, a degree, credits or a period of study, so `5 years of experience is equivalent to a
+  senior level and is required` keeps its bar. `18 months to 7+ years of experience` read its high end as a second
+  bar; both months patterns now take an optional `to|dash M years` after `months` and keep the months low end, and
+  the high end can no longer start a bar of its own. `rules_hash` moves; the two-arm reading is in the merge message.
+
 - **The gate parses the package's own YAML with libyaml, caches the eligibility catalog, and distributes tests
   by work stealing (2026-09-24, T229).** A profile of `make check` found the suite spending most of its time in
   the pure-Python YAML parser although libyaml was installed: `rules.yaml` parses in 56 ms pure and 3–4 ms in C
