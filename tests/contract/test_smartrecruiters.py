@@ -322,6 +322,33 @@ def test_the_detail_phase_stops_before_the_board_clock_could_end_a_request(
 
 @pytest.mark.usefixtures("no_real_sleep")
 @respx.mock
+def test_the_detail_phase_never_defers_before_it_has_kept_a_posting(tmp_path: Path) -> None:
+    """T243 round 3 (Codex). An INACTIVE first detail keeps nothing, and a stop right after it
+    left a `partial` with 0 kept and the rest deferred — every scan, because the inactive id is not
+    remembered. Until a posting is kept the stop does not apply: the scan either keeps one or the
+    cap cuts it and the board is failed, as before T243."""
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    _mock_all_details()
+    fetcher = _fetcher(tmp_path)
+    listed = _fx_json("list_normal.json")["content"]
+    first, second = str(listed[0]["id"]), str(listed[1]["id"])
+    with fetcher.under_deadline(time.monotonic() + 1000.0, 1000.0) as clock:
+
+        def _inactive_then_little_left(request: httpx.Request) -> httpx.Response:
+            clock.at = time.monotonic() + 0.1  # under one 0.25 s pacing delay left
+            return httpx.Response(200, json={"id": first, "active": False})
+
+        respx.get(_detail_url(first)).mock(side_effect=_inactive_then_little_left)
+        snap = provider.fetch_board(fetcher, _request())
+
+    assert _detail_calls() == {first, second}
+    assert [p.provider_posting_id for p in snap.postings] == [second]
+    assert snap.status == "partial"
+    assert snap.detail_deferred == 1
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
 def test_one_detail_failure_is_partial(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
     _mock_all_details()
