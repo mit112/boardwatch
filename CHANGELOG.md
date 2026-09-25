@@ -1016,6 +1016,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Seventh engine batch: a spaced ASCII range reads its low end, and `equals` ends a domain run (2026-09-25, T233,
+  T237).** The unit splitter cut `5 - 7 years of experience` at ` - ` as if it were an inline bullet, so `7 years of
+  experience` began a unit of its own and was read as a 7-year bar. `split_units` now keeps a spaced dash together when
+  a number (optionally `+` or `months`) sits before it and a LARGER number with a time unit within two words follows,
+  unless the low number is glued to a word or follows a label (option, level, grade, tier, step, phase, stage), so
+  `Python - 5 years` and `Level 7 - 2+ years` are still two items. The spaced range now reads exactly as the unspaced
+  one does. `one year equals six months of experience` no longer writes a spurious scoped row. `engine_version` moves
+  (`detect.py`); the two-arm reading is in the merge message.
+
 - **`main`'s push run skips the Ubuntu test shards a green PR run already ran on the identical tree (2026-09-25,
   T230).** Every ship squash-merges a PR whose branch was rebuilt on `main` just before, so the push run re-tested
   byte-identical code and its 23 jobs queued the next PR 12–15 min behind a 20-job ceiling. `plan` now asks
