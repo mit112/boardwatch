@@ -1025,6 +1025,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Tenth engine batch: an item's own trailing `required` beats its heading's hedge, Title-case `and` headings are
+  headings, and a label reads through to its bar (2026-09-25, T245, T246, T241a).** Under a preference heading,
+  `Minimum 5 years of experience in Warehouse and Logistics required.` was read as a preference because the item's own
+  `required` sat past the bar's clause; it now binds when nothing between could own it (no other duration, credential or
+  head noun, no hedge, no new phrase after a comma), so `Bachelor's degree preferred, high school diploma or equivalent
+  required.` still binds nothing. `Preferred Skills and Experience` — a Title-case heading with a lowercase `and` — was not
+  a heading at all; it now is, when every other word is a closed section/requiredness word, so a skill line like `Design
+  and Build Pipelines` is not. Under a hedge heading a bar is read through a label that states no requiredness
+  (`Specialist: 2 - 5 years …`), while `Required:`, `Prerequisite:` or `Compulsory:` keep it. `engine_version` moves; the
+  two-arm reading is in the merge message.
+
 - **Ninth engine batch: a preference heading over a list of section nouns, and a degree's length before its
   or-equivalent (2026-09-25, T219, T221).** `PREFERRED SKILLS AND EXPERIENCE:` and `Preferred Skills & Experience:`
   were not read as preference headings, so every bar beneath them read as required (690 postings `ineligible` on that
