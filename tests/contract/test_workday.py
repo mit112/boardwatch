@@ -1620,3 +1620,45 @@ def test_an_additional_location_does_not_move_the_remote_policy() -> None:
         "h", "S", _COUNTRY_LISTED, _country_detail("ACM IV", "Romania", ["Remote - Ontario"])
     )
     assert posting.remote_policy == "unknown"
+
+
+@respx.mock
+def test_a_rescan_of_a_known_posting_keeps_the_country_bearing_locations(tmp_path: Path) -> None:
+    # REACH. Details are fetched for unseen postings only, so a later scan re-lists a known
+    # posting through `listed_ids` alone. Were it ever re-parsed from its list row, whose
+    # `locationsText` here is "2 Locations", the next scan would overwrite the country and
+    # the fix would undo itself.
+    from sqlalchemy import insert, select
+
+    from boardwatch.scan.apply import apply_board
+    from boardwatch.store import tables
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(
+                insert(tables.companies).values(
+                    name="Acme", provider="workday", slug=SLUG, source="user", watched=True,
+                )
+            ).inserted_primary_key[0]
+        )
+    respx.post(LIST_URL).mock(
+        return_value=httpx.Response(
+            200, json={"total": 1, "jobPostings": [_COUNTRY_LISTED], "facets": []}
+        )
+    )
+    respx.get(_detail_url(_COUNTRY_LISTED["externalPath"])).mock(
+        return_value=httpx.Response(200, json=_country_detail("ACM IV", "Romania", ["ACM P24"]))
+    )
+    first = provider.fetch_board(_fetcher(tmp_path), _request())
+    apply_board(engine, first, company_id, insert_run(engine))
+    known = frozenset(first.listed_ids)
+    second = provider.fetch_board(_fetcher(tmp_path), _request(known=known))
+    apply_board(engine, second, company_id, insert_run(engine))
+    with engine.connect() as conn:
+        stored = conn.execute(select(tables.postings.c.locations_json)).scalar_one()
+    assert second.listed_ids == known
+    assert stored == ["ACM IV, Romania", "ACM P24"]
