@@ -34,7 +34,7 @@ from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.apply import apply_board
-from boardwatch.scan.workers import fetch_board_job
+from boardwatch.scan.workers import board_deadline_snapshot, fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
     RUN_FAILED,
@@ -571,11 +571,7 @@ def _scan_body(
                     busy.discard(host)
                 _submit_ready()
                 if future in overdue:
-                    snapshot = BoardSnapshot(
-                        status="failed", postings=[], url=request.url,
-                        observed_validators=None, error=f"board deadline {cap:g}s exceeded",
-                        fetch_seconds=now - start,
-                    )
+                    snapshot = board_deadline_snapshot(request.url, cap, now - start)
                 else:
                     try:
                         snapshot = future.result()

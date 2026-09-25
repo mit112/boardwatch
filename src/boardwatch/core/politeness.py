@@ -139,6 +139,21 @@ class HostPacing:
 _PROCESS_PACING = HostPacing()
 
 
+@dataclass
+class BoardClock:
+    """One board's deadline on the thread running it, as `Fetcher.under_deadline` yields it.
+
+    `tripped` is set when this clock refuses or cuts a request (T228). The thread then ends
+    within a request of the cap, the same instant the coordinator fails the board at, so the
+    worker reads this to give the cap's verdict itself rather than the provider's account of
+    the clock's failures — whichever of the two sees the cap first then records the same thing.
+    """
+
+    at: float
+    seconds: float
+    tripped: bool = False
+
+
 _T = TypeVar("_T")
 
 #: The instant (`time.monotonic()`) the request running on THIS thread must be done by, set by
@@ -408,20 +423,21 @@ class Fetcher:
         self._retry_attempts = settings.retry_attempts
         self._deadline = settings.fetch_deadline_seconds
         self._pacing = pacing if pacing is not None else _PROCESS_PACING
-        self._board = threading.local()  # `.deadline`: (instant, seconds) while a board runs
+        self._board = threading.local()  # `.deadline`: the `BoardClock` while a board runs
 
     @contextmanager
-    def under_deadline(self, at: float, seconds: float) -> Iterator[None]:
+    def under_deadline(self, at: float, seconds: float) -> Iterator[BoardClock]:
         """Bound every request this THREAD makes, until the block exits, by the instant `at`
         (T192c). The coordinator gives up on a board at `board_deadline_seconds`, but it cannot
         interrupt the thread, and a provider that catches each failed detail fetch and moves on
         would keep the worker — and its host — for up to `detail_budget` more fresh fetch
         deadlines. Under this scope each request's deadline is `min(its own, at)`, and one that
         starts past `at` fails at once, so the thread ends within one request of the cap.
-        `seconds` is only the budget the failure names."""
-        self._board.deadline = (at, seconds)
+        `seconds` is only the budget the failure names. The yielded clock says whether it
+        ended any request (T228)."""
+        clock = self._board.deadline = BoardClock(at, seconds)
         try:
-            yield
+            yield clock
         finally:
             del self._board.deadline
 
@@ -675,8 +691,8 @@ class Fetcher:
         return rebuilt
 
     def _effective_deadline(self, deadline: float) -> float:
-        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
-        return deadline if board is None else min(deadline, board[0])
+        board: BoardClock | None = getattr(self._board, "deadline", None)
+        return deadline if board is None else min(deadline, board.at)
 
     def _timeout_within(self, deadline: float) -> dict[str, float | None]:
         at = self._effective_deadline(deadline)
@@ -692,18 +708,24 @@ class Fetcher:
         """The failure `_check_deadline` raises for whichever deadline bound this request —
         decided by which instant is earlier, not by the clock, since the backend's timeout can
         fire a hair before `time.monotonic()` reaches the instant it was clamped to."""
-        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
-        if board is not None and board[0] <= deadline:
-            message = f"board deadline {board[1]:g}s exceeded for {url}"
-            return FetchFailure(message, status_code=None)
+        board: BoardClock | None = getattr(self._board, "deadline", None)
+        if board is not None and board.at <= deadline:
+            return self._board_failure(board, url)
         return FetchFailure(
             f"fetch deadline {self._deadline:g}s exceeded for {url}", status_code=None
         )
 
     def _check_board_deadline(self, url: str) -> None:
-        board: tuple[float, float] | None = getattr(self._board, "deadline", None)
-        if board is not None and time.monotonic() >= board[0]:
-            raise FetchFailure(f"board deadline {board[1]:g}s exceeded for {url}", status_code=None)
+        board: BoardClock | None = getattr(self._board, "deadline", None)
+        if board is not None and time.monotonic() >= board.at:
+            raise self._board_failure(board, url)
+
+    @staticmethod
+    def _board_failure(board: BoardClock, url: str) -> FetchFailure:
+        board.tripped = True  # T228: every failure the board's clock raises passes through here
+        return FetchFailure(
+            f"board deadline {board.seconds:g}s exceeded for {url}", status_code=None
+        )
 
     def _check_deadline(self, url: str, deadline: float) -> None:
         self._check_board_deadline(url)  # the effective deadline is min(request, board)

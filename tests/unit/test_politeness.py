@@ -589,11 +589,12 @@ def test_a_request_past_the_board_deadline_fails_at_once_without_sending(tmp_pat
     fetcher = Fetcher(
         _settings(tmp_path), client=httpx.Client(transport=httpx.MockTransport(handler))
     )
-    with fetcher.under_deadline(time.monotonic() - 1.0, 7.0):
+    with fetcher.under_deadline(time.monotonic() - 1.0, 7.0) as clock:
         with pytest.raises(FetchFailure, match=r"board deadline 7s exceeded") as info:
             fetcher.get("https://board.example/x")
     assert info.value.status_code is None
     assert calls == []
+    assert clock.tripped  # T228: what `fetch_board_job` reads to fail the board at its cap
     assert fetcher.get("https://board.example/x").content == b"ok"  # the scope is cleared
 
 
@@ -614,6 +615,29 @@ def test_a_request_in_flight_trips_at_the_board_deadline(tmp_path: Path) -> None
             fetcher.get("https://board-trickle.example/x")
     assert time.monotonic() - started < 1.0
     assert calls == [1]
+
+
+def test_a_request_that_fails_on_its_own_deadline_leaves_the_board_clock_clear(
+    tmp_path: Path,
+) -> None:
+    """T228. Control: `tripped` fails a board at its cap, so a request that succeeds, or fails on
+    its OWN fetch deadline, under a board scope with time left must not set it."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "own-deadline.example":
+            return httpx.Response(200, content=_trickle(40, 0.1))
+        return httpx.Response(200, content=b"ok")
+
+    settings = _settings(tmp_path).model_copy(update={"fetch_deadline_seconds": 0.2})
+    fetcher = Fetcher(
+        settings, client=httpx.Client(transport=httpx.MockTransport(handler)),
+        pacing=politeness.HostPacing(),
+    )
+    with fetcher.under_deadline(time.monotonic() + 30.0, 30.0) as clock:
+        assert fetcher.get("https://in-time.example/x").content == b"ok"
+        with pytest.raises(FetchFailure, match=r"fetch deadline 0\.2s exceeded"):
+            fetcher.get("https://own-deadline.example/x")
+    assert not clock.tripped
 
 
 def test_the_board_deadline_is_per_thread(tmp_path: Path) -> None:
@@ -993,13 +1017,14 @@ def test_a_header_trickle_ends_at_the_board_deadline(tmp_path: Path) -> None:
     fetcher = Fetcher(settings, pacing=politeness.HostPacing())
     with _local_server(_trickle_headers) as url:
         started = time.monotonic()
-        with fetcher.under_deadline(started + 0.3, 0.3):
+        with fetcher.under_deadline(started + 0.3, 0.3) as clock:
             with pytest.raises(FetchFailure, match=r"board deadline 0\.3s exceeded") as info:
                 fetcher.get(url)
         elapsed = time.monotonic() - started
     assert elapsed < 1.5, elapsed
     assert info.value.status_code is None
     _assert_the_backend_fired(info.value)
+    assert clock.tripped  # T228: set on the backend's clamp too, not only on a refused start
 
 
 def test_a_body_trickle_ends_at_the_deadline_not_at_the_next_byte(tmp_path: Path) -> None:

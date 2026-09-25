@@ -324,6 +324,46 @@ def test_an_abandoned_board_stops_fetching_at_its_cap(
     assert len(looping.requests) <= 5  # of 20
 
 
+def test_a_board_its_own_clock_ended_is_failed_at_its_cap_when_the_thread_returns_first(
+    engine: Engine, tmp_path: Path, looping: _DetailLoopProvider, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T228. The thread's board clock and the coordinator's `wait` share ONE instant, so a loop
+    that clock cuts short ends AT the cap, and which side sees it first is scheduling. Here the
+    coordinator looks only after the thread has returned the snapshot its provider built from the
+    clock's own failures ("20 failed"): the board is still failed under the cap's reason."""
+    ids = {"slow": _add_company(engine, "slow")}
+    real_wait = futures.wait
+    raced: list[bool] = []
+
+    def late_wait(
+        fs: Iterable[Future[BoardSnapshot]], timeout: float | None = None, return_when: Any = None
+    ) -> Any:
+        pending = set(fs)
+        if not raced:
+            # The timeout fired, but the coordinator's thread ran only after the board's had
+            # returned — a loaded macOS runner.
+            raced.append(True)
+            real_wait(pending)
+            return set(), pending
+        return real_wait(pending, timeout=timeout, return_when=return_when)
+
+    monkeypatch.setattr(coordinator, "wait", late_wait)
+    summary, _ = _loop_scan(
+        engine, tmp_path, looping, board_deadline_seconds=0.5, fetch_deadline_seconds=0.2
+    )
+
+    assert raced == [True]
+    assert len(looping.requests) <= 5  # the board's clock, not the provider's loop, ended it
+    assert (summary.failed, summary.errors[0]) == (1, "slow: board deadline 0.5s exceeded")
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(tables.board_scans.c.status, tables.board_scans.c.error).where(
+                tables.board_scans.c.company_id == ids["slow"]
+            )
+        ).one()
+    assert tuple(row) == ("failed", "board deadline 0.5s exceeded")
+
+
 def test_the_same_loop_under_generous_deadlines_makes_every_request(
     engine: Engine, tmp_path: Path
 ) -> None:
