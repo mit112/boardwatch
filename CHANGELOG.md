@@ -1006,6 +1006,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The gate parses the package's own YAML with libyaml, caches the eligibility catalog, and distributes tests
+  by work stealing (2026-09-24, T229).** A profile of `make check` found the suite spending most of its time in
+  the pure-Python YAML parser although libyaml was installed: `rules.yaml` parses in 56 ms pure and 3–4 ms in C
+  with identical output, and `load_rules` re-parsed it ~18× per pipeline run. Files shipped inside the package
+  (the eligibility catalog, taxonomies, leveling, personas, the company registry, register, equivalences) now
+  parse through `core/yamlio.py` with libyaml, falling back to the pure loader where libyaml is absent; files a
+  user writes stay on `yaml.safe_load`, because a fuzz of ~9M inputs found the two parsers disagree on some
+  (tabs, a bare `!`, BOMs, surrogates). `load_rules` caches its parsed catalog on the file's text (bounded, a deep
+  copy per call, the resolver check still per call). `pytest` runs `--dist worksteal`. Same tests, same coverage
+  bar. `engine_version` moves because `catalog.py` is digested.
+
 - **Fifth engine batch: a domain bar stops before its own hedge, and `a plus` is a whole word in every hedge
   list (2026-09-24, T211, T212).** `3+ years of Kubernetes preferred` / `… a plus` read as a required domain bar,
   because the domain tail's four tokens swallowed the hedge; each tail token now stops before a hedge word (or a
