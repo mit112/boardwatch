@@ -432,7 +432,7 @@ class JobAppsLane:
         `search_pages` is empty, which is honest -- there is no search and nothing paginated.
         """
         del fetcher  # on disk; see the docstring
-        records, rejected, dangling = self._records()
+        records, rejected, dangling, unreadable = self._records()
         tally = AcquisitionTally()
         for _ in range(rejected):
             # Seen (a candidate folder existed) and never attempted: `_read_record` could not
@@ -444,6 +444,10 @@ class JobAppsLane:
             # A group link whose target is gone, once per GROUP: its records were never seen,
             # so this is not `not_attemptable`. See `_records_under`.
             tally.record("dangling_group_link")
+        for _ in range(unreadable):
+            # A group that resolves but could not be listed, once per GROUP, for the same
+            # reason. See `_records_under`.
+            tally.record("unreadable_group")
 
         grouped: dict[tuple[str, str], list[tuple[_Identity, _Record]]] = {}
         names: dict[tuple[str, str], str] = {}
@@ -516,18 +520,18 @@ class JobAppsLane:
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
 
-    def _records(self) -> tuple[list[_Record], int, int]:
-        """Every readable record in the tree, how many candidates `_read_record` rejected, and
-        how many group links were dangling.
+    def _records(self) -> tuple[list[_Record], int, int, int]:
+        """Every readable record in the tree, how many candidates `_read_record` rejected, how
+        many group links were dangling, and how many groups could not be listed.
 
         Two levels deep and never recursive: `<queue>/<ATS>/<posting folder>/`. Recursing would
         reach `_skipped/<reason>/`, whose directory names are job-apps' verdicts.
 
         Raises `JobAppsSourceError` only for a STRUCTURAL break -- the source is absent,
-        unreadable, holds no group folder at all, or holds candidate records none of which
-        parse. A tree that exists and holds group folders but currently has zero records in
-        them is the owner having caught up, not a break, and returns an empty list with a zero
-        rejected count.
+        unreadable, holds no group folder at all, holds no group folder that can be listed, or
+        holds candidate records none of which parse. A tree that exists and holds group folders
+        but currently has zero records in them is the owner having caught up, not a break, and
+        returns an empty list with a zero rejected count.
         """
         if not self._roots:
             raise JobAppsSourceError(
@@ -537,16 +541,18 @@ class JobAppsLane:
         records: list[_Record] = []
         rejected = 0
         dangling = 0
+        unreadable = 0
         for root in self._roots:
-            root_records, root_rejected, root_dangling = self._records_under(root)
+            root_records, root_rejected, root_dangling, root_unreadable = self._records_under(root)
             records.extend(root_records)
             rejected += root_rejected
             dangling += root_dangling
-        return records, rejected, dangling
+            unreadable += root_unreadable
+        return records, rejected, dangling, unreadable
 
-    def _records_under(self, root: Path) -> tuple[list[_Record], int, int]:
-        """One root's readable records plus its rejected-candidate and dangling-group-link
-        counts, with that root's own structural check.
+    def _records_under(self, root: Path) -> tuple[list[_Record], int, int, int]:
+        """One root's readable records plus its rejected-candidate, dangling-group-link and
+        unreadable-group counts, with that root's own structural check.
 
         Per root rather than across them: a break in EITHER tree has to be visible. Folding them
         would let a moved discovery tree hide behind a healthy queue tree, which is the exact
@@ -584,6 +590,11 @@ class JobAppsLane:
         # want completely different fixes; a single line reading "no readable record" is the
         # difference between a five-minute and a fifty-minute diagnosis on return.
         candidates = 0
+        # Groups that resolve (`is_dir()` held) but whose listing raised -- a permission or I/O
+        # error on the group itself. Counted per group, since its records are unknowable
+        # (T238); until then `continue` dropped the whole group with no trace.
+        unreadable = 0
+        listable = 0
         for group in groups:
             if group.name in _SKIP_DIRS:
                 continue
@@ -598,7 +609,9 @@ class JobAppsLane:
                     1 for entry in listed if entry.is_symlink() and not entry.exists()
                 )
             except OSError:
+                unreadable += 1
                 continue
+            listable += 1
             for folder in folders:
                 record_path = folder / _RECORD_NAME
                 # `is_file()` alone stats through a symlink and reads False for one that is
@@ -614,6 +627,15 @@ class JobAppsLane:
                 record = _read_record(folder)
                 if record is not None:
                     records.append(record)
+        # Every group there but none listable: nothing was read, which is this root being
+        # unreadable one level down -- a structural break, raised like the root itself failing
+        # to list, never counted into a zero that reads like an owner who caught up. A root of
+        # skip folders only is not this: it has no group to list.
+        if unreadable and not listable:
+            raise JobAppsSourceError(
+                f"no group folder under {root} could be listed ({unreadable} unreadable) -- "
+                f"check the permissions on the source tree"
+            )
         if not records and candidates:
             raise JobAppsSourceError(
                 f"found {candidates} discovery record(s) under {root}, none readable at "
@@ -625,7 +647,7 @@ class JobAppsLane:
         # than raised -- see the module docstring. Whatever the cause, every candidate this root
         # held that did not become a record is one `_read_record` rejected, and the caller counts
         # it rather than dropping it silently.
-        return records, candidates - len(records), dangling
+        return records, candidates - len(records), dangling, unreadable
 
     def _body(self, record: _Record) -> str | None:
         try:

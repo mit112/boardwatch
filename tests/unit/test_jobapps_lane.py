@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import inspect
 import json
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
@@ -707,6 +708,75 @@ def test_a_tree_of_only_dangling_group_links_still_raises_as_no_group_folder(tmp
     (staging / "Ashby").symlink_to(tmp_path / "gone" / "Ashby", target_is_directory=True)
     with pytest.raises(JobAppsSourceError, match="no group folder anywhere"):
         _collect(staging, tmp_path)
+
+
+@pytest.fixture
+def lock_dir() -> Iterator[Callable[[Path], None]]:
+    """Make a directory unlistable for one test, and restore it so `tmp_path` can be removed.
+
+    Skips where permissions do not stop a listing (root, or a filesystem that ignores mode
+    bits): there the shape cannot be built, and a green test would prove nothing."""
+    locked: list[Path] = []
+
+    def lock(path: Path) -> None:
+        path.chmod(0)
+        locked.append(path)
+        try:
+            next(path.iterdir(), None)
+        except PermissionError:
+            return
+        pytest.skip("directory permissions do not stop a listing here")
+
+    yield lock
+    for path in locked:
+        path.chmod(0o755)
+
+
+def _tree_with_one_unlistable_group(tmp_path: Path, lock: Callable[[Path], None]) -> Path:
+    """A root with one readable group (one record) and one group that RESOLVES -- `is_dir()` is
+    True -- but cannot be listed, with a record behind it. `_skipped` is locked too: it is never
+    listed, so it loses nothing and must not be counted."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "ok", title="Good Role")
+    _write(
+        root, "Locked", "hidden", title="Hidden Role", posting_id="pst_hidden",
+        direct_url="https://job-boards.greenhouse.io/gitlab/jobs/4444444444",
+    )
+    (root / "_skipped").mkdir()
+    lock(root / "Locked")
+    lock(root / "_skipped")
+    return root
+
+
+def test_an_unlistable_group_is_counted_per_group_and_the_rest_of_the_tree_is_read(
+    tmp_path, lock_dir
+):
+    """T238: a group that resolves but cannot be listed hit `except OSError: continue` and lost
+    its whole group uncounted. It is counted once, per GROUP, in its own tally member: its
+    records are unknowable, so it is not `not_attemptable` (records seen and rejected), and its
+    target is there, so it is not `dangling_group_link`. The readable group reads as before."""
+    root = _tree_with_one_unlistable_group(tmp_path, lock_dir)
+
+    result = _collect(root, tmp_path)
+
+    assert [posting.title for posting in _postings(result)] == ["Good Role"]
+    assert result.tally.counts["unreadable_group"] == 1
+    assert result.tally.counts["dangling_group_link"] == 0
+    assert result.tally.counts["not_attemptable"] == 0
+    # A record count: the one record read, not the group beside it.
+    assert result.tally.attempted == 1
+
+
+def test_a_root_whose_every_group_is_unlistable_raises_as_unreadable(tmp_path, lock_dir):
+    """With EVERY group unlistable the lane read nothing, and that is the structural break it
+    raises for -- the same as a root it cannot list. Counting it would turn it into a clean zero
+    that reads like an owner who caught up. A skip folder beside it does not change that."""
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "a")
+    (root / "_applied").mkdir()
+    lock_dir(root / "Greenhouse")
+    with pytest.raises(JobAppsSourceError, match="no group folder under .* could be listed"):
+        _collect(root, tmp_path)
 
 
 # ---------------------------------------------------------------------------------------

@@ -49,6 +49,12 @@ AcquisitionOutcome = Literal[
     # counts records the lane saw and rejected; these records were never seen at all. Kept out
     # of `attempted` (`_GROUP_UNIT`).
     "dangling_group_link",
+    # A GROUP directory that resolves but cannot be listed (T238): a permission or I/O error on
+    # the listing itself. Counted once per GROUP for `dangling_group_link`'s reason -- the
+    # records behind it are unknowable -- and not folded into it, because its target is there:
+    # a broken link wants the refresher, an unlistable group wants its permissions. Kept out of
+    # `attempted` (`_GROUP_UNIT`).
+    "unreadable_group",
 ]
 
 ACQUISITION_OUTCOMES: tuple[str, ...] = get_args(AcquisitionOutcome)
@@ -59,7 +65,7 @@ _RESOLVED: frozenset[str] = frozenset({"body_inline", "body_fetched"})
 
 # Outcomes counted per source GROUP, not per record, and so left out of `attempted`: that is a
 # record count, published as the funnel's `lanes[].attempted`.
-_GROUP_UNIT: frozenset[str] = frozenset({"dangling_group_link"})
+_GROUP_UNIT: frozenset[str] = frozenset({"dangling_group_link", "unreadable_group"})
 
 
 class UnknownAcquisitionOutcome(ValueError):
@@ -71,9 +77,9 @@ class UnknownAcquisitionOutcome(ValueError):
 
 
 class AcquisitionTally:
-    """Counts every acquisition attempt by outcome, with all eleven keys always present.
+    """Counts every acquisition attempt by outcome, with all twelve keys always present.
 
-    All eleven are instrumented, so a 0 here is a measured zero rather than an absence. That
+    All twelve are instrumented, so a 0 here is a measured zero rather than an absence. That
     distinction is the whole point: an absent key reads as "not measured", and D-022/D-023 record
     a naive attribution of exactly that kind as nearly having cost job-apps a working adapter.
     """
@@ -130,5 +136,6 @@ class AcquisitionTally:
         records, so `attempted` already leaves it out (`_GROUP_UNIT`). A run that found only
         broken links attempted nothing and is not an outage; a broken link beside a failed fetch
         does not mask the failure. The next run re-reads the link once the refresher finishes.
+        `unreadable_group` (T238) is the same unit and is left out the same way.
         """
         return self.attempted - self._counts["not_attemptable"] > 0 and self.resolved == 0

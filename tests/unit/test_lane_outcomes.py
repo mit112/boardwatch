@@ -9,7 +9,7 @@ from boardwatch.lanes.outcomes import (
 )
 
 
-def test_the_catalog_is_the_ten_outcomes_the_design_names_plus_the_dangling_group_link():
+def test_the_catalog_is_the_ten_outcomes_the_design_names_plus_the_two_group_outcomes():
     assert set(ACQUISITION_OUTCOMES) == {
         "body_inline",
         "body_fetched",
@@ -23,6 +23,8 @@ def test_the_catalog_is_the_ten_outcomes_the_design_names_plus_the_dangling_grou
         "not_attemptable",
         # T220: counted per GROUP by the job-apps lane, not per posting.
         "dangling_group_link",
+        # T238: likewise per GROUP -- one that resolves but cannot be listed.
+        "unreadable_group",
     }
 
 
@@ -57,15 +59,19 @@ def test_counts_is_a_copy_so_a_reader_cannot_mutate_the_tally():
 
 def test_attempted_is_the_sum_of_the_record_unit_outcomes():
     """`attempted` counts RECORDS, the unit the funnel publishes as `lanes[].attempted`: the sum of
-    every outcome except `dangling_group_link`, which counts source GROUPS (T220)."""
+    every outcome except `dangling_group_link` and `unreadable_group`, which count source GROUPS
+    (T220, T238)."""
     tally = AcquisitionTally()
     for outcome in (
         "body_inline", "body_inline", "fetch_gone", "rejected_login_wall", "dangling_group_link",
+        "unreadable_group",
     ):
         tally.record(outcome)
     assert tally.attempted == 4
     assert tally.attempted == sum(
-        count for name, count in tally.counts.items() if name != "dangling_group_link"
+        count
+        for name, count in tally.counts.items()
+        if name not in {"dangling_group_link", "unreadable_group"}
     )
 
 
@@ -145,4 +151,27 @@ def test_a_dangling_group_link_beside_a_failed_fetch_is_still_an_outage():
     tally.record("dangling_group_link")
     tally.record("fetch_unavailable")
     assert tally.resolved == 0
+    assert tally.is_silent_outage
+
+
+def test_an_unreadable_group_leaves_attempted_unchanged_and_alone_is_not_an_outage():
+    """T238: a group that cannot be listed adds a GROUP, never a record, so the record count does
+    not move, and a run whose only entry is one is not a SILENT OUTAGE -- nothing was attempted."""
+    tally = AcquisitionTally()
+    tally.record("unreadable_group")
+    assert tally.attempted == 0
+    assert not tally.is_silent_outage
+    tally.record("body_inline")
+    tally.record("fetch_gone")
+    before = tally.attempted
+    tally.record("unreadable_group")
+    assert tally.attempted == before == 2
+    assert tally.counts["unreadable_group"] == 2
+
+
+def test_an_unreadable_group_beside_a_failed_fetch_is_still_an_outage():
+    """The other half of the pair: the group count must not mask a real failure beside it."""
+    tally = AcquisitionTally()
+    tally.record("unreadable_group")
+    tally.record("fetch_unavailable")
     assert tally.is_silent_outage
