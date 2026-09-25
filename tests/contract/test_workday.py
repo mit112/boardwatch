@@ -1568,9 +1568,25 @@ def _country_parse(detail: dict[str, Any]) -> list[str]:
 
 
 def test_an_office_code_takes_the_details_country() -> None:
-    locations = _country_parse(_country_detail("ACM IV", "Romania", ["ACM P24"]))
-    assert locations == ["ACM IV, Romania", "ACM P24"]
+    locations = _country_parse(_country_detail("ACM IV", "Romania", ["Bucharest, Romania"]))
+    assert locations == ["ACM IV, Romania", "Bucharest, Romania"]
     assert classify_location(locations) == "non_us"
+
+
+@pytest.mark.parametrize(
+    "additional",
+    [["Silicon Valley"], ["ACM P24"], ["Bucharest, Romania", "Silicon Valley"]],
+)
+def test_an_unresolvable_additional_location_keeps_the_posting_unknown(
+    additional: list[str],
+) -> None:
+    # The borrowed country speaks for the PRIMARY only. An additional site the classifier cannot
+    # name may be a US one ("Silicon Valley"), and a confirmed `non_us` would drop a real US job in
+    # hard mode — the worst direction. So the country is not borrowed and the posting stays
+    # `unknown`, kept fail-open exactly as before T250.
+    locations = _country_parse(_country_detail("ACM IV", "Romania", additional))
+    assert locations == ["ACM IV"]
+    assert classify_location(locations) == "unknown"
 
 
 def test_an_office_code_with_a_us_country_reads_us() -> None:
@@ -1651,7 +1667,9 @@ def test_a_rescan_of_a_known_posting_keeps_the_country_bearing_locations(tmp_pat
         )
     )
     respx.get(_detail_url(_COUNTRY_LISTED["externalPath"])).mock(
-        return_value=httpx.Response(200, json=_country_detail("ACM IV", "Romania", ["ACM P24"]))
+        return_value=httpx.Response(
+            200, json=_country_detail("ACM IV", "Romania", ["Bucharest, Romania"])
+        )
     )
     first = provider.fetch_board(_fetcher(tmp_path), _request())
     apply_board(engine, first, company_id, insert_run(engine))
@@ -1661,7 +1679,7 @@ def test_a_rescan_of_a_known_posting_keeps_the_country_bearing_locations(tmp_pat
     with engine.connect() as conn:
         stored = conn.execute(select(tables.postings.c.locations_json)).scalar_one()
     assert second.listed_ids == known
-    assert stored == ["ACM IV, Romania", "ACM P24"]
+    assert stored == ["ACM IV, Romania", "Bucharest, Romania"]
 
 
 def test_a_primary_that_names_a_place_keeps_the_locations_it_always_had() -> None:

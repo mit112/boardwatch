@@ -67,7 +67,7 @@ def store(tmp_path: Path) -> Engine:
         engine,
         BoardSnapshot(
             status="complete", url="u", postings=[
-                _pre_t250("R1", "ACM IV", "Romania", ["ACM P24"]),       # unknown -> non_us
+                _pre_t250("R1", "ACM IV", "Romania", ["Cluj, Romania"]),  # unknown -> non_us
                 _pre_t250("R2", "ACM HQ", "United States of America"),  # unknown -> us
                 _pre_t250("R3", "Reynosa, Mexico", "United States of America"),  # text decides
                 _pre_t250("R4", "ACM IV", None),                         # nothing to add
@@ -132,7 +132,7 @@ def test_apply_rewrites_locations_and_identities_and_is_idempotent(
     assert "applied: 3 postings" in capsys.readouterr().out
     assert _locations(store) == {
         **BEFORE,
-        "R1": ["ACM IV, Romania", "ACM P24"],
+        "R1": ["ACM IV, Romania", "Cluj, Romania"],
         "R2": ["ACM HQ, United States of America"],
         "R5": ["ACM IV, Romania"],
     }

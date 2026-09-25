@@ -935,15 +935,20 @@ def parse_posting(
     if not title:
         raise ValueError("empty title")
     location = str(info.get("location") or listed.get("locationsText") or "").strip()
-    primary = _with_country(location, info.get("country"))
+    listed_additional = info.get("additionalLocations")
+    additional = (
+        [a.strip() for a in listed_additional if isinstance(a, str) and a.strip()]
+        if isinstance(listed_additional, list)
+        else []
+    )
+    primary = _with_country(location, info.get("country"), additional)
     locations = [primary] if primary else []
     # Only beside a country the primary had to borrow: that is the one place the country can turn
     # a posting with a US site among its additional ones into a confirmed foreign one. Elsewhere
     # the list stays the primary alone, because `cross_host` keys on the whole list and a lane's
     # copy of this posting carries only the primary — 803 open matches lost, live, otherwise.
-    additional = info.get("additionalLocations")
-    if primary != location and isinstance(additional, list):
-        locations += [a.strip() for a in additional if isinstance(a, str) and a.strip()]
+    if primary != location:
+        locations += additional
     raw: dict[str, Any] = {"listed": listed}
     if detail is not None:
         raw["detail"] = detail
@@ -964,7 +969,7 @@ def parse_posting(
     )
 
 
-def _with_country(location: str, country: Any) -> str:
+def _with_country(location: str, country: Any, additional: list[str]) -> str:
     """The primary location, with the detail's structured country appended when its text names
     no place of its own.
 
@@ -982,6 +987,12 @@ def _with_country(location: str, country: Any) -> str:
     if not isinstance(descriptor, str) or not descriptor.strip():
         return location
     if resolve_countries([location]):
+        return location
+    # The country speaks for the primary ONLY. An additional site the resolver cannot name may be
+    # a US one ("Silicon Valley"), and borrowing would then turn a real US job into a confirmed
+    # foreign one, which the hard gate drops. Not borrowing leaves the posting `unknown`, kept
+    # fail-open exactly as before.
+    if not all(resolve_countries([site]) for site in additional):
         return location
     return f"{location}, {descriptor.strip()}" if location else descriptor.strip()
 
