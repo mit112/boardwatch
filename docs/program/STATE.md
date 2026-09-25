@@ -25,6 +25,35 @@
 
 ## Current standing
 
+### 2026-09-24e — **WAVE 3a SHIPPED (T218 #474, T226 #475, BUNDLE C #476, ENGINE BATCH 4 #477); THE PRIMARY IS ON `c45dc0e2`. WAVE 3b (T228, T227, T220, T229, T173, BATCH 5) GATED RED AT CLOSE — ONE TEST, A T173 RE-BASELINE — AND NOTHING OF IT SHIPPED; BATCH 6 IS WAVE 3c (ITS CODEX BLOCKER IS TB6b'S). MAIN'S macOS RED WAS A PRODUCT RACE (T228). THE GATE'S SLOWNESS WAS PURE-PYTHON YAML (T229). D-596.**
+
+**Verify first** (the session paused on seat usage with unattended work): `gh pr list --state all --limit 12`,
+`.agent/2026-09-23c-session/arm-wave3b.status`, `chain-wave3b.log`, `gate-wave3b.log`, then
+`.agent/2026-09-23c-session/RESUME-2026-09-24e.md` (every item's branch, base and next step).
+
+**Next, in order:**
+1. **Fix wave 3b's one red and ship it.** The gate (`gate-wave3b.log`, 22:46, **1 failed / 11,898 passed in 5m03** — the
+   first full gate with T229: 327 s against 945 s) fails
+   `test_recall_citizenship_clearance_domain.py::test_experience_non_requirement_fires_nothing["5+ years of DevOps experience
+   is preferred but not required."]`: T173's carrier (D-590) now writes `scoped_years_preferred` for it (reproduced on
+   `exec-t173` alone). That is the ruled design, so the fix is T173's re-baseline: move the case out of
+   `EXPERIENCE_NON_REQUIREMENTS` into an assertion that it writes ONLY `scoped_years_preferred` (preferred, never required),
+   as a commit on `exec-t173`; rebuild the stack (RESUME file), ONE `make check`, then `arm_wave3b.sh`'s chain (t228, t227,
+   t220, t173, batch5, t229 last). T229 may fail to MERGE (the `gh` token has no `workflow` scope; it edits `ci.yml`):
+   `gh auth refresh -s workflow`, then re-run `ship_one.sh t229 …` with ABSOLUTE paths. Add
+   `tests/pipeline/test_recall_*.py` to every engine executor's narrow suite.
+2. **TB6b** (`.agent/2026-09-23c-session/TB6b.md`, base `83b9d6ef`): batch 6 rebased onto batch 5, the T214a object
+   restriction, re-measure by scan closure; Codex verification; ship.
+3. **Run 476** (04:00 CDT 09-25, on `c45dc0e2`): long by design — T208's facts key and batch 4's re-key together. Read
+   with `read_run.py 476`; D-595's run-476 predictions (T198's four Workday boards, hiring.cafe by row, GitHub lists).
+4. The speed tickets T230–T232, then the engine follow-ups T233–T238 (TICKETS §2026-09-24e).
+
+**Owner questions (D-596, they change what the gate checks):** Python 3.13 only on PR CI (3.11/3.12 on push); one PR per
+wave instead of per ticket; no local coverage (CI keeps the 85% bar).
+
+**Correction to 2026-09-24d:** main's macOS red is 17 of 24 pushes since T192, not "4 of 5 since T209" (T228). Of the
+24d block's steps, 1 and 2 are done except batch 6; 3 and 4 remain.
+
 ### 2026-09-24d — **THE SESSION CLOSED ON MIT'S CALL BEFORE WAVE 3 (D-595). THE CHAIN SHIPPED (T199 #465, BUNDLE A #467, T210 #468, T209 #469, T188 #470, T208 #471) PLUS close6/close7 (#466, #472); THE 0-D REPAIR IS DONE (43 → 9 OPEN DAMAGED, THE NINE ARE `gone`); T173's TWO HEADING CLASSES ARE FIXED ON THE CARRIER (T215/T216, 1,189 CLEARS, ROUND 2 IN FLIGHT); A WHOLE-SWEEP REVIEW READ 0 BLOCKERS AND ITS FOLLOW-UPS ARE BUILT (T222–T226) AND REVIEWED; THE LIVE CONFIG'S GITHUB LISTS ARE RESTORED. THE PRIMARY IS ON `main` AT #472. THE NEXT SESSION IS HEADED BY THE ENTERPRISE SEAT.**
 
 **Read `.agent/2026-09-23c-session/HANDOFF.md` FIRST — §0 says how the seat-headed session differs (memory by symlink,
