@@ -107,7 +107,7 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, health_from_failure
+from boardwatch.providers.base import BoardHealth, detail_phase_stops, health_from_failure
 
 _HOST = "jobs.apple.com"
 _LOCALE = "en-us"
@@ -510,7 +510,14 @@ class AppleProvider:
 
         postings: list[RawPosting] = []
         failures = 0
-        for row in unseen:
+        for index, row in enumerate(unseen):
+            # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
+            # board's clock could fail the board and discard every detail already fetched.
+            if detail_phase_stops(
+                fetcher, kept=bool(postings), left=len(unseen) - index, errors=errors
+            ):
+                unseen = unseen[:index]
+                break
             posting_id = str(row["positionId"])
             title_slug = str(row.get("transformedPostingTitle") or "").strip()
             if not title_slug:
@@ -546,7 +553,7 @@ class AppleProvider:
             # FIRST, not appended: only the first three issues reach `BoardSnapshot.error`,
             # and "every detail fetch failed" is the one an operator has to see.
             errors.insert(0, f"all {len(unseen)} detail fetches failed")
-        return postings, errors, max(0, unseen_before_truncation - budget)
+        return postings, errors, unseen_before_truncation - len(unseen)
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """Page 1 of the slug's filter. A missing or undecodable hydration blob is ERROR, never

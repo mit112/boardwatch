@@ -72,7 +72,12 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    detail_phase_stops,
+    employer_label_from_host,
+    health_from_failure,
+)
 
 _PAGE_SIZE = 500  # server-side maximum; size=1000 returns 500 rows, it is not an error
 # 40 x 500 = 20,000 postings. A backstop only: normal termination is a short page.
@@ -298,7 +303,14 @@ class PhenomProvider:
 
         postings: list[RawPosting] = []
         teaser_only: list[str] = []
-        for pid, row in unseen:
+        for index, (pid, row) in enumerate(unseen):
+            # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
+            # board's clock could fail the board and discard every detail already fetched.
+            if detail_phase_stops(
+                fetcher, kept=bool(postings), left=len(unseen) - index, errors=errors
+            ):
+                unseen = unseen[:index]
+                break
             detail: dict[str, Any] | None = None
             try:
                 res = fetcher.post_json(post_url, self._detail_body(country, lang, pid))
@@ -344,7 +356,7 @@ class PhenomProvider:
             # DISTINCT ids, not len(listed): id-less rows and cross-page duplicates must not
             # hide a listing shortfall (D-271).
             board_enumerated=len(listed_ids),
-            detail_deferred=max(0, len(unseen_before_truncation) - budget),
+            detail_deferred=len(unseen_before_truncation) - len(unseen),
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:

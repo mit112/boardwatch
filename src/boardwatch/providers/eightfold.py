@@ -95,7 +95,12 @@ from boardwatch.core.models import (
     ResponseValidators,
 )
 from boardwatch.core.politeness import Fetcher, FetchFailure, FetchResult
-from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    detail_phase_stops,
+    employer_label_from_host,
+    health_from_failure,
+)
 
 _HOST_SUFFIX = ".eightfold.ai"
 _PAGE_SIZE = 10  # server-fixed: `num=50` AND `num=8` both return 10 rows — ignored, not clamped
@@ -392,7 +397,14 @@ class EightfoldProvider:
 
         postings: list[RawPosting] = []
         detail_failures = 0
-        for row in unseen:
+        for index, row in enumerate(unseen):
+            # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
+            # board's clock could fail the board and discard every detail already fetched.
+            if detail_phase_stops(
+                fetcher, kept=bool(postings), left=len(unseen) - index, errors=errors
+            ):
+                unseen = unseen[:index]
+                break
             posting_id = str(row.get("id"))
             try:
                 detail_res = _get(fetcher, self._detail_url(host, domain, posting_id), ledger)
@@ -444,7 +456,7 @@ class EightfoldProvider:
             # DISTINCT ids, not len(listed): an id-less row is a posting we cannot fetch,
             # dedupe or close, and `total - board_enumerated` exists to expose exactly that.
             board_enumerated=len(listed_ids),
-            detail_deferred=max(0, len(unseen_before_truncation) - budget),
+            detail_deferred=len(unseen_before_truncation) - len(unseen),
             throttle_retries=ledger.retries,
             throttle_exhausted=ledger.exhausted,
         )

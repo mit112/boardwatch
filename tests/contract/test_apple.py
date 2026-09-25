@@ -495,6 +495,35 @@ def test_a_redirect_that_preserves_the_filter_is_accepted(tmp_path: Path) -> Non
 
 
 @respx.mock
+def test_the_detail_phase_stops_once_the_board_clock_could_end_a_request(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248. A board its cap fails keeps nothing, so past the point where the board's clock
+    could end a request the rest are deferred — `partial`, with what was fetched — as Workday
+    and SmartRecruiters do since T243. The clock is scripted, never waited on: it has room for a
+    request until the first detail has gone out."""
+    blob = _fx("search_normal.json")
+    rows = blob["loaderData"]["search"]["searchResults"]
+    _mock_search(1, blob)
+    _mock_details(*rows)
+    fetcher = _fetcher(tmp_path)
+
+    def details() -> list[str]:
+        return [c.request.url.path for c in respx.calls if "/details/" in c.request.url.path]
+
+    monkeypatch.setattr(fetcher, "request_fits_board_deadline", lambda: not details())
+    snap = provider.fetch_board(fetcher, _request())
+
+    first = str(rows[0]["positionId"])
+    assert details() == [f"/en-us/details/{first}/{rows[0]['transformedPostingTitle']}"]
+    assert [p.provider_posting_id for p in snap.postings] == [first]
+    assert snap.status == "partial"
+    assert snap.detail_deferred == 2
+    assert "2 unseen postings deferred" in (snap.error or "")
+    assert snap.listed_ids == {"900000001", "900000002", "900000003"}
+
+
+@respx.mock
 def test_the_detail_budget_defers_rather_than_filling_the_body_with_the_teaser(
     tmp_path: Path,
 ) -> None:

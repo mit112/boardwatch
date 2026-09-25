@@ -61,6 +61,24 @@ def board_clock_deferral(deferred: int) -> str:
     )
 
 
+def detail_phase_stops(fetcher: Fetcher, *, kept: bool, left: int, errors: list[str]) -> bool:
+    """Whether a provider's detail loop stops here, before its next unseen detail (T243, T248).
+
+    The ONE stop every detail loop shares. True once `Fetcher.request_fits_board_deadline` is
+    false, because past that point the board's clock could end the next request, and a board its
+    clock cuts is failed and keeps nothing. Never before a posting is KEPT (`kept`): until then
+    each detail goes out and the cap cuts it as before T243, so a stop never leaves a `partial`
+    that kept nothing (an inactive, withdrawn or failed first detail is not remembered, so that
+    `partial` would repeat every scan). On True the `left` unseen postings are noted in `errors`;
+    the caller slices `unseen` to what it attempted and breaks, and its `detail_deferred` then
+    counts the rest.
+    """
+    if not kept or fetcher.request_fits_board_deadline():
+        return False
+    errors.append(board_clock_deferral(left))
+    return True
+
+
 # Subdomain labels that name a CAREER SITE rather than an employer. CLOSED catalog: a host
 # whose every label is in here derives NO employer name at all, rather than falling through to
 # the next label along and returning a vendor's or a registrar's word for it.

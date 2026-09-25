@@ -76,7 +76,12 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, employer_label_from_host, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    detail_phase_stops,
+    employer_label_from_host,
+    health_from_failure,
+)
 
 _HOST_SUFFIX = ".oraclecloud.com"
 # Server maximum. 201/300/500 all return exactly 200 rows while echoing the asked-for value
@@ -397,7 +402,14 @@ class OracleHCMProvider:
 
         postings: list[RawPosting] = []
         detail_failures = 0
-        for row in unseen:
+        for index, row in enumerate(unseen):
+            # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
+            # board's clock could fail the board and discard every detail already fetched.
+            if detail_phase_stops(
+                fetcher, kept=bool(postings), left=len(unseen) - index, errors=errors
+            ):
+                unseen = unseen[:index]
+                break
             posting_id = str(row["Id"])
             try:
                 detail_res = fetcher.get(self._detail_url(host, site, posting_id))
@@ -435,7 +447,7 @@ class OracleHCMProvider:
             # before a per-row parse failure dropped one, with id-less rows excluded. Every
             # provider means exactly this by the column.
             board_enumerated=len(seen_ids),
-            detail_deferred=max(0, len(unseen_before_truncation) - request.detail_budget),
+            detail_deferred=len(unseen_before_truncation) - len(unseen),
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
