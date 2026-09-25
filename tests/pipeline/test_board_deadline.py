@@ -27,6 +27,7 @@ from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.workday import WorkdayProvider
 from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import run_scan
+from boardwatch.scan.workers import fetch_board_job
 from boardwatch.store import tables
 
 
@@ -566,3 +567,108 @@ def test_a_board_out_of_time_before_its_first_detail_is_failed_at_its_cap_as_bef
     summary, stored, scan = _one_posting_scan(engine, tmp_path, out_of_time_before_the_detail=True)
     assert (summary.failed, summary.partial, stored) == (1, 0, 0)
     assert scan == ("failed", "board deadline 30s exceeded")
+
+
+_COUNTS = (
+    "board_reported_total", "board_enumerated", "detail_deferred", "board_total_censored",
+    "throttle_retries", "throttle_exhausted",
+)
+
+
+def _counted(url: str) -> BoardSnapshot:
+    """A provider's account of a board it listed and then lost to its cap: every count set."""
+    return BoardSnapshot(
+        status="partial", postings=[], url=url, error="1 detail failed",
+        board_reported_total=9, board_enumerated=7, detail_deferred=2,
+        board_total_censored=False, throttle_retries=3, throttle_exhausted=1,
+    )
+
+
+def test_a_board_its_own_clock_cut_keeps_its_provider_counts_on_the_caps_verdict(
+    tmp_path: Path,
+) -> None:
+    """T248. When the board's own clock cuts it, the thread returns the cap's `failed` in place
+    of the provider's snapshot (T228) — and that replaced the provider's counts too, so a board
+    failed at its cap recorded no listing size and lost its throttle counts. The verdict is still
+    the cap's; the counts are the provider's. No wall clock: the board's instant is already past."""
+
+    class _Listed:
+        def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
+            with pytest.raises(FetchFailure):
+                fetcher.get("https://acme.example/detail")  # the clock trips; nothing is sent
+            return _counted(request.url)
+
+    request = BoardRequest(provider="greenhouse", slug="acme", url="https://acme.example/b")
+    fetcher = Fetcher(Settings(data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1))
+    snapshot = fetch_board_job(
+        _Listed(), fetcher, request, time.monotonic() - 1.0, 60.0  # type: ignore[arg-type]
+    )
+
+    assert (snapshot.status, snapshot.error, snapshot.postings) == (
+        "failed", "board deadline 60s exceeded", []
+    )
+    assert {k: getattr(snapshot, k) for k in _COUNTS} == {
+        k: getattr(_counted(request.url), k) for k in _COUNTS
+    }
+
+
+class _CountedStuckProvider(_StuckProvider):
+    """`stuck` blocks until released and then reports every count; every other board completes
+    at once, each on its own host."""
+
+    def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
+        if request.slug == "stuck":
+            self.release.wait(timeout=5.0)
+            return _counted(request.url)
+        return super().fetch_board(fetcher, request)
+
+
+def test_a_board_the_coordinator_failed_at_its_cap_keeps_the_counts_its_thread_returns(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T248. The coordinator fails a board still running at its cap before its thread has
+    returned anything (run 475: db, hitachi, mtb, vfc), so the counts the provider took were
+    lost. The board is now recorded when its thread ends — still `failed`, still under the cap's
+    reason and seconds — carrying those counts into `board_scans` and the throttle totals.
+
+    Released from inside the coordinator's own wait, not on a timer: the first wait times out at
+    the cap with `stuck` blocked, and only a wait issued after the cap has failed it is bounded by
+    the abandoned-thread report (cap plus a fetch deadline) rather than by the cap."""
+    ids = {slug: _add_company(engine, slug) for slug in ("stuck", "acme")}
+    settings = Settings(
+        data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
+        board_deadline_seconds=0.3,
+    )
+    assert settings.fetch_deadline_seconds > settings.board_deadline_seconds
+    provider = _CountedStuckProvider()
+    real_wait = futures.wait
+
+    def releasing_wait(
+        fs: Iterable[Future[BoardSnapshot]], timeout: float | None = None, return_when: Any = None
+    ) -> Any:
+        if timeout is not None and timeout > settings.board_deadline_seconds:
+            provider.release.set()  # `stuck` is abandoned: its thread returns only now
+        return real_wait(set(fs), timeout=timeout, return_when=return_when)
+
+    monkeypatch.setattr(coordinator, "wait", releasing_wait)
+    try:
+        summary = run_scan(engine, settings, providers={"greenhouse": provider})
+    finally:
+        provider.release.set()
+
+    assert (summary.failed, summary.complete) == (1, 1)
+    assert "stuck: board deadline 0.3s exceeded" in summary.errors
+    assert (summary.throttle_retries, summary.throttle_exhausted) == (3, ["stuck"])
+    with engine.connect() as conn:
+        row = conn.execute(
+            select(tables.board_scans).where(tables.board_scans.c.company_id == ids["stuck"])
+        ).one()
+    assert (row.status, row.error, row.postings_listed) == (
+        "failed", "board deadline 0.3s exceeded", 0
+    )
+    assert (
+        row.board_reported_total, row.board_enumerated, row.detail_deferred,
+        row.board_total_censored,
+    ) == (9, 7, 2, 0)
+    cost = summary.fetch_cost["greenhouse"]
+    assert cost.untimed == 0 and cost.seconds >= settings.board_deadline_seconds

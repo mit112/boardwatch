@@ -43,16 +43,34 @@ def fetch_board_job(
     with fetcher.under_deadline(deadline_at, cap) as clock:
         snapshot = provider.fetch_board(fetcher, request)
     if clock.tripped:
-        snapshot = board_deadline_snapshot(request.url, cap)
+        snapshot = board_deadline_snapshot(request.url, cap, counts_from=snapshot)
     return snapshot.model_copy(update={"fetch_seconds": perf_counter() - started})
 
 
+#: The provider's COUNTS a cap-failed board keeps (T248): what it listed, what it deferred and
+#: what the throttle cost it. Never its postings, validators or status — the verdict is the cap's.
+_CARRIED_COUNTS = (
+    "board_reported_total", "board_enumerated", "detail_deferred", "board_total_censored",
+    "throttle_retries", "throttle_exhausted",
+)
+
+
 def board_deadline_snapshot(
-    url: str, cap: float, fetch_seconds: float | None = None
+    url: str,
+    cap: float,
+    fetch_seconds: float | None = None,
+    *,
+    counts_from: BoardSnapshot | None = None,
 ) -> BoardSnapshot:
     """The verdict on a board `board_deadline_seconds` cut short, for both halves of the cap:
-    the coordinator failing it at the cap, and its own thread cut short by the same clock."""
+    the coordinator failing it at the cap, and its own thread cut short by the same clock.
+
+    `counts_from` is the provider's own snapshot of that board, when there is one: its counts
+    ride on the verdict (T248), because replacing them left a board failed at its cap with no
+    listing size and no throttle counts, so it could not be measured afterwards.
+    """
+    counts = {} if counts_from is None else {k: getattr(counts_from, k) for k in _CARRIED_COUNTS}
     return BoardSnapshot(
         status="failed", postings=[], url=url, observed_validators=None,
-        error=f"board deadline {cap:g}s exceeded", fetch_seconds=fetch_seconds,
+        error=f"board deadline {cap:g}s exceeded", fetch_seconds=fetch_seconds, **counts,
     )

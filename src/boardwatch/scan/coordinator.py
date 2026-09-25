@@ -188,6 +188,13 @@ class ScanSummary:
     run_id: int = 0
 
 
+def _returned(future: Future[BoardSnapshot]) -> BoardSnapshot | None:
+    """What a cap-failed board's thread returned, or None while it runs or if it raised (T248)."""
+    if not future.done() or future.exception() is not None:
+        return None
+    return future.result()
+
+
 def host_queues(
     work: list[tuple[Any, Provider, BoardRequest]],
 ) -> list[list[tuple[Any, Provider, BoardRequest]]]:
@@ -495,6 +502,11 @@ def _scan_body(
     abandoned: dict[Future[BoardSnapshot], tuple[str, float, str]] = {}
     grace = settings.fetch_deadline_seconds
     reported: set[Future[BoardSnapshot]] = set()
+    # Boards failed at their cap and not yet recorded (T248), keyed to (row, request, the seconds
+    # the cap charged). Each is recorded when its thread ends, so the cap's verdict carries the
+    # counts its provider took; one whose thread has not ended when the scan has nothing else left
+    # to wait on is recorded then, without them — waiting on it is the stall the cap exists to end.
+    unrecorded: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, float]] = {}
     try:
         queues = host_queues(work)
         busy: set[str] = set()
@@ -521,15 +533,17 @@ def _scan_body(
         # in flight, just no longer ours): `future_map` can then be empty with work queued, and
         # the loop waits on those threads to free a worker or a host.
         _submit_ready()
-        while future_map or (abandoned and any(queues)):
+        while future_map or unrecorded or (abandoned and any(queues)):
             now = time.monotonic()
+            idle = not future_map and not any(queues)  # only cap-failed boards' threads are left
             due = [start + cap for *_, start in future_map.values()]
             due += [
                 start + cap + grace for f, (_, start, _) in abandoned.items() if f not in reported
             ]
-            timeout = max(0.0, min(due) - now) if due else None
+            timeout = 0.0 if idle else (max(0.0, min(due) - now) if due else None)
             done, _ = wait(
-                future_map.keys() | abandoned.keys(), timeout=timeout, return_when=FIRST_COMPLETED
+                future_map.keys() | abandoned.keys() | unrecorded.keys(),
+                timeout=timeout, return_when=FIRST_COMPLETED,
             )
             now = time.monotonic()
             for f, (_, start, slug) in abandoned.items():
@@ -544,35 +558,44 @@ def _scan_body(
                     )
             # A board still running at its deadline is failed HERE and its thread abandoned: the
             # thread cannot be interrupted, so it finishes or dies on the fetch deadline, and its
-            # snapshot — whenever it arrives — is never applied. `.done()`, not `in done`: a board
+            # snapshot — whenever it arrives — is never applied; only its counts ride on the
+            # cap's verdict (T248). `.done()`, not `in done`: a board
             # that finished after `wait()` returned is not in `done` but is not overdue either;
             # it stays in `future_map`, and the next `wait()` hands it back at once (T192b).
             overdue = {
                 f for f, (*_, start) in future_map.items()
                 if not f.done() and now - start >= cap
             }
-            for future in [*done, *overdue]:
+            # A cap-failed board's thread that ended is in `done`: `unrecorded` is in the wait set.
+            for future in dict.fromkeys([*done, *overdue, *(unrecorded if idle else ())]):
+                if future in unrecorded:
+                    _submit_ready()  # its worker and host are free if its thread ended
+                    row, request, seconds = unrecorded.pop(future)
+                    snapshot = board_deadline_snapshot(
+                        request.url, cap, seconds, counts_from=_returned(future)
+                    )
                 # Not ours any more: an abandoned thread ended, so its worker and host are free
                 # again. Keyed on `future_map` rather than `abandoned`, which `_submit_ready`
                 # prunes.
-                if future not in future_map:
+                elif future not in future_map:
                     _submit_ready()
                     continue
-                row, request, host, start = future_map.pop(future)
-                # Released and refilled BEFORE the apply, which is serial and holds the writer:
-                # the pool used to carry the whole fleet as backlog, so a worker never idled
-                # while the coordinator wrote. Refilling only after the batch applied would hand
-                # that back and idle a worker for every apply. An overdue board's host is NOT
-                # released: it stays busy until the abandoned thread ends.
-                if future in overdue:
-                    # before the refill: its worker is not handed out
-                    abandoned[future] = (host, start, row.slug)
                 else:
-                    busy.discard(host)
-                _submit_ready()
-                if future in overdue:
-                    snapshot = board_deadline_snapshot(request.url, cap, now - start)
-                else:
+                    row, request, host, start = future_map.pop(future)
+                    # Released and refilled BEFORE the apply, which is serial and holds the
+                    # writer: the pool used to carry the whole fleet as backlog, so a worker never
+                    # idled while the coordinator wrote. Refilling only after the batch applied
+                    # would hand that back and idle a worker for every apply. An overdue board's
+                    # host is NOT released: it stays busy until the abandoned thread ends.
+                    if future in overdue:
+                        # before the refill: its worker is not handed out
+                        abandoned[future] = (host, start, row.slug)
+                    else:
+                        busy.discard(host)
+                    _submit_ready()
+                    if future in overdue:
+                        unrecorded[future] = (row, request, now - start)  # recorded above, later
+                        continue
                     try:
                         snapshot = future.result()
                     except Exception as exc:  # providers map failures; belt-and-braces
