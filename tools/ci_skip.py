@@ -12,6 +12,7 @@ and `false` on anything else, including any API error, a missing field or an une
     no completed `pull_request` run on that tree concluded anything but success or cancelled
     the newest green one's head descends from the push commit's parent
     every PR associated with that head is a same-repo PR into the branch pushed to (at least one)
+    none of those PRs ever changed base (its issue events hold no base change)
     in that run, every shard of THIS push's matrix, `shard-audit`, `coverage` and `ci` succeeded
 
 The descent and base checks together are what make a tree match mean "tested". A PR run does not
@@ -42,6 +43,11 @@ GATE_JOBS = ("shard-audit", "coverage", "ci")
 # A run that concluded one of these on the same tree is not evidence against it; anything else is.
 NOT_EVIDENCE = frozenset({"success", "cancelled"})
 PER_PAGE = 100
+# A PR's base as the API reports it is its CURRENT base. A retarget does not start a
+# `pull_request` run, so a PR that ever changed base may have been tested against the old one.
+BASE_CHANGES = frozenset(
+    {"base_ref_changed", "automatic_base_change_succeeded", "automatic_base_change_failed"}
+)
 
 
 @dataclass(frozen=True)
@@ -80,8 +86,8 @@ def _check_jobs(body: Any, required: frozenset[str]) -> str | None:
     return None
 
 
-def _check_pulls(pulls: Any, repo: str, branch: str) -> str | None:
-    """None when every PR on the head is a same-repo PR into `branch`; otherwise what is wrong.
+def _check_pulls(pulls: Any, repo: str, branch: str, fetch: Fetch) -> str | None:
+    """None when every PR on the head is a same-repo PR into `branch` that never changed base.
 
     A run's own `pull_requests` is emptied once its PR merges, so the association is read from
     the commit instead, which still lists merged PRs.
@@ -100,6 +106,16 @@ def _check_pulls(pulls: Any, repo: str, branch: str) -> str | None:
             )
         if head["repo"]["full_name"] != repo:
             return f"#{number} comes from {head['repo']['full_name']}, not {repo}"
+    for pull in pulls:
+        number = pull["number"]
+        events = fetch(f"repos/{repo}/issues/{number}/events?per_page={PER_PAGE}")
+        if not isinstance(events, list):
+            raise TypeError(f"expected a list of events, got {type(events).__name__}")
+        if len(events) >= PER_PAGE:
+            return f"#{number} has {len(events)} events; the list may be truncated"
+        changed = sorted({e["event"] for e in events} & BASE_CHANGES)
+        if changed:
+            return f"#{number}'s base changed ({', '.join(changed)})"
     return None
 
 
@@ -157,7 +173,7 @@ def _decide(
         )
 
     problem = _check_pulls(
-        fetch(f"repos/{repo}/commits/{head}/pulls?per_page={PER_PAGE}"), repo, branch
+        fetch(f"repos/{repo}/commits/{head}/pulls?per_page={PER_PAGE}"), repo, branch, fetch
     )
     if problem is not None:
         return Decision(False, f"run {run_id}: {problem}")

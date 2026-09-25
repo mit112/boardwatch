@@ -54,6 +54,14 @@ def _pull(
     }
 
 
+def events_path(number: int) -> str:
+    return f"repos/{REPO}/issues/{number}/events?per_page=100"
+
+
+def _events(*kinds: str) -> list[dict[str, Any]]:
+    return [{"id": i, "event": kind} for i, kind in enumerate(("closed", "merged", *kinds))]
+
+
 def jobs_path(run_id: int) -> str:
     return f"repos/{REPO}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
 
@@ -101,6 +109,7 @@ def _api() -> dict[str, Any]:
         RUNS_PATH: {"total_count": 1, "workflow_runs": [_run(7, PR_HEAD, TREE)]},
         compare_path(PR_HEAD): {"status": "ahead"},
         pulls_path(PR_HEAD): [_pull(480)],
+        events_path(480): _events(),
         jobs_path(7): _green_jobs(),
     }
 
@@ -278,6 +287,7 @@ def test_the_newest_green_run_on_the_tree_is_the_one_checked() -> None:
     api[RUNS_PATH]["workflow_runs"] = [_run(6, OLDER_PR_HEAD, TREE), _run(7, PR_HEAD, TREE)]
     api[compare_path(OLDER_PR_HEAD)] = {"status": "ahead"}
     api[pulls_path(OLDER_PR_HEAD)] = [_pull(479)]
+    api[events_path(479)] = _events()
     api[jobs_path(6)] = {"total_count": 0, "jobs": []}
     decision = _decide(FakeAPI(api))
     assert decision.skip is True, decision.reason
@@ -322,6 +332,47 @@ def test_a_pr_run_not_established_as_a_same_repo_pr_into_this_branch_runs(
     assert problem in decision.reason
 
 
+@pytest.mark.parametrize(
+    "kind", ["base_ref_changed", "automatic_base_change_succeeded", "automatic_base_change_failed"]
+)
+def test_a_pr_whose_base_ever_changed_runs(kind: str) -> None:
+    """Its CURRENT base is main, but its run may have tested the merge into the old base.
+
+    A retarget is an `edited` event, which does not start a `pull_request` run.
+    """
+    api = _api()
+    api[events_path(480)] = _events("labeled", kind, "reopened")
+    decision = _decide(FakeAPI(api))
+    assert decision.skip is False
+    assert f"#480's base changed ({kind})" in decision.reason
+
+
+def test_a_retarget_on_the_second_of_two_prs_runs() -> None:
+    api = _api()
+    api[pulls_path(PR_HEAD)] = [_pull(480), _pull(481)]
+    api[events_path(481)] = _events("base_ref_changed")
+    decision = _decide(FakeAPI(api))
+    assert decision.skip is False
+    assert "#481's base changed (base_ref_changed)" in decision.reason
+
+
+def test_a_possibly_truncated_event_list_runs() -> None:
+    api = _api()
+    api[events_path(480)] = [{"id": i, "event": "labeled"} for i in range(100)]
+    decision = _decide(FakeAPI(api))
+    assert decision.skip is False
+    assert "#480 has 100 events; the list may be truncated" in decision.reason
+
+
+def test_an_event_list_of_the_wrong_shape_runs() -> None:
+    api = _api()
+    # An empty object, not an empty list: iterating it would find no base change.
+    api[events_path(480)] = {}
+    decision = _decide(FakeAPI(api))
+    assert decision.skip is False
+    assert "could not decide" in decision.reason
+
+
 def test_a_push_commit_without_a_parent_runs() -> None:
     api = _api()
     api[COMMIT_PATH]["parents"] = []
@@ -339,7 +390,15 @@ def test_a_run_whose_event_is_not_pull_request_is_not_evidence() -> None:
 
 
 @pytest.mark.parametrize(
-    "path", [COMMIT_PATH, RUNS_PATH, compare_path(PR_HEAD), pulls_path(PR_HEAD), jobs_path(7)]
+    "path",
+    [
+        COMMIT_PATH,
+        RUNS_PATH,
+        compare_path(PR_HEAD),
+        pulls_path(PR_HEAD),
+        events_path(480),
+        jobs_path(7),
+    ],
 )
 def test_an_api_failure_at_any_call_runs(path: str) -> None:
     decision = _decide(FakeAPI(_api(), fail=frozenset({path})))
