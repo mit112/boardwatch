@@ -225,4 +225,4 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 43
+    assert len(HEADING_CASES) == 63
