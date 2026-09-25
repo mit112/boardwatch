@@ -687,11 +687,13 @@ _HEDGE_HEADING = re.compile(
 # hedge's introducer, it would break the delimiters-only chain and restore the bar (T241a: only
 # the closed field nouns were read through, and 49 store postings kept a required bar behind any
 # other label). A label that states how binding the bar is, or a notice, is never read through:
-# `- Required: 5 years ...`, `Experience requirement: Minimum 5 years`, `Note: ...`.
+# `- Required: 5 years ...`, `Experience requirement: Minimum 5 years`, `Prerequisite: ...`,
+# `Note: ...`.
 _ITEM_LABEL = re.compile(r"(?!\d)[\w'’&/().+-]+(?:[ \t]+[\w'’&/().+-]+){0,5}[ \t]*:\s*")
 _LABEL_BINDS = re.compile(
     r"(?<!\w)(?:required|requirements?|requires?|must|mandatory|minimum|essential|necessary|"
-    r"needed|non-?negotiables?|note|important|please|basic)(?!\w)",
+    r"needed|non-?negotiables?|prerequisites?|pre-requisites?|compulsory|note|"
+    r"important|please|basic)(?!\w)",
     re.IGNORECASE,
 )
 

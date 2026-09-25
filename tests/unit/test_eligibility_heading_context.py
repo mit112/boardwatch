@@ -211,6 +211,15 @@ HEADING_CASES: list[tuple] = [
     ("h124:T245 a required after a comma and a bare and is is the bar's", 'Preferred Qualifications:\n- 5 years of experience in audit, and is required.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
     ("h125:T245 CONTROL a comma inside the bar's own list stops the bind too (pv 276749, the rule's measured cost)", "EDUCATION AND EXPERIENCE YOU'LL BRING\nMasters Degree Preferred\nMinimum 5 years Experience in business, finance or strategic pricing and contracting is required.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ("h126:T245 a comma inside an aside is not the item's comma", 'Preferred Qualifications:\n- 2+ year of experience with Big Data technologies (Hadoop, Spark) is required.', P_FACTS, ALL_BLOCKERS, 'uncertain', [['experience_years:scoped_years_minimum', 'required', 'unknown']]),
+    ('h127:T241a CONTROL a prerequisite label keeps its bar (Codex r1)', 'Preferred Qualifications:\n- Prerequisite: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h128:T241a CONTROL a compulsory label keeps its bar (Codex r1)', 'Preferred Qualifications:\n- Compulsory: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h129:T241a CONTROL a pre-requisites label keeps its bar', 'Preferred Qualifications:\n- Pre-requisites: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h130:T241a CONTROL a must-have label keeps its bar', 'Preferred Qualifications:\n- Must-have: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h131:T241a CONTROL a mandatory label keeps its bar', 'Preferred Qualifications:\n- Mandatory: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h132:T241a CONTROL a key requirement label keeps its bar', 'Preferred Qualifications:\n- Key requirement: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h133:T241a CONTROL a minimum label keeps its bar', 'Preferred Qualifications:\n- Minimum: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h134:T241a CONTROL a basic label keeps its bar', 'Preferred Qualifications:\n- Basic: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('h135:T241a CONTROL a qualifications required label keeps its bar', 'Preferred Qualifications:\n- Qualifications required: 5 years of experience.', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -326,4 +335,4 @@ def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
 
 
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 126
+    assert len(HEADING_CASES) == 135
