@@ -32,6 +32,7 @@ from boardwatch.providers.workday import (
     split_slug,
     split_target,
 )
+from boardwatch.rank.location_gate import classify_location
 
 # T232: no test in this module asserts pacing, a backoff or a deadline, so `Fetcher`'s per-host
 # delay (floored at 0.25 s by `Settings`) is dead wall clock here. See `no_real_sleep`.
@@ -1526,3 +1527,165 @@ def test_healthcheck_on_a_slice_the_tenant_does_not_offer_is_error(tmp_path: Pat
 
 def test_healthcheck_on_a_malformed_facet_fragment_is_error(tmp_path: Path) -> None:
     assert provider.healthcheck(_fetcher(tmp_path), f"{SLUG}#nope") is BoardHealth.ERROR
+
+
+# ---------------------------------------------------------------- detail country (T250)
+#
+# The live detail shape, measured on the store 2026-09-25: `jobPostingInfo.country.descriptor`
+# names the PRIMARY location's country (224,205 of 224,516 stored details carry it), while
+# `additionalLocations` is a list of bare strings with no country anywhere. A tenant's office
+# code ("BUH IV") names no place, so before T250 a Romanian requisition read `unknown`, passed
+# the fail-open location gate and was delivered. Office codes below are invented.
+
+_COUNTRY_LISTED = {
+    "title": "Medical Software Engineer",
+    "externalPath": "/job/ACM-IV/Medical-Software-Engineer_R-10001-2",
+    "locationsText": "2 Locations",
+}
+
+
+def _country_detail(
+    location: str, country: str | None, additional: list[str] | None = None
+) -> dict[str, Any]:
+    info: dict[str, Any] = {
+        "title": "Medical Software Engineer",
+        "jobDescription": "<p>Build it.</p>",
+        "location": location,
+    }
+    if country is not None:
+        info["country"] = {"descriptor": country, "id": "0" * 32}
+        info["jobRequisitionLocation"] = {
+            "descriptor": location,
+            "country": {"descriptor": country, "id": "0" * 32, "alpha2Code": "XX"},
+        }
+    if additional is not None:
+        info["additionalLocations"] = additional
+    return {"jobPostingInfo": info}
+
+
+def _country_parse(detail: dict[str, Any]) -> list[str]:
+    return parse_posting("h", "S", _COUNTRY_LISTED, detail).locations
+
+
+def test_an_office_code_takes_the_details_country() -> None:
+    locations = _country_parse(_country_detail("ACM IV", "Romania", ["Bucharest, Romania"]))
+    assert locations == ["ACM IV, Romania", "Bucharest, Romania"]
+    assert classify_location(locations) == "non_us"
+
+
+@pytest.mark.parametrize(
+    "additional",
+    [["Silicon Valley"], ["ACM P24"], ["Bucharest, Romania", "Silicon Valley"]],
+)
+def test_an_unresolvable_additional_location_keeps_the_posting_unknown(
+    additional: list[str],
+) -> None:
+    # The borrowed country speaks for the PRIMARY only. An additional site the classifier cannot
+    # name may be a US one ("Silicon Valley"), and a confirmed `non_us` would drop a real US job in
+    # hard mode — the worst direction. So the country is not borrowed and the posting stays
+    # `unknown`, kept fail-open exactly as before T250.
+    locations = _country_parse(_country_detail("ACM IV", "Romania", additional))
+    assert locations == ["ACM IV"]
+    assert classify_location(locations) == "unknown"
+
+
+def test_an_office_code_with_a_us_country_reads_us() -> None:
+    locations = _country_parse(_country_detail("ACM HQ", "United States of America"))
+    assert locations == ["ACM HQ, United States of America"]
+    assert classify_location(locations) == "us"
+
+
+def test_a_us_additional_location_keeps_a_foreign_primary_posting_us() -> None:
+    # 156 open postings live pair a non-US primary with a US additional site. Feeding the
+    # country without the additional sites would turn every one whose primary is an office
+    # code into a confirmed non-US posting — a false drop the hard gate cannot undo.
+    locations = _country_parse(_country_detail("ACM IV", "Romania", ["Austin, TX"]))
+    assert locations == ["ACM IV, Romania", "Austin, TX"]
+    assert classify_location(locations) == "us"
+
+
+@pytest.mark.parametrize(
+    ("location", "country"),
+    [
+        # Live: one tenant tags its Quezon City and Chihuahua requisitions with the USA, so an
+        # always-appended country would turn 373 confirmed-foreign postings into `us`.
+        ("Quezon City, Manila, Philippines", "United States of America"),
+        ("Bangalore, IN", "India"),
+    ],
+)
+def test_a_location_that_names_a_place_is_not_overridden_by_the_country(
+    location: str, country: str
+) -> None:
+    assert _country_parse(_country_detail(location, country)) == [location]
+
+
+def test_no_country_leaves_the_location_as_it_was() -> None:
+    assert _country_parse(_country_detail("ACM IV", None)) == ["ACM IV"]
+
+
+def test_a_detail_with_no_location_text_records_the_country_alone() -> None:
+    listed = {k: v for k, v in _COUNTRY_LISTED.items() if k != "locationsText"}
+    posting = parse_posting("h", "S", listed, _country_detail("", "Romania"))
+    assert posting.locations == ["Romania"]
+
+
+def test_an_additional_location_does_not_move_the_remote_policy() -> None:
+    # T250 changes what the location GATE reads, not remote_policy — and the backfill rewrites
+    # locations_json only, so a fresh ingest and a backfilled row must agree on this column.
+    posting = parse_posting(
+        "h", "S", _COUNTRY_LISTED, _country_detail("ACM IV", "Romania", ["Remote - Ontario"])
+    )
+    assert posting.remote_policy == "unknown"
+
+
+@respx.mock
+def test_a_rescan_of_a_known_posting_keeps_the_country_bearing_locations(tmp_path: Path) -> None:
+    # REACH. Details are fetched for unseen postings only, so a later scan re-lists a known
+    # posting through `listed_ids` alone. Were it ever re-parsed from its list row, whose
+    # `locationsText` here is "2 Locations", the next scan would overwrite the country and
+    # the fix would undo itself.
+    from sqlalchemy import insert, select
+
+    from boardwatch.scan.apply import apply_board
+    from boardwatch.store import tables
+    from boardwatch.store.db import ensure_schema, get_engine
+    from boardwatch.store.queries import insert_run
+
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        company_id = int(
+            conn.execute(
+                insert(tables.companies).values(
+                    name="Acme", provider="workday", slug=SLUG, source="user", watched=True,
+                )
+            ).inserted_primary_key[0]
+        )
+    respx.post(LIST_URL).mock(
+        return_value=httpx.Response(
+            200, json={"total": 1, "jobPostings": [_COUNTRY_LISTED], "facets": []}
+        )
+    )
+    respx.get(_detail_url(_COUNTRY_LISTED["externalPath"])).mock(
+        return_value=httpx.Response(
+            200, json=_country_detail("ACM IV", "Romania", ["Bucharest, Romania"])
+        )
+    )
+    first = provider.fetch_board(_fetcher(tmp_path), _request())
+    apply_board(engine, first, company_id, insert_run(engine))
+    known = frozenset(first.listed_ids)
+    second = provider.fetch_board(_fetcher(tmp_path), _request(known=known))
+    apply_board(engine, second, company_id, insert_run(engine))
+    with engine.connect() as conn:
+        stored = conn.execute(select(tables.postings.c.locations_json)).scalar_one()
+    assert second.listed_ids == known
+    assert stored == ["ACM IV, Romania", "Bucharest, Romania"]
+
+
+def test_a_primary_that_names_a_place_keeps_the_locations_it_always_had() -> None:
+    # The cross_host identity keys on the whole locations list, and the lane copies of a Workday
+    # posting (Indeed, LinkedIn, job-apps) carry only its primary location. Adding the additional
+    # sites to a posting whose primary already resolved cost 803 open cross_host matches live and
+    # moved no location class, so they join only where the country had to be added.
+    detail = _country_detail("Austin, TX", "United States of America", ["Denver, CO"])
+    assert _country_parse(detail) == ["Austin, TX"]

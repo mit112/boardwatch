@@ -344,6 +344,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Workday posting whose location is an office code now carries its detail's country, so a non-US posting stops passing
+  the location filter as `unknown` (2026-09-25, T250).** The adapter read only `jobPostingInfo.location` (`BUH IV`), so
+  `classify_location` could not place it and the filter let it through — a Romanian role reached the apply lane on run 477.
+  It now appends `jobPostingInfo.country` to a primary location that names no place of its own, with the posting's
+  additional locations beside it, and only when every additional location resolves; otherwise the locations stay exactly as
+  before, so a posting with an unresolvable site is never dropped on a guess and a primary that already resolves keeps its
+  duplicate-matching key. A rescan of a known posting keeps the new locations. `python -m tools.workday_locations_backfill`
+  recomputes stored rows from their saved detail (dry run by default; `--apply` writes locations and identities in one
+  transaction); on the live store it moves 5,955 open postings from `unknown` to `non_us`, none out of `us`, and loses no
+  duplicate match.
+
 - **OracleHCM, Eightfold, Phenom and Apple boards keep what they fetched when their details outrun the cap, and a board
   failed at its cap keeps its listing and throttle counts (2026-09-25, T248).** T243's stop — no new detail fetch once a
   request could not end before the board's clock, and only after a posting is kept — is now one shared helper used by all
