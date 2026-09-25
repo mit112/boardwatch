@@ -177,6 +177,17 @@ def test_requirements_header_slices_the_span_correctly():
     ]
 
 
+def test_a_title_case_header_with_a_lowercase_and_ends_the_span():
+    """T246: `Compensation and Benefits` is a section heading, as `Benefits:` is."""
+    body = (
+        "Requirements:\n"
+        "3+ years of experience with Python\n"
+        "Compensation and Benefits\n"
+        "Health insurance\n"
+    )
+    assert qualifications_span(body) == ["3+ years of experience with Python"]
+
+
 def test_no_header_returns_an_empty_span():
     body = "We are a fast-growing company looking for a great engineer to join our team."
     assert qualifications_span(body) == []

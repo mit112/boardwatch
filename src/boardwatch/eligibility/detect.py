@@ -560,8 +560,10 @@ def _looks_like_header(line: str) -> bool:
     if not words or len(words) > 6 or not words[0][0].isupper():
         return False
     # Path 1: every significant word capitalized (Title-Case/ALL-CAPS headers like
-    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills").
-    if all(w[0].isupper() for w in words if w[0].isalpha()):
+    # "Benefits:", "REQUIREMENTS", "Nice To Have Skills"). A lowercase `and` is not a
+    # significant word, as `&` is not (T246): "Preferred Skills and Experience" governed
+    # nothing where "Preferred Skills & Experience" hedged its list.
+    if all(w[0].isupper() or w == "and" for w in words if w[0].isalpha()):
         return True
     # Path 2: a lowercase-continuation header whose words AFTER the first are all
     # closed-class glue. A genuine qualification line's later words are real content,
@@ -638,10 +640,14 @@ _LEADING_LABEL = re.compile(r"[^:\n]{1,60}:")
 # and `Preferred Skills & Experience:` read as `Preferred:`, where with the colon the hedge could
 # reach no bullet at all. `Preferred Candidates Must Have:` names no section noun, and `Preferred
 # Qualifications & Required Skills:` a part that is not one, so both stay as they are. No comma:
-# a heading with one is never a heading to `_looks_like_header`.
+# a heading with one is never a heading to `_looks_like_header`. Once `Preferred Education and
+# Experience` is a heading at all (T246) it must hedge, or it ENDS an earlier hedge heading's reach
+# and its own bars read required; so the nouns hold the section nouns those headings name, and a
+# part may open with `technical`/`professional` (`Preferred Technical and Professional Experience`).
 _HEDGE_HEADING_NOUN = (
-    r"(?:qualifications?|skills?|requirements?|experience|knowledge|abilities|attributes|"
-    r"competencies)"
+    r"(?:(?:technical|professional)\s+(?:and\s+)?)*"
+    r"(?:qualifications?|skills?|requirements?|experiences?|knowledge|abilities|attributes|"
+    r"competencies|education|expertise|background|certifications?|capabilities|aptitudes|training)"
 )
 _HEDGE_HEADING = re.compile(
     r"^[\s•‣●\-\*]*(?:preferred|desired|desirable|bonus|nice[\s-]to[\s-]have)"

@@ -21,7 +21,12 @@ import hashlib
 import pytest
 
 from boardwatch.eligibility.catalog import load_rules
-from boardwatch.eligibility.detect import governing_headings, split_units
+from boardwatch.eligibility.detect import (
+    _heading_text,
+    _looks_like_header,
+    governing_headings,
+    split_units,
+)
 from boardwatch.eligibility.engine import evaluate
 from boardwatch.eligibility.facts import Facts, Policy
 from tests.pipeline.test_eligibility_corpus import CASES
@@ -174,6 +179,18 @@ HEADING_CASES: list[tuple] = [
     ("h92:T245 CONTROL a must inside an aside of its own binds the aside's noun (pv 140845)", 'Preferred Qualifications:\n- 10+ years of strong automation experience with test case development (C/C++, Python a must).', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ("h93:T245 CONTROL a required past a second experience head is that head's (pv 346998)", 'Nice to haves\n- 4+ years of product management experience with a clear track record of shipping meaningful consumer-facing products, and prior crypto, Web3, trading, gaming or banking experience is required', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
     ("h94:T245 CONTROL a required past a sentence break the splitter missed is the next sentence's (pv 318063)", 'Preferred Qualifications\n5+ years of people-management experience, including leading managers and/or operational teams.Proven leadership in building large teams.Excellent negotiation is required.', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h95:T246 a Title-case heading with a lowercase and is a heading, and its hedge governs its list', 'Preferred Skills and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h96:T246 the same heading with a colon', 'Desired Skills and Experience:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h97:T246 an ALL-CAPS heading with a lowercase and ends nothing it should not, and the hedge heading after it governs', 'DUTIES and RESPONSIBILITIES:\n- Lead audits\nPreferred Skills and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h98:T246 a hedge before technical and professional nouns governs the whole heading', 'Preferred Technical and Professional Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h99:T246 a hedge before education and experience governs the whole heading', 'Preferred Education and Experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h100:T246 a new hedge heading keeps the hedge an earlier one gave its plain lines (pv 352300)', "Preferred Skills\nExperience with Python.\nPreferred Education and Experience\nMaster's degree preferred.\n12+ years of digital design verification experience.", P_FACTS, ALL_BLOCKERS, 'eligible', [['degree:degree_preferred', 'preferred', 'met'], ['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h101:T246 a single education noun after the hedge is a hedge heading too', 'Preferred Education:\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
+    ('h102:T246 CONTROL a required technical and professional heading is no hedge heading', 'Required Technical and Professional Expertise\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ("h103:T246 CONTROL a hedge after the new heading's coordinator is not the heading's (T215)", 'Education and Preferred Qualifications\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h104:T246 CONTROL a sentence-case heading is still no heading (not built)', 'Preferred skills and experience\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h105:T246 a plain Title-case line with a lowercase and is a heading, as Python SQL already is, and ends the hedge', 'Preferred Qualifications:\nPython and SQL\n5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'ineligible', [['experience_years:scoped_years_minimum', 'required', 'unmet']]),
+    ('h106:T246 CONTROL a bulleted Title-case line with a lowercase and is no heading', 'Preferred Qualifications:\n- Python and SQL\n- 5+ years of experience in audit', P_FACTS, ALL_BLOCKERS, 'eligible', [['experience_years:scoped_years_preferred', 'preferred', 'unmet']]),
 ]
 
 # Each list-form case against the one-line body the engine already reads.
@@ -255,5 +272,35 @@ def test_split_units_is_byte_identical_over_every_body() -> None:
     assert running.hexdigest() == SPLIT_UNITS_DIGEST
 
 
+@pytest.mark.parametrize(
+    ("line", "header"),
+    [
+        ("Preferred Skills and Experience", True),
+        ("DUTIES and RESPONSIBILITIES:", True),
+        ("Compensation and Benefits", True),
+        ("Preferred skills and experience", False),
+        ("Experience with Python and SQL", False),
+        ("Skills and experience", False),
+    ],
+)
+def test_a_lowercase_and_between_capitalised_words_is_glue(line: str, header: bool) -> None:
+    """T246: `and` is not a significant word to the Title-case test, as `&` is not."""
+    assert _looks_like_header(line) is header
+
+
+@pytest.mark.parametrize(
+    "noun",
+    ["Experiences", "Education", "Expertise", "Background", "Certifications", "Capabilities",
+     "Aptitudes", "Training", "Technical Expertise", "Professional and Technical Experience"],
+)
+def test_each_section_noun_a_new_heading_names_is_hedged(noun: str) -> None:
+    """T246: every noun the newly detected hedge headings name reads as the hedge alone."""
+    assert _heading_text(f"Preferred Skills and {noun}:") == "Preferred:"
+
+
+def test_an_open_noun_after_the_hedge_is_no_hedge_heading() -> None:
+    assert _heading_text("Preferred Skills and Tools:") == "Preferred Skills and Tools:"
+
+
 def test_the_surface_is_complete() -> None:
-    assert len(HEADING_CASES) == 94
+    assert len(HEADING_CASES) == 106
