@@ -161,6 +161,11 @@ class RankedPosting:
     # has None. Carries an id rather than a bool for the reason every other drain field does: a
     # suppression the operator cannot trace to the row that displaced it is not auditable.
     lane_copy_of: int | None = None
+    # The ranker's tier (`_rank_tier` in `rank_open_postings`), stamped on the row that was sorted
+    # by it so the run's slate cut reads the SAME tier rather than a second copy of the rules:
+    # 0 = entry-marked in-field title, 1 = decided `eligible` + in-field, 2 = `uncertain` +
+    # in-field, 3 = the rest.
+    tier: int = 3
 
 
 @dataclass(frozen=True)
@@ -833,7 +838,8 @@ def rank_open_postings(
             return 2
         return 3
 
-    scored.sort(key=lambda r: (_rank_tier(r), -r.score.total))
+    scored = [replace(r, tier=_rank_tier(r)) for r in scored]
+    scored.sort(key=lambda r: (r.tier, -r.score.total))
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
     # rows instead of losing an eligible posting that ranks just below an ineligible one. An
     # unevaluated posting (verdict None) is never hidden (D-P2-10). The hidden count spans the

@@ -153,6 +153,11 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # `built`/`skipped` disposition stale the moment an operator changed a fetch budget. The
         # queue sync reports both sides of the budget either way.
         "form_question_fetch_budget",
+        # OUT on `gate.depth`'s reasoning, and `--top` — the number it bounds — is not hashed
+        # either: it changes how MANY leads one run delivers and WHEN a lead is delivered, never
+        # the verdict any posting receives. A lead beyond today's slate carries no disposition and
+        # ranks again tomorrow. IN would stale every permanent disposition for a volume knob.
+        "slate_ceiling",
     }
 )
 
@@ -320,6 +325,9 @@ _ROUTING_RELEVANT: frozenset[str] = frozenset(
         # same lead in `_review` — and it creates and destroys no lead, so `config_hash` excludes
         # it correctly.
         "form_question_fetch_budget",
+        # `gate.depth`'s class: a ceiling above `--top` is also the RANK depth, so it changes how
+        # much of the slate was judged, and `judge_verdict` is a `classify` input.
+        "slate_ceiling",
     }
 )
 _ROUTING_IRRELEVANT: frozenset[str] = frozenset(

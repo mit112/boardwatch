@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`slate_ceiling` lets a run's slate grow past `--top`, but only by decided-good leads
+  (2026-09-26).** At a ceiling above `--top`, `run` ranks that deep and delivers every tier 0-1 lead
+  (an entry-marked `in_field` title, or a decided `eligible` `in_field` one) that survived liveness and
+  the gate, with undecided leads still filling up to `--top`: slate size = min(ceiling, max(top,
+  tier 0-1 survivors)). The tier is the ranker's own, now carried on each ranked row. A lead past the
+  slate keeps today's treatment — no `seen` row, counted into `capped_by_top_n`, ranked again next run.
+  The default 0 delivers exactly `--top`, as before.
+
 - **An entry-level software title now ranks first for a profile targeting `entry` (2026-09-26).**
   `leveling.yaml`'s software tier gains `entry_markers` ("new grad", "early career", "university
   graduate", "entry level", "junior", "Engineer I", ...), and `top`/`run` sort an `in_field` title carrying

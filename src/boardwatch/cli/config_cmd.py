@@ -210,6 +210,12 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "Greenhouse application forms fetched per queue sync, looking for a citizenship or "
         "export-control hard stop the JD never states, ≥0 (0 disarms it)",
     ),
+    "slate_ceiling": (
+        int,
+        "next run",
+        "most leads one run may deliver; the slate grows past --top only by decided-eligible "
+        "leads, ≥0 (0 = exactly --top)",
+    ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 
