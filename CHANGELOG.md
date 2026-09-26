@@ -351,6 +351,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The software role gate now recognises seven title forms it read as `uncertain` (2026-09-26, E5).** `cyber
+  security` (no word boundary sat inside "Cybersecurity"), `embedded systems`, `ML/AI systems engineer`, `deployed
+  [agent] engineer` ("Deployed Engineer", "Forward Deployed Agent Engineer"), `engineer, deep learning`, an engineer or
+  developer title naming `AI agents`, and bare `test automation`. Over all 331,769 open postings: 225 titles (330
+  postings) move `uncertain` → `in_field` and 8 titles (9 postings) `out_of_field` → `in_field`. Every flip was read:
+  9 read hardware-leaning or unclear ("Embedded Systems Engineer - FPGA Platform", "Test Automation Handler
+  Engineer") and about 8 are security-compliance roles (RMF, ISSO), which the existing `security engineer` signal
+  already clears. Two wider forms were measured and rejected: a 30-character `engineer … new grad` gap and any word
+  between `deployed` and `engineer`.
+
 - **A lane copy of a job already delivered in an earlier run is no longer delivered again (2026-09-26, T257).** The
   lane-copy rules compared a lane copy only against employer-board postings on the day's slate or standing unapplied in
   the queue, and against lane copies on the same slate, so a copy of a job another lane delivered yesterday — or of a

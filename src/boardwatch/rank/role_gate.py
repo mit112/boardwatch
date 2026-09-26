@@ -436,6 +436,14 @@ _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
 # Positive SWE signal on the title. Bare `reliability` is deliberately absent: it made a
 # manufacturing "Reliability Engineer" a positive match while `reliability physics` was a
 # deny. `site reliability` and `sre` still match, so genuine SRE titles are unaffected.
+#
+# E5 (measured over all 331,769 open postings, 2026-09-26): `cyber security`, `embedded systems`,
+# `ML/AI systems engineer`, `deployed [agent] engineer`, `engineer, deep learning`, `engineer ...
+# AI agent` and bare `test automation` were each added for a filter-passing software title that
+# read `uncertain`. Two wider forms were measured and rejected: a 30-char gap in `engineer ... new
+# grad` (4 of its 5 new clears were environmental / turbomachinery / analog roles), and any word
+# between `deployed` and `engineer` ("Forward Deployed Legal Engineer"). `systems engineer` has no
+# `\w*` so "Data Scientist - Agentic AI Systems Engineering" keeps its data-scientist veto.
 _TITLE_SWE_SIGNAL = (
     r"\bsoftware\s+(engineer|engineering|developer|development|architect)\w*\b|"
     r"\b(software|application|apps?|systems?|product)\s+development\s+engineer\b|"
@@ -445,18 +453,22 @@ _TITLE_SWE_SIGNAL = (
     r"(engineer|developer|programmer|architect)\w*\b|"
     r"\b(devops|sre|site\s+reliability|platform|infrastructure|infra|cloud|"
     r"distributed\s+systems|data|machine\s+learning|ml|ai|applied\s+ai|"
-    r"perception|compiler|kernel|firmware|graphics|security|network|"
+    r"embedded\s+systems|perception|compiler|kernel|firmware|graphics|security|"
+    r"cyber\s*security|network|"
     r"observability|search|payments|growth|productivity|tools|"
-    r"automation|test\s+automation|quality\s+engineering)\s+engineer\w*\b|"
+    r"automation|quality\s+engineering)\s+engineer\w*\b|\btest\s+automation\b|"
     r"\b(engineer|developer)\s*,?\s*(backend|frontend|full[\s-]?stack|mobile|ios|android|"
-    r"platform|infrastructure|distributed\s+systems|api)\b|"
+    r"platform|infrastructure|distributed\s+systems|api|deep\s+learning)\b|"
+    r"\b(?:machine\s+learning|ml|ai)\s+systems\s+engineer\b|"
+    r"\b(?:engineer|developer)\b.{0,20}\bai\s+agents?\b|"
     r"\b(swe|sde|sdet|mts|amts|imts)\b|\bmember\s+of\s+technical\s+staff\b|"
     r"\bsw\s+engineer\w*\b|"
     r"\bprogrammer\b|\bprogrammer\s+analyst\b|"
     r"\bweb\s+develop\w*\b|\bapplication\s+develop\w*\b|"
     r"\bnew\s+grad\w*\b.{0,30}\b(engineer|developer)\b|"
     r"\b(engineer|developer)\b.{0,20}\bnew\s+grad\w*\b|"
-    r"\bcomputer\s+scientist\b|\bresearch\s+engineer\b|\bforward\s+deployed\s+engineer\b"
+    r"\bcomputer\s+scientist\b|\bresearch\s+engineer\b|"
+    r"\b(?:forward\s+)?deployed\s+(?:agent\w*\s+)?engineer\b"
 )
 
 # Broad rescue: the title reads software-first, so every deny is skipped. Evaluated FIRST.
