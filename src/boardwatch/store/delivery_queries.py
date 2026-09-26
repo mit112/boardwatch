@@ -888,6 +888,58 @@ def standing_board_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
+def delivered_cross_host_keys(
+    conn: Connection,
+) -> tuple[dict[str, tuple[int, ...]], frozenset[int]]:
+    """`cross_host` identity key -> every DELIVERED posting id in that group, board OR lane; and
+    every delivered open posting id, reported or not.
+
+    The seed for the delivered-twin rule in `top_cmd._suppress_lane_copies`: a lane copy that has
+    never been delivered is redundant when a copy of the same job already WAS, in any earlier run.
+    Measured 2026-09-25 over runs 308-477: 41 of 578 delivered leads repeated one already
+    delivered under a shared `cross_host` key, 33 of them lane-vs-lane across runs — the case
+    rule (a) cannot see (no board member) and rule (b) cannot either (its survivor must be on THIS
+    slate). The owner applied to Nuro twice that way.
+
+    **Applied and skipped members still hold, unlike `standing_board_cross_host_keys`.** The owner
+    has already acted on this job; a second copy re-opens a decision already made — releasing on
+    `applied` is how PathAI re-surfaced beside the application. **The drain is `closed` and
+    `reported`:** a closed requisition is gone, and a reported one says the delivered copy is
+    wrong, so in either case the lane copy may be the live rendering and ranks again on the next
+    run (the rule writes no `seen` row).
+
+    **The second value is the guard, and it ignores `reported`.** A row that was itself delivered
+    is never held by this rule; a reported one that ranks again (`ledger reopen`) is still a
+    delivered row, and reading "delivered" off the holder map would call it new and hide it.
+
+    CURRENT `algorithm_version` only, and reached by a JOIN outward from `artifacts`, for the
+    reasons `standing_board_cross_host_keys` gives.
+    """
+    reported = reported_job_ids(conn)
+    rows = conn.execute(
+        _delivered_select()
+        .add_columns(posting_identities.c.identity_key)
+        .join(
+            posting_identities,
+            (posting_identities.c.posting_id == postings.c.id)
+            & (posting_identities.c.kind == "cross_host")
+            & (posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION),
+        )
+        .where(postings.c.status == "open", postings.c.job_id.is_not(None))
+    ).all()
+    held: dict[str, list[int]] = {}
+    delivered: set[int] = set()
+    for row in rows:
+        posting_id = int(row.posting_id)
+        delivered.add(posting_id)
+        if int(row.job_id) in reported:
+            continue
+        key = str(row.identity_key)
+        if posting_id not in held.setdefault(key, []):
+            held[key].append(posting_id)
+    return {key: tuple(ids) for key, ids in held.items()}, frozenset(delivered)
+
+
 def lane_copy_posting_ids(conn: Connection) -> set[int]:
     """`posting_id` for every delivered LANE copy whose employer-board twin is also standing.
 

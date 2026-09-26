@@ -344,6 +344,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A lane copy of a job already delivered in an earlier run is no longer delivered again (2026-09-26, T257).** The
+  lane-copy rules compared a lane copy only against employer-board postings on the day's slate or standing unapplied in
+  the queue, and against lane copies on the same slate, so a copy of a job another lane delivered yesterday — or of a
+  board posting the owner had already applied to — went out again: 41 of 578 deliveries since run 308 repeated one already
+  made, and one role was applied to twice. A never-delivered lane copy is now held while any delivered copy of the same
+  `cross_host` group is open and not reported, applied or not, and returns once every delivered copy closes or is
+  reported. Board postings are never held, a delivered copy is never held by this rule, and no `seen` row is written.
+
 - **A scan no longer walks every open posting in the store once per board (2026-09-25, T256).** Closing a board's
   missing postings and the empty-board guard both asked for `company_id = ? AND status = 'open'`, and with no planner
   statistics SQLite answered that from the status index — reading all ~305,000 open postings to find one board's. With the
