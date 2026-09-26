@@ -14,6 +14,7 @@ every `top` run (no restart needed).
 | `detail_fetch_budget` | int, 1–10000 | 50 | next scan |
 | `seen_ttl_days` | int, ≥ 1 | 7 | next top/run |
 | `reap_stale_after_hours` | int, ≥ 1 | 24 | next run |
+| `slate_ceiling` | int, ≥ 0 | 0 (exactly `--top`) | next run |
 | `location_filter_mode` | `soft` \| `hard` | `soft` | next top |
 | `zero_skill_coverage_prior` | float, [0, 1] | 0.50 | next top |
 | `recency_half_life_days` | float | 14.0 | next top |

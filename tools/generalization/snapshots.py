@@ -109,6 +109,11 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # geography, field or work authorization -- the hold it can produce applies to every
     # profile status alike, because the reader answers the question, not a rule.
     "Settings.form_question_fetch_budget": 100,
+    # The adaptive slate's upper bound. 0 ships the fixed `--top` slate byte-for-byte. Neutral by
+    # construction: it bounds how MANY leads one run delivers, and which leads count as decided-good
+    # is the ranker's tier rule, already profile-driven — it encodes no view about roles,
+    # seniority, geography or field.
+    "Settings.slate_ceiling": 0,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -213,6 +218,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.death_probe_company_budget": "operational",
     "Settings.death_probe_ttl_hours": "operational",
     "Settings.form_question_fetch_budget": "operational",
+    "Settings.slate_ceiling": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",

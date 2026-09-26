@@ -1886,6 +1886,20 @@ def _zero_output_guard(
     return None
 
 
+def _slate_size(leads: Sequence[RankedPosting], *, top_n: int, ceiling: int) -> int:
+    """How many of the post-gate survivors the run delivers.
+
+    `ceiling <= top_n` — the default 0 among them — is the fixed `top_n` slate that shipped.
+    Above it, the slate holds every decided-good lead (tier 0-1, stamped by the ranker, never
+    re-derived here) up to the ceiling, and never fewer than `top_n`. `leads` is in ranker order,
+    tier first, so the tier 0-1 leads are its prefix and slicing to this size keeps them all.
+    """
+    if ceiling <= top_n:
+        return top_n
+    decided_good = sum(1 for posting in leads if posting.tier <= 1)
+    return min(ceiling, max(top_n, decided_good))
+
+
 def _reduce_gate_stage(
     summary: PipelineSummary,
     gate_result: GateStageResult,
@@ -2466,6 +2480,10 @@ def _run_pipeline_leased(
             if settings.gate.enabled and settings.gate.depth > top_n
             else top_n
         )
+        # The adaptive slate: a ceiling above `top_n` ranks at least that deep, or there would be
+        # no decided-good leads past `top_n` for the cut below to keep. At 0 — the default — or at
+        # or below `top_n` this is a no-op.
+        rank_limit = max(rank_limit, settings.slate_ceiling)
         try:
             ranked = rank_open_postings(
                 engine,
@@ -2624,9 +2642,13 @@ def _run_pipeline_leased(
         # it was never presented to anybody, and a `seen` row would bury it for the whole TTL —
         # D-103's "capped postings are buried, not queued". It ranks again next run, carrying
         # the verdict this run bought for it.
-        beyond_slate = leads[top_n:] if rank_limit > top_n else []
+        #
+        # With `slate_ceiling` above `top_n` the slate is not a constant: every tier 0-1 survivor
+        # is kept up to the ceiling, and undecided leads fill up to `top_n` (`_slate_size`).
+        slate_size = _slate_size(leads, top_n=top_n, ceiling=settings.slate_ceiling)
+        beyond_slate = leads[slate_size:] if rank_limit > top_n else []
         if beyond_slate:
-            leads = leads[:top_n]
+            leads = leads[:slate_size]
         beyond_slate_ids = frozenset(posting.posting_id for posting in beyond_slate)
         summary.gate_beyond_slate = len(beyond_slate)
         beyond_slate_job_ids: set[int] = set()
