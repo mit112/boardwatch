@@ -4507,6 +4507,32 @@ store — 24,213 Workday postings' locations and 72,537 identity rows (undo: `.a
 t250-locations-before-apply.json.gz`); 33 merged worktrees removed (their `.agent/` in
 `.agent/worktree-agent-archive-2026-09-25.tar.gz`); historical docs moved to `docs/program/archive/` and `docs/archive/`.
 
+
+## Settled session block moved out of STATE on 2026-09-26b (verbatim)
+
+*Moved because its day-2 read and the census close are done (D-600). Its day-1 claim is superseded: read net-new, runs 478 and 480 failed B1 and B8 volume, and the count restarted with the 2026-09-27 run (D-600).*
+
+### 2026-09-26 — **DAY 1 OF THE 14 IS RUN 478 AND IT MEETS B1–B8** (kickstarted 2026-09-25 21:03 CDT under the D-597 prepone ruling; the 09-26 04:00 tick is day 2; day 14 = the 10-08 run if nothing restarts it). **The opus B8 census reads 4/97 = 4.1%.** The apply lane was made ready on the owner's instruction: **87 PDF-less leads rendered, 61 unapplyable leads reported.** T256 #500 and T257 #501 shipped (D-599).
+
+**Verify first:** `git log --oneline -5 origin/main`, the primary on `main` (it was pulled to #500 at 01:59; #501 and this docs PR land after it), the tick enabled, `.agent/2026-09-26-session/notes.md`. Read a day with `python3 .agent/acceptance/day_row.py <run_id> <day>` (exit 1 = a bar or the judge failed) and `.venv/bin/python .agent/acceptance/b4_audit.py --run <run_id>`.
+
+**Day 1, run 478** (METRICS "Acceptance run"): B1 40 · B2 29/29 · B3 all one page · B4 0 on 29 · B5 ok · B6 reconciles · B7 0% abstain · B8 29/day · gate judged 45, failed-open 0. **B8 precision, opus census** of runs 476–478 placements: **4/97 = 4.1% (Wilson 1.6–10.1)**; overlap 17/17; short job-apps summaries 0/31, long bodies 4/66. n ≥ 100 closes with day 2's placements.
+
+**What the session found and did:**
+- **The scan crawled** (141 boards in 88 min): `scan/apply`'s two per-board reads walked all ~305k open postings through the status index; disk-bound under memory pressure on the 16 GB machine (a game was running); ~140 boards/min again once it closed. **T256 (#500)** moves them onto the company index (`likely()` hint). Run 478's wall clock was 4 h 42 m.
+- **The 1800 s cap works:** Deutsche Bank 1 → 1,142 open, Hitachi 1 → 1,555, Timberland 1 → 1,386, M&T 1 → 799. dominos grew 802 → 2,271, none ever delivered (owner call 3).
+- **The seat:** this session's 403-lead opus lane audit exhausted the enterprise seat 00:25–01:30; run 478's gate ran on the reset window and judged cleanly. Size any opus fan-out against the next gate stage.
+- **Apply-lane readiness** (the owner, 00:02: "making sure the jobs i can apply to are all ready to go"): 87 apply-lane leads had NO PDF — review-lane stubs that the review gate later released into the apply lane, which nothing renders (T259). All 87 rendered through the runner's own path (`lane/render_pending.py`, one manual run row 479); B4 0 on them. Both opus judges read every lead (agreement 97.5%); the 61 unapplyable were **marked reported** on the owner's ruling (`_reported/`, list in `lane/reported-2026-09-26.json`, reversible). **The apply lane now holds 429: 418 clean by both judges + 11 split, every one with a one-page PDF, every posting open.**
+- **T257 (#501):** a never-delivered lane copy is held while a delivered copy of its `cross_host` group is open and unreported, applied or not (41 of 578 deliveries since run 308 were repeats; one role applied to twice). Delivery-side; the count does not restart.
+- **Graduation windows written `graduation date of X – Y`** escape `graduation_window_required` (52 open postings; 3 delivered, all Adobe, now reported). **Recorded, not fixed** (owner, 02:13): it is an eligibility change and would restart the count — T258.
+
+**Next, in order:**
+1. **Read the 04:00 run as day 2** (`day_row.py <id> 2`, B4 `--run`), add its apply-lane placements to the opus census (`bw-review/.agent/auditB8-opus/stage478.py`, change the run id) to close n ≥ 100, add the METRICS row. Keep the seat quiet from ~03:00 until its gate stage ends.
+2. **Each following day:** the same. Nothing else is owed.
+3. **T255 v0.6.0:** branch `release-0.6.0` (worktree `bw-t255`, gate EXIT=0 on #500) is HELD unmerged — rebase it onto `main` again, then merge and tag together once the owner confirms the PyPI publish.
+
+**Changed this session (live store / machine):** 87 `resume_tailored` artifacts and their queue folders (manual run 479); 61 `queue.reported.*` rows; the primary pulled to #500; a stale `.git/index.lock` (from 2026-09-25 19:16, no git process) removed.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
