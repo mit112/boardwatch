@@ -1912,6 +1912,33 @@ def test_the_apply_lane_alert_reaches_the_MORNING_DIGEST(
     )
 
 
+def test_the_buried_good_lead_alert_reaches_the_MORNING_DIGEST(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pins the buried-good-lead call site above `_emit_morning`, by the discriminator above:
+    below it `summary.errors` still carries the marker and the rendered digest does not."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(
+        runner_mod, "check_buried_good_lead", lambda *_a, **_k: "MARKER-buried"
+    )
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert summary.morning is not None, "guard: the digest must have been written"
+    assert any("MARKER-buried" in e for e in summary.errors), (
+        "guard: the alert must reach summary.errors at all"
+    )
+    rendered = summary.morning.markdown_path.read_text(encoding="utf-8")
+    assert "MARKER-buried" in rendered, (
+        "the buried-good-lead alert is missing from the morning digest — the call sits BELOW "
+        "`_emit_morning`"
+    )
+
+
 # --- T129: the ping may not outrun the run's own bookkeeping -------------------------------
 #
 # The heartbeat gate asked three questions — did the run go fatal, did the funnel write, did

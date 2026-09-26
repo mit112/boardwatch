@@ -84,6 +84,7 @@ from boardwatch.llm.gate_judge import GateStageResult, run_gate_refresh, run_gat
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
+from boardwatch.notify.buried_good_lead import check_buried_good_lead
 from boardwatch.notify.corpus_regression import check_corpus_regression
 from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.heartbeat import send_heartbeat
@@ -3438,6 +3439,21 @@ def _run_pipeline_leased(
             # The FAILURE is an ordinary soft alert and is escalatable like every other one: a
             # detector that has silently stopped working is a fault, whatever it was measuring.
             note = f"apply-lane-volume check not run: {exc}"
+            console.print(f"  ! {note}", markup=False)
+            summary.errors.append(note)
+            append_run_error(engine, run_id, note)
+        # Buried-good-lead soft alert: a posting the judge cleared (eligible, seniority fit yes)
+        # that was never delivered closed since the previous clean run — a good job lost below
+        # the `--top` cut, which no delivery or lane detector above can see because the lead was
+        # never delivered. Non-fatal. Above `_emit_morning` like every soft alert here.
+        try:
+            buried_alert = check_buried_good_lead(engine, settings, run_id=run_id)
+            if buried_alert is not None:
+                console.print(f"  ! {buried_alert}", markup=False)
+                summary.errors.append(buried_alert)
+                append_run_error(engine, run_id, buried_alert)
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            note = f"buried-good-lead check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
