@@ -604,7 +604,7 @@ def rank_open_postings(
             conn, skipped=set(skipped_job_ids(conn))
         )
         # The delivered-twin rule's seed, in the same snapshot for the same reason.
-        delivered_keys = delivered_cross_host_keys(conn)
+        delivered_keys, delivered_ids = delivered_cross_host_keys(conn)
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
@@ -1130,6 +1130,7 @@ def rank_open_postings(
         visible,
         standing_board_keys=standing_board_keys,
         delivered_keys=delivered_keys,
+        delivered_ids=delivered_ids,
         include_lane_copy=include_lane_copy,
     )
     lane_copy_job_ids = {
@@ -1178,6 +1179,7 @@ def _suppress_lane_copies(
     *,
     standing_board_keys: dict[str, tuple[int, ...]],
     delivered_keys: dict[str, tuple[int, ...]],
+    delivered_ids: frozenset[int],
     include_lane_copy: bool,
 ) -> tuple[list[RankedPosting], int, set[int]]:
     """D-498 rules (a) and (b): drop a lane copy of a job this slate already carries.
@@ -1276,7 +1278,7 @@ def _suppress_lane_copies(
         ]
         # The delivered-twin rule: a copy of this job already went out in an earlier run. Only
         # for a row that was never delivered itself, so two delivered copies cannot hold each other.
-        if not holders and posting.posting_id not in delivered_keys.get(group, ()):
+        if not holders and posting.posting_id not in delivered_ids:
             holders = list(delivered_keys.get(group, ()))
         # Rule (b): no employer-board member anywhere, but a HIGHER-RANKED LANE copy of the same
         # job is already on this slate. A weaker claim than rule (a) — nothing here can point at

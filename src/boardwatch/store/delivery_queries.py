@@ -888,8 +888,11 @@ def standing_board_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}
 
 
-def delivered_cross_host_keys(conn: Connection) -> dict[str, tuple[int, ...]]:
-    """`cross_host` identity key -> every DELIVERED posting id in that group, board OR lane.
+def delivered_cross_host_keys(
+    conn: Connection,
+) -> tuple[dict[str, tuple[int, ...]], frozenset[int]]:
+    """`cross_host` identity key -> every DELIVERED posting id in that group, board OR lane; and
+    every delivered open posting id, reported or not.
 
     The seed for the delivered-twin rule in `top_cmd._suppress_lane_copies`: a lane copy that has
     never been delivered is redundant when a copy of the same job already WAS, in any earlier run.
@@ -904,6 +907,10 @@ def delivered_cross_host_keys(conn: Connection) -> dict[str, tuple[int, ...]]:
     `reported`:** a closed requisition is gone, and a reported one says the delivered copy is
     wrong, so in either case the lane copy may be the live rendering and ranks again on the next
     run (the rule writes no `seen` row).
+
+    **The second value is the guard, and it ignores `reported`.** A row that was itself delivered
+    is never held by this rule; a reported one that ranks again (`ledger reopen`) is still a
+    delivered row, and reading "delivered" off the holder map would call it new and hide it.
 
     CURRENT `algorithm_version` only, and reached by a JOIN outward from `artifacts`, for the
     reasons `standing_board_cross_host_keys` gives.
@@ -921,14 +928,16 @@ def delivered_cross_host_keys(conn: Connection) -> dict[str, tuple[int, ...]]:
         .where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all()
     held: dict[str, list[int]] = {}
+    delivered: set[int] = set()
     for row in rows:
+        posting_id = int(row.posting_id)
+        delivered.add(posting_id)
         if int(row.job_id) in reported:
             continue
         key = str(row.identity_key)
-        posting_id = int(row.posting_id)
         if posting_id not in held.setdefault(key, []):
             held[key].append(posting_id)
-    return {key: tuple(ids) for key, ids in held.items()}
+    return {key: tuple(ids) for key, ids in held.items()}, frozenset(delivered)
 
 
 def lane_copy_posting_ids(conn: Connection) -> set[int]:

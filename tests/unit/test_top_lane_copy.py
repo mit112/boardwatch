@@ -642,3 +642,19 @@ def test_a_delivered_board_twin_never_defers_another_BOARD_row(env: Path) -> Non
     results = rank_open_postings(engine, _settings(env), limit=10)
     assert results.hidden_lane_copy == 0
     assert _posting_id(engine, "acme-1") in {p.posting_id for p in results.visible}
+
+
+def test_a_delivered_copy_that_was_REPORTED_and_ranks_again_is_not_held_as_new(env: Path) -> None:
+    """Codex r1. A reported job leaves the holder map, and a `ledger reopen` lets it rank again —
+    it is still a DELIVERED row, so the delivered-twin rule must not call it new and hide it
+    behind its twin. The group then falls to rule (b), which keeps the highest-ranked copy."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    reported_lane = _posting_id(engine, "jobapps-acme")
+    for slug in ("jobapps-acme", "indeed-acme"):
+        _artifact_only(engine, _posting_id(engine, slug))
+    with engine.begin() as conn:
+        job = int(conn.execute(postings.select().where(postings.c.id == reported_lane)).one().job_id)
+        mark_job_reported(conn, job_id=job, at=NOW)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert _providers(env, results) == ["jobapps", "greenhouse", "greenhouse"]
