@@ -344,6 +344,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A scan no longer walks every open posting in the store once per board (2026-09-25, T256).** Closing a board's
+  missing postings and the empty-board guard both asked for `company_id = ? AND status = 'open'`, and with no planner
+  statistics SQLite answered that from the status index — reading all ~305,000 open postings to find one board's. With the
+  store cached that cost about a second; on a 16 GB machine under memory pressure it cost about 40 s a board and run 478's
+  scan crawled at 141 boards in 88 minutes. A `likely()` planner hint, which leaves every value unchanged, moves both reads
+  and the death probe's per-company read onto the company index.
+
 - **A Workday posting whose location is an office code now carries its detail's country, so a non-US posting stops passing
   the location filter as `unknown` (2026-09-25, T250).** The adapter read only `jobPostingInfo.location` (`BUH IV`), so
   `classify_location` could not place it and the filter let it through — a Romanian role reached the apply lane on run 477.
