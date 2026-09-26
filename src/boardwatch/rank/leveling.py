@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.resources import files
@@ -54,6 +55,15 @@ class LevelScheme:
 class FieldTier:
     words: Mapping[str, SeniorityBand]
     roman: Mapping[str, SeniorityBand]
+    entry_markers: tuple[str, ...] = ()
+
+    def has_entry_marker(self, title: str) -> bool:
+        """Whether `title` states it is entry-level in one of this field's marker phrases."""
+        spaced = " ".join(title.replace("-", " ").split())
+        return any(
+            re.search(rf"\b{re.escape(marker)}\b", spaced, re.IGNORECASE) is not None
+            for marker in self.entry_markers
+        )
 
 
 @dataclass(frozen=True)
@@ -151,7 +161,14 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
             _key(k, f"field {fname!r} roman").upper(): _band(v, f"field {fname!r} roman {k!r}")
             for k, v in ((body or {}).get("roman") or {}).items()
         }
-        fields[fname] = FieldTier(words=words, roman=roman)
+        markers = (body or {}).get("entry_markers") or []
+        if not isinstance(markers, list):
+            raise LevelingError(f"field {fname!r} entry_markers: must be a list of phrases")
+        entry_markers = tuple(
+            " ".join(_key(m, f"field {fname!r} entry_markers").casefold().split())
+            for m in markers
+        )
+        fields[fname] = FieldTier(words=words, roman=roman, entry_markers=entry_markers)
 
     # Hash the PARSED document, not the file: the consumer reads the parsed object, so a
     # digest over raw bytes would move on a comment edit and miss a semantic one via override.
