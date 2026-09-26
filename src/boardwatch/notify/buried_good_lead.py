@@ -7,9 +7,10 @@ lane detector counts it, and its closing is an ordinary scan event. Measured 202
 postings closed over runs 43-480 with no signal anywhere.
 
 A SOFT alert when at least one judge-cleared, never-built posting closed since the previous clean
-run — `buried_closed` grew, i.e. a good job was lost this run. Growth is read off `closed_at`
-rather than off a count stored by the previous run, so a re-judge or a sibling build that shrinks
-the population cannot mask a loss in the same run, and no new column is needed.
+run — either closed count grew (the current-key one, or the one cleared only under an older judge
+key and never re-judged), i.e. a good job was lost this run. The two are named apart. Growth is
+read off `closed_at` rather than off a count stored by the previous run, so a re-judge or a sibling
+build that shrinks the population cannot mask a loss in the same run, and no new column is needed.
 
 It never sets `fatal`: the run succeeded, and the loss is a ranking outcome to look at, not a
 fault that should trip the dead-man's switch.
@@ -44,11 +45,24 @@ def check_buried_good_lead(engine: Engine, settings: Settings, *, run_id: int) -
             return None
         buried = buried_good_leads(conn, settings)
     lost = sorted(pid for pid, closed_at in buried.closed.items() if closed_at > since)
-    if not lost:
+    stale_lost = sorted(pid for pid, closed_at in buried.stale_closed.items() if closed_at > since)
+    if not lost and not stale_lost:
         return None
-    ids = ", ".join(str(pid) for pid in lost)
-    return (
-        f"buried: {len(lost)} judge-cleared lead(s) closed since the previous clean run without "
-        f"ever being delivered (posting {ids}) — {len(buried.open)} more are eligible, "
-        f"seniority-fit and still open below the delivery cut"
-    )
+    parts = []
+    if lost:
+        parts.append(
+            f"{len(lost)} judge-cleared lead(s) closed since the previous clean run without ever "
+            f"being delivered (posting {_ids(lost)}) — {len(buried.open)} more are eligible, "
+            f"seniority-fit and still open below the delivery cut"
+        )
+    if stale_lost:
+        parts.append(
+            f"{len(stale_lost)} lead(s) cleared under an older judge key and never re-judged "
+            f"closed since the previous clean run (posting {_ids(stale_lost)}) — "
+            f"{len(buried.stale_open)} more are still open"
+        )
+    return "buried: " + "; ".join(parts)
+
+
+def _ids(posting_ids: list[int]) -> str:
+    return ", ".join(str(pid) for pid in posting_ids)

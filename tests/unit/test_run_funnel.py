@@ -670,24 +670,30 @@ def test_uncertain_band_is_reported_but_is_not_a_drop() -> None:
 def test_the_buried_population_is_reported_and_never_a_drop() -> None:
     """Judge-cleared, never delivered: a standing population beside the funnel. Rejects dropping
     the counts from either half, swapping them, and folding them into any stage — a drop would
-    break the shortlist identity, so `reconciles` must hold exactly as it does without them."""
+    break the shortlist identity, so `reconciles` must hold exactly as it does without them. The
+    older-key population is its own line: rejects summing it into the current-key one, and
+    dropping or swapping it."""
     baseline = funnel()
-    report = funnel(buried=BuriedLeadCounts(open=3, closed=2))
+    report = funnel(buried=BuriedLeadCounts(open=3, closed=2, stale_open=7, stale_closed=5))
 
     assert report.reconciles is baseline.reconciles is True
     assert all(
         drop.reason != "buried" for stage_ in report.stages for drop in stage_.drops
     )
-    assert funnel_to_dict(report)["buried"] == {"instrumented": True, "open": 3, "closed": 2}
+    assert funnel_to_dict(report)["buried"] == {
+        "instrumented": True, "open": 3, "closed": 2, "stale_open": 7, "stale_closed": 5,
+    }
     body = funnel_to_markdown(report)
     assert "## Judge-cleared, never delivered" in body
     assert "**3 open, 2 closed.**" in body
+    assert "**Cleared under an older judge key, never re-judged: 7 open, 5 closed.**" in body
 
 
 def test_an_unread_buried_population_is_unmeasured_not_zero() -> None:
     report = funnel()
     assert funnel_to_dict(report)["buried"] == {
-        "instrumented": False, "open": None, "closed": None
+        "instrumented": False, "open": None, "closed": None,
+        "stale_open": None, "stale_closed": None,
     }
     assert "NOT READ" in funnel_to_markdown(report).split("## Judge-cleared, never delivered")[1]
 

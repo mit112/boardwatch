@@ -12,8 +12,11 @@ All notable changes to this project are documented here. The format follows
   (2026-09-26).** A posting whose current final-gate verdict is `eligible` with seniority fit `yes`
   but whose job was never `built` ranked below `--top` with nothing saying so. The run funnel gains a
   `buried` section (open / closed counts, reported beside the funnel and in no reconciliation
-  identity), and a soft alert fires when such a posting closed since the previous clean run. On the
-  live store the current verdicts read 8 open and 1 closed.
+  identity), and a soft alert fires when such a posting closed since the previous clean run. A second,
+  separately-labelled count covers postings cleared only under an OLDER judge key and never re-judged
+  under the current one (the refresh re-judges delivered rows only); the alert fires on growth of either
+  closed count and names them apart. On the live store: 8 open / 1 closed under the current key, 24 open
+  / 5 closed under an older key.
 
 - **`slate_ceiling` lets a run's slate grow past `--top`, but only by decided-good leads
   (2026-09-26).** At a ceiling above `--top`, `run` ranks that deep and delivers every tier 0-1 lead
