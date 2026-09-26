@@ -15,20 +15,20 @@ job-apps stays on as an upstream source (D-566 §4); boardwatch is the one queue
 
 boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14 consecutive frozen daily runs**:
 
-| # | bar | how it is read each day | latest reading (2026-09-25) |
+| # | bar | how it is read each day | latest reading (2026-09-26b) |
 |---|---|---|---|
-| B1 | ≥ 10 net-new eligible, live, deduped leads | funnel `leads` | 40 per run (474–477) |
+| B1 | ≥ 10 net-new eligible, live, deduped leads | funnel `leads` whose job the run decided FIRST (`day_row.py`; D-600 — the bare count includes drain re-deliveries) | **8 (478), 1 (480)** of 40; 40 on 474, before the drain |
 | B2 | 100% of apply-lane leads have a PDF | funnel `pdf` advanced / entered | 100% |
 | B3 | 100% pass the résumé QA gate | `tailor_failed` 0, one page | 100% |
-| B4 | 0 fabrications, independently read, n ≥ 100 | every delivered PDF read back and matched to the approved bundle | **0 on 177** |
+| B4 | 0 fabrications, independently read, n ≥ 100 | every delivered PDF read back and matched to the approved bundle | **0 on 177**; 0 on all 157 PDFs of 2026-09-26 |
 | B5 | 0 silent empty days | status ok, no fatal, leads > 0 | 0 |
 | B6 | 100% funnel reconciliation | funnel `reconciles` | met on 476/477 |
 | B7 | work authorization decided, never abstained | `us_authorization_required` abstain % | 0% |
-| B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | `pdf.entered`; a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 25–36/day; **4.1% on 97, opus census of runs 476–478** (n ≥ 100 closes on day 2) |
+| B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | NET-NEW apply-lane placements (D-600); a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 8 (478), 1 (480) net-new; **5.6% on 125 (Wilson 3–11), opus census of runs 476–480 — closed** |
 
 **Frozen means (D-598 ruling 5):** during the 14 days only a fix for a defect in a lead actually DELIVERED may ship. A change
 to eligibility, the profile or the résumé gate restarts the count; a scan/board fix does not; everything else waits.
-**Day 1 is run 478, kickstarted 2026-09-25 21:03 CDT (D-599); day 14 is the 2026-10-08 run** if nothing restarts it. Each day's row goes in
+**Day 1 is the 2026-09-27 04:00 run; day 14 is the 2026-10-10 run** if nothing restarts it. Runs 478 and 480 met every bar on the funnel but FAILED B1 and B8 volume read net-new, so the count restarted (D-600). Each day's row goes in
 `METRICS.md` "Acceptance run".
 
 ## Milestones
