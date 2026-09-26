@@ -48,7 +48,8 @@ def _settings(data_dir: Path) -> Settings:
 
 
 def _seed(
-    data_dir: Path, titles: list[str], bodies: dict[str, str] | None = None
+    data_dir: Path, titles: list[str], bodies: dict[str, str] | None = None,
+    target_band: str = "any",
 ) -> dict[str, int]:
     """One company, one open SAFE_BODY posting per title, ALL posted at the same instant
     so recency cannot explain a score difference — only title_match against the single
@@ -62,7 +63,7 @@ def _seed(
         save_profile(
             conn, text="Backend engineer.", target_titles=["Software Engineer"],
             exclude_titles=[], locations=[], remote_only=False, skills=[],
-            taxonomy_version="t", resume_max_pages=1,
+            taxonomy_version="t", resume_max_pages=1, target_seniority_band=target_band,
         )
         company_id = int(conn.execute(insert(companies).values(
             name="Acme", provider="greenhouse", slug="acme-verdict-tiers", source="user",
@@ -87,7 +88,9 @@ def _seed(
     return posting_ids
 
 
-def _mark_gate_eligible(engine: Engine, tmp_path: Path, *, posting_id: int) -> None:
+def _mark_gate_eligible(
+    engine: Engine, tmp_path: Path, *, posting_id: int, target_band: str = "any"
+) -> None:
     """Persist a final-gate `eligible` verdict for `posting_id`, the same write path
     `test_rank_gate_filter.py` uses for `ineligible`. `accept_oracle_verdict` only gates
     the `ineligible` decision (a span-less ineligible downgrades to uncertain); `eligible`
@@ -105,7 +108,7 @@ def _mark_gate_eligible(engine: Engine, tmp_path: Path, *, posting_id: int) -> N
                 label=str(posting_id), decision="eligible", reason=None, evidence="",
                 confidence="high",
             ),
-            model=_settings(tmp_path).gate.model, target_band="any",
+            model=_settings(tmp_path).gate.model, target_band=target_band,
         )
 
 
@@ -184,3 +187,91 @@ def test_an_eligible_lead_with_no_role_signal_ranks_below_an_uncertain_swe_lead(
     assert by_id[swe_id].verdict == "uncertain"
 
     assert [p.posting_id for p in results.visible] == [swe_id, ranger_id]
+
+
+NEW_GRAD = "Software Engineer, New Grad"
+# A body naming a recognised skill, so the zero-signal veto cannot hide a no-role-signal title.
+SKILL_BODY = SAFE_BODY + " Familiarity with Python is a plus."
+
+
+def test_an_entry_marked_swe_title_outranks_a_decided_eligible_lead_for_an_entry_profile(
+    tmp_path: Path,
+) -> None:
+    """2026-09-26: open postings titled "New Grad" / "Early Career" cleared every filter and
+    ranked at a median of ~2,955, behind a 40-lead slate. For a profile targeting `entry`, an
+    `in_field` title carrying an entry marker is tier 0 — above a DECIDED `eligible` lead that
+    scores no lower. Against the old tiering the eligible `Software Engineer` ranks first."""
+    posting_ids = _seed(tmp_path, [NEW_GRAD, "Software Engineer"], target_band="entry")
+    ng_id, swe_id = posting_ids[NEW_GRAD], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=swe_id, target_band="entry")
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[ng_id].role == "in_field"
+    assert by_id[ng_id].verdict == "uncertain"
+    # Not lower-scoring either, so only the tier can put the new-grad lead first.
+    assert by_id[swe_id].score.total >= by_id[ng_id].score.total
+
+    assert [p.posting_id for p in results.visible] == [ng_id, swe_id]
+
+
+def test_the_entry_marker_is_inert_for_a_profile_not_targeting_entry(tmp_path: Path) -> None:
+    """Control for multi-tenancy: the same two postings under a profile targeting `any` keep the
+    D-477 order — a senior user's slate must not fill with new-grad roles."""
+    posting_ids = _seed(tmp_path, [NEW_GRAD, "Software Engineer"], target_band="any")
+    ng_id, swe_id = posting_ids[NEW_GRAD], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=swe_id)
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    assert [p.posting_id for p in results.visible] == [swe_id, ng_id]
+
+
+def test_an_entry_marker_on_a_title_with_no_role_signal_earns_no_priority(
+    tmp_path: Path,
+) -> None:
+    """The marker is a software-title rule: `Member Experience (New Grad)` has no role signal, so
+    it stays in the bottom tier below an undecided software lead, even when gate-`eligible`."""
+    member = "Member Experience (New Grad)"
+    posting_ids = _seed(
+        tmp_path, [member, "Software Engineer"], bodies={member: SKILL_BODY}, target_band="entry",
+    )
+    member_id, swe_id = posting_ids[member], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=member_id, target_band="entry")
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[member_id].role == "uncertain", by_id[member_id].role_reason
+
+    assert [p.posting_id for p in results.visible] == [swe_id, member_id]
+
+
+def test_a_tier_zero_posting_the_judge_ruled_ineligible_is_still_hidden(tmp_path: Path) -> None:
+    """Tier 0 only re-orders. A new-grad title the final gate ruled `ineligible` (with its quoted
+    span) must stay hidden, exactly like any other tier — the hides walk the sorted list."""
+    evidence = "Must hold an active TS/SCI clearance."
+    body = SAFE_BODY + " " + evidence
+    posting_ids = _seed(
+        tmp_path, [NEW_GRAD, "Software Engineer"], bodies={NEW_GRAD: body}, target_band="entry",
+    )
+    ng_id, swe_id = posting_ids[NEW_GRAD], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    with engine.connect() as conn:
+        pv_id = current_posting_versions(conn, [ng_id])[ng_id].posting_version_id
+    with engine.begin() as conn:
+        final_gate.record_gate_verdict(
+            conn, posting_version_id=pv_id, jd_text=body,
+            facts=as_engine_reads(Facts(), _settings(tmp_path).config_dir),
+            policy=Policy(families={}), catalog=_catalog(tmp_path),
+            verdict=OracleVerdict(
+                label=str(ng_id), decision="ineligible", reason="clearance",
+                evidence=evidence, confidence="high",
+            ),
+            model=_settings(tmp_path).gate.model, target_band="entry",
+        )
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    assert [p.posting_id for p in results.visible] == [swe_id]
+    assert results.hidden_ineligible == 1

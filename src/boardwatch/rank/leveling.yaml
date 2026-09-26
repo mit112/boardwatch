@@ -46,3 +46,12 @@ fields:
       "head of": staff_plus   # dormant: 0 hits measured 2026-08-19
       chief: staff_plus       # dormant: 0 hits measured 2026-08-19
     roman: {"II": mid, "III": senior, "IV": senior}
+    # Titles that state they are entry-level in so many words. These never decide a band — an
+    # absent seniority word already reads `entry` — they RANK: for a profile targeting `entry`,
+    # a software title carrying one sorts ahead of every other tier (`top_cmd._rank_tier`).
+    # Matched case-insensitively on whole words, with `-` read as a space.
+    entry_markers: ["new grad", "new grads", "new graduate", "new graduates", "new college grad",
+                    "new college graduate", "university grad", "university graduate",
+                    "recent grad", "recent graduate", "early career", "early careers",
+                    "entry level", "junior", "engineer i", "engineer 1", "developer i",
+                    "developer 1", "sde i", "sde 1", "swe i", "swe 1"]

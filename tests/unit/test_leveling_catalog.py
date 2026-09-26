@@ -163,3 +163,41 @@ fields: {nursing: {words: {}, roman: {}}}
         schemes, warning = resolve_schemes(load_leveling(tmp_path), tmp_path)
         assert warning is None
         assert schemes[("workday", "s")].name == "ic_1_to_7"
+
+
+@pytest.mark.parametrize("title", [
+    "Software Engineer, New Grad",
+    "NEW GRAD 2026: Software Engineer",
+    "Software Engineer - New-Grad (Dec 2026)",
+    "Software Development Engineer 1 - Early Career",
+    "2027 University Graduate - Software Engineer",
+    "Entry-Level Backend Engineer",
+    "Junior Software Developer",
+    "Software Engineer I",
+    "Software Engineer I/II",
+])
+def test_the_software_tier_reads_an_entry_marker(tmp_path: Path, title: str) -> None:
+    assert load_leveling(tmp_path).fields["software"].has_entry_marker(title)
+
+
+@pytest.mark.parametrize("title", [
+    "Software Engineer",
+    "Software Engineer II",
+    "Software Engineer in Test",
+    "Software Engineer 10x Team",
+    "Graduate Research Assistant",
+    "Senior Software Engineer",
+])
+def test_a_title_without_a_whole_marker_phrase_is_not_entry_marked(
+    tmp_path: Path, title: str
+) -> None:
+    assert not load_leveling(tmp_path).fields["software"].has_entry_marker(title)
+
+
+def test_entry_markers_that_are_not_a_list_raise(tmp_path: Path) -> None:
+    (tmp_path / "leveling.yaml").write_text(
+        "leveling_version: 1\nfields:\n  software:\n    entry_markers: new grad\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(LevelingError, match="entry_markers"):
+        load_leveling(tmp_path)

@@ -47,7 +47,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
+from boardwatch.rank.leveling import FieldTier, field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.location_gate import LocationTarget, TargetClass, location_target
 from boardwatch.rank.role_gate import (
     RoleVerdict,
@@ -796,26 +796,42 @@ def rank_open_postings(
             hard_filter_reason=veto.detail if veto is not None else "",
         ))
     # Score alone used to be the whole key, so a decided lead could rank below one nobody
-    # has judged yet. Tier first, score second (D-477): tier 0 is a DECIDED `eligible` — the
+    # has judged yet. Tier first, score second (D-477): tier 1 is a DECIDED `eligible` — the
     # deterministic verdict on the row, or a persisted final-gate `eligible` read the same
-    # way the ineligible hide below reads `gate_verdicts` — AND role `in_field`; tier 1 is
-    # `uncertain` + role `in_field`; tier 2 is everything else still visible (any-verdict
-    # non-swe or no-role-signal, unevaluated, ...). Role is a term of tier 0 since run 5
+    # way the ineligible hide below reads `gate_verdicts` — AND role `in_field`; tier 2 is
+    # `uncertain` + role `in_field`; tier 3 is everything else still visible (any-verdict
+    # non-swe or no-role-signal, unevaluated, ...). Role is a term of tier 1 since run 5
     # (2026-09-05, D-483): without it every `eligible` posting whose title carried no role
     # signal at all — park rangers, pulmonologists, wealth associates, all `eligible` because
     # the body flagged nothing — outranked every undecided software lead, 20 of 30 delivered,
     # worsening each run as `built` retired the software ones. The release population is
     # role `in_field` in BOTH decided tiers. Score still orders WITHIN a tier — this re-orders
     # tiers, it does not re-weigh the score.
+    #
+    # Tier 0 sits above all three, for a profile targeting `entry`: an `in_field` title that
+    # says it is entry-level in so many words (the field tier's `entry_markers` — "New Grad",
+    # "Early Career", "Engineer I"). Measured 2026-09-26 on the live store: 664 open software
+    # postings with such a title cleared every filter and ranked, for the "new grad" / "early
+    # career" subset, at a median of ~2,955 behind a 40-lead slate, so the roles written for
+    # exactly this user were the ones the slate never reached. Tiering only re-orders: every
+    # hide below still applies to a tier-0 posting.
+    entry_first = target_band == "entry" and tier is not None and bool(tier.entry_markers)
+
     def _rank_tier(posting: RankedPosting) -> int:
+        if (
+            entry_first
+            and posting.role == "in_field"
+            and cast(FieldTier, tier).has_entry_marker(posting.title)
+        ):
+            return 0
         decided_eligible = (
             posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
         )
         if decided_eligible and posting.role == "in_field":
-            return 0
-        if posting.verdict == "uncertain" and posting.role == "in_field":
             return 1
-        return 2
+        if posting.verdict == "uncertain" and posting.role == "in_field":
+            return 2
+        return 3
 
     scored.sort(key=lambda r: (_rank_tier(r), -r.score.total))
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown

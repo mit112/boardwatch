@@ -71,8 +71,8 @@ class GateTier(BaseModel):
     `depth` (T63) is how many ranked leads the judge SEES, against `--top`, which is how many
     the run delivers and tailors. `0` — the default and the behaviour that shipped — means
     "judge only the delivered shortlist". A value above `--top` ranks that many, judges the
-    whole slate, then cuts back to `--top` before the lane split, so tier 1 drains as a QUEUE:
-    a lead judged `eligible` today ranks in tier 0 tomorrow and is tailored then. A value at
+    whole slate, then cuts back to `--top` before the lane split, so tier 2 drains as a QUEUE:
+    a lead judged `eligible` today ranks in tier 1 tomorrow and is tailored then. A value at
     or below `--top` behaves exactly like `0`. It changes WHEN a posting is judged, never the
     verdict any posting receives.
     """

@@ -613,7 +613,7 @@ class PipelineSummary:
     # T63 — leads that survived liveness and the gate but ranked BEYOND the delivered slate, so
     # `gate.depth` had them judged and this run cut them before the lane split. Always 0 unless
     # `gate.depth > top_n`. They are NOT a loss: no `seen` row is written for them, so they rank
-    # again next run — and a `depth` lead the judge cleared ranks in tier 0 there, which is the
+    # again next run — and a `depth` lead the judge cleared ranks in tier 1 there, which is the
     # queue this knob exists to drain.
     gate_beyond_slate: int = 0
     # T107 — the gate stage's item- and field-level coverage, which the batch count above
@@ -2455,8 +2455,8 @@ def _run_pipeline_leased(
 
         console.print("[bold]eligibility[/bold]")
         # T63 — judge DEPTH. `gate.depth` above `top_n` ranks a DEEPER slate than this run will
-        # deliver, so the judge sees leads the tailor never will and tier 1 drains as a queue
-        # (a lead judged `eligible` today ranks in tier 0 tomorrow — `top_cmd._rank_tier` reads
+        # deliver, so the judge sees leads the tailor never will and tier 2 drains as a queue
+        # (a lead judged `eligible` today ranks in tier 1 tomorrow — `top_cmd._rank_tier` reads
         # gate verdicts, and `run_gate_stage` never re-judges a row it already decided). The
         # extra leads are cut back to `top_n` after the gate, below, and nothing past that point
         # ever sees them. `depth <= top_n` — and `depth` with the gate disarmed — ranks exactly

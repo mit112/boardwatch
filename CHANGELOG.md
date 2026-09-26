@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **An entry-level software title now ranks first for a profile targeting `entry` (2026-09-26).**
+  `leveling.yaml`'s software tier gains `entry_markers` ("new grad", "early career", "university
+  graduate", "entry level", "junior", "Engineer I", ...), and `top`/`run` sort an `in_field` title carrying
+  one into a new tier 0, ahead of decided-`eligible` leads. Measured on the live store: 664 such postings
+  cleared every filter while ranking at a median in the thousands behind a 40-lead slate. Ranking only;
+  every filter, the gate judge and the review gate still apply. Inert for any other target band.
+
 - **`boardwatch postings refetch` re-reads named postings from their own board through the scan's
   write path (2026-09-24, T210).** Workday, SmartRecruiters, Eightfold, Greenhouse and Ashby gain
   `fetch_posting`; the command reports `revised` / `refreshed` / `gone` / `unsupported` / `failed` per id,
