@@ -25,6 +25,7 @@ from boardwatch.reports.board_coverage import BoardCoverage
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import build_report as build_board_report
 from boardwatch.reports.run_funnel import (
+    BuriedLeadCounts,
     Lead,
     LivenessCheck,
     RunFunnel,
@@ -169,6 +170,7 @@ def funnel(
     # P6. `None` means the duplicate sweep did not run, which is what every test that is not
     # about dedup wants: the stage then reports itself unmeasured, as it always did.
     dedup: DedupSweep | None = None,
+    buried: BuriedLeadCounts | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -249,6 +251,7 @@ def funnel(
         unattributed_evaluations=unattributed_evaluations,
         abstain=abstain or build_abstain_report(catalog(), {}),
         dedup=dedup,
+        buried=buried,
     )
 
 
@@ -662,6 +665,31 @@ def test_uncertain_band_is_reported_but_is_not_a_drop() -> None:
     # the figure answers nothing "from the artifact alone".
     assert "`uncertain_band`: 3" in body
     assert "`band_tokens_seen_while_inert`: 2" in body
+
+
+def test_the_buried_population_is_reported_and_never_a_drop() -> None:
+    """Judge-cleared, never delivered: a standing population beside the funnel. Rejects dropping
+    the counts from either half, swapping them, and folding them into any stage — a drop would
+    break the shortlist identity, so `reconciles` must hold exactly as it does without them."""
+    baseline = funnel()
+    report = funnel(buried=BuriedLeadCounts(open=3, closed=2))
+
+    assert report.reconciles is baseline.reconciles is True
+    assert all(
+        drop.reason != "buried" for stage_ in report.stages for drop in stage_.drops
+    )
+    assert funnel_to_dict(report)["buried"] == {"instrumented": True, "open": 3, "closed": 2}
+    body = funnel_to_markdown(report)
+    assert "## Judge-cleared, never delivered" in body
+    assert "**3 open, 2 closed.**" in body
+
+
+def test_an_unread_buried_population_is_unmeasured_not_zero() -> None:
+    report = funnel()
+    assert funnel_to_dict(report)["buried"] == {
+        "instrumented": False, "open": None, "closed": None
+    }
+    assert "NOT READ" in funnel_to_markdown(report).split("## Judge-cleared, never delivered")[1]
 
 
 # ------------------------------- the scan block's four-way board split (never three-way)

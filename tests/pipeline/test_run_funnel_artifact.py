@@ -133,6 +133,17 @@ def test_a_real_run_carries_b8s_volume_cohort_and_offers_it_to_the_alert(
     }
 
 
+def test_a_real_run_reads_the_buried_population(env: Path, tmp_path: Path) -> None:
+    """The buried counts are read at finalize time, so only a real run shows they are wired:
+    `collect_run_funnel` dropping the read leaves the section `instrumented: false`."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    _pipeline(env, out_root)
+
+    assert _payload(out_root)["buried"]["instrumented"] is True
+
+
 def test_a_below_bar_volume_reading_reaches_the_run_row_and_the_escalation_channel(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

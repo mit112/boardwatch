@@ -285,6 +285,12 @@ _TOP_MISSING = 10
 # (no declared targets, or a target with no shipped pack), which is never folded into `unknown`.
 # `manifest.target_countries` comes with it, because the classes are unreadable without the set
 # they were read against; `null` means the funnel was built without one, and reads `abstain`.
+#
+# **The `buried` section does NOT bump it**, on T110's `apply_lane` precedent: a new top-level key
+# that supplies no denominator an existing block was read without and changes no existing key's
+# MEANING. It is a standing population read beside the funnel, never a drop inside it, and it sits
+# in no reconciliation identity. A funnel written before it lacks the key, which reads as `null`:
+# NOT MEASURED, never zero buried leads.
 ARTIFACT_VERSION = 9
 
 #: A lead's location class: the gate's `TargetClass`, or `abstain` where the gate cannot decide.
@@ -1265,6 +1271,42 @@ def _apply_lane_lines(cohort: ApplyLaneCohort | None) -> list[str]:
 
 
 @dataclass(frozen=True)
+class BuriedLeadCounts:
+    """Judge-cleared postings never delivered (`store.buried_queries.buried_good_leads`).
+
+    A REPORTED standing population, not a stage and not a drop: no posting here left the funnel
+    this run, so it is added to nothing and subtracted from nothing.
+    """
+
+    #: Still open — recoverable by delivering them.
+    open: int
+    #: Closed — a good job lost without ever being delivered.
+    closed: int
+
+
+def buried_to_dict(buried: BuriedLeadCounts | None) -> dict[str, object]:
+    """The buried section. `instrumented: false` and nulls when it was not read."""
+    if buried is None:
+        return {"instrumented": False, "open": None, "closed": None}
+    return {"instrumented": True, "open": buried.open, "closed": buried.closed}
+
+
+def _buried_lines(buried: BuriedLeadCounts | None) -> list[str]:
+    """The human half of the buried section."""
+    lines = ["", "## Judge-cleared, never delivered", ""]
+    if buried is None:
+        return lines + ["*NOT READ for this run — unmeasured, not zero.*"]
+    return lines + [
+        f"**{buried.open} open, {buried.closed} closed.**",
+        "",
+        "*Postings whose current final-gate verdict is `eligible` with seniority fit `yes` and "
+        "whose job was never built. A reported number, not a drop: it reconciles against "
+        "nothing above. A closed one is a good job that ranked below `--top` until it came "
+        "down.*",
+    ]
+
+
+@dataclass(frozen=True)
 class FabricationCounters:
     """P0 item 8 / bar metric B4: the fabrication gate's per-lane tally.
 
@@ -1773,6 +1815,8 @@ class RunFunnel:
     # Same omission direction as `gate` above, and it matters here for the same reason it does
     # there: B8's volume half is read off this, and a zeroed block would read as a failed gate.
     apply_lane: ApplyLaneCohort | None = None
+    # `None` means the buried population was NOT read, never that nothing is buried.
+    buried: BuriedLeadCounts | None = None
     # Wall clock per pipeline stage, in the order the stages ran. `None` means NOT MEASURED —
     # a stored funnel written before this shipped, or a caller that did not time the run —
     # which is a different statement from `()`, "timed, and no stage boundary was reached".
@@ -2023,6 +2067,8 @@ def build_run_funnel(
     # T110. Omitted means the final-lane cohort was not read, and the section reports itself
     # UNMEASURED rather than zero — the same omission direction as `gate` above.
     apply_lane: ApplyLaneCohort | None = None,
+    # Omitted means the buried population was not read, and the section says so.
+    buried: BuriedLeadCounts | None = None,
     # Omitted means the run was NOT timed, and the section says so rather than reporting a
     # stageless run — the same omission direction as `liveness` and `death_probe` above.
     stage_durations: Sequence[StageDuration] | None = None,
@@ -2593,6 +2639,7 @@ def build_run_funnel(
         form_questions=form_questions,
         gate=gate,
         apply_lane=apply_lane,
+        buried=buried,
         stage_durations=None if stage_durations is None else tuple(stage_durations),
         identity_drift=None if identity_drift is None else tuple(identity_drift),
         tenant_assumptions=tenant_assumptions,
@@ -2816,6 +2863,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # that stage would redefine a denominator every earlier funnel already published.
         # Distinct from `lanes` below, which is JD ACQUISITION — see `ApplyLaneCohort`.
         "apply_lane": apply_lane_to_dict(funnel.apply_lane),
+        # Its own section, outside `stages` and every cross-check: a standing population, not
+        # a drop, so it can sit in no reconciliation identity.
+        "buried": buried_to_dict(funnel.buried),
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
             "stubs": funnel.stub_rate.stubs,
@@ -3713,6 +3763,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "explicit `unclear` and counting those as malformed would report a seventh of the "
         "corpus as a parse failure.*",
         *_apply_lane_lines(funnel.apply_lane),
+        *_buried_lines(funnel.buried),
         "",
         "## Stub rate",
         "",
@@ -3834,6 +3885,7 @@ __all__ = [
     "ARTIFACT_VERSION",
     "ApplyLaneCohort",
     "BoardCoverageReport",
+    "BuriedLeadCounts",
     "CodeProvenance",
     "CoverageSummary",
     "CrossCheck",
@@ -3855,6 +3907,7 @@ __all__ = [
     "StubRate",
     "WrittenArtifact",
     "apply_lane_to_dict",
+    "buried_to_dict",
     "build_coverage_summary",
     "build_fabrication_counters",
     "build_projection_counters",

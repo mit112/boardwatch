@@ -42,6 +42,7 @@ from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_h
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     BoardCoverageReport,
+    BuriedLeadCounts,
     CodeProvenance,
     DeathProbeReport,
     ExecutionProvenance,
@@ -60,6 +61,7 @@ from boardwatch.reports.run_funnel import (
     identity_drift,
 )
 from boardwatch.store.abstain_queries import count_requirement_dispositions
+from boardwatch.store.buried_queries import buried_good_leads
 from boardwatch.store.delivery_queries import apply_lane_cohort
 from boardwatch.store.queries import (
     current_posting_versions,
@@ -398,6 +400,10 @@ def collect_run_funnel(
         # `settings` here still holds the start. Loaded beside the cohort read, through the same
         # call, so the drift check below compares what those read sites saw.
         read_site_settings = load_settings()
+        # Judge-cleared, never delivered. A standing population reported beside the funnel,
+        # never a drop within it, so nothing below reconciles against it.
+        buried_leads = buried_good_leads(conn, settings)
+        buried = BuriedLeadCounts(open=len(buried_leads.open), closed=len(buried_leads.closed))
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
@@ -493,6 +499,7 @@ def collect_run_funnel(
         form_questions=form_questions,
         gate=gate,
         apply_lane=apply_lane,
+        buried=buried,
         dedup=dedup,
         sources=sources,
         leads=leads,
