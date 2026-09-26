@@ -67,6 +67,7 @@ from boardwatch.store.app_state import get_digest_cursor
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     EMPTY_BODY_HASH,
+    delivered_cross_host_keys,
     standing_board_cross_host_keys,
     standing_slate_keys,
 )
@@ -602,6 +603,8 @@ def rank_open_postings(
         standing_board_keys = standing_board_cross_host_keys(
             conn, skipped=set(skipped_job_ids(conn))
         )
+        # The delivered-twin rule's seed, in the same snapshot for the same reason.
+        delivered_keys = delivered_cross_host_keys(conn)
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
@@ -1126,6 +1129,7 @@ def rank_open_postings(
         engine,
         visible,
         standing_board_keys=standing_board_keys,
+        delivered_keys=delivered_keys,
         include_lane_copy=include_lane_copy,
     )
     lane_copy_job_ids = {
@@ -1173,6 +1177,7 @@ def _suppress_lane_copies(
     visible: list[RankedPosting],
     *,
     standing_board_keys: dict[str, tuple[int, ...]],
+    delivered_keys: dict[str, tuple[int, ...]],
     include_lane_copy: bool,
 ) -> tuple[list[RankedPosting], int, set[int]]:
     """D-498 rules (a) and (b): drop a lane copy of a job this slate already carries.
@@ -1198,6 +1203,14 @@ def _suppress_lane_copies(
     quarantine whose release condition can never fire is a leak, not a filter. Both halves have a
     live end — a slate member is being delivered right now, and a standing member stops holding
     when it is applied to, skipped, reported or closed (`standing_board_cross_host_keys`).
+
+    **The delivered-twin rule, between (a) and (b).** A lane copy that has NEVER been delivered is
+    also dropped when any copy of its group — board or lane — was delivered in an earlier run and
+    is still open and unreported, even if the owner applied to it or skipped it
+    (`delivered_cross_host_keys`, which states the drain). Rule (b) alone could not see it: its
+    survivor has to be on THIS slate, and a delivered lead does not rank again. A lane row that was
+    itself delivered is never dropped by this arm, so two delivered copies cannot hold each other
+    and both vanish.
 
     **It can never hide a board posting.** Only rows on a LANE company are ever dropped, under
     either rule.
@@ -1261,6 +1274,10 @@ def _suppress_lane_copies(
             for held in (*board_on_slate.get(group, ()), *standing_board_keys.get(group, ()))
             if held != posting.posting_id
         ]
+        # The delivered-twin rule: a copy of this job already went out in an earlier run. Only
+        # for a row that was never delivered itself, so two delivered copies cannot hold each other.
+        if not holders and posting.posting_id not in delivered_keys.get(group, ()):
+            holders = list(delivered_keys.get(group, ()))
         # Rule (b): no employer-board member anywhere, but a HIGHER-RANKED LANE copy of the same
         # job is already on this slate. A weaker claim than rule (a) — nothing here can point at
         # the employer's own rendering — and `lane_copy_of` is what tells the two apart on a row.

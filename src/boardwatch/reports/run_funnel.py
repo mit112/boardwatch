@@ -2163,10 +2163,14 @@ def build_run_funnel(
                         "the EMPLOYER'S OWN board posting where one exists — on this slate or "
                         "standing in the queue, and its JD is the canonical one — and otherwise "
                         "the highest-ranked LANE copy, which is the weaker claim of the two; "
-                        "`lane_copy_of` on the row says which. No identity claim is made and no "
-                        "board posting can ever be dropped; no `seen` row is written, so a "
-                        "dropped copy returns once the survivor is applied to, skipped or "
-                        "closed. Inspect with `top --include-lane-copy`"
+                        "`lane_copy_of` on the row says which. A never-delivered lane copy is also "
+                        "dropped when a copy of the same group was DELIVERED in an earlier run and "
+                        "is still open and unreported, applied or not (the delivered-twin rule). "
+                        "No identity claim is made and no board posting can ever be dropped; no "
+                        "`seen` row is written, so a dropped copy returns once the survivor is "
+                        "applied to, skipped or closed — or, under the delivered-twin rule, once "
+                        "every delivered copy is closed or reported. Inspect with "
+                        "`top --include-lane-copy`"
                     ),
                 ),
                 Drop(

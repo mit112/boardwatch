@@ -35,9 +35,11 @@ from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.settings import Settings
+from boardwatch.store.applications import mark_job_applied
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
 from boardwatch.store.queries import save_profile
+from boardwatch.store.queue_state import mark_job_reported
 from boardwatch.store.tables import (
     artifacts,
     companies,
@@ -531,3 +533,112 @@ def test_a_lane_row_at_a_RETIRED_generation_is_not_held_by_a_CURRENT_standing_bo
     results = rank_open_postings(engine, _settings(env), limit=10)
     assert results.hidden_lane_copy == 0
     assert "jobapps" in _providers(env, results)
+
+
+# ---------------------------- the delivered-twin rule: a copy already went out in an EARLIER run
+
+
+def _artifact_only(engine: Engine, posting_id: int) -> None:
+    """In the queue WITHOUT a `built` row, so the lead ranks again and lands on the slate: the
+    shape in which two delivered copies of one group could hold each other."""
+    with engine.begin() as conn:
+        version_id = int(
+            conn.execute(
+                posting_versions.select().where(posting_versions.c.posting_id == posting_id)
+            ).first().id
+        )
+        conn.execute(insert(artifacts).values(
+            posting_version_id=version_id, kind="resume_tailored",
+            uri=f"/out/{posting_id}.typ", generator="boardwatch.tailor",
+            media_type="text/x-typst", meta_json={}, created_at=NOW, run_id=None,
+        ))
+
+
+def test_a_lane_copy_whose_LANE_twin_was_delivered_by_a_prior_run_is_deferred(env: Path) -> None:
+    """The defect, measured 2026-09-25: 33 of 578 deliveries were a lane copy of a job another
+    lane had delivered in an earlier run. No board member exists, so rule (a) has no holder, and
+    rule (b)'s survivor must be on THIS slate — the delivered copy carries `built` and never
+    ranks again. Asserting WHICH id displaced it is what ties the drop to this rule."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    delivered = _posting_id(engine, "jobapps-acme")
+    _delivered_by_a_PRIOR_run(engine, delivered)
+    results = rank_open_postings(engine, _settings(env), limit=10, include_lane_copy=True)
+    (copy,) = [p for p in results.visible if p.lane_copy_of is not None]
+    assert copy.lane_copy_of == delivered
+    assert _providers(env, results).count("indeed") == 1
+
+
+def test_the_deferred_copy_is_not_recorded_seen(env: Path) -> None:
+    """The drain depends on it: a row written `seen` would stay suppressed after its twin closes."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    _delivered_by_a_PRIOR_run(engine, _posting_id(engine, "jobapps-acme"))
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert "indeed" not in _providers(env, results)
+    with engine.connect() as conn:
+        deferred_job = int(conn.execute(
+            postings.select().where(postings.c.id == _posting_id(engine, "indeed-acme"))
+        ).one().job_id)
+    assert deferred_job not in _seen_job_ids(env)
+    assert deferred_job not in results.surfaced_job_ids
+
+
+def test_an_APPLIED_board_twin_still_holds_its_lane_copy(env: Path) -> None:
+    """Nuro: the owner applied to the board copy, rule (a)'s standing arm released the lane copy on
+    `applied`, and it was delivered and applied to a second time. A delivered twin holds whether
+    or not it was acted on."""
+    engine = _seed(env, [_lane(0), _board(1), *FILLER])
+    board = _posting_id(engine, "acme")
+    _delivered_by_a_PRIOR_run(engine, board)
+    with engine.begin() as conn:
+        mark_job_applied(conn, posting_id=board, source="test")
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert "jobapps" not in _providers(env, results)
+
+
+def test_the_drain_a_CLOSED_delivered_twin_releases_the_lane_copy(env: Path) -> None:
+    """The control that makes this a deferral rather than a deletion: once the delivered copy's
+    requisition is gone, the lane copy may be the live rendering, and it is delivered."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    delivered = _posting_id(engine, "jobapps-acme")
+    _delivered_by_a_PRIOR_run(engine, delivered)
+    with engine.begin() as conn:
+        conn.execute(
+            postings.update().where(postings.c.id == delivered).values(status="closed", closed_at=NOW)
+        )
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "indeed" in _providers(env, results)
+
+
+def test_the_drain_a_REPORTED_delivered_twin_releases_the_lane_copy(env: Path) -> None:
+    """A reported lead says the delivered copy is wrong, so it no longer vouches for its group."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    job = _delivered_by_a_PRIOR_run(engine, _posting_id(engine, "jobapps-acme"))
+    with engine.begin() as conn:
+        mark_job_reported(conn, job_id=job, at=NOW)
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert "indeed" in _providers(env, results)
+
+
+def test_two_DELIVERED_lane_copies_on_one_slate_cannot_hold_each_other(env: Path) -> None:
+    """The guard: a row that was itself delivered is never dropped by the delivered-twin rule.
+    Without it each copy names the other as its holder and BOTH leave the slate; with it the
+    group falls to rule (b), which keeps the highest-ranked copy exactly as before."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    for slug in ("jobapps-acme", "indeed-acme"):
+        _artifact_only(engine, _posting_id(engine, slug))
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 1
+    assert _providers(env, results) == ["jobapps", "greenhouse", "greenhouse"]
+
+
+def test_a_delivered_board_twin_never_defers_another_BOARD_row(env: Path) -> None:
+    """Microsoft's four requisitions again, across runs: only LANE rows are ever dropped."""
+    engine = _seed(env, [_board(0, slug="acme-0"), _board(1, slug="acme-1"), *FILLER])
+    _delivered_by_a_PRIOR_run(engine, _posting_id(engine, "acme-0"))
+    results = rank_open_postings(engine, _settings(env), limit=10)
+    assert results.hidden_lane_copy == 0
+    assert _posting_id(engine, "acme-1") in {p.posting_id for p in results.visible}
