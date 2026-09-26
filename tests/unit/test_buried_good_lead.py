@@ -73,14 +73,37 @@ def engine(tmp_path: Path) -> Engine:
 _counter = iter(range(1, 10_000))
 
 
+def _verdict(
+    engine: Engine, posting_id: int, *, decision: str = "eligible", seniority: str = "yes",
+    model: str | None = None, target_band: str = "entry",
+) -> None:
+    """One more final-gate row on the posting's current version. `model` defaults to the
+    configured judge — the CURRENT key; any other model is an OLDER key the current read skips."""
+    settings = load_settings()
+    with engine.begin() as conn:
+        version = current_posting_versions(conn, [posting_id])[posting_id]
+        final_gate.record_gate_verdict(
+            conn, posting_version_id=version.posting_version_id, jd_text=JD,
+            facts=as_engine_reads(FACTS, settings.config_dir), policy=Policy(),
+            catalog=load_rules(settings.config_dir),
+            verdict=OracleVerdict(
+                label=str(posting_id), decision=decision,
+                reason="work_auth" if decision == "ineligible" else None,
+                evidence=EVIDENCE if decision == "ineligible" else "", confidence="high",
+                seniority_fit=seniority,
+            ),
+            model=settings.gate.model if model is None else model,
+            effort=final_gate.gate_effort_key(settings.gate.effort), target_band=target_band,
+        )
+
+
 def _posting(
     engine: Engine, *, decision: str = "eligible", seniority: str = "yes",
-    closed_at: datetime | None = None, built: bool = False,
+    closed_at: datetime | None = None, built: bool = False, model: str | None = None,
 ) -> int:
     """One posting with one final-gate verdict on its current version, as the daily stage writes
-    it. `built` records the job's `built` disposition."""
+    it. `built` records the job's `built` disposition; `model` as in `_verdict`."""
     n = next(_counter)
-    settings = load_settings()
     with engine.begin() as conn:
         company_id = int(conn.execute(insert(companies).values(
             name=f"Co{n}", provider="greenhouse", slug=f"co{n}", source="user", watched=True,
@@ -92,28 +115,16 @@ def _posting(
             status="open" if closed_at is None else "closed", closed_at=closed_at,
             consecutive_missing=0, content_hash=f"h{n}", body_text=JD,
         )).inserted_primary_key[0])
-        version_id = int(conn.execute(insert(posting_versions).values(
+        conn.execute(insert(posting_versions).values(
             posting_id=posting_id, content_hash=f"h{n}", body_text=JD, captured_at=NOW,
             run_id=None, capture_reason="new",
-        )).inserted_primary_key[0])
-        final_gate.record_gate_verdict(
-            conn, posting_version_id=version_id, jd_text=JD,
-            facts=as_engine_reads(FACTS, settings.config_dir), policy=Policy(),
-            catalog=load_rules(settings.config_dir),
-            verdict=OracleVerdict(
-                label=str(posting_id), decision=decision,
-                reason="work_auth" if decision == "ineligible" else None,
-                evidence=EVIDENCE if decision == "ineligible" else "", confidence="high",
-                seniority_fit=seniority,
-            ),
-            model=settings.gate.model, effort=final_gate.gate_effort_key(settings.gate.effort),
-            target_band="entry",
-        )
+        ))
         if built:
             record_disposition(
                 conn, job_id, disposition="built", reason="lead_built", policy_version="v1",
                 now=NOW,
             )
+    _verdict(engine, posting_id, decision=decision, seniority=seniority, model=model)
     return posting_id
 
 
@@ -147,6 +158,56 @@ def test_the_read_splits_open_from_closed_and_excludes_every_other_case(engine: 
 
     assert buried.open == (buried_open,)
     assert buried.closed == {buried_closed: NOW}
+    assert buried.stale_open == () and buried.stale_closed == {}
+
+
+OLD = "an-older-judge"
+
+
+def test_the_read_counts_a_lead_cleared_only_under_an_older_key(engine: Engine) -> None:
+    """Rejects, one each: dropping the older-key population (both leak out), testing ANY old row
+    rather than the NEWEST (the later-held posting leaks in), dropping its `eligible` or seniority
+    test, dropping the built exclusion, and swapping its halves."""
+    stale_open = _posting(engine, model=OLD)
+    stale_closed = _posting(engine, model=OLD, closed_at=NOW)
+    later_held = _posting(engine, model=OLD)
+    _verdict(engine, later_held, decision="ineligible", model=OLD)
+    _posting(engine, model=OLD, seniority="no")
+    _posting(engine, model=OLD, decision="uncertain")
+    _posting(engine, model=OLD, built=True)
+
+    with engine.connect() as conn:
+        buried = buried_good_leads(conn, load_settings())
+
+    assert buried.stale_open == (stale_open,)
+    assert buried.stale_closed == {stale_closed: NOW}
+    assert buried.open == () and buried.closed == {}
+
+
+def test_a_lead_with_a_current_key_verdict_is_never_counted_as_stale(engine: Engine) -> None:
+    """Old-key `eligible`/`yes` plus ANY current-key verdict: the current key owns the posting.
+    Rejects dropping the "no current-key verdict" test — the re-cleared lead would be counted in
+    BOTH numbers and the re-held one would read cleared. Both current-key rows are OLDER than the
+    old-key rows, so the newest-row selection alone cannot exclude them."""
+    re_cleared = _posting(engine)
+    _verdict(engine, re_cleared, model=OLD)
+    re_held = _posting(engine, decision="uncertain")
+    _verdict(engine, re_held, model=OLD)
+
+    with engine.connect() as conn:
+        buried = buried_good_leads(conn, load_settings())
+
+    assert buried.open == (re_cleared,)
+    assert buried.stale_open == () and buried.stale_closed == {}
+
+
+def test_an_older_key_asked_under_band_any_clears_on_the_verdict_alone(engine: Engine) -> None:
+    """The band exception, on the row's OWN recorded band. Rejects dropping it."""
+    posting_id = _posting(engine, model=OLD, seniority="unclear")
+    _verdict(engine, posting_id, model=OLD, seniority="unclear", target_band="any")
+    with engine.connect() as conn:
+        buried = buried_good_leads(conn, load_settings())
+    assert buried.stale_open == (posting_id,)
 
 
 def test_a_reopened_built_job_still_counts_as_delivered(engine: Engine) -> None:
@@ -188,6 +249,7 @@ def test_no_profile_reads_nothing(tmp_path: Path) -> None:
     with eng.connect() as conn:
         buried = buried_good_leads(conn, load_settings())
     assert buried.open == () and buried.closed == {}
+    assert buried.stale_open == () and buried.stale_closed == {}
 
 
 # --------------------------------------------------------------------------- the alert
@@ -221,3 +283,21 @@ def test_the_alert_ignores_a_closed_posting_that_was_delivered(engine: Engine) -
     _posting(engine, closed_at=NOW + timedelta(hours=6), built=True)
     _posting(engine, closed_at=NOW + timedelta(hours=6), seniority="no")
     assert check_buried_good_lead(engine, load_settings(), run_id=current) is None
+
+
+def test_the_alert_fires_on_an_older_key_closure_and_names_it_apart(engine: Engine) -> None:
+    """Rejects an alert that reads only the current-key closed count, one that reads the older
+    key's standing closed set, and one that folds the two into one unlabelled number."""
+    _run(engine, finished_at=NOW)
+    current = _run(engine, finished_at=NOW + timedelta(days=1))
+    _posting(engine, model=OLD, closed_at=NOW - timedelta(days=3))  # lost before: reported then
+    _posting(engine, model=OLD)  # still open
+    assert check_buried_good_lead(engine, load_settings(), run_id=current) is None
+
+    lost = _posting(engine, model=OLD, closed_at=NOW + timedelta(hours=6))
+    alert = check_buried_good_lead(engine, load_settings(), run_id=current)
+    assert alert is not None
+    assert "judge-cleared lead(s) closed" not in alert, "an older-key loss was named current-key"
+    assert "1 lead(s) cleared under an older judge key and never re-judged" in alert
+    assert f"(posting {lost})" in alert
+    assert "1 more are still open" in alert

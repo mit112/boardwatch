@@ -1282,13 +1282,23 @@ class BuriedLeadCounts:
     open: int
     #: Closed — a good job lost without ever being delivered.
     closed: int
+    #: The same halves for postings cleared only under an OLDER judge key, never re-judged under
+    #: the current one. A separate population, never summed with the two above.
+    stale_open: int
+    stale_closed: int
 
 
 def buried_to_dict(buried: BuriedLeadCounts | None) -> dict[str, object]:
     """The buried section. `instrumented: false` and nulls when it was not read."""
     if buried is None:
-        return {"instrumented": False, "open": None, "closed": None}
-    return {"instrumented": True, "open": buried.open, "closed": buried.closed}
+        return {
+            "instrumented": False, "open": None, "closed": None,
+            "stale_open": None, "stale_closed": None,
+        }
+    return {
+        "instrumented": True, "open": buried.open, "closed": buried.closed,
+        "stale_open": buried.stale_open, "stale_closed": buried.stale_closed,
+    }
 
 
 def _buried_lines(buried: BuriedLeadCounts | None) -> list[str]:
@@ -1303,6 +1313,13 @@ def _buried_lines(buried: BuriedLeadCounts | None) -> list[str]:
         "whose job was never built. A reported number, not a drop: it reconciles against "
         "nothing above. A closed one is a good job that ranked below `--top` until it came "
         "down.*",
+        "",
+        "**Cleared under an older judge key, never re-judged: "
+        f"{buried.stale_open} open, {buried.stale_closed} closed.**",
+        "",
+        "*Postings with no verdict under the current key whose newest final-gate row is "
+        "`eligible` with seniority fit `yes`. The refresh re-judges delivered rows only, so these "
+        "are never asked again. Disjoint from the line above and never added to it.*",
     ]
 
 

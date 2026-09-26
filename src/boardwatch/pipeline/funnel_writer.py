@@ -403,7 +403,10 @@ def collect_run_funnel(
         # Judge-cleared, never delivered. A standing population reported beside the funnel,
         # never a drop within it, so nothing below reconciles against it.
         buried_leads = buried_good_leads(conn, settings)
-        buried = BuriedLeadCounts(open=len(buried_leads.open), closed=len(buried_leads.closed))
+        buried = BuriedLeadCounts(
+            open=len(buried_leads.open), closed=len(buried_leads.closed),
+            stale_open=len(buried_leads.stale_open), stale_closed=len(buried_leads.stale_closed),
+        )
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
