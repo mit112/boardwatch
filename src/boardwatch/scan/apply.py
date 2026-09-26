@@ -599,7 +599,7 @@ def _empty_complete_is_evidence_of_nothing(
     open_now = conn.execute(
         select(func.count())
         .select_from(postings)
-        .where(postings.c.company_id == company_id, postings.c.status == "open")
+        .where(postings.c.company_id == company_id, func.likely(postings.c.status == "open"))
     ).scalar_one()
     return int(open_now) > 0
 
@@ -618,10 +618,15 @@ def _process_missing(
     by _reset_listed_but_unrefreshed, so this loop only skips or closes."""
     applied = {raw.provider_posting_id for raw in raw_postings}
     effective = listed_ids or frozenset(applied)
+    # `likely()` is a planner hint and a no-op on the value. Without it SQLite (no ANALYZE stats)
+    # answers `company_id = ? AND status = ?` from `ix_postings_status_posted_at`, walking every
+    # OPEN posting in the store to find one board's, once per applied board. With the pages cached
+    # that is ~1 s; on a 16 GB store under memory pressure it was ~40 s a board and serialised the
+    # scan (run 478: 141 boards in 88 min). The company index answers it from the board's own rows.
     open_rows = conn.execute(
         select(
             postings.c.id, postings.c.provider_posting_id, postings.c.consecutive_missing
-        ).where(postings.c.company_id == company_id, postings.c.status == "open")
+        ).where(postings.c.company_id == company_id, func.likely(postings.c.status == "open"))
     ).all()
     closed = 0
     now = utcnow()
