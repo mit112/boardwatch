@@ -805,3 +805,50 @@ class TestSeniorityRankProvenance:
         _, reason = role_verdict("Chief Technology Officer / Vice President")
         assert 'matched "Chief Technology Officer")' in reason
         assert "Vice President" not in reason
+
+
+class TestE5SignalMisses:
+    """E5: filter-passing software titles that read `uncertain` for want of one signal token.
+    Each is the live title the fix was made for; the controls pin the WIDER form of each fix that
+    was measured over every open posting and rejected, so a later broadening fails here."""
+
+    @pytest.mark.parametrize("title", [
+        "Deployed Engineer (Early Career-NYC)",  # LangChain
+        "Forward Deployed Agent Engineer, Early Career",  # Cogent
+        "ML Systems Engineer, Data Labeling Engineering - Early Career",  # GM
+        "Cybersecurity Engineer",  # `security` has no word boundary inside `cybersecurity`
+        "Embedded Systems Engineer, Recent Graduate",  # Blissway
+        "Algorithm Engineer, Deep Learning & Vision (New Grad)",  # Bot Auto
+        "Graduate Engineer - AI Agents",  # LiveFlow
+        "Early Careers R&D Rotational Program - Test Automation",  # VIAVI
+    ])
+    def test_the_measured_misses_are_in_field(self, title: str) -> None:
+        assert role_verdict(title)[0] == "in_field", title
+
+    def test_the_new_grad_gap_is_not_widened(self) -> None:
+        # A 30-char `engineer ... new grad` gap would also clear the Bot Auto title, but 4 of its
+        # 5 new clears were non-software ("Environmental Engineer - Water Services", CDM Smith).
+        verdict = role_verdict("Environmental Engineer - Water Services - (2027 New Grads!)")[0]
+        assert verdict == "uncertain"
+
+    def test_deployed_takes_only_an_agent_word_before_engineer(self) -> None:
+        assert role_verdict("Forward Deployed Legal Engineer")[0] == "uncertain"
+
+    def test_ai_systems_engineering_does_not_clear_a_data_scientist(self) -> None:
+        # `systems engineer` carries no `\w*`: "Engineering" here names the team, not the role.
+        title = "Principal, Data Scientist, Agentic AI Systems Engineering & Model Post-Training"
+        assert role_verdict(title)[0] == "out_of_field"
+
+    @pytest.mark.parametrize("title", [
+        "Consultant - AI Agent Implementation",  # bare `ai agents?` would clear this
+        "Product Engineer - AI Stockbroking",  # an `engineer - ai` qualifier would clear this
+    ])
+    def test_ai_agent_needs_an_engineer_or_developer_head_and_the_agent_noun(
+        self, title: str
+    ) -> None:
+        assert role_verdict(title)[0] != "in_field", title
+
+    @pytest.mark.parametrize("title", ["Product Engineer", "Security Architect"])
+    def test_the_borderline_titles_are_left_for_a_ruling(self, title: str) -> None:
+        """Deliberately untouched by E5 (open question). Update this pin with the ruling."""
+        assert role_verdict(title)[0] == "uncertain"
