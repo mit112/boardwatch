@@ -499,7 +499,8 @@ def sweep_unwatched_deaths(
                         _past_ttl(cutoff).label("past_ttl"),
                     ).where(
                         postings.c.company_id == company.id,
-                        postings.c.status == "open",
+                        # The planner hint `scan/apply._process_missing` explains.
+                        func.likely(postings.c.status == "open"),
                     )
                 ).all()
                 for row in open_rows:
