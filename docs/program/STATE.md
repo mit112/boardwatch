@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -27,42 +27,28 @@
 
 ## Current standing
 
-### 2026-09-25b — **THE FINISH LINE IS SET (D-598): boardwatch is COMPLETE as the owner's daily tool when B1–B8 hold on 14 consecutive FROZEN daily runs, job-apps kept as a source. DAY 1 = THE 2026-09-26 04:00 RUN; DAY 14 = THE 10-09 RUN IF NOTHING RESTARTS IT. The engine-batch series is STOPPED (batches 7–10: 880 verdicts moved, 0 ever delivered). T248 #497 and T250 #498 shipped; the Workday location backfill is APPLIED to the live store.**
+### 2026-09-26 — **DAY 1 OF THE 14 IS RUN 478 AND IT MEETS B1–B8** (kickstarted 2026-09-25 21:03 CDT under the D-597 prepone ruling; the 09-26 04:00 tick is day 2; day 14 = the 10-08 run if nothing restarts it). **The opus B8 census reads 4/97 = 4.1%.** The apply lane was made ready on the owner's instruction: **87 PDF-less leads rendered, 61 unapplyable leads reported.** T256 #500 and T257 #501 shipped (D-599).
 
-**Verify first:** `git log --oneline -5 origin/main` (the 2026-09-25b docs PR on top of #498), the primary on `main`, `launchctl
-print-disabled gui/$(id -u) | grep boardwatch.run` = enabled, `.agent/2026-09-25b-session/notes.md`. Finish line and the
-freeze rule: `ROADMAP.md`. Rulings and measurements: D-598.
+**Verify first:** `git log --oneline -5 origin/main`, the primary on `main` (it was pulled to #500 at 01:59; #501 and this docs PR land after it), the tick enabled, `.agent/2026-09-26-session/notes.md`. Read a day with `python3 .agent/acceptance/day_row.py <run_id> <day>` (exit 1 = a bar or the judge failed) and `.venv/bin/python .agent/acceptance/b4_audit.py --run <run_id>`.
 
-**The bars now** (runs 474–477 unless noted; METRICS §2026-09-25b):
+**Day 1, run 478** (METRICS "Acceptance run"): B1 40 · B2 29/29 · B3 all one page · B4 0 on 29 · B5 ok · B6 reconciles · B7 0% abstain · B8 29/day · gate judged 45, failed-open 0. **B8 precision, opus census** of runs 476–478 placements: **4/97 = 4.1% (Wilson 1.6–10.1)**; overlap 17/17; short job-apps summaries 0/31, long bodies 4/66. n ≥ 100 closes with day 2's placements.
 
-| bar | reading | status |
-|---|---|---|
-| B1, B2, B3, B5, B7 | 40 leads/run; 100% PDF; 100% QA; 0 empty; 0% work-auth abstain | met every run |
-| B6 reconciliation | 476 and 477 reconcile (475's miss was T199, fixed) | met |
-| B4 fabrications | **0 on 177 delivered PDFs** (every bullet/skill verbatim in the approved bundle; null control) | met, 2026-09-25 |
-| B8 volume | 25 / 36 / 36 / 32 (bar ≥ 20) | met |
-| B8 precision | 4.3% on 92 run placements — but **sonnet** judges; the closing reading is an **opus** census (D-598 r6) | **owed** |
-| the 14 frozen days | day 1 = the 09-26 run (batch 10 merged after run 477 and restarts it) | **counting from 09-26** |
-
-**The freeze rule (D-598 r5):** only a fix for a defect in a DELIVERED lead may ship; a change to eligibility, the profile
-or the résumé gate restarts the 14; a scan/board fix does not; everything else waits. **Seat rule (T247):** no session
-work on the seat from ~03:00 until the run's gate stage ends — the run's judge shares it.
+**What the session found and did:**
+- **The scan crawled** (141 boards in 88 min): `scan/apply`'s two per-board reads walked all ~305k open postings through the status index; disk-bound under memory pressure on the 16 GB machine (a game was running); ~140 boards/min again once it closed. **T256 (#500)** moves them onto the company index (`likely()` hint). Run 478's wall clock was 4 h 42 m.
+- **The 1800 s cap works:** Deutsche Bank 1 → 1,142 open, Hitachi 1 → 1,555, Timberland 1 → 1,386, M&T 1 → 799. dominos grew 802 → 2,271, none ever delivered (owner call 3).
+- **The seat:** this session's 403-lead opus lane audit exhausted the enterprise seat 00:25–01:30; run 478's gate ran on the reset window and judged cleanly. Size any opus fan-out against the next gate stage.
+- **Apply-lane readiness** (the owner, 00:02: "making sure the jobs i can apply to are all ready to go"): 87 apply-lane leads had NO PDF — review-lane stubs that the review gate later released into the apply lane, which nothing renders (T259). All 87 rendered through the runner's own path (`lane/render_pending.py`, one manual run row 479); B4 0 on them. Both opus judges read every lead (agreement 97.5%); the 61 unapplyable were **marked reported** on the owner's ruling (`_reported/`, list in `lane/reported-2026-09-26.json`, reversible). **The apply lane now holds 429: 418 clean by both judges + 11 split, every one with a one-page PDF, every posting open.**
+- **T257 (#501):** a never-delivered lane copy is held while a delivered copy of its `cross_host` group is open and unreported, applied or not (41 of 578 deliveries since run 308 were repeats; one role applied to twice). Delivery-side; the count does not restart.
+- **Graduation windows written `graduation date of X – Y`** escape `graduation_window_required` (52 open postings; 3 delivered, all Adobe, now reported). **Recorded, not fixed** (owner, 02:13): it is an eligibility change and would restart the count — T258.
 
 **Next, in order:**
-1. **Read the 09-26 04:00 run** (`.venv/bin/python .agent/2026-09-23b-session/read_run.py <id>`): judged > 0 and
-   `failed_open_batches` 0; T243/T248 boards (db, hitachi, vfc, mtb, aecom2, dxc, Airbus, eklm) return `partial` and grow
-   under the 1800 s cap; T250's effect — non-US Workday postings vetoed, nothing US lost; `job_dispositions` `skipped` = 0
-   (no drain owed). Record acceptance day 1 in `METRICS.md`.
-2. **The opus B8 census** (D-598 r6): re-judge runs 476 + 477 + the 09-26 placements with two **opus** judges (apparatus
-   `bw-review/.agent/auditB8/`, change the model only), pooled to n ≥ 100; bar ≤ 16%. After the run's gate stage only.
-   Each unapplyable lead is either a delivered-lead defect (may be fixed under the freeze rule) or a recorded policy miss.
-3. **Each following day:** read the run, add the acceptance row, add placements to the census. Nothing else is owed.
-4. **T255 — the v0.6.0 cut:** prepare it; **the tag publishes to PyPI — confirm with the owner before pushing it.**
+1. **Read the 04:00 run as day 2** (`day_row.py <id> 2`, B4 `--run`), add its apply-lane placements to the opus census (`bw-review/.agent/auditB8-opus/stage478.py`, change the run id) to close n ≥ 100, add the METRICS row. Keep the seat quiet from ~03:00 until its gate stage ends.
+2. **Each following day:** the same. Nothing else is owed.
+3. **T255 v0.6.0:** branch `release-0.6.0` (worktree `bw-t255`, gate EXIT=0 on #500) is HELD unmerged — rebase it onto `main` again, then merge and tag together once the owner confirms the PyPI publish.
 
-**Changed this session:** live config `board_deadline_seconds` = 1800 (backup `config.toml.bak-predeadline-20260925`); live
-store — 24,213 Workday postings' locations and 72,537 identity rows (undo: `.agent/2026-09-25b-session/
-t250-locations-before-apply.json.gz`); 33 merged worktrees removed (their `.agent/` in
-`.agent/worktree-agent-archive-2026-09-25.tar.gz`); historical docs moved to `docs/program/archive/` and `docs/archive/`.
+**Changed this session (live store / machine):** 87 `resume_tailored` artifacts and their queue folders (manual run 479); 61 `queue.reported.*` rows; the primary pulled to #500; a stale `.git/index.lock` (from 2026-09-25 19:16, no git process) removed.
+
+### 2026-09-25b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-26.** The finish line and the freeze rule (D-598, restated in `ROADMAP.md`); its day-1 read and opus census are done above.
 
 ### 2026-09-25a — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-25b.** Wave 3b and engine batches 6–10 shipped, T229–T232 and T243, runs 476/477 re-keyed; its next steps are restated above or parked by D-598.
 
@@ -107,12 +93,14 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 ## Owner-gated — do NOT start or decide unilaterally
 
 1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
-2. **Puerto Rico for a USA-target profile** (T253 d; 113 open rows resolve to no country) — policy data, not code.
-3. **dominos** (SmartRecruiters, 24,674 listed; ~16–18 runs to drain at cap 1800, holding the shared SR host) — keep,
-   facet-slice, per-board cap, or unwatch.
+2. **Puerto Rico for a USA-target profile** (T253 d) — measured 2026-09-25: PR locations resolve `unknown`, fail open and
+   ARE delivered (5 built, HPE graduate roles). Default while unruled: keep them. Excluding them is profile data and restarts the count.
+3. **dominos** (SmartRecruiters; 2,271 open after run 478, 0 ever delivered, 2 software-ish titles; holds the shared SR
+   host up to the 1800 s cap) — keep, facet-slice, per-board cap, or unwatch; recommendation: unwatch.
 4. **The résumé formatting session** — Mit's to schedule; résumé calls (1) and (2) were dropped (D-594).
-5. **How job-apps summary leads count in the B8 census** — 27 of 68 bodies are < 1,500-character summaries, so their
-   reading is a floor. Default until ruled: counted, with the long/short split reported beside the pooled number.
+5. **How job-apps summary leads count in the B8 census** — short bodies read 0/31, long 4/66 on the opus census (a short
+   reading is a floor). Default until ruled: counted, with the split reported beside the pooled number.
+6. **When to fix T258** (graduation-window wording; 52 open postings) — an eligibility change, so it restarts the count.
 
 ## Open questions and carried gaps (settled guidance is in `STANDING-FACTS.md`)
 

@@ -4466,6 +4466,47 @@ the largest engine lever left), T220, T221, T227; T198 waits for run 476.
 - **The refused-aggregator filter is REFUSED (D-463)**, not deferred. Its premise inverts on the
   actual variable. Do not re-raise it from the 24.7%/13.4% figures, which are the wrong comparison.
 
+## Settled session block moved out of STATE on 2026-09-26 (verbatim)
+
+*Moved because its day-1 read and the opus B8 census are done (D-599); the finish line and freeze rule it set live in `ROADMAP.md` and D-598.*
+
+### 2026-09-25b — **THE FINISH LINE IS SET (D-598): boardwatch is COMPLETE as the owner's daily tool when B1–B8 hold on 14 consecutive FROZEN daily runs, job-apps kept as a source. DAY 1 = THE 2026-09-26 04:00 RUN; DAY 14 = THE 10-09 RUN IF NOTHING RESTARTS IT. The engine-batch series is STOPPED (batches 7–10: 880 verdicts moved, 0 ever delivered). T248 #497 and T250 #498 shipped; the Workday location backfill is APPLIED to the live store.**
+
+**Verify first:** `git log --oneline -5 origin/main` (the 2026-09-25b docs PR on top of #498), the primary on `main`, `launchctl
+print-disabled gui/$(id -u) | grep boardwatch.run` = enabled, `.agent/2026-09-25b-session/notes.md`. Finish line and the
+freeze rule: `ROADMAP.md`. Rulings and measurements: D-598.
+
+**The bars now** (runs 474–477 unless noted; METRICS §2026-09-25b):
+
+| bar | reading | status |
+|---|---|---|
+| B1, B2, B3, B5, B7 | 40 leads/run; 100% PDF; 100% QA; 0 empty; 0% work-auth abstain | met every run |
+| B6 reconciliation | 476 and 477 reconcile (475's miss was T199, fixed) | met |
+| B4 fabrications | **0 on 177 delivered PDFs** (every bullet/skill verbatim in the approved bundle; null control) | met, 2026-09-25 |
+| B8 volume | 25 / 36 / 36 / 32 (bar ≥ 20) | met |
+| B8 precision | 4.3% on 92 run placements — but **sonnet** judges; the closing reading is an **opus** census (D-598 r6) | **owed** |
+| the 14 frozen days | day 1 = the 09-26 run (batch 10 merged after run 477 and restarts it) | **counting from 09-26** |
+
+**The freeze rule (D-598 r5):** only a fix for a defect in a DELIVERED lead may ship; a change to eligibility, the profile
+or the résumé gate restarts the 14; a scan/board fix does not; everything else waits. **Seat rule (T247):** no session
+work on the seat from ~03:00 until the run's gate stage ends — the run's judge shares it.
+
+**Next, in order:**
+1. **Read the 09-26 04:00 run** (`.venv/bin/python .agent/2026-09-23b-session/read_run.py <id>`): judged > 0 and
+   `failed_open_batches` 0; T243/T248 boards (db, hitachi, vfc, mtb, aecom2, dxc, Airbus, eklm) return `partial` and grow
+   under the 1800 s cap; T250's effect — non-US Workday postings vetoed, nothing US lost; `job_dispositions` `skipped` = 0
+   (no drain owed). Record acceptance day 1 in `METRICS.md`.
+2. **The opus B8 census** (D-598 r6): re-judge runs 476 + 477 + the 09-26 placements with two **opus** judges (apparatus
+   `bw-review/.agent/auditB8/`, change the model only), pooled to n ≥ 100; bar ≤ 16%. After the run's gate stage only.
+   Each unapplyable lead is either a delivered-lead defect (may be fixed under the freeze rule) or a recorded policy miss.
+3. **Each following day:** read the run, add the acceptance row, add placements to the census. Nothing else is owed.
+4. **T255 — the v0.6.0 cut:** prepare it; **the tag publishes to PyPI — confirm with the owner before pushing it.**
+
+**Changed this session:** live config `board_deadline_seconds` = 1800 (backup `config.toml.bak-predeadline-20260925`); live
+store — 24,213 Workday postings' locations and 72,537 identity rows (undo: `.agent/2026-09-25b-session/
+t250-locations-before-apply.json.gz`); 33 merged worktrees removed (their `.agent/` in
+`.agent/worktree-agent-archive-2026-09-25.tar.gz`); historical docs moved to `docs/program/archive/` and `docs/archive/`.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to

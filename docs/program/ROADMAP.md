@@ -24,11 +24,11 @@ boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14
 | B5 | 0 silent empty days | status ok, no fatal, leads > 0 | 0 |
 | B6 | 100% funnel reconciliation | funnel `reconciles` | met on 476/477 |
 | B7 | work authorization decided, never abstained | `us_authorization_required` abstain % | 0% |
-| B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | `pdf.entered`; a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 25–36/day; 4.3% on 92 (sonnet — the opus census is owed) |
+| B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | `pdf.entered`; a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 25–36/day; **4.1% on 97, opus census of runs 476–478** (n ≥ 100 closes on day 2) |
 
 **Frozen means (D-598 ruling 5):** during the 14 days only a fix for a defect in a lead actually DELIVERED may ship. A change
 to eligibility, the profile or the résumé gate restarts the count; a scan/board fix does not; everything else waits.
-**Day 1 is the 2026-09-26 04:00 run; day 14 is the 2026-10-09 run** if nothing restarts it. Each day's row goes in
+**Day 1 is run 478, kickstarted 2026-09-25 21:03 CDT (D-599); day 14 is the 2026-10-08 run** if nothing restarts it. Each day's row goes in
 `METRICS.md` "Acceptance run".
 
 ## Milestones
