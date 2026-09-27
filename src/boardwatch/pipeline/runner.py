@@ -2669,6 +2669,7 @@ def _run_pipeline_leased(
                 summary.shortlist,
                 shortlisted=summary.shortlist.shortlisted - len(beyond_slate),
                 hidden_below_cutoff=summary.shortlist.hidden_below_cutoff + len(beyond_slate),
+                beyond_slate=len(beyond_slate),
             )
         if gate_result.judged or gate_result.failed_open_batches:
             beyond_note = (

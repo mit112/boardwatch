@@ -539,6 +539,11 @@ class ShortlistCounts:
     # has no role taxonomy. REPORTED, NEVER DROPPED, for exactly the reasons `signal_unmeasured`
     # gives, and appended to the shortlist `note` the same way.
     role_unmeasured: int = 0
+    # The part of `hidden_below_cutoff` the run's post-gate cut added: leads ranked, liveness-
+    # checked and (gate armed) judged, then cut at the delivered slate because `gate.depth` or
+    # `slate_ceiling` ranked deeper than it. REPORTED, NEVER DROPPED — they are already inside
+    # `capped_by_top_n`. The gate block carries the same number, but only when the gate is armed.
+    beyond_slate: int = 0
     # D-246, the seniority gate's abstain rate: a level token it could not resolve, because no
     # scheme is bound for the company or the rung falls outside the bound one. REPORTED, NEVER
     # DROPPED, and deliberately NOT part of the identity above — these postings are inside
@@ -2240,7 +2245,10 @@ def build_run_funnel(
                 "gate that never got the input it reads; "
                 f"`role_unmeasured`: {shortlist.role_unmeasured} (postings the role gate could "
                 "not classify because there is no role taxonomy — "
-                "missing_profile_field:role_taxonomy — passed through unclassified)."
+                "missing_profile_field:role_taxonomy — passed through unclassified); "
+                f"`beyond_slate`: {shortlist.beyond_slate} (inside `capped_by_top_n`: ranked "
+                "deeper than the delivered slate by `gate.depth` or `slate_ceiling`, then cut "
+                "after liveness and the gate)."
             ),
         )
 

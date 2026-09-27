@@ -146,6 +146,11 @@ def test_the_run_delivers_every_decided_lead_up_to_the_ceiling_and_reconciles(
     ]
     assert summary.shortlist is not None
     assert summary.shortlist.shortlisted == expected
+    # The gate is disarmed, so its block is null: the shortlist note is where the cut shows.
+    # Mutation caught (ceiling-above case): the runner not mapping `beyond_slate` reads 0.
+    assert payload["gate"]["instrumented"] is False
+    shortlist_stage = next(stage for stage in payload["stages"] if stage["name"] == "shortlist")
+    assert f"`beyond_slate`: {beyond} " in shortlist_stage["note"]
 
 
 @_needs_an_executable_fake

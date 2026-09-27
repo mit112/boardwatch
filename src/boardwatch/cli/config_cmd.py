@@ -213,8 +213,10 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "slate_ceiling": (
         int,
         "next run",
-        "most leads one run may deliver; the slate grows past --top only by decided-eligible "
-        "leads, ≥0 (0 = exactly --top)",
+        "most leads one run may deliver; the slate grows past --top only by every tier 0-1 lead "
+        "(entry-marked software titles for an entry-band profile, and decided-eligible software "
+        "leads); above gate.depth the gate judges up to this many leads per run (seat cost), "
+        "≥0 (0 = exactly --top)",
     ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}

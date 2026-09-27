@@ -13,8 +13,10 @@ All notable changes to this project are documented here. The format follows
   (an entry-marked `in_field` title, or a decided `eligible` `in_field` one) that survived liveness and
   the gate, with undecided leads still filling up to `--top`: slate size = min(ceiling, max(top,
   tier 0-1 survivors)). The tier is the ranker's own, now carried on each ranked row. A lead past the
-  slate keeps today's treatment — no `seen` row, counted into `capped_by_top_n`, ranked again next run.
-  The default 0 delivers exactly `--top`, as before.
+  slate keeps today's treatment — no `seen` row, counted into `capped_by_top_n`, ranked again next run —
+  and the shortlist stage's note now reports that cut as `beyond_slate` even with the gate disarmed.
+  A ceiling above `gate.depth` makes the gate judge up to the ceiling per run. The default 0 delivers
+  exactly `--top`, as before.
 
 - **An entry-level software title now ranks first for a profile targeting `entry` (2026-09-26).**
   `leveling.yaml`'s software tier gains `entry_markers` ("new grad", "early career", "university
