@@ -225,7 +225,9 @@ def test_a_graduate_title_outside_the_field_cannot_reach_tier_zero(tmp_path: Pat
     "New grads are welcome to apply!",
     "This is an early-career role on a small team.",
     "Graduating class of 2027.",
-    "Expected graduation date: May 2027",
+    # The job-apps lane ships markdown-escaped bodies.
+    "0\\-2 years of experience.",
+    "An early\\-career role, **new grads** welcome.",
 ])
 def test_the_software_tier_reads_an_entry_body_marker(tmp_path: Path, body: str) -> None:
     assert load_leveling(tmp_path).fields["software"].has_entry_body_marker(
@@ -240,11 +242,16 @@ def test_the_software_tier_reads_an_entry_body_marker(tmp_path: Path, body: str)
     # Mixed-level boilerplate: the marker's own sentence names an exclusion.
     "We hire across levels, from new grads to domain experts.",
     "Whether you're early in your career or experienced, apply.",
-    "0-2 years for junior; 5+ years for senior engineers.",
+    "0-2 years for junior; Senior roles need 5+ years.",
     "You will mentor early career engineers.",
     "3-6 years of experience (no new grads).",
     # Whole numbers only: "10-2 years" is not "0-2 years".
-    "10-20 years of experience.",
+    "10-2 years of experience.",
+    # Dropped once internships were vetoed: its remaining hits were enrolled students.
+    "Expected graduation date: May 2027",
+    # "U.S." does not end the sentence, so its exclusion still sees the marker.
+    "Senior engineers in the U.S. welcome new grads.",
+    "Staff engineers (e.g. Priya) welcome new grads.",
 ])
 def test_a_body_without_a_clean_marker_sentence_is_not_entry_marked(
     tmp_path: Path, body: str
@@ -280,3 +287,17 @@ def test_a_body_marker_phrase_is_read_with_its_dash_as_a_space(tmp_path: Path) -
     tier = load_leveling(tmp_path).fields["software"]
     assert tier.has_entry_body_marker("Needs 0\u20133 years of Go.")
     assert not tier.has_entry_body_marker("Needs 0-3 years of Go as a senior.")
+
+
+@pytest.mark.parametrize(("title", "vetoed"), [
+    ("Software Engineering Intern (New Grad)", True),
+    ("Graduate Software Engineer Internship", True),
+    ("Embedded Software Co-Op", True),
+    ("Working Student - Software Engineer", True),
+    ("Software Engineer - Internal Tools", False),
+    ("Software Engineer, International Payments", False),
+])
+def test_an_internship_title_is_vetoed_on_whole_words(
+    tmp_path: Path, title: str, vetoed: bool
+) -> None:
+    assert load_leveling(tmp_path).fields["software"].has_entry_veto(title) is vetoed
