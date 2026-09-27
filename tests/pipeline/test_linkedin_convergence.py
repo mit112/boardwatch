@@ -22,6 +22,8 @@ from sqlalchemy import Engine, func, select
 from boardwatch.core.models import RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
+from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.lanes import jobapps
 from boardwatch.lanes.base import (
     CompanyAdmission,
     LaneCompanySnapshot,
@@ -37,6 +39,7 @@ from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run, posting_slugs
 from boardwatch.store.run_funnel_queries import count_lane_captures
+from tests.unit.test_jobapps_linkedin_slice import PLAIN_JD, PLAIN_PAGE
 
 JOB_ID = "4458214586"
 LANE_BODY = "LinkedIn lane body: we are hiring a new grad software engineer to build services."
@@ -92,7 +95,15 @@ class _LinkedInStub:
         return LaneResult(snapshots=snapshots, tally=tally)
 
 
-def _tree(root: Path, job_id: str = JOB_ID, company: str = "Acme") -> Path:
+def _tree(
+    root: Path,
+    job_id: str = JOB_ID,
+    company: str = "Acme",
+    body: str = JOBAPPS_BODY,
+    *,
+    acquisition: str = "linkedin",
+    url: str | None = None,
+) -> Path:
     """One job-apps LinkedIn record, shaped as the live tree shapes it."""
     folder = root / "LinkedIn" / f"rec-{job_id}"
     folder.mkdir(parents=True)
@@ -101,12 +112,12 @@ def _tree(root: Path, job_id: str = JOB_ID, company: str = "Acme") -> Path:
             {
                 "schema_version": 2,
                 "posting_id": f"pst_{job_id}",
-                "primary_acquisition": "linkedin",
+                "primary_acquisition": acquisition,
                 "cohort_date": "2026-09-26",
                 "canonical": {
                     "company": company,
                     "title": "Associate Software Engineer",
-                    "direct_url": f"https://www.linkedin.com/jobs/view/{job_id}",
+                    "direct_url": url or f"https://www.linkedin.com/jobs/view/{job_id}",
                     "location": "Austin, TX",
                 },
             }
@@ -115,7 +126,7 @@ def _tree(root: Path, job_id: str = JOB_ID, company: str = "Acme") -> Path:
     )
     rule = "=" * 80
     (folder / "job_description.txt").write_text(
-        f"Company: {company}\nFit: 60/100\n\n{rule}\nJOB DESCRIPTION\n{rule}\n\n{JOBAPPS_BODY}",
+        f"Company: {company}\nFit: 60/100\n\n{rule}\nJOB DESCRIPTION\n{rule}\n\n{body}",
         encoding="utf-8",
     )
     return root
@@ -310,3 +321,90 @@ def test_a_split_snapshot_is_counted_as_the_board_scans_rows_it_writes(
     by_name = {check.name: check for check in checks}
     assert (by_name["lanes:board_scans"].in_memory, by_name["lanes:board_scans"].from_store) == (2, 2)
     assert all(check.agrees for check in checks), checks
+
+
+def _held(engine: Engine) -> dict[int, bool]:
+    """`{posting_version_id: still held}` for every row the quarantine ever took."""
+    with engine.connect() as conn:
+        return {
+            int(row.posting_version_id): row.reopened_at is None
+            for row in conn.execute(select(tables.quarantined_bodies)).all()
+        }
+
+
+def test_a_sliced_linkedin_capture_is_stored_as_the_jd_and_never_held(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """A first sighting of a job-apps LinkedIn page capture, through the real fetch-then-apply
+    seam and the real preflight: the stored body is the employer's JD, and the foreign-body
+    sweep holds nothing. Catches the slice not reaching the store (the capture is held)."""
+    _run(engine, tmp_path, _jobapps(engine, _tree(tmp_path / "ja", body=PLAIN_PAGE)))
+
+    assert [body for _, _, body, _ in _rows(engine)] == [PLAIN_JD]
+    stats = run_eligibility(engine, _settings(tmp_path))
+    assert stats.quarantined == 0
+    assert _held(engine) == {}
+
+
+def test_a_held_capture_is_drained_by_the_linkedin_lanes_listing_not_a_job_apps_re_read(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The drain for a capture the slice could not cut. It is stored whole and held. A later
+    job-apps read -- even one the slice CAN cut -- lands on a stored job, so it writes nothing
+    (`runner._route_by_stored_posting`) and appends no version: it cannot release the hold. The
+    LinkedIn lane's own listing is the record of truth, appends a newer version, and the
+    existing drain (`drain_quarantine`, condition 1) releases the old one in the next preflight.
+
+    Catches: the fallback storing nothing or a partial cut (nothing held in step 1), and a drain
+    that no longer releases a superseded version (still held in step 3)."""
+    settings = _settings(tmp_path)
+    broken = PLAIN_PAGE.replace("Report this job\n", "")
+    _run(engine, tmp_path, _jobapps(engine, _tree(tmp_path / "ja", body=broken)))
+    assert [body for _, _, body, _ in _rows(engine)] == [broken]
+    assert run_eligibility(engine, settings).quarantined == 1
+    (held_version,) = _held(engine)
+
+    _run(engine, tmp_path, _jobapps(engine, _tree(tmp_path / "ja2", body=PLAIN_PAGE)))
+    assert _versions(engine) == 1
+    assert run_eligibility(engine, settings).released == 0
+    assert _held(engine) == {held_version: True}
+
+    _run(engine, tmp_path, _LinkedInStub("acme-corp"))
+    stats = run_eligibility(engine, settings)
+    assert stats.released == 1
+    assert stats.quarantined == 0
+    assert _held(engine) == {held_version: False}
+
+
+def test_a_held_capture_in_a_jobright_record_is_released_by_the_next_job_apps_read(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drain for a capture stored whole before the slice read the page's shape instead of
+    the acquisition: job-apps' LinkedIn page under a jobright record (IXL's new-grad role, among
+    nine held live). Such a record is filed under job-apps' own namespace, where a directory read
+    still writes the body, so the next read appends the sliced JD as a version and the existing
+    drain (`drain_quarantine`, condition 1) releases the held one in the next preflight.
+
+    Catches the slice gated on acquisition again (the second read is the same page: no version,
+    still held)."""
+    settings = _settings(tmp_path)
+    root = _tree(
+        tmp_path / "ja",
+        body=PLAIN_PAGE,
+        acquisition="jobright",
+        url="https://jobright.ai/jobs/info/6a95ed6fcabc9f6703e1b085",
+    )
+    with monkeypatch.context() as before:  # the lane as it read this record before
+        before.setattr(jobapps, "slice_linkedin_page", lambda text: None)
+        _run(engine, tmp_path, _jobapps(engine, root))
+    assert [(slug, body) for slug, _, body, _ in _rows(engine)] == [("acme", PLAIN_PAGE)]
+    assert run_eligibility(engine, settings).quarantined == 1
+    (held_version,) = _held(engine)
+
+    _run(engine, tmp_path, _jobapps(engine, root))
+    assert [body for _, _, body, _ in _rows(engine)] == [PLAIN_JD]
+    assert _versions(engine) == 2
+    stats = run_eligibility(engine, settings)
+    assert stats.released == 1
+    assert stats.quarantined == 0
+    assert _held(engine) == {held_version: False}

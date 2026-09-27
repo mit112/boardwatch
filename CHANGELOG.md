@@ -33,6 +33,20 @@ All notable changes to this project are documented here. The format follows
   when one snapshot lands on two companies; and the death probe asks `linkedin` rows (0 of 7,106 ever
   closed) only after every other due row, so a LinkedIn lead no longer takes the budget first.
 
+- **The `jobapps` lane stores the employer's JD out of a LinkedIn page capture, not the page
+  (2026-09-27).** Some job-apps bodies are a signed-out capture of the whole LinkedIn job-view page,
+  which the foreign-body precondition holds. The lane now keeps only the lines between the header's
+  "Report this job" and the "Show more / Show less / Seniority level" criteria block, skipping the pay
+  range, job-poster card and AI-upsell sign-in forms LinkedIn renders between them. The page's shape
+  decides, not the record's acquisition: job-apps captures LinkedIn pages for `jobright` and
+  `simplify` records too. A capture whose anchors or blocks leave the measured shape is stored as it
+  is, for the quarantine to hold; the text between the anchors is taken as the JD unchecked. Measured over job-apps' tree on 2026-09-27: 54 bodies are captures (44
+  `linkedin`, 8 `jobright`, 2 `simplify`), the detector held all 54, all 54 slice to a body it passes,
+  and no body it already passed changes.
+  A held capture filed under job-apps' own namespace (9 live, IXL's new-grad role among them) is
+  released by the next job-apps read; one filed under a LinkedIn job id is released when the LinkedIn
+  lane lists the job, because a job-apps read writes nothing over a stored LinkedIn row.
+
 - **Judge-cleared leads that were never delivered are now counted, and losing one alerts
   (2026-09-26).** A posting whose current final-gate verdict is `eligible` with seniority fit `yes`
   but whose job was never `built` ranked below `--top` with nothing saying so. The run funnel gains a

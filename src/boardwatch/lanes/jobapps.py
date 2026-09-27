@@ -291,6 +291,126 @@ def unescape_markdown(text: str) -> str:
     return _MARKDOWN_ESCAPE.sub(r"\1", text)
 
 
+# A record's body can be a signed-out capture of the whole LinkedIn job-view PAGE, not the JD:
+# the site nav, the apply and sign-in forms, then the employer's text, then the job criteria,
+# "Similar jobs", "People also viewed" and the footer. The foreign-body precondition is right to
+# hold such a body (`quality.is_employer_body`). Measured 2026-09-27 over job-apps' tree: 54
+# bodies are such captures -- 44 under `linkedin` records, 8 `jobright`, 2 `simplify` -- and it
+# holds all 54. The employer's text sits between two anchors the page renders byte-identically in
+# every one, so it is cut out HERE, before the body is stored, rather than the detector being
+# taught to tolerate chrome. (jobright's own pages restate the JD in jobright's words, never match
+# the shape, and are not sliced.)
+#
+# Every anchor is matched as a WHOLE LINE, and an anchor or a block between them that leaves the
+# measured shape returns None: the caller then stores the page as it is and the quarantine holds
+# it. A slice that guessed would freeze LinkedIn's text as the employer's, which is the failure
+# the precondition exists to stop. The text between the anchors is NOT itself checked -- it is
+# taken as the JD, and the detector still judges the stored body.
+_LINKEDIN_TITLE_SUFFIX = " | LinkedIn"  # the capture's first line, the page's <title>
+_LINKEDIN_START = "Report this job"  # the last line of the job's header block
+# The JD's collapse toggle, then the first of LinkedIn's job-criteria rows.
+_LINKEDIN_END = ("Show more", "Show less", "Seniority level")
+# The sign-in consent every form on the page closes with.
+_LINKEDIN_CONSENT = (
+    "By clicking Continue to join or sign in, you agree to LinkedIn’s",
+    "User Agreement",
+    ",",
+    "Privacy Policy",
+    ", and",
+    "Cookie Policy",
+    ".",
+)
+# The "Use AI to assess how you fit" upsell, whose sign-in forms follow it.
+_LINKEDIN_AI_UPSELL = (
+    "Use AI to assess how you fit",
+    "Get AI-powered advice on this job and more exclusive features.",
+    "Am I a good fit for this job?",
+    "Tailor my resume",
+)
+# The longest sign-in form measured is 12 lines; past this a form is not the shape measured.
+_LINKEDIN_MAX_FORM_LINES = 20
+
+
+def _linkedin_preamble(lines: list[str], index: int) -> int | None:
+    """Where the employer's text starts, given the line after `_LINKEDIN_START`.
+
+    Between the two, the page may render three blocks that are LinkedIn's, not the employer's,
+    each in the one shape measured: the pay range LinkedIn restates ("<X> provided pay range",
+    "This range is provided by <X>. ...", "Base pay range", the amount), the job poster's card
+    (the name twice, then a headline), and the AI upsell with its sign-in forms. None when a
+    block starts and does not keep that shape.
+    """
+    while index < len(lines):
+        line = lines[index]
+        if line.endswith(" provided pay range"):
+            block = lines[index : index + 4]
+            if not (
+                len(block) == 4
+                and block[1].startswith("This range is provided by ")
+                and block[2] == "Base pay range"
+                and any(character.isdigit() for character in block[3])
+            ):
+                return None
+            index += 4
+        elif line.startswith("Direct message the job poster from "):
+            block = lines[index : index + 4]
+            if not (len(block) == 4 and block[1] == block[2] and block[3].strip()):
+                return None
+            index += 4
+        elif line == _LINKEDIN_AI_UPSELL[0]:
+            if tuple(lines[index : index + len(_LINKEDIN_AI_UPSELL)]) != _LINKEDIN_AI_UPSELL:
+                return None
+            index += len(_LINKEDIN_AI_UPSELL)
+            if not lines[index : index + 1] or not lines[index].startswith("Sign in to "):
+                return None
+            while index < len(lines) and lines[index].startswith("Sign in to "):
+                window = lines[index : index + _LINKEDIN_MAX_FORM_LINES]
+                try:
+                    consent = window.index(_LINKEDIN_CONSENT[0])
+                except ValueError:
+                    return None
+                closing = index + consent + len(_LINKEDIN_CONSENT)
+                if tuple(lines[index + consent : closing]) != _LINKEDIN_CONSENT:
+                    return None
+                index = closing
+        else:
+            return index
+    return None
+
+
+def slice_linkedin_page(text: str) -> str | None:
+    """The employer's own JD out of a captured LinkedIn job-view page, or None.
+
+    None whenever the text is not the page shape measured -- its first line is not a LinkedIn
+    page title, `_LINKEDIN_START` is not on exactly one line, a block between it and the JD
+    breaks shape (`_linkedin_preamble`), `_LINKEDIN_END` does not follow, or nothing is left.
+    The caller keeps the body as it is on None; it never falls back to a partial cut.
+
+    The slice is the original text's own lines, not a re-rendering of them.
+    """
+    lines = text.splitlines(keepends=True)
+    bare = [line.rstrip("\r\n") for line in lines]
+    if not bare or not bare[0].endswith(_LINKEDIN_TITLE_SUFFIX):
+        return None
+    if bare.count(_LINKEDIN_START) != 1:
+        return None
+    start = _linkedin_preamble(bare, bare.index(_LINKEDIN_START) + 1)
+    if start is None:
+        return None
+    end = next(
+        (
+            index
+            for index in range(start, len(bare))
+            if tuple(bare[index : index + len(_LINKEDIN_END)]) == _LINKEDIN_END
+        ),
+        None,
+    )
+    if end is None:
+        return None
+    body = "".join(lines[start:end])
+    return body if body.strip() else None
+
+
 def posting_identity(record: _Record) -> _Identity:
     """`(provider, slug, posting_ref)` for one record, preferring this repo's own dereference.
 
@@ -794,7 +914,12 @@ class JobAppsLane:
         body = strip_header(text)
         if body is None or not body.strip():
             return None
-        return unescape_markdown(body)
+        body = unescape_markdown(body)
+        # Sliced by the page's shape, whatever the acquisition: job-apps also captures a LinkedIn
+        # page for jobright- and simplify-acquired records. jobright's own pages restate the JD
+        # in the aggregator's words and never match the shape, so they are stored as they are.
+        sliced = slice_linkedin_page(body)
+        return body if sliced is None else sliced
 
     def _source_url(self) -> str:
         return f"file://{self._source_dir}"
