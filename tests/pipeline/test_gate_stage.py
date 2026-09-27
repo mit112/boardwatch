@@ -210,13 +210,14 @@ def _arm_gate(
     seniority_hold: bool = False,
     refresh_budget: int = 0,
     effort: str | None = None,
+    backlog_budget: int = 0,
 ) -> None:
     config_dir = load_settings(data_dir=data_dir).config_dir
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "config.toml").write_text(
         f"[gate]\nenabled = true\nmodel = \"{model}\"\nbatch_size = {batch_size}\n"
         f"call_timeout_s = 30\nseniority_hold = {str(seniority_hold).lower()}\n"
-        f"refresh_budget = {refresh_budget}\n"
+        f"refresh_budget = {refresh_budget}\nbacklog_budget = {backlog_budget}\n"
         + ("" if effort is None else f"effort = \"{effort}\"\n"),
         encoding="utf-8",
     )
@@ -2112,3 +2113,220 @@ def test_the_refresh_order_is_promotable_then_apply_then_rest_newest_first_and_n
     ordered = _refresh_order([rest, closed, apply_lead, promotable_old, promotable_new])
 
     assert [r.posting_id for r in ordered] == [2, 1, 3, 5]
+
+
+# ---------------------------------------------------------------------------
+# The gate backlog: in-field postings below the judged slate, judged but never delivered
+# ---------------------------------------------------------------------------
+
+
+def _backlog_counts(summary: object) -> tuple[object, ...]:
+    return tuple(
+        getattr(summary, f"gate_backlog_{name}")
+        for name in (
+            "candidates", "sent", "judged", "eligible", "ineligible", "uncertain", "failed_open",
+        )
+    )
+
+
+def _set_first_seen(data_dir: Path, ages_in_days: dict[int, int]) -> None:
+    from datetime import timedelta
+
+    now = utcnow()
+    with get_engine(data_dir).begin() as conn:
+        for posting_id, days in ages_in_days.items():
+            conn.execute(
+                tables.postings.update()
+                .where(tables.postings.c.id == posting_id)
+                .values(first_seen_at=now - timedelta(days=days))
+            )
+
+
+@_needs_an_executable_fake
+def test_a_zero_backlog_budget_sends_nothing_beyond_the_slate(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The shipped default: three in-field postings, `--top 1`, so two rank below the slate —
+    and the ONE call is the slate's. The funnel says the backlog was not armed, never that it
+    found nothing."""
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-backlog-off-{n}") for n in range(3)]
+    _arm_gate(env, batch_size=1, backlog_budget=0)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert _calls(fake_claude) == 1, "a zero backlog budget must never reach a request"
+    assert _backlog_counts(summary) == (0, 0, 0, 0, 0, 0, 0)
+    gate = _funnel_gate(summary)
+    assert gate["backlog_budget"] == 0
+    assert gate["backlog_candidates"] is None
+    assert gate["backlog_sent"] is None
+    # The stage's own guard, apart from the runner's: called directly at 0, it sends nothing.
+    from boardwatch.llm.gate_judge import GateBacklogResult, run_gate_backlog
+
+    direct = run_gate_backlog(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in ids], run_id=None,
+    )
+    assert direct == GateBacklogResult()
+    assert _calls(fake_claude) == 1
+
+
+@_needs_an_executable_fake
+def test_the_backlog_judges_below_the_slate_within_budget_and_the_funnel_reports_it(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Four postings, `--top 1`: three rank below the slate, a budget of two sends two, one call
+    each. Neither is delivered — the slate's lead is the run's only delivery — and each now
+    carries a current `eligible`, which is what ranks it in tier 1 next run."""
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-backlog-{n}") for n in range(4)]
+    _arm_gate(env, batch_size=1, backlog_budget=2)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert _calls(fake_claude) == 3, "one slate call and two backlog calls"
+    assert _backlog_counts(summary) == (3, 2, 2, 2, 0, 0, 0)
+    [delivered] = [lead.posting_id for lead in summary.tailored]
+    judged = [p for p in ids if p != delivered and _current_gate_verdict(env, p) == "eligible"]
+    assert len(judged) == 2, "the backlog judged two postings below the slate"
+    gate = _funnel_gate(summary)
+    assert {k: v for k, v in gate.items() if k.startswith("backlog_")} == {
+        "backlog_budget": 2,
+        "backlog_candidates": 3,
+        "backlog_sent": 2,
+        "backlog_judged": 2,
+        "backlog_eligible": 2,
+        "backlog_ineligible": 0,
+        "backlog_uncertain": 0,
+        "backlog_failed_open_batches": 0,
+    }
+
+
+@_needs_an_executable_fake
+def test_the_backlog_sends_newest_first_seen_first(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ordered by `first_seen_at`, not by the caller's order nor by id: the lowest id is the
+    newest, and the caller hands the leads in descending id order."""
+    from boardwatch.llm.gate_judge import run_gate_backlog
+
+    _ready(env)
+    a, b, c = (_seed(env, slug=f"acme-backlog-new-{n}") for n in "abc")
+    _set_first_seen(env, {a: 0, c: 1, b: 2})
+    _arm_gate(env, batch_size=1, backlog_budget=3)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    result = run_gate_backlog(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in (c, b, a)], run_id=None,
+    )
+
+    assert (result.candidates, result.sent, result.judged) == (3, 3, 3)
+    assert _gate_row_order(env) == [a, c, b]
+
+
+@_needs_an_executable_fake
+def test_the_backlog_skips_a_posting_already_judged_under_the_current_inputs(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Never re-judge (D-477 pt 5): B already carries a current reading, so it is no candidate
+    and the budget goes to A alone."""
+    from boardwatch.llm.gate_judge import run_gate_backlog, run_gate_stage
+
+    _ready(env)
+    a, b = (_seed(env, slug=f"acme-backlog-done-{n}") for n in "ab")
+    _arm_gate(env, batch_size=1, backlog_budget=13)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    engine, settings = get_engine(env), load_settings(data_dir=env)
+    run_gate_stage(engine, settings, [SimpleNamespace(posting_id=b)], run_id=None)
+    before = len(_gate_row_order(env))
+    fake_claude.unlink()
+
+    result = run_gate_backlog(
+        engine, settings, [SimpleNamespace(posting_id=p) for p in (a, b)], run_id=None
+    )
+
+    assert (result.candidates, result.sent) == (1, 1)
+    assert _calls(fake_claude) == 1
+    assert _gate_row_order(env)[before:] == [a]
+
+
+@_needs_an_executable_fake
+def test_the_backlog_re_judges_an_off_key_eligible_before_anything_newer(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The addendum: a lead a judge once cleared, stranded by a re-key, goes FIRST — ahead of a
+    never-judged A and an off-key `ineligible` B that are both newer. Then newest first."""
+    from boardwatch.llm.gate_judge import run_gate_backlog
+
+    a, b, c = _stale_abc(env, monkeypatch)
+    _set_first_seen(env, {a: 0, b: 1, c: 2})
+    _arm_gate(env, batch_size=1, backlog_budget=3)
+    before = len(_gate_row_order(env))
+
+    result = run_gate_backlog(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=p) for p in (a, b, c)], run_id=None,
+    )
+
+    assert (result.candidates, result.sent) == (3, 3)
+    assert _gate_row_order(env)[before:] == [c, a, b]
+
+
+@_needs_an_executable_fake
+def test_a_failed_backlog_batch_fails_open_is_counted_and_drops_no_lead(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-074: the judge errors on every call. The slate's lead is still delivered, the backlog
+    posting stays unjudged — a candidate again next run — and the failed batch is counted and
+    reported under the backlog's own name."""
+    _ready(env)
+    ids = [_seed(env, slug=f"acme-backlog-fail-{n}") for n in range(2)]
+    _arm_gate(env, batch_size=1, backlog_budget=1)
+    monkeypatch.setenv("GATE_FAKE_MODE", "exit1")
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert len(summary.tailored) == 1
+    assert _backlog_counts(summary) == (1, 1, 0, 0, 0, 0, 1)
+    assert _funnel_gate(summary)["backlog_failed_open_batches"] == 1
+    assert [_current_gate_verdict(env, p) for p in ids] == [None, None]
+    assert any(error.startswith("gate backlog batch 1:") for error in summary.errors), (
+        summary.errors
+    )
+
+
+@_needs_an_executable_fake
+def test_a_backlog_that_raises_costs_the_backlog_and_never_the_days_slate(
+    env: Path, tmp_path: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs before the tailor loop, so it is guarded like the refresh: UNMEASURED, never zero."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    _ready(env)
+    for n in range(2):
+        _seed(env, slug=f"acme-backlog-boom-{n}")
+    _arm_gate(env, backlog_budget=13)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+
+    def boom(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("simulated backlog failure")
+
+    monkeypatch.setattr(runner_mod, "run_gate_backlog", boom)
+
+    summary = _depth_pipeline(env, tmp_path / "apps", top_n=1)
+
+    assert summary.fatal is None, summary.fatal
+    assert len(summary.tailored) == 1
+    assert _backlog_counts(summary) == (None,) * 7
+    assert _funnel_gate(summary)["backlog_candidates"] is None
+    assert any(
+        error.startswith("gate backlog: not run:") and "simulated" in error
+        for error in summary.errors
+    ), summary.errors

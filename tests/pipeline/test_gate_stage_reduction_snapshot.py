@@ -199,7 +199,15 @@ EXPECTED: dict[str, Any] = {
         "refresh_budget": 0,
         "refresh_candidates": None,
         "refresh_sent": None,
-        "refresh_pending_after": None
+        "refresh_pending_after": None,
+        "backlog_budget": 0,
+        "backlog_candidates": None,
+        "backlog_sent": None,
+        "backlog_judged": None,
+        "backlog_eligible": None,
+        "backlog_ineligible": None,
+        "backlog_uncertain": None,
+        "backlog_failed_open_batches": None
     },
     "summary_gate": {
         "gate_excluded_ids": [
@@ -223,7 +231,14 @@ EXPECTED: dict[str, Any] = {
         "gate_readings_absent": 5,
         "gate_refresh_candidates": 0,
         "gate_refresh_sent": 0,
-        "gate_refresh_pending_after": 0
+        "gate_refresh_pending_after": 0,
+        "gate_backlog_candidates": 0,
+        "gate_backlog_sent": 0,
+        "gate_backlog_judged": 0,
+        "gate_backlog_eligible": 0,
+        "gate_backlog_ineligible": 0,
+        "gate_backlog_uncertain": 0,
+        "gate_backlog_failed_open": 0
     },
     "summary_errors": [
         "gate: batch 2/3 failed open: claude exited 1: simulated outage",

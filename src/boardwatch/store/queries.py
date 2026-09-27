@@ -931,6 +931,25 @@ def canonical_job_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int,
     return resolved
 
 
+def first_seen_at_by_posting(conn: Connection, posting_ids: Sequence[int]) -> dict[int, datetime]:
+    """`{posting_id: postings.first_seen_at}` for the postings asked about. Chunked through
+    `id_chunks` (D-288) for `canonical_job_ids`' reason: the gate backlog passes every in-field
+    posting below the judged slate, thousands on a live store."""
+    seen: dict[int, datetime] = {}
+    for chunk in id_chunks(posting_ids):
+        seen.update(
+            {
+                int(row.id): row.first_seen_at
+                for row in conn.execute(
+                    select(postings.c.id, postings.c.first_seen_at).where(
+                        postings.c.id.in_(chunk)
+                    )
+                ).all()
+            }
+        )
+    return seen
+
+
 #: The one `posting_versions.capture_reason` that means THIS posting's body moved under us.
 #:
 #: Read positively against the closed column catalog, never as `!= "new"`. `scan/apply.py` writes

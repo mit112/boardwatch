@@ -82,7 +82,12 @@ from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
 from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
-from boardwatch.llm.gate_judge import GateStageResult, run_gate_refresh, run_gate_stage
+from boardwatch.llm.gate_judge import (
+    GateStageResult,
+    run_gate_backlog,
+    run_gate_refresh,
+    run_gate_stage,
+)
 from boardwatch.notify.alert_escalation import escalate_alerts
 from boardwatch.notify.apply_lane_drought import check_apply_lane_drought
 from boardwatch.notify.apply_lane_volume import check_apply_lane_volume
@@ -648,6 +653,16 @@ class PipelineSummary:
     gate_refresh_candidates: int | None = 0
     gate_refresh_sent: int | None = 0
     gate_refresh_pending_after: int | None = 0
+    # The gate backlog: in-field postings below the judged slate with no current reading. All-zero
+    # when `gate.backlog_budget` is 0, `None` when an armed pass raised — the refresh's split
+    # exactly. See `llm.gate_judge.GateBacklogResult`.
+    gate_backlog_candidates: int | None = 0
+    gate_backlog_sent: int | None = 0
+    gate_backlog_judged: int | None = 0
+    gate_backlog_eligible: int | None = 0
+    gate_backlog_ineligible: int | None = 0
+    gate_backlog_uncertain: int | None = 0
+    gate_backlog_failed_open: int | None = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -2814,6 +2829,42 @@ def _run_pipeline_leased(
                 console.print(f"  ! {note}", markup=False)
                 stage_errors.append(note)
                 summary.errors.append(note)
+        # The backlog: in-field postings the ranker put BELOW the judged slate, which no stage
+        # above can reach, so without it a good lead ranked past `depth` is never judged and never
+        # climbs to tier 1. AFTER the refresh, so a lead it just judged is current and not re-sent.
+        # Nothing it judges is delivered this run. Guarded as the refresh is, for its reason.
+        if settings.gate.enabled and settings.gate.backlog_budget:
+            try:
+                backlog = run_gate_backlog(
+                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id
+                )
+                summary.gate_backlog_candidates = backlog.candidates
+                summary.gate_backlog_sent = backlog.sent
+                summary.gate_backlog_judged = backlog.judged
+                summary.gate_backlog_eligible = backlog.eligible
+                summary.gate_backlog_ineligible = backlog.ineligible
+                summary.gate_backlog_uncertain = backlog.uncertain
+                summary.gate_backlog_failed_open = backlog.failed_open_batches
+                backlog_errors = backlog.errors
+                console.print(
+                    f"gate backlog: {backlog.candidates} posting(s) unjudged, {backlog.sent} sent, "
+                    f"{backlog.judged} judged ({backlog.eligible} eligible, "
+                    f"{backlog.ineligible} ineligible, {backlog.uncertain} uncertain), "
+                    f"{backlog.failed_open_batches} batch(es) failed open"
+                )
+            except Exception as exc:  # noqa: BLE001 - the backlog must never cost the slate
+                summary.gate_backlog_candidates = None
+                summary.gate_backlog_sent = None
+                summary.gate_backlog_judged = None
+                summary.gate_backlog_eligible = None
+                summary.gate_backlog_ineligible = None
+                summary.gate_backlog_uncertain = None
+                summary.gate_backlog_failed_open = None
+                backlog_errors = (f"gate backlog: not run: {exc}",)
+            for note in backlog_errors:
+                console.print(f"  ! {note}", markup=False)
+                stage_errors.append(note)
+                summary.errors.append(note)
         clock.mark("gate")
 
         # T43 — the lane split moves BEFORE the tailor loop, so the render is spent on
@@ -4109,6 +4160,14 @@ def _emit_funnel(
                 refresh_candidates=summary.gate_refresh_candidates,
                 refresh_sent=summary.gate_refresh_sent,
                 refresh_pending_after=summary.gate_refresh_pending_after,
+                backlog_budget=settings.gate.backlog_budget,
+                backlog_candidates=summary.gate_backlog_candidates,
+                backlog_sent=summary.gate_backlog_sent,
+                backlog_judged=summary.gate_backlog_judged,
+                backlog_eligible=summary.gate_backlog_eligible,
+                backlog_ineligible=summary.gate_backlog_ineligible,
+                backlog_uncertain=summary.gate_backlog_uncertain,
+                backlog_failed_open_batches=summary.gate_backlog_failed_open,
             )
             if settings.gate.enabled
             else None

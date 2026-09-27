@@ -246,6 +246,10 @@ _GATE_KEYS: dict[str, str] = {
         "standing-queue leads re-judged per run when their gate reading is stale; 0 = off; "
         "next run"
     ),
+    "backlog_budget": (
+        "unjudged in-field postings below the judged slate sent to the judge per run; 0 = off; "
+        "next run"
+    ),
     "seniority_hold": (
         "hold a lead for review when the judge reads its BODY as above the target band; "
         "off = the reading is still recorded, just not acted on; next run"

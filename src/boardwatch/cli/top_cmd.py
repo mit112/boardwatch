@@ -282,6 +282,10 @@ class RankedResults:
     # item 3: on a real run at --top 5, 4,442 postings left here and appeared in no counter at
     # all. (The larger 11,517 went out through hidden_hard_filter, also uncounted before.)
     hidden_below_cutoff: int = 0
+    # The `in_field` postings among `hidden_below_cutoff`, in rank order: the gate backlog's
+    # candidates (`gate.backlog_budget`). A list threaded out, not a count — it is NOT part of the
+    # identity above, whose bucket already counts every one of them.
+    below_cutoff_in_field: tuple[RankedPosting, ...] = ()
     # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
     # bucket so the identity holds for `top --new` too instead of only for the pipeline.
     skipped_not_new: int = 0
@@ -863,6 +867,7 @@ def rank_open_postings(
     visible: list[RankedPosting] = []
     hidden = 0
     hidden_below_cutoff = 0
+    below_cutoff_in_field: list[RankedPosting] = []
     hidden_duplicate = 0
     # Dedup runs last, over the post-eligibility population (design §1.4): the survivor is
     # elected among postings that would otherwise have been visible, so a group can never be
@@ -1152,6 +1157,8 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
+            if posting.role == "in_field":
+                below_cutoff_in_field.append(posting)
     # D-498 rule (a), and it sits HERE rather than inside the fill loop because the rule is not a
     # cap. A cap asks "has this key had its allowance?", which accumulates in slate order; this
     # asks "is the EMPLOYER's own copy of this job in front of the owner?", and on a slate ordered
@@ -1193,6 +1200,7 @@ def rank_open_postings(
         considered=len(rows),
         hidden_hard_filter=hidden_hard_filter,
         hidden_below_cutoff=hidden_below_cutoff,
+        below_cutoff_in_field=tuple(below_cutoff_in_field),
         skipped_not_new=skipped_not_new,
         hidden_duplicate=hidden_duplicate,
         hidden_slate_cap=hidden_slate_cap,

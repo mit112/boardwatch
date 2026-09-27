@@ -40,8 +40,17 @@ from boardwatch.eligibility.oracle import (
     accept_oracle_verdict,
 )
 from boardwatch.eligibility.preflight import engine_facts
-from boardwatch.eligibility.read import fresh_gate_verdicts, newest_gate_verdicts
-from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
+from boardwatch.eligibility.read import (
+    ever_gate_eligible,
+    fresh_gate_verdicts,
+    newest_gate_verdicts,
+)
+from boardwatch.store.queries import (
+    CurrentVersion,
+    current_posting_versions,
+    first_seen_at_by_posting,
+    get_profile,
+)
 
 #: What this stage writes to the gate row's `provider` column: the `claude` CLI under the
 #: operator's own subscription, no API key. The same name the agent tailor lane already
@@ -668,23 +677,118 @@ def run_gate_refresh(
     stale = _stale(engine, settings, leads)
     if stale is None:
         return GateRefreshResult()
-    size = max(1, settings.gate.batch_size)
-    sent = 0
-    position = 0
-    calls = 0
-    errors: list[str] = []
-    while position < len(stale) and sent < budget:
-        chunk = stale[position : position + min(size, budget - sent)]
-        position += len(chunk)
-        calls += 1
-        _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
-        sent += result.sent
-        errors.extend(f"gate refresh batch {calls}: {note}" for note in result.errors)
+    results, errors = _send_in_batches(
+        engine, settings, stale, budget, run_id=run_id, name="gate refresh"
+    )
     after = _stale(engine, settings, leads)
     return GateRefreshResult(
         candidates=len(stale),
-        sent=sent,
+        sent=sum(result.sent for result in results),
         pending_after=len(stale) if after is None else len(after),
+        errors=tuple(errors),
+    )
+
+
+def _send_in_batches(
+    engine: Engine, settings: Settings, stale: Sequence[_T], budget: int, *,
+    run_id: int | None, name: str,
+) -> tuple[list[GateStageResult], list[str]]:
+    """Walk `stale` through `run_gate_stage` ONE BATCH PER CALL until `budget` items were SENT —
+    `run_gate_refresh`'s docstring says why each half of that matters. One result per call, and
+    each call's notes prefixed `"{name} batch {n}: "`."""
+    size = max(1, settings.gate.batch_size)
+    sent = 0
+    position = 0
+    results: list[GateStageResult] = []
+    errors: list[str] = []
+    while position < len(stale) and sent < budget:
+        chunk = list(stale[position : position + min(size, budget - sent)])
+        position += len(chunk)
+        _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
+        results.append(result)
+        sent += result.sent
+        errors.extend(f"{name} batch {len(results)}: {note}" for note in result.errors)
+    return results, errors
+
+
+@dataclass(frozen=True)
+class GateBacklogResult:
+    """One run's backlog pass. All-zero when `gate.backlog_budget` is 0 — the caller knows that
+    from the setting and the funnel reports the backlog as not armed.
+
+    `candidates` is how many of the leads handed in had no current reading when the pass began,
+    `sent` how many items its requests carried (at most `gate.backlog_budget`), and the rest are
+    the stage's own tallies summed over its batches — `failed_open_batches` batches, not items,
+    exactly as the slate's count is.
+    """
+
+    candidates: int = 0
+    sent: int = 0
+    judged: int = 0
+    eligible: int = 0
+    ineligible: int = 0
+    uncertain: int = 0
+    failed_open_batches: int = 0
+    errors: tuple[str, ...] = ()
+
+
+def _backlog(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
+    """`leads` minus every lead with a current gate reading or no current version to judge,
+    ordered for the backlog: a lead a judge EVER read `eligible` — over any version, under any
+    key — first, since a re-key stranded a clearance nothing else re-judges; then newest
+    `first_seen_at` first, then highest id. `None` on `run_gate_stage`'s fail-open cases."""
+    with engine.connect() as conn:
+        profile_row = get_profile(conn)
+        if profile_row is None:
+            return None
+        try:
+            facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
+        except ProfileRowInvalid:
+            return None
+        versions = current_posting_versions(conn, [p.posting_id for p in leads])
+        current = _current_gate_rows(
+            conn, settings, facts, profile_row.target_seniority_band, versions
+        )
+        stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
+        stale_ids = [p.posting_id for p in stale]
+        once_eligible = ever_gate_eligible(conn, stale_ids)
+        first_seen = first_seen_at_by_posting(conn, stale_ids)
+    return sorted(
+        stale,
+        key=lambda p: (p.posting_id in once_eligible, first_seen[p.posting_id], p.posting_id),
+        reverse=True,
+    )
+
+
+def run_gate_backlog(
+    engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None
+) -> GateBacklogResult:
+    """Judge up to `gate.backlog_budget` of `leads` — the in-field postings that ranked below the
+    judged slate — that carry no current gate reading, in `_backlog`'s order.
+
+    `run_gate_refresh`'s mechanism exactly: the daily stage itself, one batch per call so a seat
+    cutoff loses at most one batch, and the budget spent on what the stage actually sends. The
+    slate the stage hands back is discarded — nothing here is delivered this run. A verdict only
+    changes where the lead ranks next run: `eligible` in tier 1, `ineligible` hidden. No shortlist
+    rank is recorded: these leads were ranked below the slate the rank band is read on.
+    """
+    budget = settings.gate.backlog_budget
+    if not settings.gate.enabled or budget == 0 or not leads:
+        return GateBacklogResult()
+    stale = _backlog(engine, settings, leads)
+    if stale is None:
+        return GateBacklogResult()
+    results, errors = _send_in_batches(
+        engine, settings, stale, budget, run_id=run_id, name="gate backlog"
+    )
+    return GateBacklogResult(
+        candidates=len(stale),
+        sent=sum(r.sent for r in results),
+        judged=sum(r.judged for r in results),
+        eligible=sum(r.eligible for r in results),
+        ineligible=sum(r.ineligible for r in results),
+        uncertain=sum(r.uncertain for r in results),
+        failed_open_batches=sum(r.failed_open_batches for r in results),
         errors=tuple(errors),
     )
 

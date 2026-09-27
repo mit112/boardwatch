@@ -152,7 +152,8 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # is the operator's own act, never something a fresh install or a new tenant inherits.
     # `claude_config_dir` is machine-local (None ships inert, same reasoning as
     # jobapps_discovery_dir); `model`/`effort`/`batch_size`/`call_timeout_s`/`depth`/
-    # `refresh_budget` are cost knobs that say nothing about roles, seniority, geography or field.
+    # `refresh_budget`/`backlog_budget` are cost knobs that say nothing about roles, seniority,
+    # geography or field.
     #
     # `seniority_hold` is OFF for the same reason `enabled` is, and it is NEUTRAL despite its
     # name: it does not encode a view about which seniority anyone should target — the target
@@ -170,6 +171,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "effort": None,
         "depth": 0,
         "refresh_budget": 0,
+        "backlog_budget": 0,
         "seniority_hold": False,
     },
     "GateTier.enabled": False,
@@ -180,6 +182,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "GateTier.effort": None,
     "GateTier.depth": 0,
     "GateTier.refresh_budget": 0,
+    "GateTier.backlog_budget": 0,
     "GateTier.seniority_hold": False,
 }
 
@@ -245,6 +248,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "GateTier.effort": "capability",
     "GateTier.depth": "operational",
     "GateTier.refresh_budget": "operational",
+    "GateTier.backlog_budget": "operational",
     "GateTier.seniority_hold": "capability",
 }
 
