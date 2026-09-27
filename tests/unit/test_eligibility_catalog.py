@@ -116,7 +116,8 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
         "work_auth", "experience_years", "clearance", "degree",
         "contract_not_fte", "internship", "student_status",
     ]
-    assert len(catalog.negation_cues) == 26
+    # E6: 26 -> 27, `don’t` with the typographic apostrophe (U+2019).
+    assert len(catalog.negation_cues) == 27
     # 2026-09-04: 57 -> 59. `total_months_minimum` and `scoped_months_minimum`: every pattern
     # above them requires `years?`, so a bar stated in months wrote no row at all.
     # 2026-09-05: 59 -> 60. `labeled_years_minimum`: every pattern above it reads left to right
@@ -214,7 +215,9 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # 2026-09-04: +1, `scoped_months_minimum`, same sentence-scoped form as the six
         # scoped/domain years patterns it mirrors.
         # T200: +2, the domain range twins.
-        "abstain_by_sentence": 9,
+        # E6: +1, `graduation_window_required`. "..., or graduated within the last 24 months"
+        # opens the window for recent graduates in its own sentence only.
+        "abstain_by_sentence": 10,
         # T104/D-531: ALL ELEVEN document-scoped escapes moved here, so `abstain_by` above is
         # now ZERO -- the field stays in the loader for an override, but no bundled pattern
         # uses it. The pair must move together: an `abstain_by` that climbs off 0 means a new
