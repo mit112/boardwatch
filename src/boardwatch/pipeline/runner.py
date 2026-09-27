@@ -663,6 +663,7 @@ class PipelineSummary:
     gate_backlog_ineligible: int | None = 0
     gate_backlog_uncertain: int | None = 0
     gate_backlog_failed_open: int | None = 0
+    gate_backlog_breaker_skipped: int | None = 0
 
     @property
     def leads_with_pdf(self) -> int:
@@ -2829,42 +2830,6 @@ def _run_pipeline_leased(
                 console.print(f"  ! {note}", markup=False)
                 stage_errors.append(note)
                 summary.errors.append(note)
-        # The backlog: in-field postings the ranker put BELOW the judged slate, which no stage
-        # above can reach, so without it a good lead ranked past `depth` is never judged and never
-        # climbs to tier 1. AFTER the refresh, so a lead it just judged is current and not re-sent.
-        # Nothing it judges is delivered this run. Guarded as the refresh is, for its reason.
-        if settings.gate.enabled and settings.gate.backlog_budget:
-            try:
-                backlog = run_gate_backlog(
-                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id
-                )
-                summary.gate_backlog_candidates = backlog.candidates
-                summary.gate_backlog_sent = backlog.sent
-                summary.gate_backlog_judged = backlog.judged
-                summary.gate_backlog_eligible = backlog.eligible
-                summary.gate_backlog_ineligible = backlog.ineligible
-                summary.gate_backlog_uncertain = backlog.uncertain
-                summary.gate_backlog_failed_open = backlog.failed_open_batches
-                backlog_errors = backlog.errors
-                console.print(
-                    f"gate backlog: {backlog.candidates} posting(s) unjudged, {backlog.sent} sent, "
-                    f"{backlog.judged} judged ({backlog.eligible} eligible, "
-                    f"{backlog.ineligible} ineligible, {backlog.uncertain} uncertain), "
-                    f"{backlog.failed_open_batches} batch(es) failed open"
-                )
-            except Exception as exc:  # noqa: BLE001 - the backlog must never cost the slate
-                summary.gate_backlog_candidates = None
-                summary.gate_backlog_sent = None
-                summary.gate_backlog_judged = None
-                summary.gate_backlog_eligible = None
-                summary.gate_backlog_ineligible = None
-                summary.gate_backlog_uncertain = None
-                summary.gate_backlog_failed_open = None
-                backlog_errors = (f"gate backlog: not run: {exc}",)
-            for note in backlog_errors:
-                console.print(f"  ! {note}", markup=False)
-                stage_errors.append(note)
-                summary.errors.append(note)
         clock.mark("gate")
 
         # T43 — the lane split moves BEFORE the tailor loop, so the render is spent on
@@ -3231,6 +3196,47 @@ def _run_pipeline_leased(
             stage_completed=summary.fatal is None,
         )
 
+        # The gate backlog: in-field postings the ranker put BELOW the judged slate, which the gate
+        # stage cannot reach, so without it a good lead ranked past `depth` is never judged and
+        # never climbs to tier 1. HERE, after the tailor loop and the `seen` write, because it
+        # delivers nothing this run: ahead of the loop, a seat cutoff or a stalled judge would
+        # spend the day's tailoring on leads nobody receives today. After the refresh, so a lead
+        # the refresh just judged is current and not re-sent. Charged to the tailor stage's
+        # clock. Guarded as the refresh is: a fault costs the backlog and nothing else.
+        if settings.gate.enabled and settings.gate.backlog_budget:
+            try:
+                backlog = run_gate_backlog(
+                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id
+                )
+                summary.gate_backlog_candidates = backlog.candidates
+                summary.gate_backlog_sent = backlog.sent
+                summary.gate_backlog_judged = backlog.judged
+                summary.gate_backlog_eligible = backlog.eligible
+                summary.gate_backlog_ineligible = backlog.ineligible
+                summary.gate_backlog_uncertain = backlog.uncertain
+                summary.gate_backlog_failed_open = backlog.failed_open_batches
+                summary.gate_backlog_breaker_skipped = backlog.breaker_skipped
+                backlog_errors = backlog.errors
+                console.print(
+                    f"gate backlog: {backlog.candidates} posting(s) unjudged, {backlog.sent} sent, "
+                    f"{backlog.judged} judged ({backlog.eligible} eligible, "
+                    f"{backlog.ineligible} ineligible, {backlog.uncertain} uncertain), "
+                    f"{backlog.failed_open_batches} batch(es) failed open"
+                )
+            except Exception as exc:  # noqa: BLE001 - the backlog must never cost the slate
+                summary.gate_backlog_candidates = None
+                summary.gate_backlog_sent = None
+                summary.gate_backlog_judged = None
+                summary.gate_backlog_eligible = None
+                summary.gate_backlog_ineligible = None
+                summary.gate_backlog_uncertain = None
+                summary.gate_backlog_failed_open = None
+                summary.gate_backlog_breaker_skipped = None
+                backlog_errors = (f"gate backlog: not run: {exc}",)
+            for note in backlog_errors:
+                console.print(f"  ! {note}", markup=False)
+                stage_errors.append(note)
+                summary.errors.append(note)
         summary.evaluated = _count_evaluations(engine, run_id)
         clock.mark("tailor")
         return summary
@@ -4168,6 +4174,7 @@ def _emit_funnel(
                 backlog_ineligible=summary.gate_backlog_ineligible,
                 backlog_uncertain=summary.gate_backlog_uncertain,
                 backlog_failed_open_batches=summary.gate_backlog_failed_open,
+                backlog_breaker_skipped=summary.gate_backlog_breaker_skipped,
             )
             if settings.gate.enabled
             else None

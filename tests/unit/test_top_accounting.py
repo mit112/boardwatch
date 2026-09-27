@@ -26,7 +26,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -37,7 +37,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.ledger_queries import record_disposition
-from boardwatch.store.queries import save_profile
+from boardwatch.store.queries import current_posting_versions, save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 from tests.conftest import write_bundled_role_taxonomy
 
@@ -364,5 +364,12 @@ def test_the_below_cutoff_in_field_list_carries_only_in_field_postings(
     results = rank_open_postings(engine, _settings(env), limit=1, record_surfaced=False)
 
     assert results.hidden_below_cutoff == 2
-    assert [p.role for p in results.below_cutoff_in_field] == ["in_field"]
+    [(posting_id, version_id)] = results.below_cutoff_in_field
+    with engine.connect() as conn:
+        title = conn.execute(
+            select(postings.c.title).where(postings.c.id == posting_id)
+        ).scalar_one()
+        current = current_posting_versions(conn, [posting_id])[posting_id]
+    assert title in ("Backend Engineer", "Platform Engineer")
+    assert version_id == current.posting_version_id
     assert _accounted(results) == results.considered == 3

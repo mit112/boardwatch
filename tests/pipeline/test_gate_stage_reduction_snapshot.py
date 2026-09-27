@@ -207,7 +207,8 @@ EXPECTED: dict[str, Any] = {
         "backlog_eligible": None,
         "backlog_ineligible": None,
         "backlog_uncertain": None,
-        "backlog_failed_open_batches": None
+        "backlog_failed_open_batches": None,
+        "backlog_breaker_skipped": None
     },
     "summary_gate": {
         "gate_excluded_ids": [
@@ -238,7 +239,8 @@ EXPECTED: dict[str, Any] = {
         "gate_backlog_eligible": 0,
         "gate_backlog_ineligible": 0,
         "gate_backlog_uncertain": 0,
-        "gate_backlog_failed_open": 0
+        "gate_backlog_failed_open": 0,
+        "gate_backlog_breaker_skipped": 0
     },
     "summary_errors": [
         "gate: batch 2/3 failed open: claude exited 1: simulated outage",

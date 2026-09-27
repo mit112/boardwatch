@@ -1054,6 +1054,7 @@ class GateCounters:
     backlog_ineligible: int | None = 0
     backlog_uncertain: int | None = 0
     backlog_failed_open_batches: int | None = 0
+    backlog_breaker_skipped: int | None = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -1090,6 +1091,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "backlog_ineligible": None,
             "backlog_uncertain": None,
             "backlog_failed_open_batches": None,
+            "backlog_breaker_skipped": None,
         }
     armed = gate.refresh_budget > 0
     backlog_armed = gate.backlog_budget > 0
@@ -1123,6 +1125,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "backlog_ineligible": gate.backlog_ineligible if backlog_armed else None,
         "backlog_uncertain": gate.backlog_uncertain if backlog_armed else None,
         "backlog_failed_open_batches": gate.backlog_failed_open_batches if backlog_armed else None,
+        "backlog_breaker_skipped": gate.backlog_breaker_skipped if backlog_armed else None,
     }
 
 
@@ -1184,7 +1187,7 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         f"{gate.backlog_sent} sent (budget {gate.backlog_budget}) · {gate.backlog_judged} judged "
         f"({gate.backlog_eligible} eligible, {gate.backlog_ineligible} ineligible, "
         f"{gate.backlog_uncertain} uncertain) · {gate.backlog_failed_open_batches} batch(es) "
-        "failed open",
+        f"failed open · {gate.backlog_breaker_skipped} not sent after the breaker tripped",
     )
 
 

@@ -282,10 +282,12 @@ class RankedResults:
     # item 3: on a real run at --top 5, 4,442 postings left here and appeared in no counter at
     # all. (The larger 11,517 went out through hidden_hard_filter, also uncounted before.)
     hidden_below_cutoff: int = 0
-    # The `in_field` postings among `hidden_below_cutoff`, in rank order: the gate backlog's
-    # candidates (`gate.backlog_budget`). A list threaded out, not a count — it is NOT part of the
-    # identity above, whose bucket already counts every one of them.
-    below_cutoff_in_field: tuple[RankedPosting, ...] = ()
+    # The `in_field` postings among `hidden_below_cutoff`, in rank order, each as `(posting_id,
+    # current posting_version_id)`: the gate backlog's candidates (`gate.backlog_budget`). The
+    # version id is the one this ranking already loaded, so the backlog's freshness read needs no
+    # second pass over the bodies. Threaded out, not counted — it is NOT part of the identity
+    # above, whose bucket already counts every one of them.
+    below_cutoff_in_field: tuple[tuple[int, int], ...] = ()
     # Narrowed away by `--new`. A scoping choice rather than a rejection, kept as its own
     # bucket so the identity holds for `top --new` too instead of only for the pipeline.
     skipped_not_new: int = 0
@@ -867,7 +869,7 @@ def rank_open_postings(
     visible: list[RankedPosting] = []
     hidden = 0
     hidden_below_cutoff = 0
-    below_cutoff_in_field: list[RankedPosting] = []
+    below_cutoff_in_field: list[tuple[int, int]] = []
     hidden_duplicate = 0
     # Dedup runs last, over the post-eligibility population (design §1.4): the survivor is
     # elected among postings that would otherwise have been visible, so a group can never be
@@ -1157,8 +1159,11 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
-            if posting.role == "in_field":
-                below_cutoff_in_field.append(posting)
+            current_version = versions.get(posting.posting_id)
+            if posting.role == "in_field" and current_version is not None:
+                below_cutoff_in_field.append(
+                    (posting.posting_id, current_version.posting_version_id)
+                )
     # D-498 rule (a), and it sits HERE rather than inside the fill loop because the rule is not a
     # cap. A cap asks "has this key had its allowance?", which accumulates in slate order; this
     # asks "is the EMPLOYER's own copy of this job in front of the owner?", and on a slate ordered
