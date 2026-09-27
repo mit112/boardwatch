@@ -34,7 +34,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
-from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.param_chunks import ID_CHUNK_SIZE, id_chunks
 from boardwatch.store.tables import (
     board_scans,
     companies,
@@ -641,6 +641,40 @@ def company_exists(conn: Connection, *, provider: str, slug: str) -> bool:
     which is exactly how `ashby:lightfield` became a second row for `ashby:Lightfield`.
     """
     return stored_slug(conn, provider=provider, slug=slug) is not None
+
+
+def posting_slugs(
+    conn: Connection, *, provider: str, posting_ids: Collection[str]
+) -> dict[str, str]:
+    """`provider_posting_id -> companies.slug` for each of `posting_ids` this provider stores.
+
+    For a provider whose posting id is unique across the WHOLE provider rather than within one
+    company -- a LinkedIn job id names one job wherever it is listed -- so a posting can be found
+    by its id alone, whichever company row it was filed under. `UNIQUE(company_id,
+    provider_posting_id)` cannot say that; this is the read that lets a second observer of one
+    job land on the row the first one wrote instead of beside it.
+
+    Oldest row wins (`ORDER BY postings.id`), so an id already stored twice resolves to the same
+    row every time -- the same rule `stored_slug` applies to a collided company pair.
+
+    Chunked by `ID_CHUNK_SIZE` because the list is caller-sized (`store.param_chunks`); the
+    result is keyed on the chunked column, so the merge is exact.
+    """
+    wanted = sorted(set(posting_ids))
+    found: dict[str, str] = {}
+    for start in range(0, len(wanted), ID_CHUNK_SIZE):
+        rows = conn.execute(
+            select(postings.c.provider_posting_id, companies.c.slug)
+            .join(companies, companies.c.id == postings.c.company_id)
+            .where(
+                companies.c.provider == provider,
+                postings.c.provider_posting_id.in_(wanted[start : start + ID_CHUNK_SIZE]),
+            )
+            .order_by(postings.c.id)
+        ).all()
+        for row in rows:
+            found.setdefault(str(row.provider_posting_id), str(row.slug))
+    return found
 
 
 def unwatched_scannable_companies(

@@ -16,10 +16,16 @@ import pytest
 from sqlalchemy import Engine, select
 from sqlalchemy.exc import IntegrityError
 
+from boardwatch.core.models import RawPosting
+from boardwatch.lanes.base import lane_snapshot
+from boardwatch.scan.apply import apply_board
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.param_chunks import ID_CHUNK_SIZE
 from boardwatch.store.queries import (
     company_exists,
     get_watched_companies,
+    insert_run,
+    posting_slugs,
     unwatch,
     upsert_lane_company,
     upsert_watch,
@@ -429,3 +435,47 @@ def test_a_sibling_slice_is_still_a_second_row(engine: Engine) -> None:
     with engine.connect() as conn:
         rows = conn.execute(select(companies.c.slug)).scalars().all()
     assert sorted(rows) == sorted([first, sibling])
+
+
+def _posting(engine: Engine, *, provider: str, slug: str, posting_ref: str) -> None:
+    """One stored posting, written through the lane apply path the lookup serves."""
+    with engine.begin() as conn:
+        company_id = upsert_lane_company(conn, provider=provider, slug=slug, name=slug)
+    raw = RawPosting(
+        provider_posting_id=posting_ref, title="Software Engineer", url="https://x.test/1",
+        locations=["Austin, TX"], body_text="a body", raw_json={},
+    )
+    apply_board(
+        engine, lane_snapshot([raw], "https://x.test"), company_id, insert_run(engine),
+        scan_kind="lane",
+    )
+
+
+def test_posting_slugs_finds_a_job_by_its_id_whichever_company_row_holds_it(engine: Engine):
+    """The provider-wide lookup: one LinkedIn job id, found under the company it was filed
+    under, and ONLY under the provider asked about -- a greenhouse posting sharing the number
+    is a different job on a different board."""
+    _posting(engine, provider="linkedin", slug="acme-true", posting_ref="111")
+    _posting(engine, provider="linkedin", slug="jobapps:beta", posting_ref="222")
+    _posting(engine, provider="greenhouse", slug="acme", posting_ref="333")
+
+    with engine.connect() as conn:
+        found = posting_slugs(conn, provider="linkedin", posting_ids=["111", "222", "333", "444"])
+
+    assert found == {"111": "acme-true", "222": "jobapps:beta"}
+
+
+def test_posting_slugs_resolves_an_id_stored_twice_to_the_oldest_row(engine: Engine):
+    _posting(engine, provider="linkedin", slug="first", posting_ref="111")
+    _posting(engine, provider="linkedin", slug="second", posting_ref="111")
+    with engine.connect() as conn:
+        assert posting_slugs(conn, provider="linkedin", posting_ids=["111"]) == {"111": "first"}
+
+
+def test_posting_slugs_reads_past_one_chunk_of_ids(engine: Engine):
+    """An id in the SECOND chunk is found. A lookup that bound only the first chunk -- or bound
+    the whole list and was never exercised past SQLite's cap -- would miss it."""
+    _posting(engine, provider="linkedin", slug="acme", posting_ref="late")
+    wanted = [f"id{n:05d}" for n in range(ID_CHUNK_SIZE + 5)] + ["late"]
+    with engine.connect() as conn:
+        assert posting_slugs(conn, provider="linkedin", posting_ids=wanted) == {"late": "acme"}

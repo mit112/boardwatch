@@ -280,17 +280,124 @@ def test_cohort_date_is_not_used_as_a_posting_date(tmp_path):
 # ---------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("acquisition", ["linkedin"])
-def test_an_aggregator_only_record_is_counted_and_not_ingested(tmp_path, acquisition):
-    """`linkedin` is the aggregator that stays OUT, and deliberately so: boardwatch runs its own
-    LinkedIn lane, so admitting these would duplicate a lane we already have against an identity
-    scheme that cannot converge the two. It is the largest source in the tree (88 records), and
-    that reach is bought by un-throttling our own lane instead."""
+def test_a_linkedin_record_with_no_job_view_url_is_counted_and_not_ingested(tmp_path):
+    """A `linkedin` record is admitted ONLY through its job id (`linkedin_job_ref`). One whose
+    `direct_url` is not a job-view page has no key that converges with boardwatch's own
+    LinkedIn lane, so it stays out, counted, exactly as every `linkedin` record used to."""
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "ok")
-    _write(root, "LinkedIn", "agg", acquisition=acquisition, posting_id="pst_agg")
+    _write(root, "LinkedIn", "agg", acquisition="linkedin", posting_id="pst_agg")
     result = _collect(root, tmp_path)
     assert len(_postings(result)) == 1
+    assert result.tally.counts["not_attemptable"] == 1
+
+
+_VIEW = "https://www.linkedin.com/jobs/view/4458214586"
+
+
+def _linkedin(root: Path, name: str = "li", **kwargs: object) -> Path:
+    kwargs.setdefault("direct_url", _VIEW)
+    return _write(root, "LinkedIn", name, acquisition="linkedin", **kwargs)
+
+
+def test_a_linkedin_record_files_under_the_linkedin_provider_keyed_on_its_job_id(tmp_path):
+    """Owner ruling 2026-09-26: job-apps' LinkedIn finds are admitted. The key is the one
+    boardwatch's own LinkedIn lane stores -- `(linkedin, <slug>, <job id>)` -- so the two
+    converge. A job the store has never seen files under a `jobapps:` namespaced slug, because
+    job-apps carries no LinkedIn company slug and a bare name slug could land on a DIFFERENT
+    employer's real LinkedIn row."""
+    root = tmp_path / "queue"
+    _linkedin(root, company="4A Consulting, LLC")
+    result = _collect(root, tmp_path)
+    (snapshot,) = result.snapshots
+    assert (snapshot.provider, snapshot.slug) == ("linkedin", "jobapps:4a-consulting-llc")
+    (posting,) = snapshot.snapshot.postings
+    assert posting.provider_posting_id == "4458214586"
+    assert posting.url == _VIEW
+    assert posting.body_text == _BODY
+    assert result.tally.counts["body_inline"] == 1
+
+
+def test_a_linkedin_record_declares_only_liveness_before_the_runner_sees_the_store(tmp_path):
+    """The lane declares what a directory read always is -- not a sighting. Whether it is ALSO
+    not the row's record of truth depends on whether the job is stored at APPLY time, which
+    the runner decides (`_route_by_stored_posting`); declaring every column here would blank
+    the location of every first sighting on INSERT (`scan.apply._inserted_fields`)."""
+    root = tmp_path / "queue"
+    _linkedin(root)
+    (posting,) = _postings(_collect(root, tmp_path))
+    assert posting.secondhand == frozenset({"liveness"})
+
+
+def test_a_linkedin_job_the_store_holds_files_under_the_slug_it_is_held_under(tmp_path):
+    """Asked ONCE, for the LinkedIn provider, with every LinkedIn job id in the tree -- and a
+    stored job takes the stored company's slug, so admission meets a company it already knows
+    and charges nothing. A job it does not hold keeps the namespaced slug."""
+    root = tmp_path / "queue"
+    _linkedin(root, "a", company="Acme", posting_id="pst_a")
+    _linkedin(
+        root, "b", company="Beta", posting_id="pst_b",
+        direct_url="https://www.linkedin.com/jobs/view/999",
+    )
+    _write(root, "Greenhouse", "gh")
+    asked: list[tuple[str, frozenset[str]]] = []
+
+    def reader(provider, posting_ids):
+        asked.append((provider, frozenset(posting_ids)))
+        return {"4458214586": "acme-corp"}
+
+    offered: list[tuple[str, str]] = []
+
+    def admits(provider, slug):
+        offered.append((provider, slug))
+        return True
+
+    result = JobAppsLane(source_dir=root, stored_posting_slugs=reader).collect(
+        _fetcher(tmp_path), admits
+    )
+
+    assert asked == [("linkedin", frozenset({"4458214586", "999"}))]
+    assert sorted(offered) == [
+        ("greenhouse", "gitlab"), ("linkedin", "acme-corp"), ("linkedin", "jobapps:beta"),
+    ]
+    by_slug = {snapshot.slug: snapshot for snapshot in result.snapshots}
+    assert by_slug["acme-corp"].snapshot.postings[0].provider_posting_id == "4458214586"
+
+
+def test_a_tree_with_no_linkedin_record_never_asks_the_store(tmp_path):
+    root = tmp_path / "queue"
+    _write(root, "Greenhouse", "gh")
+
+    def reader(provider, posting_ids):
+        raise AssertionError("asked the store with no LinkedIn job to ask about")
+
+    JobAppsLane(source_dir=root, stored_posting_slugs=reader).collect(
+        _fetcher(tmp_path), lambda provider, slug: True
+    )
+
+
+@pytest.mark.parametrize("acquisition", ["jobright", "hiringcafe"])
+def test_a_linkedin_url_under_another_acquisition_keeps_the_ladder(tmp_path, acquisition):
+    """Only `linkedin`-ACQUIRED records take the job-id path. A record admitted today under
+    another acquisition keeps the identity it already has in the store, whatever its URL -- a
+    re-key would orphan the stored row and insert a second one beside it."""
+    root = tmp_path / "queue"
+    _write(root, "Other", "a", acquisition=acquisition, company="Acme", posting_id="pst_a",
+           direct_url=_VIEW)
+    (snapshot,) = _collect(root, tmp_path).snapshots
+    assert (snapshot.provider, snapshot.slug) == ("jobapps", "acme")
+    assert snapshot.snapshot.postings[0].provider_posting_id == "pst_a"
+
+
+def test_two_linkedin_records_naming_one_job_are_ingested_once(tmp_path):
+    """Two `posting_id`s, two spellings of the employer, ONE LinkedIn job. Keyed with the slug,
+    both would file -- under two namespaced companies -- and the second would be written over
+    the first at apply. The job id is the identity, so the second is dropped and counted."""
+    root = tmp_path / "queue"
+    _linkedin(root, "a", company="Acme Corp", posting_id="pst_a")
+    _linkedin(root, "b", company="ACME Corporation", posting_id="pst_b")
+    result = _collect(root, tmp_path)
+    assert [p.provider_posting_id for p in _postings(result)] == ["4458214586"]
     assert result.tally.counts["not_attemptable"] == 1
 
 

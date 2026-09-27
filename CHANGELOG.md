@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The `jobapps` lane admits job-apps' LinkedIn finds, and one LinkedIn job is one posting whichever
+  lane saw it first (2026-09-26, owner ruling).** A `linkedin`-acquired record whose URL is a job-view page
+  files under `(linkedin, <slug>, <job id>)`, the key the LinkedIn lane stores: the stored company's slug
+  when the job is already held, else a `jobapps:<name>` namespaced slug (job-apps carries no LinkedIn
+  company slug). The runner files every LinkedIn posting by its job id at apply, so a later listing under
+  another slug updates the stored row instead of inserting a second one; a directory read that lands on a
+  stored job writes no column and resets no liveness. No new request; records from other acquisitions keep
+  their identity. Measured on the store clone: 1,503 LinkedIn records readable, 206 converge onto existing
+  LinkedIn-lane rows, 1,297 are first sightings at 799 new placeholder companies.
+
 - **Judge-cleared leads that were never delivered are now counted, and losing one alerts
   (2026-09-26).** A posting whose current final-gate verdict is `eligible` with seniority fit `yes`
   but whose job was never `built` ranked below `--top` with nothing saying so. The run funnel gains a
