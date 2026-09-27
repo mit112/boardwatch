@@ -291,14 +291,15 @@ def unescape_markdown(text: str) -> str:
     return _MARKDOWN_ESCAPE.sub(r"\1", text)
 
 
-# A `linkedin` record's body can be a signed-out capture of the whole LinkedIn job-view PAGE, not
-# the JD: the site nav, the apply and sign-in forms, then the employer's text, then the job
-# criteria, "Similar jobs", "People also viewed" and the footer. The foreign-body precondition is
-# right to hold such a body (`quality.is_employer_body`). Measured 2026-09-26 over the 1,503
-# admitted `linkedin` records: 16 bodies are such captures and it holds all 16. The employer's
-# text sits between two anchors the page renders byte-identically in all 16, so it is cut out
-# HERE, before the body is stored, rather than the detector being taught to tolerate chrome.
-# (The other 34 held bodies on that date are jobright pages and are not sliced.)
+# A record's body can be a signed-out capture of the whole LinkedIn job-view PAGE, not the JD:
+# the site nav, the apply and sign-in forms, then the employer's text, then the job criteria,
+# "Similar jobs", "People also viewed" and the footer. The foreign-body precondition is right to
+# hold such a body (`quality.is_employer_body`). Measured 2026-09-27 over job-apps' tree: 54
+# bodies are such captures -- 44 under `linkedin` records, 8 `jobright`, 2 `simplify` -- and it
+# holds all 54. The employer's text sits between two anchors the page renders byte-identically in
+# every one, so it is cut out HERE, before the body is stored, rather than the detector being
+# taught to tolerate chrome. (jobright's own pages restate the JD in jobright's words, never match
+# the shape, and are not sliced.)
 #
 # Every anchor is matched as a WHOLE LINE, and anything the page's shape does not account for
 # returns None: the caller then stores the page as it is and the quarantine holds it. A slice
@@ -913,10 +914,9 @@ class JobAppsLane:
         if body is None or not body.strip():
             return None
         body = unescape_markdown(body)
-        if record.primary_acquisition != _LINKEDIN_ACQUISITION:
-            # Only a `linkedin` capture is sliced. jobright's and indeed's pages restate the JD
-            # in the aggregator's own words, so there is no employer span in them to cut out.
-            return body
+        # Sliced by the page's shape, whatever the acquisition: job-apps also captures a LinkedIn
+        # page for jobright- and simplify-acquired records. jobright's own pages restate the JD
+        # in the aggregator's words and never match the shape, so they are stored as they are.
         sliced = slice_linkedin_page(body)
         return body if sliced is None else sliced
 

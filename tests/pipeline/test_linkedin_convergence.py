@@ -23,6 +23,7 @@ from boardwatch.core.models import RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.preflight import run_eligibility
+from boardwatch.lanes import jobapps
 from boardwatch.lanes.base import (
     CompanyAdmission,
     LaneCompanySnapshot,
@@ -95,7 +96,13 @@ class _LinkedInStub:
 
 
 def _tree(
-    root: Path, job_id: str = JOB_ID, company: str = "Acme", body: str = JOBAPPS_BODY
+    root: Path,
+    job_id: str = JOB_ID,
+    company: str = "Acme",
+    body: str = JOBAPPS_BODY,
+    *,
+    acquisition: str = "linkedin",
+    url: str | None = None,
 ) -> Path:
     """One job-apps LinkedIn record, shaped as the live tree shapes it."""
     folder = root / "LinkedIn" / f"rec-{job_id}"
@@ -105,12 +112,12 @@ def _tree(
             {
                 "schema_version": 2,
                 "posting_id": f"pst_{job_id}",
-                "primary_acquisition": "linkedin",
+                "primary_acquisition": acquisition,
                 "cohort_date": "2026-09-26",
                 "canonical": {
                     "company": company,
                     "title": "Associate Software Engineer",
-                    "direct_url": f"https://www.linkedin.com/jobs/view/{job_id}",
+                    "direct_url": url or f"https://www.linkedin.com/jobs/view/{job_id}",
                     "location": "Austin, TX",
                 },
             }
@@ -363,6 +370,40 @@ def test_a_held_capture_is_drained_by_the_linkedin_lanes_listing_not_a_job_apps_
     assert _held(engine) == {held_version: True}
 
     _run(engine, tmp_path, _LinkedInStub("acme-corp"))
+    stats = run_eligibility(engine, settings)
+    assert stats.released == 1
+    assert stats.quarantined == 0
+    assert _held(engine) == {held_version: False}
+
+
+def test_a_held_capture_in_a_jobright_record_is_released_by_the_next_job_apps_read(
+    engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The drain for a capture stored whole before the slice read the page's shape instead of
+    the acquisition: job-apps' LinkedIn page under a jobright record (IXL's new-grad role, among
+    nine held live). Such a record is filed under job-apps' own namespace, where a directory read
+    still writes the body, so the next read appends the sliced JD as a version and the existing
+    drain (`drain_quarantine`, condition 1) releases the held one in the next preflight.
+
+    Catches the slice gated on acquisition again (the second read is the same page: no version,
+    still held)."""
+    settings = _settings(tmp_path)
+    root = _tree(
+        tmp_path / "ja",
+        body=PLAIN_PAGE,
+        acquisition="jobright",
+        url="https://jobright.ai/jobs/info/6a95ed6fcabc9f6703e1b085",
+    )
+    with monkeypatch.context() as before:  # the lane as it read this record before
+        before.setattr(jobapps, "slice_linkedin_page", lambda text: None)
+        _run(engine, tmp_path, _jobapps(engine, root))
+    assert [(slug, body) for slug, _, body, _ in _rows(engine)] == [("acme", PLAIN_PAGE)]
+    assert run_eligibility(engine, settings).quarantined == 1
+    (held_version,) = _held(engine)
+
+    _run(engine, tmp_path, _jobapps(engine, root))
+    assert [body for _, _, body, _ in _rows(engine)] == [PLAIN_JD]
+    assert _versions(engine) == 2
     stats = run_eligibility(engine, settings)
     assert stats.released == 1
     assert stats.quarantined == 0

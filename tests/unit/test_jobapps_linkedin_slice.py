@@ -238,14 +238,15 @@ def test_a_linkedin_capture_out_of_shape_is_stored_as_it_is(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("acquisition", ["jobright", "indeed", "simplify"])
-def test_a_non_linkedin_record_is_never_sliced_even_holding_a_linkedin_capture(
+def test_a_capture_is_sliced_whatever_the_records_acquisition(
     tmp_path: Path, acquisition: str
 ) -> None:
-    """Only a `linkedin`-acquired record is sliced. Catches the acquisition gate being dropped:
-    the body here IS a LinkedIn capture the slice would otherwise cut."""
+    """The page's shape decides, not the acquisition: job-apps captures a LinkedIn page for
+    jobright- and simplify-acquired records too (measured 2026-09-27: 8 and 2, IXL's new-grad
+    role among them). Catches the slice gated back onto `linkedin` records only."""
     root = tmp_path / "queue"
     _record(
         root, "other", acquisition=acquisition,
         url="https://jobright.ai/jobs/info/6a95ed6fcabc9f6703e1b085", jd=PLAIN_PAGE,
     )
-    assert list(_bodies(root, tmp_path).values()) == [PLAIN_PAGE]
+    assert list(_bodies(root, tmp_path).values()) == [PLAIN_JD]
