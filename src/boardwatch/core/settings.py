@@ -407,10 +407,12 @@ class Settings(BaseModel):
     form_question_fetch_budget: int = Field(default=100, ge=0)
     # The adaptive slate's upper bound. `0` — the default — delivers exactly `--top`, the fixed
     # slate that shipped. Above `--top`, the run ranks this deep and the delivered slate grows past
-    # `--top` ONLY by decided-good leads (ranker tiers 0-1, `top_cmd._rank_tier`) that survived
-    # liveness and the gate: size = min(ceiling, max(top, tier 0-1 survivors)). A busy day stops
-    # cutting decided-eligible leads for want of a slot; a quiet day still fills to `--top`. A
-    # ceiling at or below `--top` changes nothing.
+    # `--top` ONLY by every tier 0-1 lead (`top_cmd._rank_tier`: entry-marked software titles for
+    # an entry-band profile, and decided-eligible software leads) that survived liveness and the
+    # gate: size = min(ceiling, max(top, tier 0-1 survivors)). A busy day stops cutting those
+    # leads for want of a slot; a quiet day still fills to `--top`. A ceiling at or below `--top`
+    # changes nothing. SEAT COST: a ceiling above `gate.depth` is also the rank depth, so with the
+    # gate armed the judge sees up to `slate_ceiling` leads per run, not `gate.depth`.
     slate_ceiling: int = Field(default=0, ge=0)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
