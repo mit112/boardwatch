@@ -5,14 +5,16 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
-SEVENTEEN rows were ADDED 2026-09-26 for E6, false `ineligible` verdicts on new-grad software postings, and
+TWENTY-THREE rows were ADDED 2026-09-26 for E6, false `ineligible` verdicts on new-grad software postings, and
 every pre-existing row passes unchanged. m1250-m1254 are the elapsed-time domain heads (`N years running`
 with no object, `N years ago`; `running` with an object or `and` a gerund keeps its bar), m1255-m1258 the
 company-side subjects (a possessive `X’s founding team brings`, `celebrating over N years`; each stays
 clause- or sentence-bound), m1259-m1260 `up to ~N years` as a ceiling (a bare tilde is still a floor),
 m1261-m1263 a graduation window's `or graduated within the last N months` arm (abstains outside the window,
 still `met` inside it, reaches no other sentence), m1264-m1266 the typographic `don’t` cue (clause-bound, and
-`doesn’t` deliberately still no cue). Hand-edited: the generator no longer exists.
+`doesn’t` deliberately still no cue). Round 2 added m1267-m1272, still-firing controls: `3 to ~5 years`
+(only `up to ~` is a ceiling), a contraction `It’s` (no possessive), `running,` / `running/` on the domain
+and domain-range heads, and `Agile` beside the `ago` stop. Hand-edited: the generator no longer exists.
 
 FOUR rows were ADDED 2026-09-25 for engine batch 10: m1246 is T245 (an item-final `required` past an `and`
 beats an inline heading's hedge), m1247 T241a (a level label after an inline bullet no longer hides the hedge
@@ -1611,6 +1613,12 @@ CASES: list[tuple] = [
     ('m1264:E6 a typographic-apostrophe `don’t require a PhD` is a negation (Nuance Labs, pv 294637)', 'We don’t require a PhD — we care about systems intuition.', {'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1265:E6 CONTROL a typographic `don’t` in another clause leaves the doctorate bar', 'We don’t compromise: a PhD in Physics is required.', {'highest_degree': 'bachelor'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['degree:doctorate_in_field_required', 'required', 'unmet']]),
     ('m1266:E6 CONTROL only `don’t` is a typographic cue: a `doesn’t` past `because` keeps the sponsorship restriction (pv 129565)', 'Unfortunately, we’re unable to provide visa sponsorship for this role because it doesn’t meet the government’s requirements for Skilled Worker visas.', {'work_authorization': {'status': 'needs_sponsorship', 'jurisdiction': 'us'}}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['work_auth:no_sponsorship_offered', 'required', 'unmet']]),
+    ('m1267:E6 CONTROL `N to ~M years` without `up` keeps its experience row', '3 to ~5 years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1268:E6 CONTROL a contraction `It’s` is no company-side possessive', 'It’s essential that engineers have 5+ years of experience.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:total_years_minimum', 'required', 'unmet']]),
+    ('m1269:E6 CONTROL `running,` then a list keeps its domain bar', '5+ years running, tuning and scaling Postgres.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('m1270:E6 CONTROL `running/` keeps its domain bar', '4+ years running/operating Kubernetes clusters.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
+    ('m1271:E6 CONTROL `running/` keeps its domain range bar', '5-7 years running/operating Kubernetes clusters.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_range_years_minimum', 'required', 'unmet']]),
+    ('m1272:E6 CONTROL `ago` is a whole-word stop, so `Agile` keeps its domain bar', '5+ years Agile coaching across multiple teams.', {'total_years_experience': 1}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['experience_years:domain_years_minimum', 'required', 'unmet']]),
 ]
 
 
@@ -1630,4 +1638,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1265
+    assert len(CASES) == 1271

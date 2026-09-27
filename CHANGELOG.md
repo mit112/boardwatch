@@ -411,16 +411,16 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - **Five false-`ineligible` readings on new-grad software postings are fixed in `rules.yaml` (2026-09-26, E6).**
-  Company history read as a years bar: `N years ago` and an object-less `N years running` no longer head a
-  domain bar ("Founded more than 15 years ago", "tripled ARR each year for 3 years running"), and
-  `company_side_years` takes a possessive subject ("Prophet Security’s founding team brings more than 30
-  years ...") and `celebrating` ("celebrating over 30 years of experience as design-build experts"). "up to ~2
-  years of experience" is a ceiling like "up to 2 years". A graduation window with a same-sentence "or graduated
-  within the last N months" arm abstains instead of rejecting. `don’t` with the typographic apostrophe is a
-  negation cue ("We don’t require a PhD"); its fourteen siblings are not, because they dropped a real
-  sponsorship restriction past a `because`. Measured over the 276,642 evaluated bodies with the pure engine:
-  251 postings move (206 `ineligible` → `uncertain`, 40 → `eligible`, 5 `uncertain` → `eligible`), none toward
-  `ineligible`. Changes verdicts, so it restarts the frozen-run count.
+  Company history read as a years bar: `N years ago` and a clause-final `N years running` no longer head a domain
+  bar ("Founded more than 15 years ago", "tripled ARR each year for 3 years running"), and `company_side_years`
+  takes a possessive subject (not a contraction like `It’s`) ("Prophet Security’s founding team brings more than 30
+  years ...") and `celebrating` ("celebrating over 30 years of experience as design-build experts"). "up to ~2 years
+  of experience" is a ceiling like "up to 2 years" ("3 to ~5 years" keeps its row). A graduation window with a
+  same-sentence "or graduated within the last N months" arm abstains instead of rejecting. `don’t` with the
+  typographic apostrophe is a negation cue ("We don’t require a PhD"); its fourteen siblings are not, because they
+  dropped a real sponsorship restriction past a `because`. Measured over the 276,642 evaluated bodies with the pure
+  engine: 251 postings move (206 `ineligible` → `uncertain`, 40 → `eligible`, 5 `uncertain` → `eligible`), none
+  toward `ineligible`. Changes verdicts, so it restarts the frozen-run count.
 
 - **The software role gate now recognises seven title forms it read as `uncertain` (2026-09-26, E5).** `cyber
   security` (no word boundary sat inside "Cybersecurity"), `embedded systems`, `ML/AI systems engineer`, `forward
