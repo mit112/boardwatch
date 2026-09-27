@@ -948,6 +948,36 @@ def latest_revision_at(conn: Connection, posting_ids: Sequence[int]) -> dict[int
     return out
 
 
+def _is_current_version() -> ColumnElement[bool]:
+    """`_pv` is its posting's newest version: no later (captured_at, id). Shared by the two
+    current-version reads below so their tie-break cannot drift apart."""
+    newer = (
+        select(posting_versions.c.id)
+        .where(
+            posting_versions.c.posting_id == _pv.c.posting_id,
+            tuple_(posting_versions.c.captured_at, posting_versions.c.id)
+            > tuple_(_pv.c.captured_at, _pv.c.id),
+        )
+        .exists()
+    )
+    return ~newer
+
+
+def current_posting_version_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
+    """posting_id -> its newest posting_version id, ignoring status: `current_posting_versions`'
+    selection without `body_text`, for a caller that needs only the key. Chunked the same way."""
+    out: dict[int, int] = {}
+    for chunk in id_chunks(list(posting_ids)):
+        out.update({
+            int(row.posting_id): int(row.id)
+            for row in conn.execute(
+                select(_pv.c.id, _pv.c.posting_id)
+                .where(_pv.c.posting_id.in_(chunk), _is_current_version())
+            ).all()
+        })
+    return out
+
+
 def current_posting_versions(
     conn: Connection, posting_ids: Sequence[int] | None = None
 ) -> dict[int, CurrentVersion]:
@@ -965,15 +995,6 @@ def current_posting_versions(
     """
     if posting_ids is not None and not posting_ids:
         return {}
-    newer = (
-        select(posting_versions.c.id)
-        .where(
-            posting_versions.c.posting_id == _pv.c.posting_id,
-            tuple_(posting_versions.c.captured_at, posting_versions.c.id)
-            > tuple_(_pv.c.captured_at, _pv.c.id),
-        )
-        .exists()
-    )
     stmt = (
         select(
             _pv.c.id.label("posting_version_id"),
@@ -982,7 +1003,7 @@ def current_posting_versions(
             _pv.c.captured_at,
         )
         .join(postings, _pv.c.posting_id == postings.c.id)
-        .where(~newer)
+        .where(_is_current_version())
     )
     def rows_of(selectable: Select[Any]) -> dict[int, CurrentVersion]:
         return {
@@ -1000,8 +1021,8 @@ def current_posting_versions(
     # Chunked past SQLite's bound-parameter cap. `export` passes every open posting id UNION
     # every tracked one, which crossed the cap at 32,771 open postings — the `None` branch
     # above never had the problem, this one has been failing since. Chunk-and-merge is exact:
-    # `~newer` is correlated per posting and considers all of that posting's versions
-    # whatever the filter, so a posting's current version does not depend on its chunk.
+    # `_is_current_version()` is correlated per posting and considers all of that posting's
+    # versions whatever the filter, so a posting's current version does not depend on its chunk.
     out: dict[int, CurrentVersion] = {}
     for chunk in id_chunks(list(posting_ids)):
         out.update(rows_of(stmt.where(postings.c.id.in_(chunk))))

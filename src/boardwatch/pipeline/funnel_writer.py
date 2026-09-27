@@ -42,7 +42,6 @@ from boardwatch.reports.manifest import config_hash, profile_row_hash, routing_h
 from boardwatch.reports.run_funnel import (
     ApplyLaneCohort,
     BoardCoverageReport,
-    BuriedLeadCounts,
     CodeProvenance,
     DeathProbeReport,
     ExecutionProvenance,
@@ -402,11 +401,8 @@ def collect_run_funnel(
         read_site_settings = load_settings()
         # Judge-cleared, never delivered. A standing population reported beside the funnel,
         # never a drop within it, so nothing below reconciles against it.
-        buried_leads = buried_good_leads(conn, settings)
-        buried = BuriedLeadCounts(
-            open=len(buried_leads.open), closed=len(buried_leads.closed),
-            stale_open=len(buried_leads.stale_open), stale_closed=len(buried_leads.stale_closed),
-        )
+        # Read ONCE per run: `_emit_funnel` hands this same result to the buried alert.
+        buried = buried_good_leads(conn, settings)
         marked_applied = count_applied_for_postings(conn, posting_ids)
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)

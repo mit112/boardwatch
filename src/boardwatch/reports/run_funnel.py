@@ -60,6 +60,7 @@ from boardwatch.reports.board_coverage import (
     board_coverage_table,
     board_coverage_to_dict,
 )
+from boardwatch.store.buried_queries import BuriedLeads
 from boardwatch.store.delivery_queries import LanePlacement
 from boardwatch.store.run_funnel_queries import (
     NAMED_STALE_BOARDS,
@@ -1270,44 +1271,33 @@ def _apply_lane_lines(cohort: ApplyLaneCohort | None) -> list[str]:
     return lines
 
 
-@dataclass(frozen=True)
-class BuriedLeadCounts:
-    """Judge-cleared postings never delivered (`store.buried_queries.buried_good_leads`).
+def buried_to_dict(buried: BuriedLeads | None) -> dict[str, object]:
+    """The buried section (`store.buried_queries.buried_good_leads`), as counts. `instrumented:
+    false` and nulls when it was not read.
 
     A REPORTED standing population, not a stage and not a drop: no posting here left the funnel
-    this run, so it is added to nothing and subtracted from nothing.
+    this run, so it is added to nothing and subtracted from nothing. The `stale_*` pair — cleared
+    only under an OLDER judge key, never re-judged — is a separate population, never summed with
+    the current-key pair.
     """
-
-    #: Still open — recoverable by delivering them.
-    open: int
-    #: Closed — a good job lost without ever being delivered.
-    closed: int
-    #: The same halves for postings cleared only under an OLDER judge key, never re-judged under
-    #: the current one. A separate population, never summed with the two above.
-    stale_open: int
-    stale_closed: int
-
-
-def buried_to_dict(buried: BuriedLeadCounts | None) -> dict[str, object]:
-    """The buried section. `instrumented: false` and nulls when it was not read."""
     if buried is None:
         return {
             "instrumented": False, "open": None, "closed": None,
             "stale_open": None, "stale_closed": None,
         }
     return {
-        "instrumented": True, "open": buried.open, "closed": buried.closed,
-        "stale_open": buried.stale_open, "stale_closed": buried.stale_closed,
+        "instrumented": True, "open": len(buried.open), "closed": len(buried.closed),
+        "stale_open": len(buried.stale_open), "stale_closed": len(buried.stale_closed),
     }
 
 
-def _buried_lines(buried: BuriedLeadCounts | None) -> list[str]:
+def _buried_lines(buried: BuriedLeads | None) -> list[str]:
     """The human half of the buried section."""
     lines = ["", "## Judge-cleared, never delivered", ""]
     if buried is None:
         return lines + ["*NOT READ for this run — unmeasured, not zero.*"]
     return lines + [
-        f"**{buried.open} open, {buried.closed} closed.**",
+        f"**{len(buried.open)} open, {len(buried.closed)} closed.**",
         "",
         "*Postings whose current final-gate verdict is `eligible` with seniority fit `yes` and "
         "whose job was never built. A reported number, not a drop: it reconciles against "
@@ -1315,7 +1305,7 @@ def _buried_lines(buried: BuriedLeadCounts | None) -> list[str]:
         "down.*",
         "",
         "**Cleared under an older judge key, never re-judged: "
-        f"{buried.stale_open} open, {buried.stale_closed} closed.**",
+        f"{len(buried.stale_open)} open, {len(buried.stale_closed)} closed.**",
         "",
         "*Postings with no verdict under the current key whose newest final-gate row is "
         "`eligible` with seniority fit `yes`. The refresh re-judges delivered rows only, so these "
@@ -1833,7 +1823,7 @@ class RunFunnel:
     # there: B8's volume half is read off this, and a zeroed block would read as a failed gate.
     apply_lane: ApplyLaneCohort | None = None
     # `None` means the buried population was NOT read, never that nothing is buried.
-    buried: BuriedLeadCounts | None = None
+    buried: BuriedLeads | None = None
     # Wall clock per pipeline stage, in the order the stages ran. `None` means NOT MEASURED —
     # a stored funnel written before this shipped, or a caller that did not time the run —
     # which is a different statement from `()`, "timed, and no stage boundary was reached".
@@ -2085,7 +2075,7 @@ def build_run_funnel(
     # UNMEASURED rather than zero — the same omission direction as `gate` above.
     apply_lane: ApplyLaneCohort | None = None,
     # Omitted means the buried population was not read, and the section says so.
-    buried: BuriedLeadCounts | None = None,
+    buried: BuriedLeads | None = None,
     # Omitted means the run was NOT timed, and the section says so rather than reporting a
     # stageless run — the same omission direction as `liveness` and `death_probe` above.
     stage_durations: Sequence[StageDuration] | None = None,
@@ -3902,7 +3892,6 @@ __all__ = [
     "ARTIFACT_VERSION",
     "ApplyLaneCohort",
     "BoardCoverageReport",
-    "BuriedLeadCounts",
     "CodeProvenance",
     "CoverageSummary",
     "CrossCheck",
