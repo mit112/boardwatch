@@ -26,7 +26,8 @@ Evaluating TITLE_SWE_RESCUE first fixes all 16 at zero measured precision cost a
 runs 2.3x faster (0.30s vs 0.71s over a 19,262-posting rank), because a software
 title short-circuits before any deny pattern is tried:
 
-    rescue -> hard denies -> soft denies (only if no software signal) -> signal -> uncertain
+    rescue -> hard denies -> soft denies (only if no software signal) -> signal
+        -> weak signal (only if no soft deny fired) -> uncertain
 
 Nothing runs before the rescue. When a rescue token turns out to be a false positive the
 fix belongs in the RESCUE, not in a stage that outranks it: a pre-rescue deny is reachable
@@ -443,7 +444,10 @@ _DENY_FAMILIES_SOFT: tuple[str, ...] = tuple([
 # read `uncertain`. Two wider forms were measured and rejected: a 30-char gap in `engineer ... new
 # grad` (4 of its 5 new clears were environmental / turbomachinery / analog roles), and any word
 # between `deployed` and `engineer` ("Forward Deployed Legal Engineer"). `systems engineer` has no
-# `\w*` so "Data Scientist - Agentic AI Systems Engineering" keeps its data-scientist veto.
+# `\w*` so "Data Scientist - Agentic AI Systems Engineering" keeps its data-scientist veto, and
+# it and `deep learning` stand down before `hardware` / `electrical` ("AI Systems Engineer - Data
+# Center Electrical"). Bare `deployed engineer` is anchored-guarded against field-service words
+# ("Deployed Engineer - Oil & Gas Field Service", "Customer Deployed Engineer").
 _TITLE_SWE_SIGNAL = (
     r"\bsoftware\s+(engineer|engineering|developer|development|architect)\w*\b|"
     r"\b(software|application|apps?|systems?|product)\s+development\s+engineer\b|"
@@ -456,10 +460,11 @@ _TITLE_SWE_SIGNAL = (
     r"embedded\s+systems|perception|compiler|kernel|firmware|graphics|security|"
     r"cyber\s*security|network|"
     r"observability|search|payments|growth|productivity|tools|"
-    r"automation|quality\s+engineering)\s+engineer\w*\b|\btest\s+automation\b|"
+    r"automation|quality\s+engineering)\s+engineer\w*\b|"
     r"\b(engineer|developer)\s*,?\s*(backend|frontend|full[\s-]?stack|mobile|ios|android|"
-    r"platform|infrastructure|distributed\s+systems|api|deep\s+learning)\b|"
-    r"\b(?:machine\s+learning|ml|ai)\s+systems\s+engineer\b|"
+    r"platform|infrastructure|distributed\s+systems|api|"
+    r"deep\s+learning(?!.*\b(?:hardware|electrical)\b))\b|"
+    r"\b(?:machine\s+learning|ml|ai)\s+systems\s+engineer\b(?!.*\b(?:hardware|electrical)\b)|"
     r"\b(?:engineer|developer)\b.{0,20}\bai\s+agents?\b|"
     r"\b(swe|sde|sdet|mts|amts|imts)\b|\bmember\s+of\s+technical\s+staff\b|"
     r"\bsw\s+engineer\w*\b|"
@@ -468,8 +473,14 @@ _TITLE_SWE_SIGNAL = (
     r"\bnew\s+grad\w*\b.{0,30}\b(engineer|developer)\b|"
     r"\b(engineer|developer)\b.{0,20}\bnew\s+grad\w*\b|"
     r"\bcomputer\s+scientist\b|\bresearch\s+engineer\b|"
-    r"\b(?:forward\s+)?deployed\s+(?:agent\w*\s+)?engineer\b"
+    r"\bforward[\s-]+deployed\s+(?:(?:software|agents?|agentic|ai|infrastructure)\s+)?engineer\b|"
+    r"^(?!.*\b(?:field|oil|gas|customer|on[\s-]?site)\b).*?\bdeployed\s+engineer\b"
 )
+
+# A software phrase with no role head noun ("R&D Rotational Program - Test Automation"). Checked
+# only AFTER the soft denies, so a business head noun still decides: "Test Automation Manager" and
+# "HVAC Test Automation Specialist" stay `out_of_field`. In `_TITLE_SWE_SIGNAL` it would skip them.
+_TITLE_SWE_WEAK_SIGNAL = r"\btest\s+automation\b"
 
 # Broad rescue: the title reads software-first, so every deny is skipped. Evaluated FIRST.
 _TITLE_SWE_RESCUE = (
@@ -516,6 +527,7 @@ _TITLE_SWE_RESCUE = (
 # Compiled once at import: the gate runs per posting over a full rank.
 _RESCUE = re.compile(_TITLE_SWE_RESCUE, re.IGNORECASE)
 _SIGNAL = re.compile(_TITLE_SWE_SIGNAL, re.IGNORECASE)
+_WEAK_SIGNAL = re.compile(_TITLE_SWE_WEAK_SIGNAL, re.IGNORECASE)
 _DENY_HARD = tuple(
     re.compile(pattern, re.IGNORECASE)
     for pattern in _DENY_DISCIPLINE
@@ -570,6 +582,9 @@ def role_verdict(title: str) -> tuple[RoleVerdict, str]:
             soft = pattern.search(title)
             if soft is not None:
                 return "out_of_field", f'not software (matched "{soft.group(0)}")'
+        weak = _WEAK_SIGNAL.search(title)
+        if weak is not None:
+            return "in_field", f'software title (matched "{weak.group(0)}")'
         return "uncertain", "no role signal in title"
     return "in_field", f'software title (matched "{signal.group(0)}")'
 

@@ -848,6 +848,26 @@ class TestE5SignalMisses:
     ) -> None:
         assert role_verdict(title)[0] != "in_field", title
 
+    @pytest.mark.parametrize("title", ["HVAC Test Automation Specialist", "Test Automation Manager"])
+    def test_bare_test_automation_does_not_skip_the_soft_denies(self, title: str) -> None:
+        # The phrase has no head noun, so it is checked only after the soft denies.
+        assert role_verdict(title)[0] == "out_of_field", title
+
+    @pytest.mark.parametrize("title", [
+        "Deployed Engineer - Oil & Gas Field Service",
+        "Field Deployed Engineer",
+        "Customer Deployed Engineer",
+    ])
+    def test_bare_deployed_engineer_stands_down_on_field_service_words(self, title: str) -> None:
+        assert role_verdict(title)[0] != "in_field", title
+
+    @pytest.mark.parametrize("title", [
+        "AI Systems Engineer - Data Center Electrical",
+        "Engineer, Deep Learning Hardware",
+    ])
+    def test_ai_systems_and_deep_learning_stand_down_on_hardware(self, title: str) -> None:
+        assert role_verdict(title)[0] != "in_field", title
+
     @pytest.mark.parametrize("title", ["Product Engineer", "Security Architect"])
     def test_the_borderline_titles_are_left_for_a_ruling(self, title: str) -> None:
         """Deliberately untouched by E5 (open question). Update this pin with the ruling."""
