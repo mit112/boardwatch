@@ -31,7 +31,7 @@ from boardwatch.eligibility.final_gate import GATE_VERSION_PREFIX, gate_effort_k
 from boardwatch.eligibility.preflight import current_judge_inputs
 from boardwatch.eligibility.read import current_gate_seniority, current_gate_verdicts
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queries import current_posting_versions
+from boardwatch.store.queries import current_posting_version_ids
 from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
@@ -80,6 +80,11 @@ def buried_good_leads(conn: Connection, settings: Settings) -> BuriedLeads:
     built = select(job_dispositions.c.job_id).where(job_dispositions.c.disposition == "built")
     # Narrowed to postings with ANY final-gate row, so the key-matched reads below see hundreds
     # of versions rather than the whole corpus. Which row is current is theirs.
+    #
+    # This is a FULL SCAN of `eligibility_evaluations`: no index reaches the gate rows (the
+    # table's indexes lead on `input_id`, and its one partial index covers `deterministic` rows
+    # only). Measured 1-12 s warm-to-cold on the 2.7M-row store, so a run reads it ONCE — the
+    # funnel does, and the alert is handed the result.
     rows = conn.execute(
         select(postings.c.id, postings.c.closed_at)
         .distinct()
@@ -97,8 +102,7 @@ def buried_good_leads(conn: Connection, settings: Settings) -> BuriedLeads:
         )
     ).all()
     closed_at = {int(row.id): row.closed_at for row in rows}
-    versions = current_posting_versions(conn, list(closed_at))
-    version_ids = [version.posting_version_id for version in versions.values()]
+    version_ids = list(current_posting_version_ids(conn, list(closed_at)).values())
     verdicts = current_gate_verdicts(
         conn, version_ids, facts, load_rules(settings.config_dir), model=settings.gate.model,
         effort=gate_effort_key(settings.gate.effort), target_band=target_band,

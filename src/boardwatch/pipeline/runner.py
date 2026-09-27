@@ -153,6 +153,7 @@ from boardwatch.scan.coordinator import (
     systemic_scan_outage_reason,
 )
 from boardwatch.store.artifacts import record_artifact
+from boardwatch.store.buried_queries import BuriedLeads
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.delivery_queries import (
@@ -580,6 +581,10 @@ class PipelineSummary:
     # raised and the caller stayed fail-open, D-287), which is silence about the lane rather
     # than a reading of zero.
     apply_lane: ApplyLaneCohort | None = None
+    # The judge-cleared, never-delivered population, as the funnel read it. Set by `_emit_funnel`,
+    # like `apply_lane`, so the buried alert reuses the funnel's read (a full scan of the gate
+    # rows) instead of paying for a second one; `None` when the funnel was not collected.
+    buried: BuriedLeads | None = None
     # T137. The run's identity read ONCE before ranking, and how the run was executed — both by
     # `_capture_run_start`, both `None` when that read failed: reporting only, so a failure costs
     # the section and never the run.
@@ -3443,11 +3448,12 @@ def _run_pipeline_leased(
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
         # Buried-good-lead soft alert: a posting the judge cleared (eligible, seniority fit yes)
-        # that was never delivered closed since the previous clean run — a good job lost below
+        # that was never delivered closed since the previous pipeline run — a good job lost below
         # the `--top` cut, which no delivery or lane detector above can see because the lead was
-        # never delivered. Non-fatal. Above `_emit_morning` like every soft alert here.
+        # never delivered. Reads the population the funnel read. Non-fatal. Above `_emit_morning`
+        # like every soft alert here.
         try:
-            buried_alert = check_buried_good_lead(engine, settings, run_id=run_id)
+            buried_alert = check_buried_good_lead(engine, summary.buried, run_id=run_id)
             if buried_alert is not None:
                 console.print(f"  ! {buried_alert}", markup=False)
                 summary.errors.append(buried_alert)
@@ -4067,6 +4073,8 @@ def _emit_funnel(
     summary.identity_drift = funnel.identity_drift
     # T203. Same placement, same reason.
     summary.cross_check_disagreements = funnel.disagreements
+    # Same placement, same reason: the buried alert reads the population the funnel read.
+    summary.buried = funnel.buried
     return write_run_funnel(funnel, day_dir)
 
 

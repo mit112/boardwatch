@@ -128,12 +128,24 @@ def _posting(
     return posting_id
 
 
-def _run(engine: Engine, *, finished_at: datetime, status: str = RUN_OK) -> int:
+def _run(
+    engine: Engine, *, finished_at: datetime, status: str = RUN_OK, pipeline: bool = True
+) -> int:
+    """A run row. `pipeline` stamps the corpus counts only the funnel writer writes; without it
+    the row is a manual command's (`ensure_run`) or a run that died before its funnel."""
+    corpus = {"corpus_open": 1, "corpus_evaluated": 1, "corpus_candidates": 1} if pipeline else {}
     with engine.begin() as conn:
         return int(conn.execute(insert(runs).values(
             started_at=finished_at - timedelta(minutes=30), finished_at=finished_at,
-            status=status,
+            status=status, **corpus,
         )).inserted_primary_key[0])
+
+
+def _alert(engine: Engine, *, run_id: int) -> str | None:
+    """The alert over the population the funnel would read now."""
+    with engine.connect() as conn:
+        buried = buried_good_leads(conn, load_settings())
+    return check_buried_good_lead(engine, buried, run_id=run_id)
 
 
 # --------------------------------------------------------------------------- the read
@@ -201,6 +213,22 @@ def test_a_lead_with_a_current_key_verdict_is_never_counted_as_stale(engine: Eng
     assert buried.stale_open == () and buried.stale_closed == {}
 
 
+def test_a_verdict_on_a_superseded_body_is_not_a_current_key_verdict(engine: Engine) -> None:
+    """The current key includes the CURRENT version. A body revision after the verdict leaves no
+    current-key verdict, so the lead is stale, not current. Rejects reading any version but the
+    newest (the old version's verdict would read current)."""
+    posting_id = _posting(engine)
+    with engine.begin() as conn:
+        conn.execute(insert(posting_versions).values(
+            posting_id=posting_id, content_hash="revised", body_text=JD + " Revised.",
+            captured_at=NOW + timedelta(days=1), run_id=None, capture_reason="revised",
+        ))
+    with engine.connect() as conn:
+        buried = buried_good_leads(conn, load_settings())
+    assert buried.open == ()
+    assert buried.stale_open == (posting_id,)
+
+
 def test_an_older_key_asked_under_band_any_clears_on_the_verdict_alone(engine: Engine) -> None:
     """The band exception, on the row's OWN recorded band. Rejects dropping it."""
     posting_id = _posting(engine, model=OLD, seniority="unclear")
@@ -255,25 +283,60 @@ def test_no_profile_reads_nothing(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- the alert
 
 
-def test_the_alert_fires_only_on_a_closure_since_the_previous_clean_run(engine: Engine) -> None:
+def test_the_alert_fires_only_on_a_closure_since_the_previous_pipeline_run(
+    engine: Engine,
+) -> None:
     """Rejects firing on the standing closed count (the old closure would fire every run), and
-    comparing against the wrong run (the failed run in between, or the current run itself)."""
+    comparing against the wrong run (a failed run that never reached its funnel, or the current
+    run itself)."""
     previous = _run(engine, finished_at=NOW)
-    _run(engine, finished_at=NOW + timedelta(hours=12), status="failed")
+    _run(engine, finished_at=NOW + timedelta(hours=12), status="failed", pipeline=False)
     current = _run(engine, finished_at=NOW + timedelta(days=1))
     _posting(engine, closed_at=NOW - timedelta(days=3))  # lost before `previous`: reported then
     _posting(engine)  # still open
 
-    assert check_buried_good_lead(engine, load_settings(), run_id=current) is None
+    assert _alert(engine, run_id=current) is None
 
     lost = _posting(engine, closed_at=NOW + timedelta(hours=6))
-    alert = check_buried_good_lead(engine, load_settings(), run_id=current)
+    alert = _alert(engine, run_id=current)
     assert alert is not None
     assert f"posting {lost})" in alert
     assert "1 judge-cleared lead(s) closed" in alert
     assert "1 more are eligible" in alert
     # The previous run itself sees neither loss as its own: nothing before it to compare with.
-    assert check_buried_good_lead(engine, load_settings(), run_id=previous) is None
+    assert _alert(engine, run_id=previous) is None
+
+
+def test_a_manual_command_run_between_two_pipeline_runs_does_not_hide_a_closure(
+    engine: Engine,
+) -> None:
+    """A manual `scan` mints an `ok` run row with no funnel. Rejects anchoring on the newest `ok`
+    run of any kind: the closure before the manual run would never be alerted."""
+    _run(engine, finished_at=NOW)
+    _run(engine, finished_at=NOW + timedelta(hours=12), pipeline=False)  # e.g. a manual scan
+    current = _run(engine, finished_at=NOW + timedelta(days=1))
+    lost = _posting(engine, closed_at=NOW + timedelta(hours=6))
+    alert = _alert(engine, run_id=current)
+    assert alert is not None and f"(posting {lost})" in alert
+
+
+def test_a_closure_a_failed_pipeline_run_reported_is_not_reported_again(engine: Engine) -> None:
+    """A failed pipeline run still reached its funnel and this alert. Rejects anchoring on clean
+    runs only: the next run would re-report the loss the failed run already did."""
+    _run(engine, finished_at=NOW)
+    _posting(engine, closed_at=NOW + timedelta(hours=6))
+    failed = _run(engine, finished_at=NOW + timedelta(hours=12), status="failed")
+    current = _run(engine, finished_at=NOW + timedelta(days=1))
+    assert _alert(engine, run_id=failed) is not None, "guard: the failed run reported it"
+    assert _alert(engine, run_id=current) is None
+
+
+def test_an_unread_population_abstains(engine: Engine) -> None:
+    """`None` is a funnel that was not collected. Rejects reading it as a fault or re-reading."""
+    _run(engine, finished_at=NOW)
+    current = _run(engine, finished_at=NOW + timedelta(days=1))
+    _posting(engine, closed_at=NOW + timedelta(hours=6))
+    assert check_buried_good_lead(engine, None, run_id=current) is None
 
 
 def test_the_alert_ignores_a_closed_posting_that_was_delivered(engine: Engine) -> None:
@@ -282,7 +345,7 @@ def test_the_alert_ignores_a_closed_posting_that_was_delivered(engine: Engine) -
     current = _run(engine, finished_at=NOW + timedelta(days=1))
     _posting(engine, closed_at=NOW + timedelta(hours=6), built=True)
     _posting(engine, closed_at=NOW + timedelta(hours=6), seniority="no")
-    assert check_buried_good_lead(engine, load_settings(), run_id=current) is None
+    assert _alert(engine, run_id=current) is None
 
 
 def test_the_alert_fires_on_an_older_key_closure_and_names_it_apart(engine: Engine) -> None:
@@ -292,10 +355,10 @@ def test_the_alert_fires_on_an_older_key_closure_and_names_it_apart(engine: Engi
     current = _run(engine, finished_at=NOW + timedelta(days=1))
     _posting(engine, model=OLD, closed_at=NOW - timedelta(days=3))  # lost before: reported then
     _posting(engine, model=OLD)  # still open
-    assert check_buried_good_lead(engine, load_settings(), run_id=current) is None
+    assert _alert(engine, run_id=current) is None
 
     lost = _posting(engine, model=OLD, closed_at=NOW + timedelta(hours=6))
-    alert = check_buried_good_lead(engine, load_settings(), run_id=current)
+    alert = _alert(engine, run_id=current)
     assert alert is not None
     assert "judge-cleared lead(s) closed" not in alert, "an older-key loss was named current-key"
     assert "1 lead(s) cleared under an older judge key and never re-judged" in alert

@@ -25,7 +25,6 @@ from boardwatch.reports.board_coverage import BoardCoverage
 from boardwatch.reports.board_coverage import CoverageReport as BoardCoverageReport
 from boardwatch.reports.board_coverage import build_report as build_board_report
 from boardwatch.reports.run_funnel import (
-    BuriedLeadCounts,
     Lead,
     LivenessCheck,
     RunFunnel,
@@ -38,6 +37,7 @@ from boardwatch.reports.run_funnel import (
     funnel_to_markdown,
     write_run_funnel,
 )
+from boardwatch.store.buried_queries import BuriedLeads
 from boardwatch.store.run_funnel_queries import (
     CorpusCounts,
     DedupSweep,
@@ -170,7 +170,7 @@ def funnel(
     # P6. `None` means the duplicate sweep did not run, which is what every test that is not
     # about dedup wants: the stage then reports itself unmeasured, as it always did.
     dedup: DedupSweep | None = None,
-    buried: BuriedLeadCounts | None = None,
+    buried: BuriedLeads | None = None,
 ) -> RunFunnel:
     leads = [lead()] if leads is None else leads
     # Default to a CONSISTENT tailor stage. Every shortlisted posting either produced a lead
@@ -674,7 +674,11 @@ def test_the_buried_population_is_reported_and_never_a_drop() -> None:
     older-key population is its own line: rejects summing it into the current-key one, and
     dropping or swapping it."""
     baseline = funnel()
-    report = funnel(buried=BuriedLeadCounts(open=3, closed=2, stale_open=7, stale_closed=5))
+    closed_at = datetime(2026, 9, 26)
+    report = funnel(buried=BuriedLeads(
+        open=(1, 2, 3), closed=dict.fromkeys((4, 5), closed_at),
+        stale_open=(6, 7, 8, 9, 10, 11, 12), stale_closed=dict.fromkeys(range(13, 18), closed_at),
+    ))
 
     assert report.reconciles is baseline.reconciles is True
     assert all(
