@@ -435,14 +435,14 @@ def _current_gate_rows(
     settings: Settings,
     facts: Facts,
     target_band: str,
-    versions: Mapping[int, CurrentVersion],
+    version_ids: list[int],
 ) -> dict[int, str | None]:
     """posting_id -> its CURRENT gate verdict under the freshness key: the one definition of
-    "already judged" that `run_gate_stage` skips on and `run_gate_refresh` counts as done, so a
-    narrowing added to the key reaches both. Why each argument is there is `run_gate_stage`'s
-    comment below."""
+    "already judged" that `run_gate_stage` skips on and `run_gate_refresh` and the backlog count
+    as done, so a narrowing added to the key reaches all three. Why each argument is there is
+    `run_gate_stage`'s comment below."""
     return fresh_gate_verdicts(
-        conn, [v.posting_version_id for v in versions.values()], facts,
+        conn, version_ids, facts,
         model=settings.gate.model, effort=gate_effort_key(settings.gate.effort),
         target_band=target_band,
     )
@@ -491,7 +491,8 @@ def run_gate_stage(
         catalog = load_rules(settings.config_dir)
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         already_gated = _current_gate_rows(
-            conn, settings, facts, profile_row.target_seniority_band, versions
+            conn, settings, facts, profile_row.target_seniority_band,
+            [v.posting_version_id for v in versions.values()],
         )
     # Never re-judge (D-477 point 5): a lead this judge, at this level, already answered on these
     # exact inputs is skipped entirely — it never enters a request, let alone a `claude` call.
@@ -641,7 +642,8 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
             return None
         versions = current_posting_versions(conn, [p.posting_id for p in leads])
         current = _current_gate_rows(
-            conn, settings, facts, profile_row.target_seniority_band, versions
+            conn, settings, facts, profile_row.target_seniority_band,
+            [v.posting_version_id for v in versions.values()],
         )
         newest = newest_gate_verdicts(conn, list(versions))
     stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
@@ -677,7 +679,7 @@ def run_gate_refresh(
     stale = _stale(engine, settings, leads)
     if stale is None:
         return GateRefreshResult()
-    results, errors = _send_in_batches(
+    results, errors, _ = _send_in_batches(
         engine, settings, stale, budget, run_id=run_id, name="gate refresh"
     )
     after = _stale(engine, settings, leads)
@@ -691,24 +693,41 @@ def run_gate_refresh(
 
 def _send_in_batches(
     engine: Engine, settings: Settings, stale: Sequence[_T], budget: int, *,
-    run_id: int | None, name: str,
-) -> tuple[list[GateStageResult], list[str]]:
+    run_id: int | None, name: str, breaker: int | None = None,
+) -> tuple[list[GateStageResult], list[str], int]:
     """Walk `stale` through `run_gate_stage` ONE BATCH PER CALL until `budget` items were SENT —
     `run_gate_refresh`'s docstring says why each half of that matters. One result per call, and
-    each call's notes prefixed `"{name} batch {n}: "`."""
+    each call's notes prefixed `"{name} batch {n}: "`.
+
+    `breaker` stops the walk after that many CONSECUTIVE failed-open batches, so a stalled judge
+    costs at most `breaker` call timeouts rather than one per batch the budget allows. The third
+    value is how many items the stop left unsent: the budget still unspent, bounded by the items
+    left to walk. `None` never stops, and the third value is then always 0."""
     size = max(1, settings.gate.batch_size)
     sent = 0
     position = 0
+    failed_in_a_row = 0
     results: list[GateStageResult] = []
     errors: list[str] = []
     while position < len(stale) and sent < budget:
+        if breaker is not None and failed_in_a_row >= breaker:
+            skipped = min(len(stale) - position, budget - sent)
+            errors.append(
+                f"{name}: stopped after {failed_in_a_row} consecutive failed-open batches; "
+                f"{skipped} item(s) not sent"
+            )
+            return results, errors, skipped
         chunk = list(stale[position : position + min(size, budget - sent)])
         position += len(chunk)
         _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
         results.append(result)
         sent += result.sent
         errors.extend(f"{name} batch {len(results)}: {note}" for note in result.errors)
-    return results, errors
+        if result.failed_open_batches:
+            failed_in_a_row += 1
+        elif result.sent:
+            failed_in_a_row = 0
+    return results, errors, 0
 
 
 @dataclass(frozen=True)
@@ -719,7 +738,8 @@ class GateBacklogResult:
     `candidates` is how many of the leads handed in had no current reading when the pass began,
     `sent` how many items its requests carried (at most `gate.backlog_budget`), and the rest are
     the stage's own tallies summed over its batches — `failed_open_batches` batches, not items,
-    exactly as the slate's count is.
+    exactly as the slate's count is. `breaker_skipped` is how many items the budget still allowed
+    when `BACKLOG_BREAKER` consecutive failed batches stopped the pass; 0 when it never tripped.
     """
 
     candidates: int = 0
@@ -729,14 +749,32 @@ class GateBacklogResult:
     ineligible: int = 0
     uncertain: int = 0
     failed_open_batches: int = 0
+    breaker_skipped: int = 0
     errors: tuple[str, ...] = ()
 
 
-def _backlog(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] | None:
-    """`leads` minus every lead with a current gate reading or no current version to judge,
+#: Consecutive failed-open batches after which the backlog stops for the run. Its leads are
+#: delivered by nobody this run, so a stalled judge must not cost one `call_timeout_s` per batch
+#: the budget allows: two in a row is past a single transient failure, and the leads not sent
+#: are simply candidates again next run.
+BACKLOG_BREAKER = 2
+
+
+@dataclass(frozen=True)
+class _Lead:
+    posting_id: int
+
+
+def _backlog(
+    engine: Engine, settings: Settings, candidates: Sequence[tuple[int, int]]
+) -> list[_Lead] | None:
+    """The `(posting_id, current posting_version_id)` candidates with no current gate reading,
     ordered for the backlog: a lead a judge EVER read `eligible` — over any version, under any
     key — first, since a re-key stranded a clearance nothing else re-judges; then newest
-    `first_seen_at` first, then highest id. `None` on `run_gate_stage`'s fail-open cases."""
+    `first_seen_at` first, then highest id. `None` on `run_gate_stage`'s fail-open cases.
+
+    The version ids are the ranker's, so no body is read here: `run_gate_stage` loads the bodies
+    of the batch it sends, and only of that batch, and re-checks freshness on its own read."""
     with engine.connect() as conn:
         profile_row = get_profile(conn)
         if profile_row is None:
@@ -745,41 +783,48 @@ def _backlog(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T
             facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
         except ProfileRowInvalid:
             return None
-        versions = current_posting_versions(conn, [p.posting_id for p in leads])
         current = _current_gate_rows(
-            conn, settings, facts, profile_row.target_seniority_band, versions
+            conn, settings, facts, profile_row.target_seniority_band,
+            [version_id for _, version_id in candidates],
         )
-        stale = [p for p in leads if p.posting_id in versions and p.posting_id not in current]
-        stale_ids = [p.posting_id for p in stale]
+        stale_ids = [posting_id for posting_id, _ in candidates if posting_id not in current]
         once_eligible = ever_gate_eligible(conn, stale_ids)
         first_seen = first_seen_at_by_posting(conn, stale_ids)
-    return sorted(
-        stale,
-        key=lambda p: (p.posting_id in once_eligible, first_seen[p.posting_id], p.posting_id),
-        reverse=True,
-    )
+    return [
+        _Lead(posting_id)
+        for posting_id in sorted(
+            stale_ids,
+            key=lambda p: (p in once_eligible, first_seen[p], p),
+            reverse=True,
+        )
+    ]
 
 
 def run_gate_backlog(
-    engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None
+    engine: Engine, settings: Settings, candidates: Sequence[tuple[int, int]], *,
+    run_id: int | None,
 ) -> GateBacklogResult:
-    """Judge up to `gate.backlog_budget` of `leads` — the in-field postings that ranked below the
-    judged slate — that carry no current gate reading, in `_backlog`'s order.
+    """Judge up to `gate.backlog_budget` of `candidates` — `(posting_id, current
+    posting_version_id)` for the in-field postings that ranked below the judged slate — that carry
+    no current gate reading, in `_backlog`'s order. At a budget of 0 nothing is read at all.
 
     `run_gate_refresh`'s mechanism exactly: the daily stage itself, one batch per call so a seat
     cutoff loses at most one batch, and the budget spent on what the stage actually sends. The
     slate the stage hands back is discarded — nothing here is delivered this run. A verdict only
     changes where the lead ranks next run: `eligible` in tier 1, `ineligible` hidden. No shortlist
     rank is recorded: these leads were ranked below the slate the rank band is read on.
+
+    Unlike the refresh, it stops after `BACKLOG_BREAKER` consecutive failed-open batches.
     """
     budget = settings.gate.backlog_budget
-    if not settings.gate.enabled or budget == 0 or not leads:
+    if not settings.gate.enabled or budget == 0 or not candidates:
         return GateBacklogResult()
-    stale = _backlog(engine, settings, leads)
+    stale = _backlog(engine, settings, candidates)
     if stale is None:
         return GateBacklogResult()
-    results, errors = _send_in_batches(
-        engine, settings, stale, budget, run_id=run_id, name="gate backlog"
+    results, errors, breaker_skipped = _send_in_batches(
+        engine, settings, stale, budget, run_id=run_id, name="gate backlog",
+        breaker=BACKLOG_BREAKER,
     )
     return GateBacklogResult(
         candidates=len(stale),
@@ -789,6 +834,7 @@ def run_gate_backlog(
         ineligible=sum(r.ineligible for r in results),
         uncertain=sum(r.uncertain for r in results),
         failed_open_batches=sum(r.failed_open_batches for r in results),
+        breaker_skipped=breaker_skipped,
         errors=tuple(errors),
     )
 

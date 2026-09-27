@@ -13,11 +13,12 @@ All notable changes to this project are documented here. The format follows
   below it was never judged and never climbed to tier 1. Each run now also sends up to
   `backlog_budget` of the `in_field` postings below the cutoff that carry no current gate reading:
   those with an earlier `eligible` reading under an older key first (a re-key stranded them), then
-  newest `first_seen_at` first. Same judge, same batches, each committed as it returns; a failed batch
-  fails open and is counted. Nothing it judges is delivered that run; a cleared posting ranks in tier 1
-  on the next. The funnel's `gate` block reports `backlog_budget`, `backlog_candidates`, `backlog_sent`,
-  `backlog_judged`, the three verdict counts and `backlog_failed_open_batches`. Default `0` sends
-  nothing.
+  newest `first_seen_at` first. It runs AFTER the tailor loop, since it delivers nothing that run; same
+  judge, same batches, each committed as it returns; a failed batch fails open and is counted, and two
+  consecutive failed batches stop the pass for the run. A cleared posting ranks in tier 1 on the next
+  run. The funnel's `gate` block reports `backlog_budget`, `backlog_candidates`, `backlog_sent`,
+  `backlog_judged`, the three verdict counts, `backlog_failed_open_batches` and
+  `backlog_breaker_skipped`. Default `0` sends nothing and reads nothing.
 
 - **The `jobapps` lane admits job-apps' LinkedIn finds, and one LinkedIn job is one posting whichever
   lane saw it first (2026-09-26, owner ruling).** A `linkedin`-acquired record whose URL is a job-view page
