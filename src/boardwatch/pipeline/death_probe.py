@@ -116,6 +116,7 @@ from sqlalchemy import ColumnElement, Engine, and_, case, func, or_, select, upd
 from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
+from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.pipeline.liveness import LivenessProber
 from boardwatch.reports.run_funnel import DeathProbeReport
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES
@@ -159,6 +160,15 @@ LISTING_ENDPOINTS: dict[str, tuple[str, str | None]] = {
 # "a catalog entry nothing emits is a bucket that cannot be audited". So the owner is this
 # module, which owns the mechanism that emits them.
 LISTING_SIGNALS: tuple[str, ...] = ("listing_absent", "listing_present", "listing_unknown")
+
+# Providers whose rows the URL probe has been measured NOT to close, so they are asked only after
+# every other due row. LinkedIn: 0 of 7,106 open `linkedin` rows ever closed on the store as of
+# 2026-09-26, with 402 probed and 1 strike -- a job-view page almost never answers `refetch_gone`.
+# The priority (T90) would otherwise spend the capped budget on them first once job-apps' LinkedIn
+# finds became standing leads, starving rows that can close. Still probed when budget is left
+# over, so an `alive`/`gone` answer is never refused outright -- the order moves, the set does not.
+# Delivery's own liveness check (`pipeline/liveness.check_leads`) still withholds a dead lead.
+PROBED_LAST_PROVIDERS: frozenset[str] = frozenset({LINKEDIN_PROVIDER})
 
 
 class UnlistableProvider(Exception):
@@ -370,6 +380,7 @@ def sweep_unwatched_deaths(
         # unheld row only tidies the store.
         has_a_standing_lead = postings.c.job_id.in_(standing)
         held_by_a_standing_lead = case((has_a_standing_lead, 0), else_=1)  # 0 sorts first
+        probed_last = case((companies.c.provider.in_(tuple(PROBED_LAST_PROVIDERS)), 1), else_=0)
         company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather
@@ -399,6 +410,9 @@ def sweep_unwatched_deaths(
             .select_from(board)
             .where(and_(due_predicate, has_url, on_url_path))
             .order_by(
+                # Ahead of the standing-lead key: a row that cannot close is not worth a probe
+                # before one that can, whoever holds it.
+                probed_last.asc(),
                 held_by_a_standing_lead.asc(),
                 postings.c.last_death_probe_at.asc(),
                 postings.c.id.asc(),

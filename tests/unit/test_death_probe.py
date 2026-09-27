@@ -1009,6 +1009,48 @@ def test_the_priority_is_applied_before_the_budget_not_after_it(tmp_path: Path) 
     assert url.asked == [ids[-1]]  # type: ignore[attr-defined]
 
 
+def test_a_linkedin_lead_does_not_take_the_budget_from_a_row_that_can_close(
+    tmp_path: Path,
+) -> None:
+    """LinkedIn job-view pages almost never answer gone (0 of 7,106 `linkedin` rows ever closed),
+    and job-apps' LinkedIn finds now become standing leads. At a budget of one, a LinkedIn row
+    HOLDING a lead is asked after a row nobody holds on a host that can close -- the lead
+    priority alone would spend the budget on the LinkedIn row every run."""
+    engine = _store(tmp_path)
+    other = _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    linkedin_row = _posting(
+        engine,
+        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://www.linkedin.com/jobs/view/4458214586",
+    )
+    _deliver_lead(engine, linkedin_row)
+
+    url = _url_prober_that_records(_alive)
+    _sweep(engine, url, budget=1)
+
+    assert url.asked == [other]  # type: ignore[attr-defined]
+
+
+def test_a_linkedin_row_is_still_probed_when_budget_is_left(tmp_path: Path) -> None:
+    """The order moves; the set does not. With room for both, the LinkedIn row is asked too, so
+    a real `gone` from it can still strike."""
+    engine = _store(tmp_path)
+    other = _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    linkedin_row = _posting(
+        engine,
+        _company(engine, slug="acme-corp", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://www.linkedin.com/jobs/view/4458214586",
+    )
+
+    url = _url_prober_that_records(_gone)
+    _sweep(engine, url, budget=2)
+
+    assert url.asked == [other, linkedin_row]  # type: ignore[attr-defined]
+    assert _row(engine, linkedin_row)[1] == 1
+
+
 def test_a_company_holding_a_standing_lead_is_asked_before_an_older_one(tmp_path: Path) -> None:
     """The listing path, where the probe unit is the COMPANY: a company with ANY standing lead
     among its open rows sorts ahead of one with none. Two never-asked companies tie on both
