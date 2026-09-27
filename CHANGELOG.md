@@ -8,6 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A jobright record that job-apps' resolver sent to an employer's own posting is filed under that
+  posting (2026-09-27).** job-apps' authenticated resolver rewrites a jobright folder's
+  `1_apply.webloc` to the page jobright's apply button opens and keeps the jobright URL in
+  `jobright_source.url`. When that sidecar names the record's own jobright id and the URL is an exact
+  posting (`parse_posting_target`), the `jobapps` lane files the record under the board's own key,
+  declares every column secondhand, admits it as a tier-1 convergence and watches the board, so the
+  next scan writes the employer's JD and the quarantine's drain releases jobright's text (Indeed's
+  D-414(a) path). Until that scan, jobright's text is the stored JD, exactly as it is today under
+  job-apps' own key. A record the store already holds under job-apps' own key keeps it, so no job is
+  filed twice; a board-level URL changes nothing. Measured on today's tree: 5 records resolve to an
+  exact posting, all 5 already stored, so nothing moves until the resolver runs on new records.
+
 - **`[gate] backlog_budget` judges filter-passing software postings the judged slate never reached
   (2026-09-26).** The gate judged only the top `gate.depth` by rank, so an `in_field` posting ranked
   below it was never judged and never climbed to tier 1. Each run now also sends up to
