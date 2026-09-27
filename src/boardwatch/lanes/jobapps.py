@@ -69,6 +69,7 @@ import json
 import os
 import re
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -80,9 +81,13 @@ from boardwatch.lanes.base import (
     CompanyAdmission,
     LaneCompanySnapshot,
     LaneResult,
+    PostingSlugReader,
     lane_snapshot,
+    no_stored_postings,
 )
 from boardwatch.lanes.dereference import UnresolvablePostingURL, parse_posting_target
+from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
+from boardwatch.lanes.linkedin import job_id_from_view_url
 from boardwatch.lanes.outcomes import AcquisitionTally
 
 LANE_NAME = "jobapps"
@@ -129,10 +134,10 @@ _DIRECT_APPLY_SOURCES = frozenset(
         # so this costs ZERO network requests. Measured over the live tree: indeed 48 records,
         # jobright 5.
         #
-        # `linkedin` is deliberately NOT here even though it is the largest source (88 records).
-        # boardwatch runs its OWN LinkedIn lane, so admitting these would duplicate a lane we
-        # already have against an identity scheme that cannot converge the two -- the reach is
-        # bought by un-throttling that lane instead.
+        # `linkedin` is NOT here, and is admitted by a path of its own instead
+        # (`linkedin_job_ref`): its `direct_url` is a LinkedIn job-view page, which is what the
+        # owner applies through, and its job id is the key boardwatch's own LinkedIn lane
+        # stores -- so it files onto that lane's identity rather than beside it.
         #
         # The accepted cost, stated rather than discovered later: the apply URL is the
         # aggregator's page, not the employer's, and these postings can never close by
@@ -240,8 +245,9 @@ def is_direct_apply(primary_acquisition: str) -> bool:
     counted rather than silently trusted. Two aggregators were admitted deliberately on
     2026-09-01 (see the set): they carry a posting-specific URL rather than a search page, and the
     owner already applies through those links in the source system, so "cannot apply from" does
-    not hold for them. The remaining aggregator, `linkedin`, stays out because boardwatch runs its
-    own lane for it.
+    not hold for them. The remaining aggregator, `linkedin`, is False here and is admitted through
+    `linkedin_job_ref` instead, because what makes it safe is not its URL but its job id: that is
+    the key boardwatch's own LinkedIn lane stores, so the two converge on one row.
     """
     return (
         primary_acquisition in _DIRECT_APPLY_SOURCES
@@ -334,6 +340,54 @@ def posting_identity(record: _Record) -> _Identity:
         return _Identity(provider, slug, record.posting_id, _LIVENESS_UNOBSERVED)
     return _Identity(
         LANE_PROVIDER, _name_slug(record.company), record.posting_id, _LIVENESS_UNOBSERVED
+    )
+
+
+# The acquisition whose records are keyed on a LinkedIn job id. The only one: a record from any
+# other acquisition keeps the ladder above even when its URL is a LinkedIn page, so nothing this
+# lane already stores is re-keyed.
+_LINKEDIN_ACQUISITION = "linkedin"
+
+
+def linkedin_job_ref(record: _Record) -> str | None:
+    """The LinkedIn job id of a `linkedin`-acquired record, or None for any other record.
+
+    None for a `linkedin` record whose `direct_url` is not a job-view URL, too: with no job id it
+    has no key that converges, so it stays out, counted, as it always was. Measured 2026-09-26:
+    all 1,503 `linkedin` records in the discovery and queue trees carried one.
+    """
+    if record.primary_acquisition != _LINKEDIN_ACQUISITION:
+        return None
+    return job_id_from_view_url(record.direct_url)
+
+
+def linkedin_identity(record: _Record, job_id: str, stored: Mapping[str, str]) -> _Identity:
+    """`(linkedin, slug, job id)` -- the identity boardwatch's own LinkedIn lane gives this job.
+
+    **One posting per LinkedIn job, whichever source saw it first.** The LinkedIn lane keys a
+    card `(linkedin, <company slug>, <job id>)`, and job-apps' record holds the same job id in its
+    job-view URL. What it does NOT hold is LinkedIn's company slug -- none of job-apps' files
+    carries one -- and a slug derived from the display name is the lane's own slug for only 122
+    of 186 jobs the two already share (66%). So:
+
+    * **The store already holds the job** (`stored`): file under the slug it holds it under, so
+      the company is one the store knows and admission charges nothing for it.
+    * **It does not**: file under `jobapps:<name slug>`. The namespace is what keeps a guess off a
+      real LinkedIn company's row -- no stored LinkedIn slug carries a colon (1,007 of 1,007).
+
+    Either way the runner files the posting by its job id, not its slug
+    (`runner._route_by_stored_posting`): onto the row that already holds the job when one does,
+    even one the LinkedIn lane wrote earlier in this same run, and it is there -- at apply, not
+    here -- that an observation which did not look is made to declare every column. So this
+    declares `_LIVENESS_UNOBSERVED` alone, for the reason every tier does: a directory read is not
+    a sighting, and a first sighting is the only observer its row has yet.
+    """
+    slug = stored.get(job_id)
+    return _Identity(
+        LINKEDIN_PROVIDER,
+        slug if slug is not None else f"{LANE_NAME}:{_name_slug(record.company)}",
+        job_id,
+        _LIVENESS_UNOBSERVED,
     )
 
 
@@ -438,7 +492,12 @@ class JobAppsLane:
 
     name = LANE_NAME
 
-    def __init__(self, source_dir: Path | None, queue_dir: Path | None = None) -> None:
+    def __init__(
+        self,
+        source_dir: Path | None,
+        queue_dir: Path | None = None,
+        stored_posting_slugs: PostingSlugReader = no_stored_postings,
+    ) -> None:
         # TWO roots, because job-apps MOVES a folder out of the discovery tree when it promotes
         # it. Measured: discovery holds 190 records and the promoted queue holds 737 -- so a
         # posting became invisible to boardwatch at exactly the moment it became one the owner
@@ -447,6 +506,9 @@ class JobAppsLane:
         self._source_dir = source_dir
         self._queue_dir = queue_dir
         self._roots = tuple(root for root in (source_dir, queue_dir) if root is not None)
+        # Which LinkedIn job ids the store already holds (`linkedin_identity`). The default finds
+        # none, so a lane built without a store files every LinkedIn record under its namespace.
+        self._stored_posting_slugs = stored_posting_slugs
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
         """Every direct-apply record in the tree, grouped by the company identity it resolves to.
@@ -497,8 +559,13 @@ class JobAppsLane:
         # deduplicated here. Zero collisions in the live tree today -- the hazard is structural,
         # not hypothetical, and `lanes/hiringcafe.py` records the same one.
         seen_identities: set[tuple[str, str, str]] = set()
+        # ONE read for the whole tree, before any record is filed: it decides the slug of every
+        # LinkedIn record (`linkedin_identity`).
+        linkedin_ids = {ref for record in records if (ref := linkedin_job_ref(record))}
+        stored = self._stored_posting_slugs(LINKEDIN_PROVIDER, linkedin_ids) if linkedin_ids else {}
         for record in records:
-            if not is_direct_apply(record.primary_acquisition):
+            linkedin_ref = linkedin_job_ref(record)
+            if linkedin_ref is None and not is_direct_apply(record.primary_acquisition):
                 # Seen, and no acquisition attempted: the URL is an aggregator landing page with
                 # no posting behind it. Counted, because a silent drop is indistinguishable from
                 # a record the lane never saw.
@@ -509,8 +576,18 @@ class JobAppsLane:
                 tally.record("not_attemptable")
                 continue
             seen_posting_ids.add(record.posting_id)
-            identity = posting_identity(record)
-            resolved = (identity.provider, identity.slug, identity.posting_ref)
+            identity = (
+                posting_identity(record)
+                if linkedin_ref is None
+                else linkedin_identity(record, linkedin_ref, stored)
+            )
+            # A LinkedIn job is ONE job whatever company spelling filed it, so its slug is left
+            # out of the key: two records naming one job id under two spellings are one posting.
+            resolved = (
+                identity.provider,
+                identity.slug if linkedin_ref is None else "",
+                identity.posting_ref,
+            )
             if resolved in seen_identities:
                 # A second record resolving to a posting this run already took. Same bucket, and
                 # dropping it is what keeps `apply_board` from aborting the stage.

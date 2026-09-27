@@ -30,8 +30,11 @@ same role happens downstream through the P6 identity quad (company+title+locatio
 through a link -- exactly D-290's constraint.
 
 THE ID IS THE URN, NOT THE URL. The job id is read from `data-entity-urn="urn:li:jobPosting:{id}"`.
-The job-view URL's trailing number is NOT a reliable id and is never parsed for one -- see the
-`URN_URL_MISMATCH_CARD` trap in `tests/unit/linkedin_shape.py`.
+A CARD's job-view URL is never parsed for one -- see the `URN_URL_MISMATCH_CARD` trap in
+`tests/unit/linkedin_shape.py`. The one reader of a job-view URL is `job_id_from_view_url`, for a
+source that holds the URL and no card at all (job-apps' LinkedIn records). There the URL is all
+there is, and it is sound: measured 2026-09-26 over the 7,106 rows this lane had stored, the URL's
+trailing number equalled the URN id on every one.
 
 THE QUERY FACET SHIPPED; PAGING DID NOT (probed live 2026-08-26, through this repo's own
 `Fetcher`). Unfaceted, this search returns the general labour market and not the user's: its 10
@@ -70,6 +73,7 @@ is never sent.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -215,6 +219,26 @@ def parse_card(node: Node) -> SearchCard:
 
 def job_posting_url(job_id: str) -> str:
     return f"{_JOB_POSTING_URL}{job_id}"
+
+
+# `/jobs/view/{id}` and `/jobs/view/{title-at-company}-{id}`, any query: the two shapes a job-view
+# URL takes. Anchored on the host and the path so a number elsewhere in a URL is never read as one.
+_VIEW_URL = re.compile(
+    r"^https?://(?:[a-z]{2,3}\.)?(?:www\.)?linkedin\.com"
+    r"/jobs/view/(?:[^/?#]*-)?(\d+)/?(?:[?#].*)?$",
+    re.IGNORECASE,
+)
+
+
+def job_id_from_view_url(url: str) -> str | None:
+    """The LinkedIn job id in a job-view URL, or None when the URL is not one.
+
+    The same id this lane stores as `provider_posting_id`, so a posting another source found
+    through its job-view URL is keyed exactly where this lane keys the card for the same job.
+    Never used on a card, which carries its URN (see the module docstring).
+    """
+    match = _VIEW_URL.match(url.strip())
+    return match.group(1) if match else None
 
 
 def search_urls(facets: Sequence[str]) -> tuple[str, ...]:

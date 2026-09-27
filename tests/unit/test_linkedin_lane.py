@@ -416,6 +416,36 @@ def test_the_job_posting_url_is_built_from_the_id():
     )
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        # job-apps' shape: the bare id.
+        "https://www.linkedin.com/jobs/view/4458214586",
+        # this lane's own card shape: title-at-company slug, then tracking query.
+        "https://www.linkedin.com/jobs/view/software-engineer-at-acme-4458214586"
+        "?position=2&pageNum=0&refId=abc%3D%3D&trackingId=xyz",
+        "https://uk.linkedin.com/jobs/view/4458214586/",
+    ],
+)
+def test_a_job_view_url_yields_the_job_id_this_lane_stores(url):
+    """The id another source's job-view URL carries is the one `_raw_posting` stores as
+    `provider_posting_id` -- that equality is what lets the two converge on one row."""
+    assert linkedin.job_id_from_view_url(url) == "4458214586"
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.linkedin.com/company/acme/jobs",  # a company page, not a job
+        "https://www.linkedin.com/jobs/search/?keywords=4458214586",  # a number in a query
+        "https://example.com/jobs/view/4458214586",  # the path on another host
+        "https://www.linkedin.com.evil.test/jobs/view/4458214586",
+    ],
+)
+def test_a_url_that_is_not_a_job_view_yields_no_id(url):
+    assert linkedin.job_id_from_view_url(url) is None
+
+
 def test_the_lane_is_registered_but_off_by_default(tmp_path):
     """Registered makes it reachable; enabled runs it. D-290: it ships off and not armed.
 

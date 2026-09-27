@@ -13,6 +13,7 @@ restating them.
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from typing import Literal, Protocol, get_args
 
@@ -313,6 +314,22 @@ def _no_seeds(
     return ()
 
 
+class PostingSlugReader(Protocol):
+    """(provider, posting ids) -> `{posting id: stored company slug}` for the ids already stored.
+
+    How a lane asks whether a job it holds is one the store already has under that provider's
+    provider-wide posting id (`queries.posting_slugs`), without holding a `Connection` -- the
+    runner supplies it for the reason it supplies `CompanyAdmission` and `SeedReader`.
+    """
+
+    def __call__(self, provider: str, posting_ids: Collection[str]) -> Mapping[str, str]: ...
+
+
+def no_stored_postings(provider: str, posting_ids: Collection[str]) -> Mapping[str, str]:
+    """The default `PostingSlugReader`: nothing is stored, for a lane that asks no such question."""
+    return {}
+
+
 class CompanyAdmission(Protocol):
     """(provider, slug) -> may this lane spend requests on that company.
 
@@ -415,3 +432,8 @@ class LaneContext:
     # a lane is additive breadth, and a resolver handed no backlog must report that it found
     # nothing, not fail the run.
     pending_seeds: SeedReader = field(default=_no_seeds)
+    # Which of a lane's provider-wide posting ids the store already holds, and under which company
+    # slug (`PostingSlugReader`). Read by the job-apps lane for its LinkedIn records, which carry
+    # the job id and no LinkedIn company slug. Defaulted to a reader that finds nothing, so every
+    # lane that never asks is unaffected.
+    stored_posting_slugs: PostingSlugReader = field(default=no_stored_postings)

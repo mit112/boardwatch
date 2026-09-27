@@ -22,7 +22,7 @@ id rather than minting its own; run standalone, each still mints one, which is w
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field, replace
 from datetime import timedelta
@@ -39,6 +39,7 @@ from sqlalchemy import Engine, select
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
 from boardwatch.core.lineage import ResumeSourceLineage
+from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
@@ -65,7 +66,7 @@ from boardwatch.eligibility.read import (
 from boardwatch.extract.preflight import refresh_profile_taxonomy
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.lanes.admission import CompanyBudget
-from boardwatch.lanes.base import Lane, LaneContext, LaneResult
+from boardwatch.lanes.base import Lane, LaneCompanySnapshot, LaneContext, LaneResult, lane_snapshot
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
@@ -79,6 +80,7 @@ from boardwatch.lanes.hiringcafe import HiringCafeLane
 from boardwatch.lanes.indeed import IndeedLane
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.jsonld import JsonLdLane
+from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.lanes.linkedin import LinkedInLane, search_urls
 from boardwatch.llm.gate_judge import GateStageResult, run_gate_refresh, run_gate_stage
 from boardwatch.notify.alert_escalation import escalate_alerts
@@ -173,6 +175,7 @@ from boardwatch.store.queries import (
     ensure_run,
     finish_run,
     get_profile,
+    posting_slugs,
     reap_stale_runs,
     upsert_lane_company,
     watched_company_names,
@@ -340,6 +343,7 @@ LANE_FACTORIES: dict[str, LaneFactory] = {
     JobAppsLane.name: lambda ctx: JobAppsLane(
         source_dir=ctx.settings.jobapps_discovery_dir,
         queue_dir=ctx.settings.jobapps_queue_dir,
+        stored_posting_slugs=ctx.stored_posting_slugs,
     ),
     # Indeed takes NEITHER `lane_posting_budget` nor `lane_search_pages`, and both omissions are
     # deliberate. The budget bounds "JD-body requests one lane may make in a run", and this lane
@@ -808,6 +812,11 @@ def _fetch_lanes(
                 limit=limit,
             )
 
+    # Same shape as `pending_seeds`: a read-only closure that opens its own short connection.
+    def stored_posting_slugs(provider: str, posting_ids: Collection[str]) -> Mapping[str, str]:
+        with engine.connect() as conn:
+            return posting_slugs(conn, provider=provider, posting_ids=posting_ids)
+
     context = LaneContext(
         settings=settings,
         facets=facets,
@@ -815,6 +824,7 @@ def _fetch_lanes(
         watched_companies=watched_companies,
         target_countries=target_countries,
         pending_seeds=pending_seeds,
+        stored_posting_slugs=stored_posting_slugs,
     )
 
     # Lanes are RESOLVED before anything is submitted, so an unregistered name is reported
@@ -1204,8 +1214,9 @@ def _apply_lane(
     # below), and this is what decides with which `resolved` value.
     applied_cleanly = False
     apply_error: Exception | None = None
+    landed: set[tuple[str, str]] = set()
     try:
-        _apply_snapshots(engine, result, run_id, lane.name)
+        landed = _apply_snapshots(engine, result, run_id, lane.name)
         applied_cleanly = True
     except Exception as exc:  # noqa: BLE001 - captured to re-raise as the primary cause below
         apply_error = exc
@@ -1244,8 +1255,10 @@ def _apply_lane(
     # after `_apply_snapshots` returned cleanly (a partial apply raises above). Intersecting
     # rather than counting snapshots is what keeps an already-stored company, which also lands a
     # snapshot, out of a number that means new reach. The lane's own spelling on both sides: the
-    # protocol requires `admits` and the snapshot to carry the same `(provider, slug)`.
-    landed = {(company.provider, company.slug) for company in result.snapshots}
+    # protocol requires `admits` and the snapshot to carry the same `(provider, slug)`. `landed`
+    # is what `_apply_snapshots` actually upserted, not `result.snapshots`: a company whose every
+    # posting was filed onto another company's row by its job id (`_route_by_stored_posting`)
+    # got no row of its own and added no reach.
     return (
         LaneReport(
             name=lane.name,
@@ -1268,9 +1281,78 @@ def _apply_lane(
     )
 
 
-def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int, lane: str) -> None:
-    """Land every company a lane collected. Raises on the first company that cannot be applied."""
-    for company in result.snapshots:
+# Providers whose posting id names ONE job across the whole provider, not merely within a company:
+# a LinkedIn job id is the job wherever it is listed. The store's key is `(company_id,
+# provider_posting_id)`, so for these alone a posting is found by its id before its company.
+_PROVIDER_WIDE_POSTING_IDS = frozenset({LINKEDIN_PROVIDER})
+
+
+def _route_by_stored_posting(
+    conn: SAConnection, company: LaneCompanySnapshot
+) -> list[LaneCompanySnapshot]:
+    """`company` split so that each posting the store already holds lands on the row holding it.
+
+    Two sources can see one LinkedIn job under two company slugs: the LinkedIn lane reads the
+    true slug off the card, and the job-apps lane, which never sees one, files a first sighting
+    under a namespaced guess (`jobapps.linkedin_identity`). Keyed by company, the second observer
+    would INSERT a second posting for the same job. Filed by the job id instead, it UPDATES the
+    first -- whichever lane got there first, in this run or an earlier one, since each company
+    is looked up at its own apply, after every company before it has committed.
+
+    **An observation that did not look is not the record of truth for a row that exists.** A
+    posting whose id is stored and which declares `"liveness"` -- a directory read, not a fetch
+    -- is made to declare every column too (`CONVERGED_SECONDHAND`), so it writes nothing over
+    the row: not over the LinkedIn lane's live reading, and not over its own first reading from
+    an earlier run, which would otherwise be revised back and forth against the LinkedIn lane's
+    rendering of the same page. Decided here rather than in the lane because only here is it
+    known: two lanes can store one job in one run, and the lane's view is from before either.
+    A live listing declares nothing and still refreshes the row, which is what it is for.
+
+    Every other provider passes through untouched: an ATS posting id is unique within one board
+    only, so an id match across two companies there says nothing.
+    """
+    if company.provider not in _PROVIDER_WIDE_POSTING_IDS:
+        return [company]
+    stored = posting_slugs(
+        conn,
+        provider=company.provider,
+        posting_ids=[raw.provider_posting_id for raw in company.snapshot.postings],
+    )
+    groups: dict[str, list[RawPosting]] = {}
+    for raw in company.snapshot.postings:
+        slug = stored.get(raw.provider_posting_id)
+        if slug is not None and "liveness" in raw.secondhand:
+            raw = raw.model_copy(update={"secondhand": raw.secondhand | CONVERGED_SECONDHAND})
+        groups.setdefault(company.slug if slug is None else slug, []).append(raw)
+    return [
+        replace(company, slug=slug, snapshot=lane_snapshot(raws, company.snapshot.url))
+        for slug, raws in groups.items()
+    ]
+
+
+def _routed_snapshots(
+    engine: Engine, snapshots: Sequence[LaneCompanySnapshot]
+) -> Iterator[LaneCompanySnapshot]:
+    """`snapshots`, each routed by `_route_by_stored_posting` at the moment it is reached.
+
+    Lazy, so each company is looked up at its own apply, after every company before it has
+    committed -- the store it is routed against is the store it is written to.
+    """
+    for company in snapshots:
+        with engine.connect() as conn:
+            routed = _route_by_stored_posting(conn, company)
+        yield from routed
+
+
+def _apply_snapshots(
+    engine: Engine, result: LaneResult, run_id: int, lane: str
+) -> set[tuple[str, str]]:
+    """Land every company a lane collected, returning the `(provider, slug)` of each it upserted.
+
+    Raises on the first company that cannot be applied.
+    """
+    landed: set[tuple[str, str]] = set()
+    for company in _routed_snapshots(engine, result.snapshots):
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
         # already holds — the convergence case a lane exists to produce. It is conflict-safe by
         # design and leaves an existing row's `source` and `watched` alone, so this can never
@@ -1316,6 +1398,8 @@ def _apply_snapshots(engine: Engine, result: LaneResult, run_id: int, lane: str)
         # lane on the row, so `count_lane_captures` credits a capture only to the lane that landed
         # it (T199).
         apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane", lane=lane)
+        landed.add((company.provider, company.slug))
+    return landed
 
 
 def _persist_seed_work(
