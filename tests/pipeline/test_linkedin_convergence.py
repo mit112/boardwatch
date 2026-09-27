@@ -32,9 +32,11 @@ from boardwatch.lanes.base import (
 from boardwatch.lanes.jobapps import JobAppsLane
 from boardwatch.lanes.outcomes import AcquisitionTally
 from boardwatch.pipeline.runner import _collect_lane
+from boardwatch.reports.run_funnel import _lane_cross_checks
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import insert_run, posting_slugs
+from boardwatch.store.run_funnel_queries import count_lane_captures
 
 JOB_ID = "4458214586"
 LANE_BODY = "LinkedIn lane body: we are hiring a new grad software engineer to build services."
@@ -58,18 +60,23 @@ class _LinkedInStub:
 
     name = "linkedin"
 
-    def __init__(self, slug: str, job_id: str = JOB_ID, body: str = LANE_BODY) -> None:
-        self._slug, self._job_id, self._body = slug, job_id, body
+    def __init__(
+        self, slug: str, job_id: str = JOB_ID, body: str = LANE_BODY, *more_ids: str
+    ) -> None:
+        self._slug, self._job_ids, self._body = slug, (job_id, *more_ids), body
 
     def collect(self, fetcher: Fetcher, admits: CompanyAdmission) -> LaneResult:
-        raw = RawPosting(
-            provider_posting_id=self._job_id,
-            title="Associate Software Engineer",
-            url=f"https://www.linkedin.com/jobs/view/associate-at-acme-{self._job_id}?refId=x",
-            locations=["Austin, TX"],
-            body_text=self._body,
-            raw_json={"card": {}},
-        )
+        raws = [
+            RawPosting(
+                provider_posting_id=job_id,
+                title="Associate Software Engineer",
+                url=f"https://www.linkedin.com/jobs/view/associate-at-acme-{job_id}?refId=x",
+                locations=["Austin, TX"],
+                body_text=self._body,
+                raw_json={"card": {}},
+            )
+            for job_id in self._job_ids
+        ]
         snapshots = ()
         if admits("linkedin", self._slug):
             snapshots = (
@@ -77,7 +84,7 @@ class _LinkedInStub:
                     provider="linkedin",
                     slug=self._slug,
                     name="Acme",
-                    snapshot=lane_snapshot([raw], "https://www.linkedin.com/search"),
+                    snapshot=lane_snapshot(raws, "https://www.linkedin.com/search"),
                 ),
             )
         tally = AcquisitionTally()
@@ -129,6 +136,17 @@ def _jobapps(engine: Engine, root: Path, *, blind: bool = False) -> JobAppsLane:
 def _run(engine: Engine, tmp_path: Path, lane: object):
     settings = _settings(tmp_path)
     return _collect_lane(engine, settings, lane, Fetcher(settings), insert_run(engine))  # type: ignore[arg-type]
+
+
+def _run_checked(engine: Engine, tmp_path: Path, lane: object):
+    """`_run`, returning the report AND the funnel's T191 lane cross-checks for that run -- the
+    lane's self-report against the store's own recount, through `count_lane_captures`."""
+    settings = _settings(tmp_path)
+    run_id = insert_run(engine)
+    report = _collect_lane(engine, settings, lane, Fetcher(settings), run_id)  # type: ignore[arg-type]
+    with engine.connect() as conn:
+        captures = count_lane_captures(conn, run_id, {report.name: report.admitted})
+    return report, _lane_cross_checks([report], captures)
 
 
 def _rows(engine: Engine) -> list[tuple[str, str, str, str]]:
@@ -270,3 +288,25 @@ def test_an_ats_posting_id_shared_across_two_boards_is_two_postings(
     assert [(slug, ref) for slug, ref, _, _ in _rows(engine)] == [
         ("alpha", JOB_ID), ("beta", JOB_ID),
     ]
+
+
+def test_a_split_snapshot_is_counted_as_the_board_scans_rows_it_writes(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """ONE collected LinkedIn snapshot, two cards: one job job-apps stored first under its
+    placeholder, one new. Routing lands it as TWO applies -- two `scan_kind='lane'` rows -- so the
+    lane must report two snapshots, or the funnel's `lanes:board_scans` check disagrees and the
+    run records an error on every run the LinkedIn lane lists such an employer."""
+    _run(engine, tmp_path, _jobapps(engine, _tree(tmp_path / "ja")))
+
+    report, checks = _run_checked(
+        engine, tmp_path, _LinkedInStub("acme-corp", JOB_ID, LANE_BODY, "5550001")
+    )
+
+    assert sorted((slug, ref) for slug, ref, _, _ in _rows(engine)) == [
+        ("acme-corp", "5550001"), ("jobapps:acme", JOB_ID),
+    ]
+    assert report.snapshots == 2
+    by_name = {check.name: check for check in checks}
+    assert (by_name["lanes:board_scans"].in_memory, by_name["lanes:board_scans"].from_store) == (2, 2)
+    assert all(check.agrees for check in checks), checks

@@ -16,7 +16,10 @@ All notable changes to this project are documented here. The format follows
   another slug updates the stored row instead of inserting a second one; a directory read that lands on a
   stored job writes no column and resets no liveness. No new request; records from other acquisitions keep
   their identity. Measured on the store clone: 1,503 LinkedIn records readable, 206 converge onto existing
-  LinkedIn-lane rows, 1,297 are first sightings at 799 new placeholder companies.
+  LinkedIn-lane rows, 1,297 are first sightings at 799 new placeholder companies. A lane's reported snapshot
+  count is now its post-routing apply count, so the funnel's `lanes:board_scans` check still reconciles
+  when one snapshot lands on two companies; and the death probe asks `linkedin` rows (0 of 7,106 ever
+  closed) only after every other due row, so a LinkedIn lead no longer takes the budget first.
 
 - **Judge-cleared leads that were never delivered are now counted, and losing one alerts
   (2026-09-26).** A posting whose current final-gate verdict is `eligible` with seniority fit `yes`

@@ -1214,9 +1214,9 @@ def _apply_lane(
     # below), and this is what decides with which `resolved` value.
     applied_cleanly = False
     apply_error: Exception | None = None
-    landed: set[tuple[str, str]] = set()
+    applied: list[tuple[str, str]] = []
     try:
-        landed = _apply_snapshots(engine, result, run_id, lane.name)
+        applied = _apply_snapshots(engine, result, run_id, lane.name)
         applied_cleanly = True
     except Exception as exc:  # noqa: BLE001 - captured to re-raise as the primary cause below
         apply_error = exc
@@ -1259,6 +1259,7 @@ def _apply_lane(
     # is what `_apply_snapshots` actually upserted, not `result.snapshots`: a company whose every
     # posting was filed onto another company's row by its job id (`_route_by_stored_posting`)
     # got no row of its own and added no reach.
+    landed = set(applied)
     return (
         LaneReport(
             name=lane.name,
@@ -1269,7 +1270,9 @@ def _apply_lane(
             admitted=budget.admitted,
             refused=budget.refused,
             persisted_new=tuple(key for key in budget.admitted if key in landed),
-            snapshots=len(result.snapshots),
+            # One per `apply_board` call, i.e. per `scan_kind='lane'` row written -- counted after
+            # routing, which can split one collected snapshot across several company rows.
+            snapshots=len(applied),
             search_pages=result.search_pages,
             search_outcomes=result.search_outcomes,
             not_attemptable=result.not_attemptable,
@@ -1346,12 +1349,16 @@ def _routed_snapshots(
 
 def _apply_snapshots(
     engine: Engine, result: LaneResult, run_id: int, lane: str
-) -> set[tuple[str, str]]:
-    """Land every company a lane collected, returning the `(provider, slug)` of each it upserted.
+) -> list[tuple[str, str]]:
+    """Land every company a lane collected, returning the `(provider, slug)` of each apply.
+
+    ONE entry per `apply_board` call, and so per `scan_kind='lane'` `board_scans` row it wrote:
+    after routing, one collected snapshot may land as several (`_route_by_stored_posting`), and
+    the funnel's `lanes:board_scans` cross-check compares this count against those rows.
 
     Raises on the first company that cannot be applied.
     """
-    landed: set[tuple[str, str]] = set()
+    applied: list[tuple[str, str]] = []
     for company in _routed_snapshots(engine, result.snapshots):
         # `upsert_lane_company` is called for EVERY snapshot, including a company the store
         # already holds — the convergence case a lane exists to produce. It is conflict-safe by
@@ -1398,8 +1405,8 @@ def _apply_snapshots(
         # lane on the row, so `count_lane_captures` credits a capture only to the lane that landed
         # it (T199).
         apply_board(engine, company.snapshot, company_id, run_id, scan_kind="lane", lane=lane)
-        landed.add((company.provider, company.slug))
-    return landed
+        applied.append((company.provider, company.slug))
+    return applied
 
 
 def _persist_seed_work(
