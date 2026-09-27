@@ -27,6 +27,42 @@
 
 ## Current standing
 
+### 2026-09-27 — **DAY 1 (run 486) MEETS EVERY BAR; the LinkedIn JD slice (#509) and jobright employer resolution (#510) ship before it; job-apps' resolver runs alone again** (D-602). Owner rulings 00:04 and 02:31: "no sponsorship" roles stay blocked; the resolver runs as a resolver-only step (build and autoapply stay off); new jobright jobs only; the 35 held LinkedIn-provider captures are measured after day 1.
+
+**Verify first:** `git log --oneline -5 origin/main` (the session record, then #510 `9aaae4ae`, #509 `791f70a5`), the primary
+on `main`, the tick enabled, and job-apps' plist carrying `JOBRIGHT_RESOLVE=1` beside `STAGE1_ONLY=1`
+(`launchctl print gui/$(id -u)/com.mitsheth.job-discovery | grep -E 'JOBRIGHT|STAGE1'`).
+
+**Day 1, run 486** (METRICS "Acceptance run"): B1 **73 net-new** · B2 55/55 · B3 one page · B4 0 · B5–B7 ok · B8 **53 net-new**
+· gate 67 judged, 0 failed open · refresh 1/1 batch failed open (empty response; 132 pending) · backlog 150 judged (120
+eligible), breaker 0 · slate 76 of ceiling 80 · wall 2 h 21 m. **The funnel is written ~13 min AFTER `runs.status` reads
+`ok`** — wait on the run's PID with `kill -0 <pid>`, not on the row (a `pgrep -f` waiter matches its own shell). The 9 held `jobapps:*` LinkedIn captures
+(IXL new grad ×3 among them) each got a run-486 version equal to the slice and were released; the 35 under
+`linkedin:jobapps:*` were not (only the LinkedIn lane's listing releases them).
+
+**Next, in order:**
+1. **Read the 09-28 04:00 run as day 2** (`day_row.py <id> 2`, `b4_audit.py --run <id>`), after its PID exits.
+2. **#510's first effect.** job-apps' resolver first runs 09-27 ~08:52 on `resumes/2026-09-27/` (log
+   `resumes/_logs/2026-09-27_daily_pipeline_0830.log`, line `-- jobright resolver (STAGE1_ONLY)`; manifest
+   `autoapply/jobright_daterun_2026-09-27.json`). Day 2 should file its exact-posting hits under the board's key, watched.
+3. **D-601 ruling 6 (tier 0 above decided-eligible).** Buried-open went 6 → 70, but 66 were cleared IN run 486 (56 unmarked,
+   10 tier 0) and deliver next run by design. If day 2's buried-open does not fall, tier 0 is starving them — report it.
+   Split: `.agent/2026-09-27-session/buried_split.py`.
+4. **The 35 held LinkedIn-provider captures:** `.agent/2026-09-27-session/held_captures.py
+   .agent/2026-09-27-session/held_baseline.json` after day 2; if they still do not release, owner-gated item 0.
+5. The 2026-09-26b block's items 2–4 stand.
+
+**Follow-ups (not built):** the slice takes the text between its anchors unchecked (a floor check); its drain tests build a
+one-root lane; a newly watched board takes jobright's company label as its name (the Cboe board would read "CBRE"); the
+resolver covers top-level day folders only (`_eligibility_review`, `_review_later`, `sk1-*` are not resolved); job-apps'
+`CLAUDE.md`/`AGENTS.md` still say the job "stops after Stage 1" (those files carry someone else's uncommitted edits);
+job-apps `5fd9f94` is committed, not pushed. D-601's list (`.agent/2026-09-26c-crash/followups.md`) is still unfiled.
+
+**Changed this session (live store / machine):** job-apps `run_daily_pipeline.sh` (`5fd9f94`) and its launchd plist (backup
+`com.mitsheth.job-discovery.plist.bak-prejobrightresolve-20260927`); a stale 0-byte job-apps `.git/index.lock` (09-04)
+removed; one resolver `probe` (3 jobright jobs, nothing submitted). The session wrote nothing to the live store. Worktrees
+`bw-slice` and `bw-jobright` are merged and may be removed.
+
 ### 2026-09-26c — **A NEW-GRAD ROLE MUST NEVER BE MISSED (owner ruling) — four PRs merged before day 1, the frozen config set** (D-601). Measured on a read-only clone: 1,600 open postings titled new grad / early career, 81 ever delivered; **354 passed every filter and ranked at a median of ~2,955 behind the 40-lead slate**; 22 judge-cleared leads were stranded by an old judge key. Shipped (#504 #505 #506 #507, all before the 04:00 day-1 tick, owner-approved override of D-598's freeze): entry-level titles rank first for an entry profile (tier 0), role-gate misses, `slate_ceiling`, the buried-good-lead count + alert, entry markers v2 (title + JD body), job-apps' LinkedIn finds admitted, `gate.backlog_budget`, 251 false-ineligible verdicts released. **Live config: `slate_ceiling = 80`, `gate.backlog_budget = 150`** (backup `config.toml.bak-preslateceiling-20260926`).
 
 **Verify first:** `git log --oneline -6 origin/main` (top: `523c067e`), the primary on `main`, `.agent/2026-09-26c-crash/followups.md`.
@@ -42,8 +78,8 @@ tier 0-1 leads; the gate also judges up to 150 backlog postings after tailoring 
 
 **Found, not fixed:** 473 open jobapps-lane postings (202 new-grad software) sit in the body quarantine with **no working exit**
 (jobright paraphrases; the drain needs a new version that never comes). They reach `_review` unevaluated and unrendered.
-395 of 450 jobright rows carry no employer URL (job-apps' resolver last ran 08-27). Branches held: `jobapps-linkedin-jd-slice`
-(e1d15f7b, 16 captures), `jobright-employer-resolution` (empty, design in its RESULT.md).
+395 of 450 jobright rows carry no employer URL (job-apps' resolver last ran 08-27). Both branches this block held are
+merged — #509 and #510 (D-602); the resolver runs again from 09-27.
 
 **Changed this session (live store / machine):** config.toml (+2 keys); runs 482–485; 212 queue folders; a 17 GB COW store clone
 used for read-only measurement, deleted at close.
@@ -129,10 +165,10 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 
 ## Owner-gated — do NOT start or decide unilaterally
 
-0. **2026-09-26c asks:** (a) do "without visa sponsorship" (present tense, no "now or in the future") roles block the profile?
-   6 software roles (TP-Link, Zettabyte, Qumulo ×2, Sigma, Wise); (b) re-enable job-apps' URL resolver (the only fix for the
-   jobright quarantine); (c) merge `jobapps-linkedin-jd-slice`, and extend it to jobright/simplify captures (9 held, IXL
-   among them)? (d) tier 0 outranks judge-cleared leads — watch whether starvation clears once the new-grad backlog drains.
+0. **The 35 held `linkedin:jobapps:*` LinkedIn captures** (D-602; ByteDance Graduate, NetApp Emerging Talent ×2, Skillstorm
+   Entry Level among them): day 1 released 0. If day 2 does not either — a one-time ADDITIVE repair (append the sliced JD as
+   a new version; the existing drain then releases them) or keep waiting on the LinkedIn lane. D-601's asks (a)–(c) were
+   answered 2026-09-27 (D-602); (d) is next step 3 above.
 1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
 2. **Puerto Rico for a USA-target profile** (T253 d) — measured 2026-09-25: PR locations resolve `unknown`, fail open and
    ARE delivered (5 built, HPE graduate roles). Default while unruled: keep them. Excluding them is profile data and restarts the count.
