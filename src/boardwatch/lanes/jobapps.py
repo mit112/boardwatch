@@ -301,10 +301,11 @@ def unescape_markdown(text: str) -> str:
 # taught to tolerate chrome. (jobright's own pages restate the JD in jobright's words, never match
 # the shape, and are not sliced.)
 #
-# Every anchor is matched as a WHOLE LINE, and anything the page's shape does not account for
-# returns None: the caller then stores the page as it is and the quarantine holds it. A slice
-# that guessed would freeze LinkedIn's text as the employer's, which is the failure the
-# precondition exists to stop.
+# Every anchor is matched as a WHOLE LINE, and an anchor or a block between them that leaves the
+# measured shape returns None: the caller then stores the page as it is and the quarantine holds
+# it. A slice that guessed would freeze LinkedIn's text as the employer's, which is the failure
+# the precondition exists to stop. The text between the anchors is NOT itself checked -- it is
+# taken as the JD, and the detector still judges the stored body.
 _LINKEDIN_TITLE_SUFFIX = " | LinkedIn"  # the capture's first line, the page's <title>
 _LINKEDIN_START = "Report this job"  # the last line of the job's header block
 # The JD's collapse toggle, then the first of LinkedIn's job-criteria rows.

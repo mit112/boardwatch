@@ -39,8 +39,8 @@ All notable changes to this project are documented here. The format follows
   "Report this job" and the "Show more / Show less / Seniority level" criteria block, skipping the pay
   range, job-poster card and AI-upsell sign-in forms LinkedIn renders between them. The page's shape
   decides, not the record's acquisition: job-apps captures LinkedIn pages for `jobright` and
-  `simplify` records too. A capture that leaves this exact shape is stored as it is, for the
-  quarantine to hold. Measured over job-apps' tree on 2026-09-27: 54 bodies are captures (44
+  `simplify` records too. A capture whose anchors or blocks leave the measured shape is stored as it
+  is, for the quarantine to hold; the text between the anchors is taken as the JD unchecked. Measured over job-apps' tree on 2026-09-27: 54 bodies are captures (44
   `linkedin`, 8 `jobright`, 2 `simplify`), the detector held all 54, all 54 slice to a body it passes,
   and no body it already passed changes.
   A held capture filed under job-apps' own namespace (9 live, IXL's new-grad role among them) is
