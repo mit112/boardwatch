@@ -27,6 +27,27 @@
 
 ## Current standing
 
+### 2026-09-26c — **A NEW-GRAD ROLE MUST NEVER BE MISSED (owner ruling) — four PRs merged before day 1, the frozen config set** (D-601). Measured on a read-only clone: 1,600 open postings titled new grad / early career, 81 ever delivered; **354 passed every filter and ranked at a median of ~2,955 behind the 40-lead slate**; 22 judge-cleared leads were stranded by an old judge key. Shipped (#504 #505 #506 #507, all before the 04:00 day-1 tick, owner-approved override of D-598's freeze): entry-level titles rank first for an entry profile (tier 0), role-gate misses, `slate_ceiling`, the buried-good-lead count + alert, entry markers v2 (title + JD body), job-apps' LinkedIn finds admitted, `gate.backlog_budget`, 251 false-ineligible verdicts released. **Live config: `slate_ceiling = 80`, `gate.backlog_budget = 150`** (backup `config.toml.bak-preslateceiling-20260926`).
+
+**Verify first:** `git log --oneline -6 origin/main` (top: `523c067e`), the primary on `main`, `.agent/2026-09-26c-crash/followups.md`.
+
+**Drain (manual `run --no-scan --project --top 150`, owner-approved):** run 483 delivered 118 (107 entry-marked; 21 apply
+with PDF, 97 review), run 485 delivered 94 (55 apply, 39 review; 67 via LinkedIn). Blind two-opus audit of run 483: agreement
+108/118; apply lane 1/21 unapplyable. Runs **482** (Mac crash mid-rank, 0 delivered) and **484** (interrupted in lanes) are
+phantom `running` rows — inert, reaped by age. Batches 3–5 were skipped on the owner's word.
+
+**Expect on day 1 (09-27 04:00):** a LONGER run — the new rules re-evaluate the corpus; the slate may grow past 40 (up to 80) with
+tier 0-1 leads; the gate also judges up to 150 backlog postings after tailoring (fail-open, 2-failure breaker); the funnel carries a
+`buried` section and a backlog block. The 26b block's next steps (read day 1 net-new with `day_row.py`) stand unchanged.
+
+**Found, not fixed:** 473 open jobapps-lane postings (202 new-grad software) sit in the body quarantine with **no working exit**
+(jobright paraphrases; the drain needs a new version that never comes). They reach `_review` unevaluated and unrendered.
+395 of 450 jobright rows carry no employer URL (job-apps' resolver last ran 08-27). Branches held: `jobapps-linkedin-jd-slice`
+(e1d15f7b, 16 captures), `jobright-employer-resolution` (empty, design in its RESULT.md).
+
+**Changed this session (live store / machine):** config.toml (+2 keys); runs 482–485; 212 queue folders; a 17 GB COW store clone
+used for read-only measurement, deleted at close.
+
 ### 2026-09-26b — **THE COUNT RESTARTED: DAY 1 IS THE 2026-09-27 04:00 RUN, DAY 14 THE 10-10 RUN** (D-600). Run 480 (day 2) met every bar on the funnel, but read NET-NEW — as B1 says — runs 478 and 480 delivered **8 and 1** new jobs of 40: D-588's 09-24 ledger drain had re-served ~1,000 delivered leads. **The drain is re-closed** (1,018 rows, owner's ruling); the guard is T264. **The opus B8 census closed at 7/125 = 5.6% (Wilson 3–11).** The apply lane is ready: 527 leads, every one open with a one-page PDF.
 
 **Verify first:** `git log --oneline -5 origin/main`, the primary on `main`, the tick enabled, `.agent/2026-09-26-session/notes.md`.
@@ -108,6 +129,10 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 
 ## Owner-gated — do NOT start or decide unilaterally
 
+0. **2026-09-26c asks:** (a) do "without visa sponsorship" (present tense, no "now or in the future") roles block the profile?
+   6 software roles (TP-Link, Zettabyte, Qumulo ×2, Sigma, Wise); (b) re-enable job-apps' URL resolver (the only fix for the
+   jobright quarantine); (c) merge `jobapps-linkedin-jd-slice`, and extend it to jobright/simplify captures (9 held, IXL
+   among them)? (d) tier 0 outranks judge-cleared leads — watch whether starvation clears once the new-grad backlog drains.
 1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
 2. **Puerto Rico for a USA-target profile** (T253 d) — measured 2026-09-25: PR locations resolve `unknown`, fail open and
    ARE delivered (5 built, HPE graduate roles). Default while unruled: keep them. Excluding them is profile data and restarts the count.
