@@ -67,12 +67,14 @@ from __future__ import annotations
 import errno
 import json
 import os
+import plistlib
 import re
 import stat
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
+from xml.parsers.expat import ExpatError
 
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting, SecondhandField
@@ -85,7 +87,11 @@ from boardwatch.lanes.base import (
     lane_snapshot,
     no_stored_postings,
 )
-from boardwatch.lanes.dereference import UnresolvablePostingURL, parse_posting_target
+from boardwatch.lanes.dereference import (
+    PostingTarget,
+    UnresolvablePostingURL,
+    parse_posting_target,
+)
 from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.lanes.linkedin import job_id_from_view_url
 from boardwatch.lanes.outcomes import AcquisitionTally
@@ -200,6 +206,10 @@ class _Record:
     # Where it was read from. Travels with the record so the body read needs no lookup table and
     # `collect` keeps no state between calls.
     folder: Path
+    # The employer's own posting URL job-apps' jobright resolver found (`employer_posting`), set
+    # by `collect` only when the record is filed under it. The record's own `direct_url` stays
+    # job-apps' value, so the provenance in `raw_json` is unchanged.
+    resolved_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -411,6 +421,64 @@ def slice_linkedin_page(text: str) -> str | None:
     return body if body.strip() else None
 
 
+# job-apps' authenticated jobright resolver (`autoapply/jobright_resolver.py`) clicks jobright's
+# apply button and rewrites the folder's apply webloc to the page it opens, keeping the jobright
+# URL it replaced in a sidecar. It is the only source of an employer URL for a jobright record:
+# none of job-apps' record files carries one, and jobright's logged-out page does not either
+# (D-406). Measured 2026-09-26: 55 of 450 held jobright rows had one, all written by it.
+_JOBRIGHT_ACQUISITION = "jobright"
+_APPLY_WEBLOC = "1_apply.webloc"
+_JOBRIGHT_SOURCE = "jobright_source.url"
+_JOBRIGHT_ID = re.compile(r"jobright\.ai/jobs/info/([0-9a-f]+)", re.IGNORECASE)
+# The resolver writes its webloc from a template without XML-escaping the URL, so an `&` in it
+# makes the file invalid XML; such a file's one string is read by pattern, as written.
+_WEBLOC_URL = re.compile(r"<key>URL</key>\s*<string>([^<]*)</string>")
+
+
+def _webloc_url(data: bytes) -> str | None:
+    """The URL a webloc holds. A valid plist is read as one, so an escaped `&amp;` is unescaped;
+    anything else is the resolver's unescaped template and its string is taken verbatim --
+    unescaping that would turn a raw `&copy=1` into `(c)=1`."""
+    try:
+        payload = plistlib.loads(data)
+    except (ExpatError, plistlib.InvalidFileException, ValueError):
+        found = _WEBLOC_URL.search(data.decode("utf-8", errors="replace"))
+        return found.group(1) if found else None
+    url = payload.get("URL") if isinstance(payload, dict) else None
+    return url if isinstance(url, str) else None
+
+
+def employer_posting(record: _Record) -> tuple[str, PostingTarget] | None:
+    """The employer's posting a jobright record was resolved to, or None.
+
+    Read only when the evidence is the resolver's own: the folder's apply webloc no longer points
+    at jobright, and the sidecar beside it names THIS record's jobright id -- so a webloc copied
+    between folders, or one the owner rewrote by hand, is never taken for a resolution. And only
+    an exact POSTING (`parse_posting_target`) counts: a board-level URL would file a job-apps key
+    inside a board the scan enumerates, beside the scan's own row for the same job, where it never
+    closes. Anything else is None, and the record keeps the identity it has always had.
+    """
+    if record.primary_acquisition != _JOBRIGHT_ACQUISITION:
+        return None
+    own = _JOBRIGHT_ID.search(record.direct_url)
+    if own is None:
+        return None
+    try:
+        source = (record.folder / _JOBRIGHT_SOURCE).read_text(encoding="utf-8", errors="replace")
+        webloc = (record.folder / _APPLY_WEBLOC).read_bytes()
+    except OSError:
+        return None
+    named = _JOBRIGHT_ID.search(source)
+    found = _webloc_url(webloc)
+    if named is None or found is None or named.group(1).lower() != own.group(1).lower():
+        return None
+    url = found.strip()
+    try:
+        return url, parse_posting_target(url)
+    except (UnknownBoardURL, UnresolvablePostingURL):
+        return None
+
+
 def posting_identity(record: _Record) -> _Identity:
     """`(provider, slug, posting_ref)` for one record, preferring this repo's own dereference.
 
@@ -555,7 +623,7 @@ def _raw_posting(identity: _Identity, record: _Record, *, body_text: str) -> Raw
         title=record.title,
         # The employer's own apply page -- what the user clicks, and in the tier-1 convergence
         # case the same URL the provider itself would have recorded.
-        url=record.direct_url,
+        url=record.resolved_url or record.direct_url,
         locations=_locations(record.location),
         body_text=body_text,
         raw_json={
@@ -683,6 +751,26 @@ class JobAppsLane:
         # LinkedIn record (`linkedin_identity`).
         linkedin_ids = {ref for record in records if (ref := linkedin_job_ref(record))}
         stored = self._stored_posting_slugs(LINKEDIN_PROVIDER, linkedin_ids) if linkedin_ids else {}
+        # And ONE for the jobright records job-apps' resolver sent to an employer's own posting
+        # (`employer_posting`). Such a record is filed under that posting -- tier 1, where the
+        # board scan is the record of truth and converges with it on the exact key -- but ONLY
+        # while job-apps' own key for it is not stored: re-filing a stored row under a second key
+        # would leave the first one open forever (a lane row never closes, D-314). So a record
+        # boardwatch first saw unresolved keeps the key it has.
+        employer_postings = {
+            record.posting_id: found
+            for record in records
+            if (found := employer_posting(record)) is not None
+        }
+        filed_own = (
+            self._stored_posting_slugs(LANE_PROVIDER, employer_postings)
+            if employer_postings
+            else {}
+        )
+        # Companies holding a resolved record: admitted as a tier-1 convergence and watched, so
+        # the next scan writes the employer's own JD over the jobright text this lane stores and
+        # the quarantine's drain releases it -- Indeed's D-414(a) path, done the same way.
+        converged: set[tuple[str, str]] = set()
         for record in records:
             linkedin_ref = linkedin_job_ref(record)
             if linkedin_ref is None and not is_direct_apply(record.primary_acquisition):
@@ -701,6 +789,16 @@ class JobAppsLane:
                 if linkedin_ref is None
                 else linkedin_identity(record, linkedin_ref, stored)
             )
+            if record.posting_id in employer_postings and record.posting_id not in filed_own:
+                url, target = employer_postings[record.posting_id]
+                record = replace(record, resolved_url=url)
+                identity = _Identity(
+                    target.provider,
+                    target.slug,
+                    target.posting_ref,
+                    CONVERGED_SECONDHAND | _LIVENESS_UNOBSERVED,
+                )
+                converged.add((identity.provider, identity.slug))
             # A LinkedIn job is ONE job whatever company spelling filed it, so its slug is left
             # out of the key: two records naming one job id under two spellings are one posting.
             resolved = (
@@ -722,7 +820,9 @@ class JobAppsLane:
 
         snapshots: list[LaneCompanySnapshot] = []
         for (provider, slug), entries in grouped.items():
-            if not admits(provider, slug):
+            # `tier1` is passed only when it is True; the protocol's default is False.
+            tier1 = (provider, slug) in converged
+            if not (admits(provider, slug, tier1=True) if tier1 else admits(provider, slug)):
                 # Asked exactly once per distinct identity, as the protocol requires. Nothing is
                 # tallied for a refusal -- `admission.CompanyBudget.refused` names them.
                 continue
@@ -745,6 +845,7 @@ class JobAppsLane:
                         # and inventing an http URL for a local read would name a request that
                         # was never made.
                         snapshot=lane_snapshot(postings, self._source_url()),
+                        watch=tier1,
                     )
                 )
         return LaneResult(snapshots=tuple(snapshots), tally=tally)
