@@ -59,6 +59,12 @@ class FieldTier:
     entry_markers: tuple[str, ...] = ()
     entry_body_markers: tuple[str, ...] = ()
     entry_body_exclusions: tuple[str, ...] = ()
+    entry_marker_vetoes: tuple[str, ...] = ()
+
+    def has_entry_veto(self, title: str) -> bool:
+        """Whether `title` names a role no entry marker may lift — an internship is a student
+        role, and its "graduate" or "expected graduation date" does not make it a new-grad one."""
+        return _has_phrase(_spaced(title), self.entry_marker_vetoes)
 
     def has_entry_marker(self, title: str) -> bool:
         """Whether `title` states it is entry-level in one of this field's marker phrases."""
@@ -76,18 +82,25 @@ class FieldTier:
         )
 
 
-# A sentence ends at a full stop, `!`, `?` or a line break — a bullet list is lines. Not at `;`:
-# "0-2 years for junior; 5+ for senior" is one statement, and its exclusion must see both halves.
-_SENTENCE_BREAK = re.compile(r"[.!?\n]+")
+# A sentence ends at a line break (a bullet list is lines), or at `.`, `!` or `?` followed by
+# whitespace and a capital — but not after a one- or two-letter word, so "U.S.", "e.g." and
+# "Dr." do not cut a sentence from its own exclusion. Not at `;`: "0-2 years for junior; 5+ for
+# senior" is one statement, and its exclusion must see both halves.
+_SENTENCE_BREAK = re.compile(r"\n+|(?<!\b[^\W\d_])(?<!\b[^\W\d_]{2})[.!?]+(?=\s+[A-Z])")
 
 
 # Chained `str.replace`, not `str.translate`: translate is ~75x slower over the JD bodies.
 _DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015"
+# A markdown escape, `\X` — the job-apps lane ships markdown-escaped bodies ("0\-2 years").
+_ESCAPE = re.compile(r"\\(.)")
 
 
 def _spaced(text: str) -> str:
-    """`text` casefolded, with every dash read as a space and whitespace collapsed, so "0–2
-    years", "0-2 Years" and "Early-Career" match the phrases "0 2 years" and "early career"."""
+    """`text` casefolded, markdown-unescaped, with every dash read as a space and whitespace
+    collapsed, so "0–2 years", "0\\-2 Years" and "Early-Career" match the phrases "0 2 years"
+    and "early career"."""
+    if "\\" in text:
+        text = _ESCAPE.sub(r"\1", text)
     for dash in _DASHES:
         text = text.replace(dash, " ")
     return " ".join(text.casefold().split())
@@ -210,13 +223,17 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
         }
         phrases = {
             key: _phrases((body or {}).get(key), f"field {fname!r} {key}")
-            for key in ("entry_markers", "entry_body_markers", "entry_body_exclusions")
+            for key in (
+                "entry_markers", "entry_body_markers", "entry_body_exclusions",
+                "entry_marker_vetoes",
+            )
         }
         fields[fname] = FieldTier(
             words=words, roman=roman,
             entry_markers=phrases["entry_markers"],
             entry_body_markers=phrases["entry_body_markers"],
             entry_body_exclusions=phrases["entry_body_exclusions"],
+            entry_marker_vetoes=phrases["entry_marker_vetoes"],
         )
 
     # Hash the PARSED document, not the file: the consumer reads the parsed object, so a

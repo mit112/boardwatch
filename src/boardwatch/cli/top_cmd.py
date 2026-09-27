@@ -827,14 +827,19 @@ def rank_open_postings(
     # were truly entry-level.
     # The body is the current version's, which `versions` above already holds for every open
     # posting, so this reads nothing new; it is scanned only for an `in_field` row whose title
-    # carried no marker.
+    # carried no marker. A title naming one of the tier's `entry_marker_vetoes` ("intern",
+    # "co-op") earns tier 0 through no marker: an internship is not a new-grad role.
     entry_first = target_band == "entry" and tier is not None and bool(
         tier.entry_markers or tier.entry_body_markers
     )
 
     def _rank_tier(posting: RankedPosting) -> int:
-        if entry_first and posting.role == "in_field":
-            entry_tier = cast(FieldTier, tier)
+        entry_tier = cast(FieldTier, tier)
+        if (
+            entry_first
+            and posting.role == "in_field"
+            and not entry_tier.has_entry_veto(posting.title)
+        ):
             version = versions.get(posting.posting_id)
             if entry_tier.has_entry_marker(posting.title) or (
                 version is not None and entry_tier.has_entry_body_marker(version.body_text)

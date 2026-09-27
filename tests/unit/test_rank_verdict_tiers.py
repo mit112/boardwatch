@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from sqlalchemy import Engine, insert
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
@@ -308,6 +309,30 @@ def test_an_entry_body_marker_on_a_title_with_no_role_signal_earns_no_priority(
     assert by_id[member_id].role == "uncertain", by_id[member_id].role_reason
 
     assert [p.posting_id for p in results.visible] == [swe_id, member_id]
+
+
+@pytest.mark.parametrize("intern", [
+    "Graduate Software Engineer Intern",            # a title marker ("graduate")
+    "Software Engineer Intern",                     # a body marker
+])
+def test_an_internship_earns_no_entry_tier_through_any_marker(
+    tmp_path: Path, intern: str
+) -> None:
+    """E4 review: for an entry profile that does not hide intern titles, "graduate" in the title
+    or "new grads" in the body lifted internships into tier 0. A vetoed title word ("intern")
+    keeps an internship in its verdict tier, below a decided `eligible` software lead."""
+    posting_ids = _seed(
+        tmp_path, [intern, "Software Engineer"], bodies={intern: ENTRY_BODY}, target_band="entry",
+    )
+    intern_id, swe_id = posting_ids[intern], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=swe_id, target_band="entry")
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[intern_id].role == "in_field"
+
+    assert [p.posting_id for p in results.visible] == [swe_id, intern_id]
 
 
 def test_a_tier_zero_posting_the_judge_ruled_ineligible_is_still_hidden(tmp_path: Path) -> None:

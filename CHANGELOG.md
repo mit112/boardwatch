@@ -39,12 +39,15 @@ All notable changes to this project are documented here. The format follows
 - **More entry-level software postings rank first for a profile targeting `entry`: campus-hire title
   words and a JD-body marker (2026-09-26, E4).** `entry_markers` gains "college grad", "campus", "2026
   start", "2027 start" and "graduate". A new `entry_body_markers` list ("0-2 years", "new grad", "recent
-  graduate", "early career", "class of 2027", "expected graduation date") lifts an `in_field` posting
+  graduate", "early career", "class of 2027") lifts an `in_field` posting
   whose title has no marker into the same tier 0 when one sentence of its current JD body says so and that
   sentence names none of `entry_body_exclusions` ("across levels", "senior", "mentor", ...). Bare "entry
-  level" and "graduation date" are not markers. Measured on a store clone: ~150 of 3,481 visible
-  unmarked `in_field` postings gain tier 0, 126 of them ranked beyond 150 before; 37 of a 40-posting
-  sample were truly entry-level. Reads no new column: the body is the one the ranker already loads.
+  level", "graduation date" and "expected graduation date" are not markers. A title naming one of
+  `entry_marker_vetoes` ("intern", "internship", "co-op", "student") earns tier 0 through no marker.
+  Matching reads markdown escapes (`0\-2 years`) and does not end a sentence at "U.S." or "e.g.".
+  Measured on a store clone: ~150 of 3,481 visible unmarked `in_field` postings gain tier 0, 126 of
+  them ranked beyond 150 before; a 40-posting sample read 37/40 truly entry-level, and 36/40 over every
+  profile's population. Reads no new column: the body is the one the ranker already loads.
 
 - **`boardwatch postings refetch` re-reads named postings from their own board through the scan's
   write path (2026-09-24, T210).** Workday, SmartRecruiters, Eightfold, Greenhouse and Ashby gain

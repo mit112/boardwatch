@@ -68,13 +68,21 @@ fields:
     # exclusion is not a hit: "0-2 years for junior, 5+ for senior" hires across levels, and
     # "mentor early career engineers" is a senior role's duty.
     # Bare "entry level" and "graduation date" are deliberately absent — both read in EEO and
-    # benefits boilerplate far more often than in a requirement.
+    # benefits boilerplate far more often than in a requirement — and so is "expected graduation
+    # date": measured 2026-09-26, once the vetoes below drop internships it lifts 2 postings
+    # store-wide, both for enrolled students.
     entry_body_markers: ["0 1 years", "0 to 1 years", "0 2 years", "0 to 2 years",
                          "new grad", "new grads", "new graduate", "new graduates",
                          "new college grad", "new college graduate", "recent grad",
                          "recent grads", "recent graduate", "recent graduates", "early career",
-                         "class of 2026", "class of 2027", "expected graduation date"]
+                         "class of 2026", "class of 2027"]
     entry_body_exclusions: ["across levels", "varying levels", "senior", "staff", "experts",
                             "or experienced", "or an experienced", "and experienced",
                             "whether you", "not intended", "mentor", "mentoring", "seasoned",
                             "no new grads", "separate"]
+    # A title naming one of these earns tier 0 through NO marker, title or body: an internship,
+    # co-op or working-student post is a student role, and "Graduate Intern" or a body's "recent
+    # graduates" does not make it a new-grad one. Whole words, so "Internal Tools" is not vetoed.
+    # Measured 2026-09-26: they veto 97 title-marked and 60 body-marked open in_field postings.
+    entry_marker_vetoes: ["intern", "interns", "internship", "internships", "co-op", "co-ops",
+                          "coop", "student", "students"]
