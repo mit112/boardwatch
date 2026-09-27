@@ -97,7 +97,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         "contains no company names at all, because a company's ladder is not a fact "
         "boardwatch can ship. The company binding is user config in "
         "{config_dir}/leveling-bindings.yaml (D-246)",
-        pin="sha256:446e40d926efb57587f55de4665e68bd7a75e21e7c6df6ddc29d13c3cad61191",
+        pin="sha256:9162da39e1e56f2931fe968bf41f8f92a6240068f3932dc58da15d2caad9d102",
     ),
     "src/boardwatch/registry/companies.yaml": DataEntry(
         kind="company_enumeration",
