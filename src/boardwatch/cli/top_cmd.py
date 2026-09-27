@@ -820,15 +820,26 @@ def rank_open_postings(
     # career" subset, at a median of ~2,955 behind a 40-lead slate, so the roles written for
     # exactly this user were the ones the slate never reached. Tiering only re-orders: every
     # hide below still applies to a tier-0 posting.
-    entry_first = target_band == "entry" and tier is not None and bool(tier.entry_markers)
+    #
+    # A JD BODY that says so joins tier 0 the same way (the tier's `entry_body_markers` — "0-2
+    # years", "new grad", "early career"): of 3,481 visible `in_field` postings with no title
+    # marker on 2026-09-26, ~150 did, 126 of them ranked beyond 150; 37 of a 40-posting sample
+    # were truly entry-level.
+    # The body is the current version's, which `versions` above already holds for every open
+    # posting, so this reads nothing new; it is scanned only for an `in_field` row whose title
+    # carried no marker.
+    entry_first = target_band == "entry" and tier is not None and bool(
+        tier.entry_markers or tier.entry_body_markers
+    )
 
     def _rank_tier(posting: RankedPosting) -> int:
-        if (
-            entry_first
-            and posting.role == "in_field"
-            and cast(FieldTier, tier).has_entry_marker(posting.title)
-        ):
-            return 0
+        if entry_first and posting.role == "in_field":
+            entry_tier = cast(FieldTier, tier)
+            version = versions.get(posting.posting_id)
+            if entry_tier.has_entry_marker(posting.title) or (
+                version is not None and entry_tier.has_entry_body_marker(version.body_text)
+            ):
+                return 0
         decided_eligible = (
             posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
         )

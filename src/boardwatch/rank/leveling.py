@@ -16,6 +16,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal
@@ -56,14 +57,53 @@ class FieldTier:
     words: Mapping[str, SeniorityBand]
     roman: Mapping[str, SeniorityBand]
     entry_markers: tuple[str, ...] = ()
+    entry_body_markers: tuple[str, ...] = ()
+    entry_body_exclusions: tuple[str, ...] = ()
 
     def has_entry_marker(self, title: str) -> bool:
         """Whether `title` states it is entry-level in one of this field's marker phrases."""
-        spaced = " ".join(title.replace("-", " ").split())
-        return any(
-            re.search(rf"\b{re.escape(marker)}\b", spaced, re.IGNORECASE) is not None
-            for marker in self.entry_markers
+        return _has_phrase(_spaced(title), self.entry_markers)
+
+    def has_entry_body_marker(self, body: str) -> bool:
+        """Whether a sentence of `body` states the role is entry-level in one of this field's
+        body phrases, and that same sentence names none of the exclusions — "0-2 years for
+        junior, 5+ for senior" is a posting hiring across levels, not an entry-level one."""
+        # Whole-body screen first: most JDs carry no marker at all, and the ranker scans ~20k.
+        return _has_phrase(_spaced(body), self.entry_body_markers) and any(
+            _has_phrase(spaced, self.entry_body_markers)
+            and not _has_phrase(spaced, self.entry_body_exclusions)
+            for spaced in map(_spaced, _SENTENCE_BREAK.split(body))
         )
+
+
+# A sentence ends at a full stop, `!`, `?` or a line break — a bullet list is lines. Not at `;`:
+# "0-2 years for junior; 5+ for senior" is one statement, and its exclusion must see both halves.
+_SENTENCE_BREAK = re.compile(r"[.!?\n]+")
+
+
+# Chained `str.replace`, not `str.translate`: translate is ~75x slower over the JD bodies.
+_DASHES = "-\u2010\u2011\u2012\u2013\u2014\u2015"
+
+
+def _spaced(text: str) -> str:
+    """`text` casefolded, with every dash read as a space and whitespace collapsed, so "0–2
+    years", "0-2 Years" and "Early-Career" match the phrases "0 2 years" and "early career"."""
+    for dash in _DASHES:
+        text = text.replace(dash, " ")
+    return " ".join(text.casefold().split())
+
+
+def _has_phrase(spaced: str, phrases: tuple[str, ...]) -> bool:
+    # A plain substring test first halves the body screen: it rejects most JDs in C, and the
+    # regex then only confirms that a phrase found stands on whole-word boundaries.
+    return any(p in spaced for p in phrases) and _alternation(phrases).search(spaced) is not None
+
+
+@lru_cache(maxsize=16)
+def _alternation(phrases: tuple[str, ...]) -> re.Pattern[str]:
+    # One compiled pattern per phrase list, case-sensitive over casefolded text (more than
+    # twice as fast as IGNORECASE): the ranker screens up to ~20k JD bodies, ~125 MB, per rank.
+    return re.compile(rf"\b(?:{'|'.join(map(re.escape, phrases))})\b")
 
 
 @dataclass(frozen=True)
@@ -100,6 +140,13 @@ def _key(value: object, where: str) -> str:
         raise LevelingError(f"{where}: key {value!r} is {type(value).__name__}, not a string. "
                             f"QUOTE it: {_YAML_BOOLISH}")
     return value
+
+
+def _phrases(value: object, where: str) -> tuple[str, ...]:
+    """A phrase list, normalised the way `_spaced` normalises the text it is matched against."""
+    if not isinstance(value, list | None):
+        raise LevelingError(f"{where}: must be a list of phrases")
+    return tuple(_spaced(_key(m, where)) for m in value or [])
 
 
 def field_tier(catalog: LevelingCatalog, field: str | None) -> FieldTier | None:
@@ -161,14 +208,16 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
             _key(k, f"field {fname!r} roman").upper(): _band(v, f"field {fname!r} roman {k!r}")
             for k, v in ((body or {}).get("roman") or {}).items()
         }
-        markers = (body or {}).get("entry_markers") or []
-        if not isinstance(markers, list):
-            raise LevelingError(f"field {fname!r} entry_markers: must be a list of phrases")
-        entry_markers = tuple(
-            " ".join(_key(m, f"field {fname!r} entry_markers").casefold().split())
-            for m in markers
+        phrases = {
+            key: _phrases((body or {}).get(key), f"field {fname!r} {key}")
+            for key in ("entry_markers", "entry_body_markers", "entry_body_exclusions")
+        }
+        fields[fname] = FieldTier(
+            words=words, roman=roman,
+            entry_markers=phrases["entry_markers"],
+            entry_body_markers=phrases["entry_body_markers"],
+            entry_body_exclusions=phrases["entry_body_exclusions"],
         )
-        fields[fname] = FieldTier(words=words, roman=roman, entry_markers=entry_markers)
 
     # Hash the PARSED document, not the file: the consumer reads the parsed object, so a
     # digest over raw bytes would move on a comment edit and miss a semantic one via override.

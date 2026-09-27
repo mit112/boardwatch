@@ -175,6 +175,12 @@ fields: {nursing: {words: {}, roman: {}}}
     "Junior Software Developer",
     "Software Engineer I",
     "Software Engineer I/II",
+    # E4 (2026-09-26): campus-hire wordings the first list missed.
+    "Software Engineer, College Grad 2026",
+    "Campus Hire - Backend Engineer",
+    "Machine Learning Engineer (2027 Start)",
+    "2026 Start - Software Engineer",
+    "Graduate Software Engineer",
 ])
 def test_the_software_tier_reads_an_entry_marker(tmp_path: Path, title: str) -> None:
     assert load_leveling(tmp_path).fields["software"].has_entry_marker(title)
@@ -185,7 +191,7 @@ def test_the_software_tier_reads_an_entry_marker(tmp_path: Path, title: str) -> 
     "Software Engineer II",
     "Software Engineer in Test",
     "Software Engineer 10x Team",
-    "Graduate Research Assistant",
+    "Undergraduate Software Engineer",
     "Senior Software Engineer",
 ])
 def test_a_title_without_a_whole_marker_phrase_is_not_entry_marked(
@@ -201,3 +207,76 @@ def test_entry_markers_that_are_not_a_list_raise(tmp_path: Path) -> None:
     )
     with pytest.raises(LevelingError, match="entry_markers"):
         load_leveling(tmp_path)
+
+
+def test_a_graduate_title_outside_the_field_cannot_reach_tier_zero(tmp_path: Path) -> None:
+    """ "graduate" marks "Graduate Research Assistant" too; the tier-0 rule never sees it, because
+    it applies only to a role-`in_field` title and this one is `out_of_field`."""
+    from boardwatch.rank.role_gate import role_verdict
+
+    assert load_leveling(tmp_path).fields["software"].has_entry_marker("Graduate Research Assistant")
+    assert role_verdict("Graduate Research Assistant")[0] == "out_of_field"
+
+
+@pytest.mark.parametrize("body", [
+    "Requirements:\n0-2 years of professional experience.",
+    "You bring 0\u20131 years of experience, internships count.",
+    "0 to 2 years of experience with Python",
+    "New grads are welcome to apply!",
+    "This is an early-career role on a small team.",
+    "Graduating class of 2027.",
+    "Expected graduation date: May 2027",
+])
+def test_the_software_tier_reads_an_entry_body_marker(tmp_path: Path, body: str) -> None:
+    assert load_leveling(tmp_path).fields["software"].has_entry_body_marker(
+        "We build payments infrastructure. " + body
+    )
+
+
+@pytest.mark.parametrize("body", [
+    # A body label and EEO/benefits boilerplate, deliberately not markers.
+    "Job level: Entry Level. We build payments infrastructure.",
+    "Please state your graduation date on the form.",
+    # Mixed-level boilerplate: the marker's own sentence names an exclusion.
+    "We hire across levels, from new grads to domain experts.",
+    "Whether you're early in your career or experienced, apply.",
+    "0-2 years for junior; 5+ years for senior engineers.",
+    "You will mentor early career engineers.",
+    "3-6 years of experience (no new grads).",
+    # Whole numbers only: "10-2 years" is not "0-2 years".
+    "10-20 years of experience.",
+])
+def test_a_body_without_a_clean_marker_sentence_is_not_entry_marked(
+    tmp_path: Path, body: str
+) -> None:
+    assert not load_leveling(tmp_path).fields["software"].has_entry_body_marker(body)
+
+
+def test_an_exclusion_cancels_only_its_own_sentence(tmp_path: Path) -> None:
+    """The exclusion is scoped to the marker's sentence: a `senior` elsewhere in the JD (a line
+    break or a full stop away) does not cancel a clean "new grad" sentence."""
+    tier = load_leveling(tmp_path).fields["software"]
+    assert tier.has_entry_body_marker("You will work with senior engineers\nNew grads welcome.")
+    assert tier.has_entry_body_marker("Senior engineers review code. New grads welcome.")
+
+
+def test_entry_body_markers_that_are_not_a_list_raise(tmp_path: Path) -> None:
+    (tmp_path / "leveling.yaml").write_text(
+        "leveling_version: 1\nfields:\n  software:\n    entry_body_markers: new grad\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(LevelingError, match="entry_body_markers"):
+        load_leveling(tmp_path)
+
+
+def test_a_body_marker_phrase_is_read_with_its_dash_as_a_space(tmp_path: Path) -> None:
+    """A phrase written with a dash in the data matches the text it names: both sides go
+    through the same normalisation, so an override author need not know it exists."""
+    (tmp_path / "leveling.yaml").write_text(
+        "leveling_version: 1\nfields:\n  software:\n"
+        "    entry_body_markers: [\"0-3 Years\"]\n    entry_body_exclusions: [Senior]\n",
+        encoding="utf-8",
+    )
+    tier = load_leveling(tmp_path).fields["software"]
+    assert tier.has_entry_body_marker("Needs 0\u20133 years of Go.")
+    assert not tier.has_entry_body_marker("Needs 0-3 years of Go as a senior.")

@@ -36,6 +36,16 @@ All notable changes to this project are documented here. The format follows
   cleared every filter while ranking at a median in the thousands behind a 40-lead slate. Ranking only;
   every filter, the gate judge and the review gate still apply. Inert for any other target band.
 
+- **More entry-level software postings rank first for a profile targeting `entry`: campus-hire title
+  words and a JD-body marker (2026-09-26, E4).** `entry_markers` gains "college grad", "campus", "2026
+  start", "2027 start" and "graduate". A new `entry_body_markers` list ("0-2 years", "new grad", "recent
+  graduate", "early career", "class of 2027", "expected graduation date") lifts an `in_field` posting
+  whose title has no marker into the same tier 0 when one sentence of its current JD body says so and that
+  sentence names none of `entry_body_exclusions` ("across levels", "senior", "mentor", ...). Bare "entry
+  level" and "graduation date" are not markers. Measured on a store clone: ~150 of 3,481 visible
+  unmarked `in_field` postings gain tier 0, 126 of them ranked beyond 150 before; 37 of a 40-posting
+  sample were truly entry-level. Reads no new column: the body is the one the ranker already loads.
+
 - **`boardwatch postings refetch` re-reads named postings from their own board through the scan's
   write path (2026-09-24, T210).** Workday, SmartRecruiters, Eightfold, Greenhouse and Ashby gain
   `fetch_posting`; the command reports `revised` / `refreshed` / `gone` / `unsupported` / `failed` per id,

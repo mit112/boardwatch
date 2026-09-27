@@ -49,9 +49,32 @@ fields:
     # Titles that state they are entry-level in so many words. These never decide a band — an
     # absent seniority word already reads `entry` — they RANK: for a profile targeting `entry`,
     # a software title carrying one sorts ahead of every other tier (`top_cmd._rank_tier`).
-    # Matched case-insensitively on whole words, with `-` read as a space.
+    # Matched case-insensitively on whole words, with any dash read as a space.
     entry_markers: ["new grad", "new grads", "new graduate", "new graduates", "new college grad",
                     "new college graduate", "university grad", "university graduate",
                     "recent grad", "recent graduate", "early career", "early careers",
                     "entry level", "junior", "engineer i", "engineer 1", "developer i",
-                    "developer 1", "sde i", "sde 1", "swe i", "swe 1"]
+                    "developer 1", "sde i", "sde 1", "swe i", "swe 1",
+                    # Measured 2026-09-26 on 4,275 visible in_field postings: these mark 130 more,
+                    # every one a graduate/campus-hire role (the only flagged ones are PhD new-grad
+                    # roles). Store-wide they also mark 46 internships, which a profile's own
+                    # exclude titles hide. "Graduate Research Assistant" is not in_field, so tier
+                    # 0 never sees it. "associate" is absent: it names a mid rung at many firms.
+                    "college grad", "college graduate", "campus", "2026 start", "2027 start",
+                    "graduate"]
+    # JD-body sentences that state the role is entry-level, for a posting whose title does not.
+    # Same use and matching as `entry_markers`, per sentence, with every dash read as a space
+    # (so "0 2 years" matches "0-2 years" and "0–2 years"). A sentence that also names an
+    # exclusion is not a hit: "0-2 years for junior, 5+ for senior" hires across levels, and
+    # "mentor early career engineers" is a senior role's duty.
+    # Bare "entry level" and "graduation date" are deliberately absent — both read in EEO and
+    # benefits boilerplate far more often than in a requirement.
+    entry_body_markers: ["0 1 years", "0 to 1 years", "0 2 years", "0 to 2 years",
+                         "new grad", "new grads", "new graduate", "new graduates",
+                         "new college grad", "new college graduate", "recent grad",
+                         "recent grads", "recent graduate", "recent graduates", "early career",
+                         "class of 2026", "class of 2027", "expected graduation date"]
+    entry_body_exclusions: ["across levels", "varying levels", "senior", "staff", "experts",
+                            "or experienced", "or an experienced", "and experienced",
+                            "whether you", "not intended", "mentor", "mentoring", "seasoned",
+                            "no new grads", "separate"]

@@ -248,6 +248,68 @@ def test_an_entry_marker_on_a_title_with_no_role_signal_earns_no_priority(
     assert [p.posting_id for p in results.visible] == [swe_id, member_id]
 
 
+BODY_MARKED = "Software Engineer, Platform"
+# The marker sentence sits in a body the deterministic engine never flags.
+ENTRY_BODY = SAFE_BODY + " New grads are welcome to apply."
+
+
+def test_an_entry_body_marked_swe_lead_outranks_a_decided_eligible_lead_for_an_entry_profile(
+    tmp_path: Path,
+) -> None:
+    """E4: a title with no marker whose JD BODY says "new grads welcome" joins tier 0 exactly like
+    a title-marked one. Against the title-only rule the eligible `Software Engineer` ranks first."""
+    posting_ids = _seed(
+        tmp_path, [BODY_MARKED, "Software Engineer"], bodies={BODY_MARKED: ENTRY_BODY},
+        target_band="entry",
+    )
+    body_id, swe_id = posting_ids[BODY_MARKED], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=swe_id, target_band="entry")
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[body_id].role == "in_field"
+    assert by_id[body_id].verdict == "uncertain"
+    assert by_id[swe_id].score.total >= by_id[body_id].score.total
+
+    assert [p.posting_id for p in results.visible] == [body_id, swe_id]
+
+
+def test_an_entry_body_marker_is_inert_for_a_profile_not_targeting_entry(tmp_path: Path) -> None:
+    """Control: the same postings under a profile targeting `any` keep the D-477 order."""
+    posting_ids = _seed(
+        tmp_path, [BODY_MARKED, "Software Engineer"], bodies={BODY_MARKED: ENTRY_BODY},
+        target_band="any",
+    )
+    body_id, swe_id = posting_ids[BODY_MARKED], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=swe_id)
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    assert [p.posting_id for p in results.visible] == [swe_id, body_id]
+
+
+def test_an_entry_body_marker_on_a_title_with_no_role_signal_earns_no_priority(
+    tmp_path: Path,
+) -> None:
+    """The body marker is a software-posting rule like the title one: `Member Experience` with a
+    "new grads welcome" body stays below an undecided software lead, even when gate-`eligible`."""
+    member = "Member Experience"
+    posting_ids = _seed(
+        tmp_path, [member, "Software Engineer"],
+        bodies={member: SKILL_BODY + " New grads are welcome to apply."}, target_band="entry",
+    )
+    member_id, swe_id = posting_ids[member], posting_ids["Software Engineer"]
+    engine = get_engine(tmp_path)
+    _mark_gate_eligible(engine, tmp_path, posting_id=member_id, target_band="entry")
+
+    results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
+    by_id = {p.posting_id: p for p in results.visible}
+    assert by_id[member_id].role == "uncertain", by_id[member_id].role_reason
+
+    assert [p.posting_id for p in results.visible] == [swe_id, member_id]
+
+
 def test_a_tier_zero_posting_the_judge_ruled_ineligible_is_still_hidden(tmp_path: Path) -> None:
     """Tier 0 only re-orders. A new-grad title the final gate ruled `ineligible` (with its quoted
     span) must stay hidden, exactly like any other tier — the hides walk the sorted list."""
