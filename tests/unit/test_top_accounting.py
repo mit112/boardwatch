@@ -348,3 +348,21 @@ def test_rank_twins_count_only_this_run_suppressions(env: Path) -> None:
     assert ranked.hidden_handled == 2  # P1 + P3
     assert p1 in ranked.judged_this_run_ids
     assert p3 not in ranked.judged_this_run_ids
+
+
+def test_the_below_cutoff_in_field_list_carries_only_in_field_postings(
+    env: Path,
+) -> None:
+    """The gate backlog's candidates: every `in_field` posting the cutoff hid, and nothing else.
+    "Systems Engineer" is `uncertain` to the role gate, and a body naming a skill keeps it past
+    the zero-signal veto, so it reaches the cutoff and is counted there — but it is no backlog
+    candidate. The list is threaded out beside the count, never folded into the identity."""
+    body = "We build backend services in Python and Go."
+    titles = ["Backend Engineer", "Platform Engineer", "Systems Engineer"]
+    engine = _seed(env, titles, bodies=[body] * 3)
+
+    results = rank_open_postings(engine, _settings(env), limit=1, record_surfaced=False)
+
+    assert results.hidden_below_cutoff == 2
+    assert [p.role for p in results.below_cutoff_in_field] == ["in_field"]
+    assert _accounted(results) == results.considered == 3

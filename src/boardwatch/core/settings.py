@@ -101,6 +101,13 @@ class GateTier(BaseModel):
     #: about `queue size / refresh_budget` runs and a steady-state run sends nearly nothing. It
     #: changes WHEN a lead is judged, never the verdict it receives — `depth`'s class exactly.
     refresh_budget: int = Field(default=0, ge=0)
+    #: How many BACKLOG postings a run may send to the judge: filter-passing, in-field postings
+    #: that ranked below the judged slate and carry no current gate reading, those with an earlier
+    #: `eligible` reading under an older key first, then newest first. `0` — the default — sends
+    #: none. Beyond `depth` a posting is never judged, so a good lead ranked below it stays in tier
+    #: 2 forever; with this, each run judges a bounded slice and a lead the judge clears ranks in
+    #: tier 1 on the next run. The stage delivers none of them — `depth`'s class exactly.
+    backlog_budget: int = Field(default=0, ge=0)
     #: Whether the judge's `seniority_fit` reading HOLDS a lead for review (2026-09-13).
     #:
     #: **Off by default, and the default is a measurement, not caution.** The reading is always

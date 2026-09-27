@@ -1043,6 +1043,17 @@ class GateCounters:
     refresh_candidates: int | None = 0
     refresh_sent: int | None = 0
     refresh_pending_after: int | None = 0
+    #: The gate backlog, apart from both for the same reason: its postings ranked below the
+    #: slate and none is delivered this run. `backlog_budget` is the setting, the rest are `None`
+    #: when an armed backlog raised — the refresh's split exactly.
+    backlog_budget: int = 0
+    backlog_candidates: int | None = 0
+    backlog_sent: int | None = 0
+    backlog_judged: int | None = 0
+    backlog_eligible: int | None = 0
+    backlog_ineligible: int | None = 0
+    backlog_uncertain: int | None = 0
+    backlog_failed_open_batches: int | None = 0
 
 
 def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
@@ -1071,8 +1082,17 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
             "refresh_candidates": None,
             "refresh_sent": None,
             "refresh_pending_after": None,
+            "backlog_budget": None,
+            "backlog_candidates": None,
+            "backlog_sent": None,
+            "backlog_judged": None,
+            "backlog_eligible": None,
+            "backlog_ineligible": None,
+            "backlog_uncertain": None,
+            "backlog_failed_open_batches": None,
         }
     armed = gate.refresh_budget > 0
+    backlog_armed = gate.backlog_budget > 0
     return {
         "instrumented": True,
         "judged": gate.judged,
@@ -1095,6 +1115,14 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "refresh_candidates": gate.refresh_candidates if armed else None,
         "refresh_sent": gate.refresh_sent if armed else None,
         "refresh_pending_after": gate.refresh_pending_after if armed else None,
+        "backlog_budget": gate.backlog_budget,
+        "backlog_candidates": gate.backlog_candidates if backlog_armed else None,
+        "backlog_sent": gate.backlog_sent if backlog_armed else None,
+        "backlog_judged": gate.backlog_judged if backlog_armed else None,
+        "backlog_eligible": gate.backlog_eligible if backlog_armed else None,
+        "backlog_ineligible": gate.backlog_ineligible if backlog_armed else None,
+        "backlog_uncertain": gate.backlog_uncertain if backlog_armed else None,
+        "backlog_failed_open_batches": gate.backlog_failed_open_batches if backlog_armed else None,
     }
 
 
@@ -1147,6 +1175,16 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         else f"standing-queue refresh: {gate.refresh_candidates} lead(s) had a stale gate reading "
         f"· {gate.refresh_sent} sent (budget {gate.refresh_budget}) · "
         f"{gate.refresh_pending_after} still stale after",
+        "",
+        "backlog not armed (`gate.backlog_budget = 0`)"
+        if not gate.backlog_budget
+        else "backlog FAILED and measured nothing — see this run's errors"
+        if gate.backlog_candidates is None
+        else f"backlog: {gate.backlog_candidates} in-field posting(s) below the slate unjudged · "
+        f"{gate.backlog_sent} sent (budget {gate.backlog_budget}) · {gate.backlog_judged} judged "
+        f"({gate.backlog_eligible} eligible, {gate.backlog_ineligible} ineligible, "
+        f"{gate.backlog_uncertain} uncertain) · {gate.backlog_failed_open_batches} batch(es) "
+        "failed open",
     )
 
 

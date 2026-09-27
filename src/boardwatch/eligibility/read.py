@@ -522,6 +522,32 @@ def newest_gate_verdicts(conn: Connection, posting_ids: list[int]) -> dict[int, 
     return out
 
 
+def ever_gate_eligible(conn: Connection, posting_ids: list[int]) -> set[int]:
+    """The posting ids with ANY final-gate `eligible` row, over any of their versions, under any
+    key. Not a lane read, for `newest_gate_verdicts`' reason. Its one caller, `gate_judge`'s
+    backlog, sends these first: a judge cleared each once, and a re-key stranded the reading."""
+    out: set[int] = set()
+    for chunk in id_chunks(posting_ids):
+        rows = conn.execute(
+            select(posting_versions.c.posting_id)
+            .join(eligibility_inputs,
+                  posting_versions.c.id == eligibility_inputs.c.posting_version_id)
+            .join(eligibility_evaluations,
+                  eligibility_evaluations.c.input_id == eligibility_inputs.c.id)
+            .where(
+                posting_versions.c.posting_id.in_(chunk),
+                eligibility_evaluations.c.engine_kind == "llm",
+                eligibility_evaluations.c.engine_version.startswith(
+                    GATE_VERSION_PREFIX, autoescape=True
+                ),
+                eligibility_evaluations.c.verdict == "eligible",
+            )
+            .distinct()
+        ).all()
+        out.update(int(r.posting_id) for r in rows)
+    return out
+
+
 def fresh_gate_verdicts(
     conn: Connection, posting_version_ids: list[int], facts: Facts, *, model: str, effort: str,
     target_band: str,
