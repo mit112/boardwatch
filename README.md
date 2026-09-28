@@ -609,8 +609,8 @@ terms.
   webhook notifier `BOARDWATCH_NOTIFY_WEBHOOK_URL`, and an unattended `run` can ping
   `BOARDWATCH_HEARTBEAT_URL` (a dead-man's switch) and post its warnings to
   `BOARDWATCH_ALERT_URL`. The optional final-eligibility gate takes no key: it runs your own
-  `claude` CLI. The one secret boardwatch creates itself is the review app's bearer token, kept
-  at mode 0600 in `{config_dir}/web-token`.
+  `claude` CLI. The one secret boardwatch creates itself is the review app's bearer token,
+  written at mode 0600 to `{config_dir}/web-token` on first use.
   [SECURITY.md](https://github.com/mit112/boardwatch/blob/main/SECURITY.md) says exactly what each one sends.
 
 **Where your files live.**

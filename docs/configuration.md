@@ -7,8 +7,9 @@ out-of-range values are rejected with a clear error. Weights are read live on
 every `top` run (no restart needed).
 
 `config show` prints every key on this page except `llm.base_url` and
-`lane_new_companies_per_run_overrides`, each with its value, its default, its range and when it
-takes effect. **An unknown key in `config.toml` is ignored silently**, so read any hand edit back
+`lane_new_companies_per_run_overrides`, with its value and, for most keys, its default, range and
+when it takes effect. Where the two disagree, this page states what `config set` accepts:
+`config show` describes `lane_posting_budget` as `≥0`, but its floor is 1. **An unknown key in `config.toml` is ignored silently**, so read any hand edit back
 with `config show` — the file alone cannot tell a typo from success.
 
 ### Scanning and politeness
