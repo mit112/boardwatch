@@ -436,6 +436,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Workday or SmartRecruiters scan no longer walks every open posting in the store once per board (2026-09-28).**
+  Six providers list postings without bodies (Workday, SmartRecruiters, Oracle HCM, Phenom, Eightfold, Apple), so each of
+  their boards' applies also resets the miss counter of the postings it listed but did not re-fetch. That UPDATE asked for `company_id = ? AND status = 'open' AND provider_posting_id IN (...)`,
+  and from three ids SQLite answered it from the status index, reading all ~341,000 open postings. T256 fixed the two
+  per-board reads beside it but not this write. With the store cached it cost about a second a board (run 486's Workday
+  median, 0.88 s). On run 489, with ~5 GB of the 18 GB store in page cache, a Workday board's apply took about 41 s and the
+  Workday scan did 189 boards in 128 minutes; the same WHERE clause, timed read-only on that store, took 24.4 s bare and
+  0.00 s hinted. The same `likely()` hint moves it onto the company index.
+
 - **Five false-`ineligible` readings on new-grad software postings are fixed in `rules.yaml` (2026-09-26, E6).**
   Company history read as a years bar: `N years ago` and a clause-final `N years running` no longer head a domain
   bar ("Founded more than 15 years ago", "tripled ARR each year for 3 years running"), and `company_side_years`

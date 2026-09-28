@@ -573,11 +573,13 @@ def _reset_listed_but_unrefreshed(
     to_reset = tuple(listed_ids - applied)
     if not to_reset:
         return
+    # `likely()` for the reason `_process_missing` gives: from three ids the bare status term
+    # walks every open posting in the store, ~41 s a Workday board on run 489.
     conn.execute(
         update(postings)
         .where(
             postings.c.company_id == company_id,
-            postings.c.status == "open",
+            func.likely(postings.c.status == "open"),
             postings.c.provider_posting_id.in_(to_reset),
             postings.c.consecutive_missing != 0,
         )

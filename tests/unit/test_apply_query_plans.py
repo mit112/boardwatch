@@ -48,12 +48,13 @@ def _store(tmp_path: Path) -> tuple[Engine, int, int]:
     return engine, ids[0], run_id
 
 
-def _captured(engine: Engine) -> list[tuple[str, Any]]:
+def _captured(engine: Engine, verb: str = "SELECT") -> list[tuple[str, Any]]:
     seen: list[tuple[str, Any]] = []
+    target = "UPDATE postings" if verb == "UPDATE" else "FROM postings"
 
     @event.listens_for(engine, "before_cursor_execute")
     def _grab(conn: Any, cursor: Any, statement: str, parameters: Any, *_: Any) -> None:
-        if statement.lstrip().upper().startswith("SELECT") and "FROM postings" in statement:
+        if statement.lstrip().upper().startswith(verb) and target in statement:
             seen.append((statement, parameters))
 
     return seen
@@ -86,3 +87,20 @@ def test_the_empty_board_guard_counts_from_the_company_index(tmp_path: Path) -> 
     counts = [(sql, p) for sql, p in seen if "count(" in sql.lower()]
     assert counts, "the guard's count was not captured, so nothing below was checked"
     assert not [plan for plan in _plans(engine, counts) if WALK in plan]
+
+
+def test_resetting_listed_but_unrefreshed_postings_reads_the_board_from_the_company_index(
+    tmp_path: Path,
+) -> None:
+    """Run 489 (2026-09-28): the SELECTs above were fixed, but this UPDATE — which only the
+    providers whose lists carry no bodies reach (Workday, SmartRecruiters…) — kept the bare status term. From
+    three listed-but-unrefreshed ids the planner walks every open posting: ~41 s per Workday
+    board on an 18 GB store with ~5 GB of page cache, the same crawl as run 478."""
+    engine, company_id, run_id = _store(tmp_path)
+    seen = _captured(engine, "UPDATE")
+    listed = BoardSnapshot(status="partial", postings=[], url="https://x/acme",
+                           listed_ids=frozenset({"acme-0", "acme-1", "acme-2"}))
+    apply_board(engine, listed, company_id, run_id)
+    resets = [(sql, p) for sql, p in seen if "consecutive_missing" in sql]
+    assert resets, "the reset was not captured, so nothing below was checked"
+    assert not [plan for plan in _plans(engine, resets) if WALK in plan]
