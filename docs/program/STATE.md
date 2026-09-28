@@ -27,7 +27,7 @@
 
 ## Current standing
 
-### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — three owner calls are open** (D-604). The owner was away after the day-2 read; the questions below were asked and not answered, so nothing owner-gated was done.
+### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — the owner approved all three recommendations for the next session** (D-604, D-605). The owner was away after the day-2 read, so nothing owner-gated was done; at 12:26 CDT the owner ruled "we'll do your recs in the next session".
 
 **Verify first:** `git log --oneline -3 origin/main` (the session record, then #513 `50ff5262`), the primary on `main` at it, no
 run active, the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; URL = line 2 of `~/Library/Logs/boardwatch-web.log`).
@@ -43,7 +43,7 @@ bodiless-list providers, kept a bare `status = 'open'` term, so from three ids S
 the fix; the scan should return to ~70 min.** Apparatus note: this session's read-only timing query walked the same index at
 11:10Z and warmed the cache — run 489's remaining Workday applies then took ~0.5 s, so day 2's scan time is not clean.
 
-**Found, owner calls (items 7 and 8 below; item 0 still open):**
+**Found, owner calls (items 0, 7 and 8 below — all RULED 2026-09-28, D-605):**
 - **Tier 0 fills the whole slate (D-601 ruling 6's check FAILED).** All 66 of run 489's leads and all 76 of run 486's are
   entry-marked (tier 0). The rank window is `slate_ceiling` = 80 and tier 0 fills it, so judge-cleared leads (tier 1) never
   enter: buried-open 70 → **116**; 65 of the 66 cleared in run 486 are still buried; the backlog clears ~117 a day into tier 1.
@@ -56,7 +56,9 @@ the fix; the scan should return to ~70 min.** Apparatus note: this session's rea
 **Next, in order:**
 1. **Read the 2026-09-29 04:00 run as DAY 3** — `day_row.py <id> 3`, `b4_audit.py --run <id>`, after its PID exits. Check the
    fix took: Workday apply median in `board_scans` for the run under 2 s, `stage_durations` scan near day 1's 4,157 s.
-2. **Act on the owner's answers** to items 0, 7 and 8 (the session's recommendations are recorded there).
+2. **Carry out the owner's rulings (D-605), with no run active:** (a) the held-35 additive repair (item 0); (b) `slate_ceiling`
+   80 → 100 in the live `config.toml`, backed up first (item 7); (c) file the refresh fix as a ticket for after day 14 (item 8).
+   Done before the 09-29 04:00 tick, (a) and (b) reach day 3; after it, day 4.
 3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`.
 4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
 
@@ -228,9 +230,10 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 ## Owner-gated — do NOT start or decide unilaterally
 
 0. **The 35 held `linkedin:jobapps:*` LinkedIn captures** (D-602; ByteDance Graduate, NetApp Emerging Talent ×2, Skillstorm
-   Entry Level among them): days 1 and 2 released 0. Asked 2026-09-28, unanswered: a one-time ADDITIVE repair (append the
+   Entry Level among them): days 1 and 2 released 0. **RULED 2026-09-28 12:26 (D-605): do the repair next session.** The
+   one-time ADDITIVE repair (append the
    sliced JD as a new version through `store/body_revision.record_body_revision`, the `postings reparse-bodies` path; the
-   drain then releases them) or keep waiting. **Recommended: repair** — 35 postings, 17 distinct JDs, all slice to a body the
+   drain then releases them) — 35 postings, 17 distinct JDs, all slice to a body the
    detector passes; the LinkedIn lane has never written a second version for any of its 2,942 job-apps postings. A live-store
    write, not an eligibility change. Measure: `.agent/2026-09-28-session/held35_measure.py`.
 1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
@@ -242,11 +245,12 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 5. **How job-apps summary leads count in the B8 census** — closed census: short bodies 0/38, long 7/87 (a short reading is
    a floor). Default until ruled: counted, with the split reported beside the pooled number.
 6. **When to fix T258** (graduation-window wording; 52 open postings) — an eligibility change, so it restarts the count.
-7. **Tier 0 vs judge-cleared leads** (D-604): tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
+7. **Tier 0 vs judge-cleared leads** (D-604) — **RULED 2026-09-28 12:26 (D-605): raise `slate_ceiling` 80 → 100 next session.** Tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
    ~46 a day). Options: raise `slate_ceiling` 80 → 100 (config only; tier 0 stays first, up to ~20 judge-cleared a day
    behind it; the judge sees up to 100 a run) — **recommended**; reserve slots within 80 (ranking code); or keep as is.
-   Whether a delivery-config change restarts the count is the owner's call (D-598 r5 lists eligibility, profile, résumé gate).
-8. **The gate refresh's poisoned batch** (D-604): posting 29849 fails its batch of 13 every run. Recommended: fix after day 14
+   The ruling did not address the count separately; D-598 r5's restart list (eligibility, profile, résumé gate) does not name it.
+8. **The gate refresh's poisoned batch** (D-604) — **RULED 2026-09-28 12:26 (D-605): fix after day 14.** Posting 29849 fails its
+   batch of 13 every run
    (fail-open, so the cost is 12 stale readings, not lost jobs). Candidate fixes, none built: isolate a failed batch by
    re-sending its items singly; read one fenced array out of a response that carries prose around it; withhold a body
    carrying AI-directed text. Any of them changes the final gate, which restarts the count.
