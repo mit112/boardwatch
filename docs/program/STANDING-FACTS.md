@@ -4597,6 +4597,24 @@ removed; one resolver `probe` (3 jobright jobs, nothing submitted). The session 
 `bw-slice` and `bw-jobright` are merged and may be removed.
 
 
+
+## Settled session blocks moved out of STATE on 2026-09-28d (verbatim)
+
+### 2026-09-28c — **THE PUBLIC DOCS ARE BROUGHT UP TO DATE FOR A NEW USER AND v0.6.0 IS PUBLISHED (T255, owner-approved 14:51)**; the Docker image keeps its config in its volume (D-607). Nothing touched the live store, the config or a run; **day 3 (the 2026-09-29 04:00 run) is still unread** — the 2026-09-28b block's steps are the next session's first job, unchanged.
+
+**Verify first:** `git log --oneline -5 origin/main` (this record, #519 the 0.6.0 cut, #517, #518); `curl -s https://pypi.org/pypi/boardwatch/json` reads `0.6.0`; GHCR tags carry `0.6.0` and `latest`; the primary on `main`.
+
+**Done:** #517 (the docs), #518 (the Docker config dir), #519 (the cut); tag `v0.6.0` on `9776acc0`; PyPI, GHCR (`0.6.0` =
+`latest`) and the GitHub release published and each verified from outside `release.yml` (D-607). About panel updated;
+T268–T270 filed; worktree `bw-t255` removed (branch kept).
+
+**Next:** first the 2026-09-28b block's items 1–4 — the day-3 read is time-bound. Then **T268–T270, on the owner's ruling of
+16:41 (D-608): "make sure the remaining items are taken care of in the next session".** T269 (text) and T270 (`config show`'s
+descriptions, a `lanes_enabled` check at `config set`, the image's tectonic cache, the token mode) touch nothing on D-598
+r5's restart list; check the live `config.toml`'s `lanes_enabled` against the five lane names before adding any check that
+runs at load. **T268 changes what the résumé gate refuses and the delivered files' names**: build it on a branch and ask
+the owner before merging (owner-gated item 9).
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to

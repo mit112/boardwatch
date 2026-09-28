@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -27,20 +27,20 @@
 
 ## Current standing
 
-### 2026-09-28c — **THE PUBLIC DOCS ARE BROUGHT UP TO DATE FOR A NEW USER AND v0.6.0 IS PUBLISHED (T255, owner-approved 14:51)**; the Docker image keeps its config in its volume (D-607). Nothing touched the live store, the config or a run; **day 3 (the 2026-09-29 04:00 run) is still unread** — the 2026-09-28b block's steps are the next session's first job, unchanged.
+### 2026-09-28d — **T269 AND T270 SHIP; T268 IS SPLIT — its one-refusal half ships, the rest waits for day 14 AND a redesign; T251 (Windows) ships test-only** (D-609). The owner ruled five calls at 18:42 ("go with your recommendations"). Nothing touched the live store, the config or a run. **Day 3 (the 2026-09-29 04:00 run) is UNREAD: its read is the next session's first job** — the 2026-09-28b block's items 1–4, unchanged.
 
-**Verify first:** `git log --oneline -5 origin/main` (this record, #519 the 0.6.0 cut, #517, #518); `curl -s https://pypi.org/pypi/boardwatch/json` reads `0.6.0`; GHCR tags carry `0.6.0` and `latest`; the primary on `main`.
+**Verify first:** `git log --oneline -6 origin/main` (this record, T251 #525, T268a #524, #523 T269, #522 T270); the primary on
+`main` at this record, with `git -C boardwatch pull --ff-only` only when no run is active (it is the daily run's code); no run active.
 
-**Done:** #517 (the docs), #518 (the Docker config dir), #519 (the cut); tag `v0.6.0` on `9776acc0`; PyPI, GHCR (`0.6.0` =
-`latest`) and the GitHub release published and each verified from outside `release.yml` (D-607). About panel updated;
-T268–T270 filed; worktree `bw-t255` removed (branch kept).
+**Done:** #522 (T270: `config show` text, `config set lanes_enabled` check, the web-token mode, the Docker/CI warm-up that
+now renders offline), #523 (T269), #524 (T268 item 1), #525 (T251). T271 (the text residuals) and T272 (T251's
+Windows production bugs) filed. Branch `t268-resume-setup` (T268 items 2–3) is kept UNMERGED.
 
-**Next:** first the 2026-09-28b block's items 1–4 — the day-3 read is time-bound. Then **T268–T270, on the owner's ruling of
-16:41 (D-608): "make sure the remaining items are taken care of in the next session".** T269 (text) and T270 (`config show`'s
-descriptions, a `lanes_enabled` check at `config set`, the image's tectonic cache, the token mode) touch nothing on D-598
-r5's restart list; check the live `config.toml`'s `lanes_enabled` against the five lane names before adding any check that
-runs at load. **T268 changes what the résumé gate refuses and the delivered files' names**: build it on a branch and ask
-the owner before merging (owner-gated item 9).
+**Next:** (1) the day-3 read (28b block). (2) After the 2026-10-10 run: T268 items 2–3 **after redesign** (Codex found
+two real defects in the owner-name check, see T268's status block), T268 item 4 as ruled (option A), T272, T265.
+Worktrees `bw-t268`, `bw-t268a`, `bw-t269`, `bw-t270`, `bw-t251`, `bw-warmup`, `bw-record` are this session's; they are safe to remove once merged.
+
+### 2026-09-28c — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-28d.** The public docs refresh and v0.6.0 published (D-607); its T268–T270 step is done or ruled (D-609).
 
 ### 2026-09-28b — **THE OWNER'S THREE D-605 RULINGS ARE CARRIED OUT BEFORE DAY 3: the 35 held LinkedIn captures are repaired, `slate_ceiling` is 100, and the refresh fix is filed as T265** (D-606). The owner did not want to wait for day 3 in this session, so day 3 (the 2026-09-29 04:00 run) is UNREAD at close and is the next session's first job.
 
@@ -241,10 +241,9 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
    (fail-open, so the cost is 12 stale readings, not lost jobs). Candidate fixes, none built: isolate a failed batch by
    re-sending its items singly; read one fenced array out of a response that carries prose around it; withhold a body
    carrying AI-directed text. Any of them changes the final gate, which restarts the count.
-9. **When T268 merges** (D-608) — the owner ruled it is done next session, but listing the placeholders at once is the only
-   part that changes nothing a run accepts: more phrases change what the résumé gate refuses, one identity source renames
-   delivered PDFs, and `top`'s seen-marking is a design call. Options: merge and restart the count, or merge after the
-   2026-10-10 run (day 14). Ask with the branch in hand.
+9. **When T268 merges** (D-608) — **RULED 2026-09-28 18:42 (D-609): split.** Item 1 shipped (#524). Items 2–3 wait until
+   after the 2026-10-10 run and need a redesign first (T268's status block). Item 4 is option A (`top` records only with
+   `--record`), built after day 14.
 
 ## Open questions and carried gaps (settled guidance is in `STANDING-FACTS.md`)
 
@@ -254,7 +253,7 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
   gaps (Türkiye, Nicaragua); some US towns misread as non-US. Watch for it in the census; fix only from a delivered lead.
 - **The standing apply queue** can hold leads released after a re-key until the 130/run refresh reaches them (321 pending
   after run 480). It is not the B8 population (D-598 r6) but it is what the owner reads.
-- **Windows nightly red since 09-23** (T251; best-effort platform, no bar). Read a Windows result by test name, never colour.
+- **Windows:** T251 shipped test-only (#525), and Windows CI on its branch was green on 3.11/3.12/3.13; the production bugs it found are T272. Read a Windows result by test name, never by colour.
 - **The primary checkout IS the daily run's code** (editable venv): park it on `main`, never pull while a run is active
   (`ps -Ao args | grep -Eq '(^|/)boardwatch run '`).
 - **Citi sits at ~13% coverage permanently** (Workday's 2,000 cap; facet sum 4,589) — input-side, no bar.
