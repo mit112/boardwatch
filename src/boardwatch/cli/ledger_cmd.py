@@ -150,9 +150,10 @@ def reopen(
     ever held anything. A released job can be decided again, and the next decision is live.
 
     `--stale` is the policy-drift drain. A stamp mismatch is never released automatically
-    (design §2.4) — auto-expiry on mismatch would rebuild the whole shortlist on any settings
+    — auto-expiry on mismatch would rebuild the whole shortlist on any settings
     tweak, and an automatic re-open cannot be reviewed before it happens. This is that review.
     """
+    # No automatic release on a stamp mismatch is design §2.4.
     if not job and not stale:
         console.print("nothing to do: pass --job <id> (repeatable) or --stale")
         raise typer.Exit(code=2)

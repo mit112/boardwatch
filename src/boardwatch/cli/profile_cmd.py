@@ -191,7 +191,8 @@ def show(
 
 @profile_app.command("edit")
 def edit(ctx: typer.Context) -> None:
-    """Edit the profile; skills are re-derived on save (§3.6)."""
+    """Edit the profile; skills are re-derived on save."""
+    # Skill re-derivation on save is PROGRAM.md §3.6.
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         row = get_profile(conn)

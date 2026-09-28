@@ -109,16 +109,17 @@ def regroup(
         False, "--dry-run", help="Report what would move without writing anything."
     ),
 ) -> None:
-    """Move every duplicate posting onto its survivor's canonical job (P6 slice 2 §3).
+    """Move every duplicate posting onto its survivor's canonical job.
 
     The corpus-wide counterpart to what the pipeline does over the population it ranked. Safe to
     re-run: a posting already on the canonical job plans no move, so a second pass writes
     nothing and appends no event.
 
-    Completeness-gated for a stronger reason than the ranker's (D-090). Survivor election over a
+    Completeness-gated for a stronger reason than the ranker's. Survivor election over a
     partial corpus is backfill-order-dependent, and unlike the read path this writes that
     order-dependence to disk permanently.
     """
+    # P6 slice 2 §3; the ranker's completeness gate is D-090.
     engine = build_context(ctx.obj).engine
     with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         if not identities_complete(conn):
@@ -167,17 +168,18 @@ def verify(ctx: typer.Context) -> None:
 
     Path A: stored posting_identities rows. Path B: recomputed from postings. They differ
     exactly when a posting changed and *nothing called the writer* — the writer itself
-    upserts (§2.3), so a clean `backfill` clears any disagreement it can reach. What
+    upserts, so a clean `backfill` clears any disagreement it can reach. What
     survives a backfill is a real defect: a scan path that mutates a posting without
     recomputing its identity.
 
     This is a staleness and consistency check, not a proof that the normalizers are
-    correct — both paths call the same `normalize_title`/`normalized_locations`. Design
-    §6.3 says so plainly; do not oversell it in the output text.
+    correct — both paths call the same `normalize_title`/`normalized_locations`.
 
     Missing identities fail too. "Nothing is deduped because nothing was backfilled" is
     not a healthy subsystem, and the message says which command fixes it.
     """
+    # The writer upserts per design §2.3. Design §6.3 says plainly that this is not a proof the
+    # normalizers are correct; do not oversell it in the output text.
     engine = build_context(ctx.obj).engine
     stale: list[int] = []
     missing: list[int] = []
@@ -212,10 +214,9 @@ def leakage(
     ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of text."),
 ) -> None:
-    """Gate P6's "duplicate leakage over 7 days" number (design §2, `reports/leakage.py`).
+    """Report duplicate leakage: the share of jobs that reached you which were duplicates.
 
-    Only `exact_quad` counts as a duplicate (the owner's ruling — see
-    `core/identity_kinds.py`), and only jobs that actually reached the operator
+    Only `exact_quad` counts as a duplicate, and only jobs that actually reached the operator
     (`job_dispositions`: `seen`, `skipped`, or `built`) count as "leaked" — a duplicate the
     ranker suppressed before it ever surfaced never leaked. Body-less/unbackfilled postings
     have no `exact_quad` identity by design and are reported as their own `unidentified`
@@ -224,11 +225,13 @@ def leakage(
     A second line reports the `company_title_location` class as an UPPER BOUND. That class is
     not a duplicate count — measured by hand on 2026-08-27, 3 of 17 such groups among the
     delivered population were true duplicates and 14 were genuinely different jobs — so it is
-    printed beside the gate's number, never inside it, and nothing in it is suppressed.
+    printed beside the headline rate, never inside it, and nothing in it is suppressed.
 
     Prints "not measurable" rather than 0% or 100% when nothing in the window carries an
     identity, on either line.
     """
+    # Gate P6's "duplicate leakage over 7 days" number (design §2, `reports/leakage.py`). Only
+    # `exact_quad` counting as a duplicate is the owner's ruling — see `core/identity_kinds.py`.
     engine = build_context(ctx.obj).engine
     report = compute_leakage_report(engine, window_days=days)
     if as_json:
@@ -271,11 +274,11 @@ def leakage(
 
 @identities_app.command("memberships")
 def memberships(ctx: typer.Context) -> None:
-    """Report multi-posting jobs whose recorded grouping evidence no longer holds (T118).
+    """Report multi-posting jobs whose recorded grouping evidence no longer holds.
 
-    A job groups several postings, and the grouping is durable by design (D-104) — but the
+    A job groups several postings, and the grouping is durable by design — but the
     evidence that justified it is not. `postings.job_id` has three writers and none of them
-    ever splits a job: there is no split CLI, no drain, no nightly pass, and `scan/apply.py`
+    ever splits a job: there is no split CLI, no drain, no nightly pass, and a scan
     refreshes a posting's identities after a revision without ever re-deriving its `job_id`.
     So two postings merged as duplicates keep sharing one disposition and one application
     forever, however far their JDs later drift apart.
@@ -285,9 +288,11 @@ def memberships(ctx: typer.Context) -> None:
     this finds.
 
     Exits 0 even with divergences to report. There is no fix to point an operator at, and a
-    check that is permanently red is a discarded check (`verify`'s design §2.3 reasoning);
-    `reap`'s dry run sets the same precedent for a read-only maintenance report.
+    check that is permanently red is a discarded check; `reap`'s dry run sets the same
+    precedent for a read-only maintenance report.
     """
+    # T118. Durable grouping is D-104; the scan-side identity refresh is `scan/apply.py`; the
+    # permanently-red reasoning is `verify`'s design §2.3.
     engine = build_context(ctx.obj).engine
     with engine.connect() as conn:
         rows = load_job_memberships(conn, now=utcnow())

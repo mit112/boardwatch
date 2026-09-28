@@ -169,10 +169,10 @@ def run(
     queue_root: Path | None = typer.Option(  # noqa: B008
         None,
         "--queue-root",
-        help="The delivery queue's own root (default: the delivery queue's own default root, "
-        f"{DEFAULT_QUEUE_ROOT}). Left as `None` rather than defaulting to that path here: "
-        "`_sync_queue` still resolves the default from `pipeline.runner`'s own module namespace "
-        "at call time when this is absent, which is the seam a test redirects by name (T5).",
+        # Left as `None` rather than defaulting to DEFAULT_QUEUE_ROOT here: `_sync_queue` still
+        # resolves the default from `pipeline.runner`'s own module namespace at call time when
+        # this is absent, which is the seam a test redirects by name (T5).
+        help=f"The delivery queue's root directory (default: {DEFAULT_QUEUE_ROOT}).",
     ),
 ) -> None:
     """Run the whole pipeline once, attributing every row it writes to one run."""

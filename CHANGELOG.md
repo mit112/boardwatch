@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`--help`, `boardwatch guide` and a run's apply-lane alert no longer carry this repository's
+  internal references (2026-09-28, T269).** Help text for `run`, `top`, `profile edit`,
+  `eligibility`, `companies`, `identities`, `ledger reopen`, `profile-bundle` and `resume project`
+  dropped ticket, decision and section numbers, file references and design history (kept as code
+  comments). The apply-lane soft alert now reads "under the daily target of 20" instead of
+  "under B8's bar of 20". No behaviour changes.
+
 ### Fixed
 
 - `config show` now prints `llm.base_url` and `lane_new_companies_per_run_overrides`, describes

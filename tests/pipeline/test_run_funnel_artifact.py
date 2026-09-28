@@ -179,9 +179,9 @@ def test_a_below_bar_volume_reading_reaches_the_run_row_and_the_escalation_chann
         errors = conn.execute(
             select(tables.runs.c.errors_json).where(tables.runs.c.id == summary.run_id)
         ).scalar_one()
-    assert any("under B8's bar" in str(err) for err in errors or []), errors
-    assert any("under B8's bar" in err for err in summary.errors), summary.errors
-    assert captured and any("under B8's bar" in a for a in captured[-1]), captured
+    assert any("under the daily target" in str(err) for err in errors or []), errors
+    assert any("under the daily target" in err for err in summary.errors), summary.errors
+    assert captured and any("under the daily target" in a for a in captured[-1]), captured
 
 
 def test_a_real_run_reconciles(env: Path, tmp_path: Path) -> None:

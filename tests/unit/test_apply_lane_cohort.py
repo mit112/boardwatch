@@ -312,7 +312,7 @@ def test_the_volume_alert_sees_a_shortfall_the_drought_detector_cannot(engine: E
     alert = check_apply_lane_volume(funnel.apply_lane)
     assert alert is not None
     assert f"{under_bar} lead(s) reached the blind-apply queue" in alert
-    assert f"bar of {APPLY_LANE_VOLUME_BAR}" in alert
+    assert f"under the daily target of {APPLY_LANE_VOLUME_BAR}" in alert
 
 
 def test_the_volume_alert_abstains_at_the_bar_and_when_the_cohort_is_absent_or_empty() -> None:
