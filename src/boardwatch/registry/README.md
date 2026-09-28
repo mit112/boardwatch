@@ -24,7 +24,7 @@ companies:
 
 ## Starter-set selection rule
 
-Roughly 15 of the 35+ catalog entries are tagged `starter`. This subset must
+15 of the 37 catalog entries are tagged `starter`. This subset must
 satisfy **four cumulative criteria** (from Issue #19):
 
 1. **Stability**: the board was live-verified OK in **two attended checks ≥ 7
@@ -32,7 +32,8 @@ satisfy **four cumulative criteria** (from Issue #19):
 2. **Workload budget**: the entire starter set's cold scan → extract → rank
    completes in **≤ 480 s on the slowest CI OS** (≥ 20 % headroom under 600 s),
    validated by the Task 25 gate.
-3. **Provider diversity**: every provider has ≥ 3 entries in the starter set.
+3. **Provider diversity**: every provider in the starter set (Greenhouse, Lever and Ashby)
+   has ≥ 3 entries in it.
 4. **Recognizability**: explicit sign-off from the project owner (Mit) that
    the set provides a useful breadth-vs-cost trade-off per the §2.1 framing.
    US-company skew is acknowledged as an inherent limitation of an

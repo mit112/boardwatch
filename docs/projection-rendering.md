@@ -111,6 +111,9 @@ boardwatch resume project --posting <id> --scorer <name> --out <dir>
 
 # 3. Render a résumé document to PDF (requires tectonic on PATH):
 boardwatch tailor run <id> --resume <path>
+
+# Or let the daily run do 2b and 3 for every lead it puts in the apply lane:
+boardwatch run --project
 ```
 
 `approve-projection` binds the approval to the exact résumé TEXT it printed — every entry field,

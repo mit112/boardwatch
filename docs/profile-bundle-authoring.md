@@ -1493,6 +1493,8 @@ Every command accepts `--bundle PATH`, and every one but `approve-projection` ac
 | `conflicts` | — | nothing |
 | `migrate` | — | nothing at schema v1 |
 | `import` | `--draft`, `--source` (both required), `--from PATH` | `imports/source-ledger.yaml`, and nothing else |
+| `extract` | `--draft`, `--source` (both required), `--from PATH` | that source's `imports/source-ledger.yaml` and `imports/extraction-report.yaml`, re-derived |
+| `promote-candidates` | `--draft`, `--source` (both required), `--from PATH` | the entities, facts (born `unresolved`) and grounded skills that source's candidates yield; one-shot, refused once the draft holds any |
 | `add-evidence` | `--draft`, `--evidence-file`, `--capture` (all required) | `evidence/records.yaml`, each fact/metric document it cites back from, the manifest, and possibly one blob |
 | `edit-fact` | `--draft`, `--fact-id`, `--value` (all required) | the fact's own document, `evidence/records.yaml`, and the manifest |
 | `add-fact` | `--draft`, `--fact-id`, `--subject-id`, `--predicate`, `--value`, `--evidence-id`, `--verification-state`, `--verification-basis`, `--usage-context`, `--surface` (all required; `--surface` repeats) | the subject's document, `evidence/records.yaml`, and the manifest |
@@ -1500,5 +1502,7 @@ Every command accepts `--bundle PATH`, and every one but `approve-projection` ac
 | `resolve-conflict` | `--draft`, `--ruling-file` (both required) | `conflicts/rulings.yaml` and the one ruled group |
 | `approve` | `--draft NAME` (required) | one approval stamp under `approvals/` |
 | `promote` | `--draft`, `--summary` (required), `--actor` | one immutable revision, and `CURRENT` |
+| `approve-projection` | `--declaration PATH` | one stamp under `{config_dir}/projection-approvals/` — see [projection](projection-rendering.md) |
+| `project` | `--declaration PATH` | nothing: prints the JD-blind Stage 1 pool — see [projection](projection-rendering.md) |
 
 `validate`, `inspect`, `inventory`, `conflicts` and `migrate` (at v1) perform **no writes at all**.
