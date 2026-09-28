@@ -46,5 +46,9 @@ RUN useradd --create-home --uid 10001 boardwatch \
 USER boardwatch
 WORKDIR /data
 VOLUME ["/data"]
+# The config dir (config.toml, the role taxonomy `init` writes, résumé files) lives in the same
+# volume. Left at its default it sits in the container's home, which `docker run --rm` discards,
+# so every setting was lost and the next container ranked without the role filter.
+ENV BOARDWATCH_CONFIG_DIR=/data/config
 
 ENTRYPOINT ["boardwatch"]
