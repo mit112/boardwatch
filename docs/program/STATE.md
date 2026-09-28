@@ -27,6 +27,43 @@
 
 ## Current standing
 
+### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — three owner calls are open** (D-604). The owner was away after the day-2 read; the questions below were asked and not answered, so nothing owner-gated was done.
+
+**Verify first:** `git log --oneline -3 origin/main` (the session record, then #513 `50ff5262`), the primary on `main` at it, no
+run active, the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; URL = line 2 of `~/Library/Logs/boardwatch-web.log`).
+
+**Day 2, run 489** (METRICS "Acceptance run"): B1 **65 net-new** · B2 42/42 · B3 one page · B4 0 on 42 · B5–B7 ok · B8 **41
+net-new** · gate 59 judged, 0 failed open · backlog 150 judged (117 eligible) · refresh 13 sent, its 1 batch failed open ·
+wall 3 h 12 m, of which the scan took 2 h 42 m (day 1: 69 min). Viewer: `pdf_available` 614/614.
+
+**Found and fixed — the scan crawl (#513, merged 06:50 CDT, pulled into the primary after the run).** Workday applies took
+~41 s a board (day 1: 0.88 s) and SmartRecruiters 23.9 s: `_reset_listed_but_unrefreshed`'s UPDATE, reached only by the six
+bodiless-list providers, kept a bare `status = 'open'` term, so from three ids SQLite walked all 341k open postings — T256
+(#500) had hinted the two reads beside it. The 18 GB store no longer fits the ~5 GB of page cache. **Day 3 is the first run on
+the fix; the scan should return to ~70 min.** Apparatus note: this session's read-only timing query walked the same index at
+11:10Z and warmed the cache — run 489's remaining Workday applies then took ~0.5 s, so day 2's scan time is not clean.
+
+**Found, owner calls (items 7 and 8 below; item 0 still open):**
+- **Tier 0 fills the whole slate (D-601 ruling 6's check FAILED).** All 66 of run 489's leads and all 76 of run 486's are
+  entry-marked (tier 0). The rank window is `slate_ceiling` = 80 and tier 0 fills it, so judge-cleared leads (tier 1) never
+  enter: buried-open 70 → **116**; 65 of the 66 cleared in run 486 are still buried; the backlog clears ~117 a day into tier 1.
+- **The gate refresh's first batch fails open every run.** Posting **29849** (Volarisgroup, Jr. Software Engineer; the only open
+  posting of its kind) carries text addressed to AI screeners; the judge answers all 13 correctly but adds a prose note beside
+  the fenced JSON, and the strict parser fails the batch. The refresh order is fixed, so the same 13 leads fail each run
+  (day 1: note before, `char 0`; day 2: `Extra data`). Reproduced once: `.agent/2026-09-28-session/refresh_repro.py --call`.
+- **The 35 held LinkedIn captures released 0 again** (item 0).
+
+**Next, in order:**
+1. **Read the 2026-09-29 04:00 run as DAY 3** — `day_row.py <id> 3`, `b4_audit.py --run <id>`, after its PID exits. Check the
+   fix took: Workday apply median in `board_scans` for the run under 2 s, `stage_durations` scan near day 1's 4,157 s.
+2. **Act on the owner's answers** to items 0, 7 and 8 (the session's recommendations are recorded there).
+3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`.
+4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
+
+**Changed this session (live store / machine):** nothing written to the live store. #513 merged; the primary pulled to
+`50ff5262` after run 489 exited; worktree `bw-reset-hint` removed (branch kept); one headless judge call (the repro, no store
+write); a stale 0-byte `.git/index.lock` (09-27 21:30, no git process) removed.
+
 ### 2026-09-27b — **THE VIEWER IS UP AND EVERY APPLY-LANE PDF SERVES; DAY 2 IS UNREAD** (D-603). The owner asked for `boardwatch web` up and every eligible job lined up to apply. Found: 126 of 572 apply-lane PDFs lived under the config dir, outside the viewer's `--out-root`, so its PDF button refused them; 4 more had no PDF. All 130 re-rendered (manual runs 487, 488; static, 0 failed); `pdf_available` 572/572. The session wrote nothing else to the store. The 04:00 day-2 run had not started at close.
 
 **Verify first:** `git log --oneline -3 origin/main`, the primary on `main`, no run active, the viewer alive
@@ -191,9 +228,11 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 ## Owner-gated — do NOT start or decide unilaterally
 
 0. **The 35 held `linkedin:jobapps:*` LinkedIn captures** (D-602; ByteDance Graduate, NetApp Emerging Talent ×2, Skillstorm
-   Entry Level among them): day 1 released 0. If day 2 does not either — a one-time ADDITIVE repair (append the sliced JD as
-   a new version; the existing drain then releases them) or keep waiting on the LinkedIn lane. D-601's asks (a)–(c) were
-   answered 2026-09-27 (D-602); (d) is next step 3 above.
+   Entry Level among them): days 1 and 2 released 0. Asked 2026-09-28, unanswered: a one-time ADDITIVE repair (append the
+   sliced JD as a new version through `store/body_revision.record_body_revision`, the `postings reparse-bodies` path; the
+   drain then releases them) or keep waiting. **Recommended: repair** — 35 postings, 17 distinct JDs, all slice to a body the
+   detector passes; the LinkedIn lane has never written a second version for any of its 2,942 job-apps postings. A live-store
+   write, not an eligibility change. Measure: `.agent/2026-09-28-session/held35_measure.py`.
 1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
 2. **Puerto Rico for a USA-target profile** (T253 d) — measured 2026-09-25: PR locations resolve `unknown`, fail open and
    ARE delivered (5 built, HPE graduate roles). Default while unruled: keep them. Excluding them is profile data and restarts the count.
@@ -203,6 +242,14 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 5. **How job-apps summary leads count in the B8 census** — closed census: short bodies 0/38, long 7/87 (a short reading is
    a floor). Default until ruled: counted, with the split reported beside the pooled number.
 6. **When to fix T258** (graduation-window wording; 52 open postings) — an eligibility change, so it restarts the count.
+7. **Tier 0 vs judge-cleared leads** (D-604): tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
+   ~46 a day). Options: raise `slate_ceiling` 80 → 100 (config only; tier 0 stays first, up to ~20 judge-cleared a day
+   behind it; the judge sees up to 100 a run) — **recommended**; reserve slots within 80 (ranking code); or keep as is.
+   Whether a delivery-config change restarts the count is the owner's call (D-598 r5 lists eligibility, profile, résumé gate).
+8. **The gate refresh's poisoned batch** (D-604): posting 29849 fails its batch of 13 every run. Recommended: fix after day 14
+   (fail-open, so the cost is 12 stale readings, not lost jobs). Candidate fixes, none built: isolate a failed batch by
+   re-sending its items singly; read one fenced array out of a response that carries prose around it; withhold a body
+   carrying AI-directed text. Any of them changes the final gate, which restarts the count.
 
 ## Open questions and carried gaps (settled guidance is in `STANDING-FACTS.md`)
 
