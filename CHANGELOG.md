@@ -29,7 +29,8 @@ All notable changes to this project are documented here. The format follows
   copied token with broader permissions no longer stays readable by other users (T270).
 - The Docker image warms tectonic's package cache as the runtime `boardwatch` user, so the cache is
   in that user's home rather than in `/root`, which the user cannot read. The warm-up also compiles
-  the résumé template's preamble instead of a bare `article`, the same warm-up CI runs (T270).
+  the whole résumé template with one sample bullet instead of a bare `article`, so a first render
+  needs no network; CI's typesetting action runs the same warm-up (T270).
 
 ## [0.6.0] - 2026-09-28
 
