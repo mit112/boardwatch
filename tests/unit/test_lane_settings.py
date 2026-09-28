@@ -179,19 +179,19 @@ def test_the_lane_keys_round_trip_through_config_set_and_show(cfg: Path) -> None
     """Reachability from the CLI is asserted exhaustively elsewhere; this is the other half —
     a key that shows but cannot be written is still a gap. `lanes_enabled` is the only
     non-scalar in that table, so its caster is the one that can silently not work."""
-    assert runner.invoke(app, ["config", "set", "lanes_enabled", "alpha, beta"]).exit_code == 0
+    assert runner.invoke(app, ["config", "set", "lanes_enabled", "jsonld, indeed"]).exit_code == 0
     assert runner.invoke(app, ["config", "set", "lane_posting_budget", "12"]).exit_code == 0
 
     out = runner.invoke(app, ["config", "show"]).stdout
-    assert "lanes_enabled = ('alpha', 'beta')" in out
+    assert "lanes_enabled = ('jsonld', 'indeed')" in out
     assert "lane_posting_budget = 12" in out
-    assert load_settings(data_dir=None).lanes_enabled == ("alpha", "beta")
+    assert load_settings(data_dir=None).lanes_enabled == ("jsonld", "indeed")
 
 
 def test_setting_the_lane_list_to_blank_disarms_every_lane(cfg: Path) -> None:
     """The way back off has to exist, and an empty string must not register a lane named ""
     that would then be reported as unregistered on every run."""
-    assert runner.invoke(app, ["config", "set", "lanes_enabled", "alpha"]).exit_code == 0
+    assert runner.invoke(app, ["config", "set", "lanes_enabled", "jsonld"]).exit_code == 0
     assert runner.invoke(app, ["config", "set", "lanes_enabled", ""]).exit_code == 0
     assert load_settings(data_dir=None).lanes_enabled == ()
 
