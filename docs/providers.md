@@ -37,7 +37,9 @@ page to find it. Bodies need one detail fetch per unseen posting, bounded by
 **Phenom honest limits.** A board is `{host, country, language}` on the employer's own domain,
 so it is added only as `phenom:<host>/<country>/<lang>` — a pasted URL cannot name one. The
 endpoint sends no `ETag` or `Last-Modified`, so every scan re-reads the board, and a wrong
-country or language on a live site reads as an empty board rather than an error.
+country or language on a live site reads as an empty board rather than an error. A posting
+whose detail fetch fails is stored with the listing's short teaser as its body and is not
+fetched again on later scans; the scan reports it, and the board as `partial`.
 
 **Jibe honest limits.** Jibe (iCIMS career sites) lives on the employer's own careers host, so
 it is added only as `jibe:<careers-host>`. Bodies arrive with the listing, paged at the API's

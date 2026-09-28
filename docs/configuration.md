@@ -6,10 +6,10 @@ show` to see current values (and their defaults) and `boardwatch config set <key
 out-of-range values are rejected with a clear error. Weights are read live on
 every `top` run (no restart needed).
 
-`config show` is the authoritative list: it prints every key on this page with its value, its
-default, its range and when it takes effect. **An unknown key in `config.toml` is ignored
-silently**, so read any hand edit back with `config show` — the file alone cannot tell a typo
-from success.
+`config show` prints every key on this page except `llm.base_url` and
+`lane_new_companies_per_run_overrides`, each with its value, its default, its range and when it
+takes effect. **An unknown key in `config.toml` is ignored silently**, so read any hand edit back
+with `config show` — the file alone cannot tell a typo from success.
 
 ### Scanning and politeness
 
@@ -64,7 +64,8 @@ enabling one: the lanes are held to a different standard than the ATS boards.
 | `lane_search_hubs` | JSON array | empty | LinkedIn search hubs, e.g. `'["Austin, TX", "Boston, MA"]'`; blank disables hub nets | next run |
 | `lane_github_lists` | comma-separated `owner/repo` | empty | Public GitHub job lists to read, e.g. `SimplifyJobs/New-Grad-Positions`; blank reads none | next run |
 | `lane_new_companies_per_run` | int, ≥ 0 | 10 | Companies one lane may add per run (already-known ones are free) | next run |
-| `lane_posting_budget` | int, ≥ 0 | 60 | Job-description requests one lane may make per run | next run |
+| `lane_new_companies_per_run_overrides` | table of lane name → int ≥ 0 or `"unlimited"` | `jobapps` and `hiringcafe` unlimited | Per-lane replacements for `lane_new_companies_per_run`; an `"indeed.tier1"` key bounds the Indeed lane's tier-1 admissions separately. Hand-edit only, and not printed by `config show` | next run |
+| `lane_posting_budget` | int, ≥ 1 | 60 | Job-description requests one lane may make per run (to switch a lane off, leave it out of `lanes_enabled`) | next run |
 | `lane_search_pages` | int, ≥ 1 | 1 | Search pages one lane requests per facet | next run |
 | `lane_hub_combos_per_run` | int, ≥ 0 | 12 | LinkedIn term/hub combinations searched per run | next run |
 | `lane_company_combos_per_run` | int, ≥ 0 | 0 (off) | Per-company LinkedIn searches per run. Each asks your first target title at one watched company and takes a slot from `lane_new_companies_per_run` | next run |
@@ -98,9 +99,10 @@ pings it, so an external monitor can alert when a scheduled run never happens (s
 
     export BOARDWATCH_HEARTBEAT_URL=https://hc-ping.com/<your-check-uuid>
 
-A third carries the opposite half: a run that succeeded while raising warnings still pings the
-heartbeat, so `boardwatch run` also POSTs its warning text to `BOARDWATCH_ALERT_URL` when that is
-set — any endpoint that accepts a text body, such as a healthchecks.io `/fail` URL. Presence-gated
+A third carries the opposite half: a run that succeeded while degraded still pings the heartbeat,
+so `boardwatch run` also POSTs its end-of-run alerts to `BOARDWATCH_ALERT_URL` when that is set —
+any endpoint that accepts a text body, such as a healthchecks.io `/fail` URL. Only those alerts
+are sent, never the routine per-board or per-lead errors a normal run also logs. Presence-gated
 too, and a failed post never fails the run.
 
 ## `[gate]`
@@ -118,7 +120,7 @@ success.
 | Key | Type / Range | Default | What it controls | Takes effect |
 |---|---|---|---|---|
 | `gate.enabled` | bool | `false` | Arms the judge | next run |
-| `gate.claude_config_dir` | path, expanded absolute | unset | `CLAUDE_CONFIG_DIR` for the headless call, i.e. which Claude account it uses | next run |
+| `gate.claude_config_dir` | absolute path (`~` is not expanded) | unset | `CLAUDE_CONFIG_DIR` for the headless call, i.e. which Claude account it uses | next run |
 | `gate.model` | string, a `claude` model alias | `sonnet` | The model the judge runs on | next run |
 | `gate.batch_size` | int, ≥ 1 | 13 | Leads per call | next run |
 | `gate.call_timeout_s` | int, ≥ 1 | 300 | Seconds per call | next run |

@@ -154,7 +154,8 @@ uv run boardwatch init
 
 `scan` and `top` answer "what is new and worth a look". **`boardwatch run`** does the whole job
 in one command: it scans, evaluates eligibility, ranks, re-checks that each shortlisted posting
-is still live, and renders a tailored one-page résumé PDF for every lead it delivers.
+is still live, and renders a tailored one-page résumé PDF for every lead it puts in the apply
+lane.
 **`boardwatch web`** then opens those leads in a local review page.
 
 It needs a résumé to tailor, which you write once as structured YAML — boardwatch never parses
@@ -182,9 +183,11 @@ their paths):
 
 What a run leaves behind:
 
-- **`~/boardwatch-queue/`** — one folder per delivered lead, holding its PDF, the job description,
-  an `apply.webloc` link to the posting and a `details.json`. Leads a check could not clear
-  wait in `_review/`; what you act on moves to `_applied/`, `_skipped/` or `_reported/`.
+- **`~/boardwatch-queue/`** — one folder per delivered lead, holding its tailored PDF, the job
+  description, a link to the posting (`apply.webloc` on macOS, `apply.url` on Windows,
+  `apply-link.txt` elsewhere) and a `details.json`. Leads a check could not clear wait in
+  `_review/`, without a PDF, for you to read first; what you act on moves to `_applied/`,
+  `_skipped/` or `_reported/`.
 - **`~/boardwatch-applications/<date>/`** — the day's render folders, a `morning-<run>.md`
   summary, and a `funnel-<run>.md` that accounts for every posting the run considered.
 
@@ -282,7 +285,8 @@ Three properties are deliberate:
   `claude` CLI): it can withhold a lead it reads as ineligible, quoting the sentence it relied
   on, and when it reads a posting as eligible it can release into the apply lane a lead held
   for review only because the rules found no requirements to read or could not decide its
-  experience bar. Turning it off restores the fully deterministic path.
+  experience bar. Turning it off stops new judge calls; the readings it already recorded keep
+  applying to ranking and to the lanes.
 - **Honest.** A clean posting reads as "no flags", never as a guarantee. "no flags" means
   only that no catalogued disqualifier was found, not that you are cleared to apply, and
   ambiguous wording reads as "check" rather than a false all-clear.
@@ -563,8 +567,8 @@ are in [provider notes](https://github.com/mit112/boardwatch/blob/main/docs/prov
 
 By default boardwatch reads the **same public, keyless endpoints that power each company's own
 careers page** — a JSON API for most providers, and for Apple (and the first request of an
-Eightfold scan) the data embedded in that public page. It does not log in, send cookies or
-tokens, or bypass any access control. That is deliberately the least-invasive way to get this
+Eightfold scan) the data embedded in that public page. It does not log in, present credentials,
+or bypass any access control. That is deliberately the least-invasive way to get this
 data. Still, these are third-party services, and using them responsibly is on you:
 
 - **Keep the politeness defaults.** The defaults (≥1 request/sec per host, conditional
@@ -584,7 +588,7 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 **The opt-in discovery lanes do not all meet that bar, which is why each is off unless you name
 it in `lanes_enabled`** (`linkedin`, `indeed`, `hiringcafe`, `jsonld`, `jobapps`). They read
 listings beyond an employer's own board. `jsonld` — like the GitHub new-grad lists and `grnh.se`
-links that it and `companies discover` read — sends no key or cookie and identifies itself
+links that it and `companies discover` read — sends no key or credential and identifies itself
 honestly, and `jobapps` only reads a folder another local tool writes. The rest go further: the
 LinkedIn guest-search pages and the hiring.cafe search those lanes read are disallowed by those
 sites' `robots.txt`, and the Indeed lane calls Indeed's mobile-app API while presenting that
@@ -600,12 +604,14 @@ terms.
   the opt-in LLM tier also caches raw responses there as plain files on disk (override with
   `--data-dir`). No server, no account, no cloud.
 - **No telemetry.** boardwatch phones home to nobody.
-- **Every secret is opt-in and read from the environment only**, never written to disk. The
-  default path authenticates to nothing. The LLM tiers read `BOARDWATCH_LLM_API_KEY`, the
+- **Every credential you supply is opt-in and read from the environment only**, never written
+  to disk. The default path authenticates to nothing. The LLM tiers read `BOARDWATCH_LLM_API_KEY`, the
   webhook notifier `BOARDWATCH_NOTIFY_WEBHOOK_URL`, and an unattended `run` can ping
   `BOARDWATCH_HEARTBEAT_URL` (a dead-man's switch) and post its warnings to
   `BOARDWATCH_ALERT_URL`. The optional final-eligibility gate takes no key: it runs your own
-  `claude` CLI. [SECURITY.md](https://github.com/mit112/boardwatch/blob/main/SECURITY.md) says exactly what each one sends.
+  `claude` CLI. The one secret boardwatch creates itself is the review app's bearer token, kept
+  at mode 0600 in `{config_dir}/web-token`.
+  [SECURITY.md](https://github.com/mit112/boardwatch/blob/main/SECURITY.md) says exactly what each one sends.
 
 **Where your files live.**
 

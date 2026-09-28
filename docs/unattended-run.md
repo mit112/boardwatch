@@ -108,8 +108,9 @@ presence-gated (unset ⇒ no ping) and, like the webhook URL, the value is a sec
 environment, never `config.toml`; put it in the agent's `EnvironmentVariables` alongside `PATH`.
 
 **Alerting when a run succeeds but degrades.** The heartbeat cannot see a run that finished while
-raising warnings — it still pings. Set `BOARDWATCH_ALERT_URL` too and each such run POSTs its
-warning lines there; a healthchecks.io `/fail` URL for the same check turns silence-watching into
+raising alerts — it still pings. Set `BOARDWATCH_ALERT_URL` too and each such run POSTs its
+end-of-run alerts there (never the routine per-board or per-lead errors a normal run also
+logs); a healthchecks.io `/fail` URL for the same check turns silence-watching into
 degradation-watching as well. Presence-gated, and a failed post never fails the run.
 
 Everything the `scan` schedule notes — environment variables, running as the same user that ran

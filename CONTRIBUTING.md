@@ -62,10 +62,11 @@ The registry (`src/boardwatch/registry/companies.yaml`) is a plain YAML catalog;
    boardwatch companies add <board-url-or-provider:slug> --verify
    ```
 
-   `--verify` skips a board it cannot confirm, so a reachable one is real. (One caveat: a
-   SmartRecruiters board cannot be distinguished from a typo — see the
-   [provider matrix](docs/provider-matrix.md).) This only proves reachability; it does not edit
-   the catalog.
+   `--verify` skips a board it cannot confirm, so a reachable one is real. (Two caveats, both in
+   the [provider matrix](docs/provider-matrix.md): a SmartRecruiters board cannot be
+   distinguished from a typo, and a mistyped Oracle HCM site answers with a real but different
+   board, so check that the postings it returns are the employer's.) This only proves
+   reachability; it does not edit the catalog.
 
 2. **Add the entry.** Append to `companies.yaml` following the schema and rules in the
    [registry README](src/boardwatch/registry/README.md) — exactly `name`, `provider`, `slug`,

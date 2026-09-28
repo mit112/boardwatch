@@ -21,10 +21,11 @@ third-party job text.
 
 ## Secrets
 
-boardwatch's secrets are all opt-in and all read from the environment only: the LLM API key
+The secrets you supply are all opt-in and all read from the environment only: the LLM API key
 (`BOARDWATCH_LLM_API_KEY`), the notification webhook URL (`BOARDWATCH_NOTIFY_WEBHOOK_URL`), and
 an unattended run's two monitor URLs (`BOARDWATCH_HEARTBEAT_URL`, `BOARDWATCH_ALERT_URL`). None
-is ever written to the database, written to your config file, or printed.
+is ever written to the database, written to your config file, or printed. The one secret
+boardwatch creates itself is the review app's bearer token, described above.
 
 The LLM eligibility-extraction tier is **disabled by default**. The deterministic
 eligibility engine is the default path and never contacts a model. When you enable the
@@ -78,7 +79,8 @@ The gate takes no API key and boardwatch stores no credential for it.
 
 Both are off unless their variable is set. `BOARDWATCH_HEARTBEAT_URL` receives a plain `GET` with
 no body after each clean run. `BOARDWATCH_ALERT_URL` receives a `POST` whose text body is the run
-id and its warning lines, the same text the run's morning report shows.
+id and its end-of-run alerts, the degradation warnings the morning report also lists; routine
+per-board and per-lead errors are not sent.
 
 ## What leaves your machine when notifications are on
 
