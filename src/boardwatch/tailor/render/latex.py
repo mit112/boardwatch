@@ -121,13 +121,16 @@ def _validate_template(text: str, *, check_placeholder_phrases: bool = True) -> 
     # permanently unloadable. The catalog exists to catch a CONFIG-DIR template that is an
     # unedited copy of that same bundled text — never the bundled text loaded as itself.
     if check_placeholder_phrases:
+        # Every hit in one refusal, so a newcomer edits them all before rerunning instead of
+        # meeting them one run at a time (T268).
         lowered = text.lower()
-        for phrase in _PLACEHOLDER_PHRASES:
-            if phrase.lower() in lowered:
-                raise TemplateArtifactError(
-                    f"template still carries the bundled placeholder {phrase!r} — edit "
-                    "the header/education before using this template"
-                )
+        found = [phrase for phrase in _PLACEHOLDER_PHRASES if phrase.lower() in lowered]
+        if found:
+            raise TemplateArtifactError(
+                f"template still carries the bundled placeholder(s) "
+                f"{', '.join(repr(phrase) for phrase in found)} — edit the header/education "
+                "before using this template"
+            )
 
 
 def resolve_template(config_dir: Path | None, *, allow_bundled_default: bool = False) -> str:

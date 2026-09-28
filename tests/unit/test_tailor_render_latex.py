@@ -336,6 +336,21 @@ def test_validate_template_rejects_bundled_placeholder_phrase(tmp_path):
         resolve_template(tmp_path)
 
 
+def test_placeholder_refusal_names_every_phrase_at_once(tmp_path):
+    """T268: one refusal lists everything left to edit, so a newcomer does not rerun once per
+    phrase. The unedited starter carries all five catalog phrases."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+
+    (tmp_path / "resume_template.tex").write_text(resolve_template(None), encoding="utf-8")
+    with pytest.raises(TemplateArtifactError) as excinfo:
+        resolve_template(tmp_path)
+    message = str(excinfo.value)
+    for phrase in (
+        "Your Name", "you@example.com", "555 555 5555", "Example University", "Example Field",
+    ):
+        assert repr(phrase) in message, phrase
+
+
 def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
     """The bundled default's own header/education literally ARE "Your Name" / "Example
     University" / etc, so the phrase catalog must not fire when the caller has explicitly asked
