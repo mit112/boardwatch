@@ -20,6 +20,7 @@ from boardwatch.core.features import FEATURE_BY_KEY, SETTABLE_FEATURE_KEYS
 from boardwatch.core.secrets import LLM_API_KEY_ENV, resolve_secret
 from boardwatch.core.settings import LLMTier, NotifyTier, Settings, load_settings
 from boardwatch.notify.webhook import WEBHOOK_URL_ENV
+from boardwatch.pipeline.runner import LANE_FACTORIES
 
 config_app = typer.Typer(no_args_is_help=True, help="Show or change settings.")
 console = Console()
@@ -33,6 +34,30 @@ def _lane_names(raw: str) -> list[str]:
     named "", which would then be reported as unknown on every run.
     """
     return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+class UnknownLane(ValueError):
+    """A `lanes_enabled` entry with no row in `pipeline.runner.LANE_FACTORIES`."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(
+            f"{name!r} is not a lane; known lanes: {', '.join(sorted(LANE_FACTORIES))}"
+        )
+        self.name = name
+
+
+def _enabled_lanes(raw: str) -> list[str]:
+    """`lanes_enabled` from one CLI string, refused when a name is outside the lane catalog.
+
+    Checked HERE, at `config set` time only. `Settings` must keep accepting any name: a
+    load-time refusal would stop every command, the daily run included, over one stale lane
+    name, where the runner reports an unknown name into the run's errors and skips it.
+    """
+    names = _lane_names(raw)
+    for name in names:
+        if name not in LANE_FACTORIES:
+            raise UnknownLane(name)
+    return names
 
 
 def _search_hubs(raw: str) -> list[str]:
@@ -129,7 +154,7 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "recency_half_life_days": (float, "next top", "days at which the recency score halves"),
     "busy_timeout_ms": (int, "next command", "SQLite busy timeout in milliseconds"),
     "lanes_enabled": (
-        _lane_names, "next run", "comma-separated lane names; blank disarms every lane"
+        _enabled_lanes, "next run", "comma-separated lane names; blank disarms every lane"
     ),
     "lane_search_hubs": (
         _search_hubs,
@@ -146,7 +171,7 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "lane_new_companies_per_run": (
         int, "next run", "companies one lane may ADD per run, ≥0 (already-known ones are free)"
     ),
-    "lane_posting_budget": (int, "next run", "JD-body requests one lane may make per run, ≥0"),
+    "lane_posting_budget": (int, "next run", "JD-body requests one lane may make per run, ≥1"),
     "lane_search_pages": (
         int,
         "next run",
@@ -236,7 +261,9 @@ _NOTIFY_KEYS = {
 # deliberate hand edit of config.toml, not a toggle.
 _GATE_KEYS: dict[str, str] = {
     "enabled": "opt-in headless final-eligibility judge; spends money when true; next run",
-    "claude_config_dir": "CLAUDE_CONFIG_DIR of the headless call, expanded absolute path; next run",
+    "claude_config_dir": (
+        "CLAUDE_CONFIG_DIR of the headless call, passed verbatim (~ is not expanded); next run"
+    ),
     "model": "claude model alias, e.g. haiku; next run",
     "batch_size": "leads per call, ≥1; next run",
     "call_timeout_s": "seconds per call, ≥1; next run",
@@ -326,6 +353,7 @@ _LLM_KEYS: tuple[tuple[str, str | None, str | None], ...] = (
     ("enabled", None, "opt-in LLM tier"),
     ("provider", None, None),
     ("model", None, None),
+    ("base_url", None, None),
     ("eligibility_extraction", None, None),
     ("resume_tailoring", None, None),
     ("resume_tailoring_via_agent", None, None),
@@ -358,6 +386,12 @@ def show(
         cur, dflt = getattr(settings, key), getattr(defaults, key)
         payload[key] = _shown(cur, dflt, units=units, effect=effect)
         out.print(f"{key} = {cur} (default {dflt}; {units}; {effect})")
+    # A per-lane mapping, so not in `_SCALAR_KEYS`: printed here, set only by hand in config.toml.
+    key = "lane_new_companies_per_run_overrides"
+    cur, dflt = getattr(settings, key), getattr(defaults, key)
+    units = 'lane name -> int ≥0 or "unlimited"; hand-edit only'
+    payload[key] = _shown(cur, dflt, units=units, effect="next run")
+    out.print(f"{key} = {cur} (default {dflt}; {units}; next run)")
     for key in sorted(_WEIGHT_KEYS):
         cur, dflt = getattr(settings.weights, key), getattr(defaults.weights, key)
         payload[f"weights.{key}"] = _shown(cur, dflt, units="[0,1]", effect="next top")
@@ -369,6 +403,7 @@ def show(
     out.print(
         f"llm.enabled = {llm.enabled} (opt-in LLM tier; provider={llm.provider}, model={llm.model})"
     )
+    out.print(f"llm.base_url = {llm.base_url}")
     out.print(f"llm.eligibility_extraction = {llm.eligibility_extraction}")
     out.print(f"llm.resume_tailoring = {llm.resume_tailoring}")
     out.print(f"llm.resume_tailoring_via_agent = {llm.resume_tailoring_via_agent}")
