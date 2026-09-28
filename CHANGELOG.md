@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format follows
   stale lane name never stops a run; the run reports it and skips it (T270).
 - `boardwatch web` resets an existing `web-token` to mode 0600 when it reuses it, so a restored or
   copied token with broader permissions no longer stays readable by other users (T270).
+- The Docker image warms tectonic's package cache as the runtime `boardwatch` user, so the cache is
+  in that user's home rather than in `/root`, which the user cannot read. The warm-up also compiles
+  the résumé template's preamble instead of a bare `article`, the same warm-up CI runs (T270).
 
 ## [0.6.0] - 2026-09-28
 

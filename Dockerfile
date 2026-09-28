@@ -19,12 +19,28 @@ RUN set -eux; \
     tectonic --version; \
     pdfinfo -v
 
+# The runtime user exists before the warm-up below, so the warm-up can run as it.
+RUN useradd --create-home --uid 10001 boardwatch
+
 # Warm tectonic's package bundle at build time with a throwaway compile — otherwise the
 # first real render in a network-restricted runtime would be forced to fetch hundreds of
 # MB of LaTeX packages on demand and fail.
-RUN printf '\\documentclass{article}\\begin{document}x\\end{document}' > /tmp/w.tex \
-    && tectonic /tmp/w.tex \
-    && rm -f /tmp/w.tex /tmp/w.pdf
+#
+# It runs AS `boardwatch`, because tectonic caches under the invoking user's home: warmed as
+# root, the bundle sat in /root/.cache, which the runtime user cannot enter. And it compiles
+# the résumé template's own preamble, not a bare `article`, which fetches almost none of the
+# packages a render needs — the same warm-up the CI typesetting action runs (D-269).
+COPY --chown=boardwatch:boardwatch src/boardwatch/tailor/render/templates/resume_base.tex /tmp/resume_base.tex
+USER boardwatch
+RUN set -eux; \
+    cd /tmp; \
+    awk '/\\begin\{document\}/{exit} {print}' resume_base.tex > warmup.tex; \
+    printf '\\begin{document}x\\end{document}\n' >> warmup.tex; \
+    grep -q 'fontspec' warmup.tex; \
+    tectonic warmup.tex; \
+    pdfinfo warmup.pdf | grep -q '^Pages:'; \
+    rm -f resume_base.tex warmup.tex warmup.pdf
+USER root
 
 # Dependencies come from uv.lock, never from a fresh resolve: two builds of the same tag
 # must yield the same dependency tree. `uv export` renders the locked graph as a
@@ -41,8 +57,7 @@ RUN uv export --directory /tmp/boardwatch --frozen --no-dev --no-emit-project \
 
 # Run as a non-root user; persist the local SQLite DB under /data (mount a volume
 # here and pass `--data-dir /data`).
-RUN useradd --create-home --uid 10001 boardwatch \
-    && mkdir -p /data && chown boardwatch:boardwatch /data
+RUN mkdir -p /data && chown boardwatch:boardwatch /data
 USER boardwatch
 WORKDIR /data
 VOLUME ["/data"]
