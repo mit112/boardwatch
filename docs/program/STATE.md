@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -26,6 +26,36 @@
 ---
 
 ## Current standing
+
+### 2026-09-28b — **THE OWNER'S THREE D-605 RULINGS ARE CARRIED OUT BEFORE DAY 3: the 35 held LinkedIn captures are repaired, `slate_ceiling` is 100, and the refresh fix is filed as T265** (D-606). The owner did not want to wait for day 3 in this session, so day 3 (the 2026-09-29 04:00 run) is UNREAD at close and is the next session's first job.
+
+**Verify first:** `git log --oneline -3 origin/main` (this session's record on top of #515), the primary on `main`, no run
+active, the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; it was restarted this session, so the port changed —
+read it with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`; the token is stable).
+
+**Done (live store / machine), all with no run active:**
+- **Held-35 repair (owner-gated item 0).** `.agent/2026-09-29-session/held35_repair.py` (the `postings reparse-bodies`
+  shape, one transaction): dry-run 35 postings / 17 distinct slices / 0 problems; applied with the viewer stopped —
+  35 runless `revised` versions, 64 identity rows. `held35_measure.py`: 2 versions on every one, all open; a second dry-run
+  writes 0. They stay `held` until the next run's preflight `drain_quarantine` releases them (the "superseded" condition).
+- **`slate_ceiling` 80 → 100 (item 7)** in the live `config.toml` (backup `config.toml.bak-preslateceiling100-20260928`);
+  `load_settings().slate_ceiling` reads 100.
+- **T265** (item 8: the refresh's poisoned batch, BUILD AFTER DAY 14), **T266** (#507's eligibility residuals, parked) and
+  **T267** (lane residuals) filed in `TICKETS-2026-09-22c.md` — D-601's `followups.md` is filed; its closed items are named in T267.
+- The viewer was stopped and restarted for the write; `/api/queue` 614 rows, `pdf_available` 614/614.
+
+**Next, in order:**
+1. **Read the 2026-09-29 04:00 run as DAY 3** (D-600): PID via `ps -Ao pid,args | grep -E '(^|/)boardwatch run '`, wait with
+   `kill -0` until it EXITS (the funnel lands ~14 min after `runs.status` reads `ok`), then `day_row.py <id> 3` and
+   `b4_audit.py --run <id>`. Day 2 for comparison: B1 65 · B2 42/42 · B4 0 · B8 41 · gate 59 judged, 0 failed open.
+2. **Three first-run checks:** (a) #513 — Workday apply median in `board_scans` under 2 s, `stage_durations` scan near day 1's
+   4,157 s; (b) `slate_ceiling` 100 — up to 100 leads, and `.agent/2026-09-28-session/delivered_tiers.py <id> <date>` should
+   show some leads NOT tier 0; `buried_split.py`'s buried-open (116 after run 489) should fall (read its totals — its by-run
+   split hardcodes run 486); (c) the repair — `held_captures.py .agent/2026-09-27-session/held_baseline.json` should read
+   linkedin 35/35 released.
+3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`. Grep
+   `~/Library/Logs/boardwatch-run.log` for `gate refresh batch` — T265's failure does not show in `day_row.py`.
+4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
 
 ### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — the owner approved all three recommendations for the next session** (D-604, D-605). The owner was away after the day-2 read, so nothing owner-gated was done; at 12:26 CDT the owner ruled "we'll do your recs in the next session".
 
@@ -56,9 +86,8 @@ the fix; the scan should return to ~70 min.** Apparatus note: this session's rea
 **Next, in order:**
 1. **Read the 2026-09-29 04:00 run as DAY 3** — `day_row.py <id> 3`, `b4_audit.py --run <id>`, after its PID exits. Check the
    fix took: Workday apply median in `board_scans` for the run under 2 s, `stage_durations` scan near day 1's 4,157 s.
-2. **Carry out the owner's rulings (D-605), with no run active:** (a) the held-35 additive repair (item 0); (b) `slate_ceiling`
-   80 → 100 in the live `config.toml`, backed up first (item 7); (c) file the refresh fix as a ticket for after day 14 (item 8).
-   Done before the 09-29 04:00 tick, (a) and (b) reach day 3; after it, day 4.
+2. **DONE 2026-09-28b (D-606):** the owner's rulings (D-605) — the held-35 repair, `slate_ceiling` 100 and T265 — all
+   before the 09-29 04:00 tick, so (a) and (b) reach day 3.
 3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`.
 4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
 
@@ -66,66 +95,9 @@ the fix; the scan should return to ~70 min.** Apparatus note: this session's rea
 `50ff5262` after run 489 exited; worktree `bw-reset-hint` removed (branch kept); one headless judge call (the repro, no store
 write); a stale 0-byte `.git/index.lock` (09-27 21:30, no git process) removed.
 
-### 2026-09-27b — **THE VIEWER IS UP AND EVERY APPLY-LANE PDF SERVES; DAY 2 IS UNREAD** (D-603). The owner asked for `boardwatch web` up and every eligible job lined up to apply. Found: 126 of 572 apply-lane PDFs lived under the config dir, outside the viewer's `--out-root`, so its PDF button refused them; 4 more had no PDF. All 130 re-rendered (manual runs 487, 488; static, 0 failed); `pdf_available` 572/572. The session wrote nothing else to the store. The 04:00 day-2 run had not started at close.
+### 2026-09-27b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-28b.** The viewer's out-root PDFs re-rendered (130, runs 487/488, D-603); its day-2 read is done (D-604).
 
-**Verify first:** `git log --oneline -3 origin/main`, the primary on `main`, no run active, the viewer alive
-(`ps -Ao pid,args | grep '[b]oardwatch web'`; port via `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`; URL = line 2 of
-`~/Library/Logs/boardwatch-web.log`, token stable). Start it only with the parenthesised form in memory/D-603 — the plain
-`nohup … & disown` form dies in seconds from an agent shell.
-
-**Next, in order:**
-1. **Read the 2026-09-28 04:00 run as DAY 2** (D-600): find its PID (`ps -Ao args | grep -E '(^|/)boardwatch run '`), wait
-   with `kill -0 <pid>` until it EXITS (the funnel lands ~13 min after `runs.status` reads `ok`), then
-   `python3 .agent/acceptance/day_row.py <run_id> 2` and `.venv/bin/python .agent/acceptance/b4_audit.py --run <run_id>`.
-   Day 1 (run 486) for comparison: B1 73 net-new, B2 55/55, B3 one page, B4 0, B8 53 net-new, gate 67 judged / 0 failed open.
-2. **D-601 ruling 6 (tier 0 above decided-eligible):** `.venv/bin/python .agent/2026-09-27-session/buried_split.py`. Pre-run
-   baseline (18:45 CDT, `.agent/2026-09-27b-session/notes.md`): buried-open 70, stale 5, 66 judged in run 486. If buried-open
-   does not fall, tier 0 is starving the unmarked judge-cleared leads — report it; do not change the ranking unasked.
-3. **The 35 held `linkedin:jobapps:*` captures:** `.venv/bin/python .agent/2026-09-27-session/held_captures.py
-   .agent/2026-09-27-session/held_baseline.json`. Baseline: 35 held, 0 released. Still 0 ⇒ owner-gated item 0.
-4. **#510's first effect** (jobright records resolved before boardwatch stores them file under the board's tier-1 key,
-   watched) — today's one resolution was `other`, so expect none; and `inventory.py` (`pdf missing` must be 0).
-5. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
-
-**Changed this session (live store / machine):** runs 487 and 488 (manual render rows); 130 `resume_tailored` artifacts under
-`~/boardwatch-applications/2026-09-27/`; 130 queue folders updated. Worktrees `bw-slice` and `bw-jobright` removed
-(branches kept). job-apps `5fd9f94` still committed, not pushed.
-
-### 2026-09-27 — **DAY 1 (run 486) MEETS EVERY BAR; the LinkedIn JD slice (#509) and jobright employer resolution (#510) ship before it; job-apps' resolver runs alone again** (D-602). Owner rulings 00:04 and 02:31: "no sponsorship" roles stay blocked; the resolver runs as a resolver-only step (build and autoapply stay off); new jobright jobs only; the 35 held LinkedIn-provider captures are measured after day 1.
-
-**Verify first:** `git log --oneline -5 origin/main` (the session record, then #510 `9aaae4ae`, #509 `791f70a5`), the primary
-on `main`, the tick enabled, and job-apps' plist carrying `JOBRIGHT_RESOLVE=1` beside `STAGE1_ONLY=1`
-(`launchctl print gui/$(id -u)/com.mitsheth.job-discovery | grep -E 'JOBRIGHT|STAGE1'`).
-
-**Day 1, run 486** (METRICS "Acceptance run"): B1 **73 net-new** · B2 55/55 · B3 one page · B4 0 · B5–B7 ok · B8 **53 net-new**
-· gate 67 judged, 0 failed open · refresh 1/1 batch failed open (empty response; 132 pending) · backlog 150 judged (120
-eligible), breaker 0 · slate 76 of ceiling 80 · wall 2 h 21 m. **The funnel is written ~13 min AFTER `runs.status` reads
-`ok`** — wait on the run's PID with `kill -0 <pid>`, not on the row (a `pgrep -f` waiter matches its own shell). The 9 held `jobapps:*` LinkedIn captures
-(IXL new grad ×3 among them) each got a run-486 version equal to the slice and were released; the 35 under
-`linkedin:jobapps:*` were not (only the LinkedIn lane's listing releases them).
-
-**Next, in order:**
-1. **Read the 09-28 04:00 run as day 2** (`day_row.py <id> 2`, `b4_audit.py --run <id>`), after its PID exits.
-2. **#510's first effect.** job-apps' resolver first runs 09-27 ~08:52 on `resumes/2026-09-27/` (log
-   `resumes/_logs/2026-09-27_daily_pipeline_0830.log`, line `-- jobright resolver (STAGE1_ONLY)`; manifest
-   `autoapply/jobright_daterun_2026-09-27.json`). Day 2 should file its exact-posting hits under the board's key, watched.
-3. **D-601 ruling 6 (tier 0 above decided-eligible).** Buried-open went 6 → 70, but 66 were cleared IN run 486 (56 unmarked,
-   10 tier 0) and deliver next run by design. If day 2's buried-open does not fall, tier 0 is starving them — report it.
-   Split: `.agent/2026-09-27-session/buried_split.py`.
-4. **The 35 held LinkedIn-provider captures:** `.agent/2026-09-27-session/held_captures.py
-   .agent/2026-09-27-session/held_baseline.json` after day 2; if they still do not release, owner-gated item 0.
-5. The 2026-09-26b block's items 2–4 stand.
-
-**Follow-ups (not built):** the slice takes the text between its anchors unchecked (a floor check); its drain tests build a
-one-root lane; a newly watched board takes jobright's company label as its name (the Cboe board would read "CBRE"); the
-resolver covers top-level day folders only (`_eligibility_review`, `_review_later`, `sk1-*` are not resolved); job-apps'
-`CLAUDE.md`/`AGENTS.md` still say the job "stops after Stage 1" (those files carry someone else's uncommitted edits);
-job-apps `5fd9f94` is committed, not pushed. D-601's list (`.agent/2026-09-26c-crash/followups.md`) is still unfiled.
-
-**Changed this session (live store / machine):** job-apps `run_daily_pipeline.sh` (`5fd9f94`) and its launchd plist (backup
-`com.mitsheth.job-discovery.plist.bak-prejobrightresolve-20260927`); a stale 0-byte job-apps `.git/index.lock` (09-04)
-removed; one resolver `probe` (3 jobright jobs, nothing submitted). The session wrote nothing to the live store. Worktrees
-`bw-slice` and `bw-jobright` are merged and may be removed.
+### 2026-09-27 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-28b.** Day 1 (run 486), the LinkedIn JD slice (#509) and jobright resolution (#510, D-602); its day-2 read, #510's effect and ruling 6's check are done (D-604), the 35 held captures repaired (D-606), and D-601's follow-up list filed as T266/T267.
 
 ### 2026-09-26c — **A NEW-GRAD ROLE MUST NEVER BE MISSED (owner ruling) — four PRs merged before day 1, the frozen config set** (D-601). Measured on a read-only clone: 1,600 open postings titled new grad / early career, 81 ever delivered; **354 passed every filter and ranked at a median of ~2,955 behind the 40-lead slate**; 22 judge-cleared leads were stranded by an old judge key. Shipped (#504 #505 #506 #507, all before the 04:00 day-1 tick, owner-approved override of D-598's freeze): entry-level titles rank first for an entry profile (tier 0), role-gate misses, `slate_ceiling`, the buried-good-lead count + alert, entry markers v2 (title + JD body), job-apps' LinkedIn finds admitted, `gate.backlog_budget`, 251 false-ineligible verdicts released. **Live config: `slate_ceiling = 80`, `gate.backlog_budget = 150`** (backup `config.toml.bak-preslateceiling-20260926`).
 
@@ -230,7 +202,7 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 ## Owner-gated — do NOT start or decide unilaterally
 
 0. **The 35 held `linkedin:jobapps:*` LinkedIn captures** (D-602; ByteDance Graduate, NetApp Emerging Talent ×2, Skillstorm
-   Entry Level among them): days 1 and 2 released 0. **RULED 2026-09-28 12:26 (D-605): do the repair next session.** The
+   Entry Level among them): days 1 and 2 released 0. **RULED 2026-09-28 12:26 (D-605); DONE 2026-09-28b (D-606) — day 3 should release 35/35.** The
    one-time ADDITIVE repair (append the
    sliced JD as a new version through `store/body_revision.record_body_revision`, the `postings reparse-bodies` path; the
    drain then releases them) — 35 postings, 17 distinct JDs, all slice to a body the
@@ -245,11 +217,11 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 5. **How job-apps summary leads count in the B8 census** — closed census: short bodies 0/38, long 7/87 (a short reading is
    a floor). Default until ruled: counted, with the split reported beside the pooled number.
 6. **When to fix T258** (graduation-window wording; 52 open postings) — an eligibility change, so it restarts the count.
-7. **Tier 0 vs judge-cleared leads** (D-604) — **RULED 2026-09-28 12:26 (D-605): raise `slate_ceiling` 80 → 100 next session.** Tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
+7. **Tier 0 vs judge-cleared leads** (D-604) — **RULED 2026-09-28 12:26 (D-605); DONE 2026-09-28b (D-606): the live `slate_ceiling` is 100.** Tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
    ~46 a day). Options: raise `slate_ceiling` 80 → 100 (config only; tier 0 stays first, up to ~20 judge-cleared a day
    behind it; the judge sees up to 100 a run) — **recommended**; reserve slots within 80 (ranking code); or keep as is.
    The ruling did not address the count separately; D-598 r5's restart list (eligibility, profile, résumé gate) does not name it.
-8. **The gate refresh's poisoned batch** (D-604) — **RULED 2026-09-28 12:26 (D-605): fix after day 14.** Posting 29849 fails its
+8. **The gate refresh's poisoned batch** (D-604) — **RULED 2026-09-28 12:26 (D-605): fix after day 14 — filed as T265 (D-606).** Posting 29849 fails its
    batch of 13 every run
    (fail-open, so the cost is 12 stale readings, not lost jobs). Candidate fixes, none built: isolate a failed batch by
    re-sending its items singly; read one fenced array out of a response that carries prose around it; withhold a body
