@@ -14,6 +14,8 @@ All notable changes to this project are documented here. The format follows
 - `config set lanes_enabled` refuses a name that is not a lane (`linkedin`, `indeed`, `hiringcafe`,
   `jsonld`, `jobapps`) instead of writing it. Loading `config.toml` still accepts any name, so a
   stale lane name never stops a run; the run reports it and skips it (T270).
+- `boardwatch web` resets an existing `web-token` to mode 0600 when it reuses it, so a restored or
+  copied token with broader permissions no longer stays readable by other users (T270).
 
 ## [0.6.0] - 2026-09-28
 

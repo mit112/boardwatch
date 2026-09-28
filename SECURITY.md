@@ -16,8 +16,8 @@ of any kind.
 
 The review app, `boardwatch web`, refuses to bind anything but a loopback address, and its API
 answers only requests that carry its bearer token, created at mode 0600 in
-`{config_dir}/web-token` on first use (an existing file is reused as it is, so keep it private
-if you copy or restore it): what it serves includes your résumé, your answers panel and
+`{config_dir}/web-token` on first use (an existing file keeps its token and is reset to mode
+0600 each launch): what it serves includes your résumé, your answers panel and
 third-party job text.
 
 ## Secrets
