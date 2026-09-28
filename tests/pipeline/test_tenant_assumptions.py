@@ -269,7 +269,11 @@ def test_the_report_changes_no_other_funnel_key(
         _seed_tenant2(root / "data")
         payload = _run(root / "data", root / "apps", mode="hard")
         rest = {key: value for key, value in payload.items() if key not in volatile}
-        text = json.dumps(rest, sort_keys=True, default=str).replace(str(root), "<root>")
+        text = json.dumps(rest, sort_keys=True, default=str)
+        # As JSON escapes it (a Windows root's backslashes are doubled) and as a POSIX string;
+        # both are `str(root)` on macOS and Linux (T251).
+        for spelling in (json.dumps(str(root))[1:-1], root.as_posix()):
+            text = text.replace(spelling, "<root>")
         return text, payload["tenant_assumptions"]
 
     with_report, report = run_once(tmp_path / "a")

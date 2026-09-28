@@ -8,6 +8,7 @@ the coordinator itself, independent of why the worker is stuck.
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import time
 from collections.abc import Iterable, Iterator
@@ -71,6 +72,13 @@ def provider() -> Iterator[_StuckProvider]:
     stuck = _StuckProvider()
     yield stuck
     stuck.release.set()  # let the abandoned worker finish rather than outlive the test
+
+
+#: Real-time 0.3 s board caps raced against thread scheduling. Flaky on windows-latest only
+#: (T251: 2 of 18 Windows jobs, 2026-09-23..28, both 3.12), never pinned to a cause there.
+_windows_timing = pytest.mark.skipif(
+    sys.platform == "win32", reason="0.3 s real-time board cap is flaky on windows-latest runners"
+)
 
 
 def _add_company(engine: Engine, slug: str) -> int:
@@ -162,6 +170,7 @@ def test_boards_inside_the_deadline_are_untouched(
     assert (summary.complete, summary.failed, summary.errors) == (2, 0, [])
 
 
+@_windows_timing
 def test_a_worker_freed_by_an_abandoned_board_is_reused(
     engine: Engine, tmp_path: Path, provider: _StuckProvider
 ) -> None:
@@ -626,6 +635,7 @@ class _CountedStuckProvider(_StuckProvider):
         return super().fetch_board(fetcher, request)
 
 
+@_windows_timing
 def test_a_board_the_coordinator_failed_at_its_cap_keeps_the_counts_its_thread_returns(
     engine: Engine, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

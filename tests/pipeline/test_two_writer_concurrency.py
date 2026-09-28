@@ -150,6 +150,11 @@ def _posting(pid: str, body: str = "b") -> RawPosting:
     )
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32" and sys.version_info < (3, 13),
+    reason="time.monotonic() ticks at ~15.6 ms on Windows before Python 3.13, so the commit and "
+    "the return can read the same instant and the strict ordering check cannot hold",
+)
 def test_a_deferred_apply_loses_a_board_when_a_concurrent_write_lands_mid_apply(
     tmp_path: Path,
 ) -> None:
