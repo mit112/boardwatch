@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **`--help`, `boardwatch guide` and a run's apply-lane alert no longer carry this repository's
+  internal references (2026-09-28, T269).** Help text for `run`, `top`, `profile edit`,
+  `eligibility`, `companies`, `identities`, `ledger reopen`, `profile-bundle` and `resume project`
+  dropped ticket, decision and section numbers, file references and design history (kept as code
+  comments). The apply-lane soft alert now reads "under the daily target of 20" instead of
+  "under B8's bar of 20". The gate-staleness alert drops its decision number, `eligibility score`'s
+  audit warning no longer names "B1-B4", and the run funnel's apply-lane and fabrication notes no
+  longer name B8 and B4. No behaviour changes.
+
 ### Fixed
 
 - `config show` now prints `llm.base_url` and `lane_new_companies_per_run_overrides`, describes
@@ -18,7 +29,8 @@ All notable changes to this project are documented here. The format follows
   copied token with broader permissions no longer stays readable by other users (T270).
 - The Docker image warms tectonic's package cache as the runtime `boardwatch` user, so the cache is
   in that user's home rather than in `/root`, which the user cannot read. The warm-up also compiles
-  the résumé template's preamble instead of a bare `article`, the same warm-up CI runs (T270).
+  the whole résumé template with one sample bullet instead of a bare `article`, so a first render
+  needs no network; CI's typesetting action runs the same warm-up (T270).
 
 ## [0.6.0] - 2026-09-28
 

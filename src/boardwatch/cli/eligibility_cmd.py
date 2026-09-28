@@ -328,13 +328,14 @@ def extract_cmd(
         help="Preview the LLM payload and destination for open postings; call no model.",
     ),
 ) -> None:
-    """Opt-in LLM-assisted eligibility extraction (advisory, D-P3-13). Off by default.
+    """Opt-in LLM-assisted eligibility extraction (advisory). Off by default.
 
     The deterministic `eligibility run` stays authoritative; this command only ever adds
     additional `engine_kind='llm'` rows that `show` renders as advisory. When the LLM
     tier is off or uncredentialed this degrades to a one-line message instead of an
     error, and never calls a model.
     """
+    # The advisory-only LLM tier is decision D-P3-13.
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     if not settings.llm.eligibility_extraction:
@@ -698,10 +699,11 @@ def label_apply_cmd(
 
     Runs each verdict through the ineligible-gate (`apply_oracle_verdicts`) and rewrites
     each `*.jsonl` worksheet file in place, one JSON object per line, same order and every
-    pre-existing key preserved (M5). Hard-negative rows (H1, `applied/` prefix) accepted as
-    `ineligible` are surfaced as a warning, not silently applied — Mit actually applied to
+    pre-existing key preserved. Hard-negative rows (`applied/` prefix) accepted as
+    `ineligible` are surfaced as a warning, not silently applied — you actually applied to
     those postings, so an ineligible verdict is a red flag worth a human look.
     """
+    # Key preservation is M5; the hard-negative rows are H1.
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
@@ -825,9 +827,10 @@ def gate_apply_cmd(
 
     The rows name no judge — the verdicts came from whatever agent session produced the file —
     so no gate read acts on them: the queue, the run's lane split and `top` all key a verdict on
-    the judge that reached it (T161). They are recorded, and a lead is held or released on them
+    the judge that reached it. They are recorded, and a lead is held or released on them
     only once a named judge re-judges it.
     """
+    # Keying a gate read on the judge that reached the verdict is T161.
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
@@ -883,12 +886,15 @@ def score_cmd(
         "(default {data_dir}/eligibility-labels).",
     ),
 ) -> None:
-    """Precision report against the human-verified labeled set (Gate P5, PROGRAM.md §3.P5).
+    """Precision report against the human-verified labeled set.
 
     Exits non-zero when the labeled set contains at least one reference INELIGIBLE case
-    and `meets_ship_gate()` fails — the mechanical audit drain (M1): an all-oracle,
-    zero-audit labeled set cannot ship on precision alone.
+    and the set misses the precision bar, has an INELIGIBLE verdict without a quoted span, or
+    has too few human-audited cases: a set labeled only by the oracle cannot pass on precision
+    alone.
     """
+    # This is Gate P5 (PROGRAM.md §3.P5); the exit condition is `meets_ship_gate()`, the
+    # mechanical audit drain (M1).
     app_ctx = build_context(ctx.obj)
     settings = app_ctx.settings
     catalog = load_rules(settings.config_dir)
@@ -913,7 +919,8 @@ def score_cmd(
     console.print(f"audited: {report.audited_coverage:.0%}")
     if report.audited_coverage < SHIP_AUDIT_COVERAGE_BAR:
         console.print(
-            "[yellow]NOT integrity-anchored; run the audit before shipping B1-B4[/yellow]"
+            "[yellow]NOT integrity-anchored; audit more of the labeled set before relying on "
+            "this precision[/yellow]"
         )
     if report.is_measurable and not report.meets_ship_gate():
         raise typer.Exit(1)
@@ -964,10 +971,11 @@ def policy_set(ctx: typer.Context, family: str, choice: str) -> None:
 def policy_ceiling(ctx: typer.Context, family: str, years: int) -> None:
     """Set one family's near-miss ceiling: the highest `required` years bar that abstains.
 
-    Stretch tolerance is a per-user preference (D-480 D1), so it is stored on the profile
+    Stretch tolerance is a per-user preference, so it is stored on the profile
     beside severity rather than as a `rules.yaml` override — an override replaces the whole
     catalog and nothing would detect it drifting from the bundled one.
     """
+    # Stretch tolerance as a per-user preference is D-480 D1.
     app_ctx = build_context(ctx.obj)
     catalog = load_rules(app_ctx.settings.config_dir)
     with app_ctx.engine.begin() as conn:

@@ -975,12 +975,13 @@ def promote_candidates(
     bundle: Path | None = BUNDLE_OPTION,
     json_output: bool = JSON_OPTION,
 ) -> None:
-    """Promote one source's imported candidates into entities, facts, and grounded skills (§6.8).
+    """Promote one source's imported candidates into entities, facts, and grounded skills.
 
     Deterministic and owner-mediated: facts are born `unresolved` with no fabricated evidence, and a
     skill is created only where a bullet's `tech_tags` grounds it to an entity. One-shot: it refuses
     if the draft already holds promoted entities or skills.
     """
+    # Promotion is the design's §6.8.
     root = _bundle_root(ctx, bundle)
     outcome = _guarded(
         lambda: authoring.promote_candidates(
@@ -1140,10 +1141,10 @@ def exclude_record(
         help="The enumerated source record to account for. `validate --completeness` names the "
         "undispositioned ones.",
     ),
-    # The closed catalog, offered as an enum so an out-of-catalog reason is refused by Typer with
+    # §18's closed catalog, offered as an enum so an out-of-catalog reason is refused by Typer with
     # the legal ones printed, rather than reaching the model as a string.
     reason: ExclusionReason = typer.Option(  # noqa: B008
-        ..., "--reason", help="Why the record is excluded, from §18's closed catalog."
+        ..., "--reason", help="Why the record is excluded, from a closed catalog."
     ),
     # Not defaulted and not optional: §18 says every exclusion requires a rationale, and an
     # exclusion is the one write no command can take back. A blank one is refused by the model.
@@ -1296,11 +1297,12 @@ def approve(
 ) -> None:
     """Record the owner's approval of a draft's exact content, on a controlling terminal.
 
-    There is no `--yes`, no environment variable and no piped answer. §13 is explicit that this is
-    an operator-interaction seam rather than access control: any process with write permission can
+    There is no `--yes`, no environment variable and no piped answer. This is an
+    operator-interaction step rather than access control: any process with write permission can
     construct a stamp file. What makes the approval mean something is that it is bound to one
     candidate digest and is reviewable, not that Boardwatch can tell a person from a script.
     """
+    # The design's §13 is explicit that this is an operator-interaction seam, not access control.
     root = _bundle_root(ctx, bundle)
     outcome = _guarded(lambda: _approve(root, draft, terminal=approval_terminal()))
     filed = outcome.value

@@ -205,7 +205,7 @@ def names(
         False, "--apply", help="Actually rewrite the names. Without it this only reports."
     ),
 ) -> None:
-    """Repair company rows named after their SLUG rather than their employer (T74).
+    """Repair company rows named after their SLUG rather than their employer.
 
     WHY THIS EXISTS. `companies.name` is the input to `normalize_company`, which is a component
     of the `cross_host` posting identity. A board the bundled registry does not know used to be
@@ -227,6 +227,7 @@ def names(
 
     Reports by default. Safe to re-run: a row already carrying its derived name plans no write.
     """
+    # The slug-named rows are T74.
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         rows = companies_named_by_slug(conn)
@@ -498,7 +499,8 @@ def _print_facets(
 
 @companies_app.command("export")
 def export(ctx: typer.Context) -> None:
-    """Emit the user's watches as registry-format YAML (the §3.2 contribution funnel)."""
+    """Emit the user's watches as registry-format YAML, the format a registry contribution uses."""
+    # The contribution funnel is PROGRAM.md §3.2.
     app_ctx = build_context(ctx.obj)
     with app_ctx.engine.connect() as conn:
         rows = list_watches(conn)
@@ -529,7 +531,7 @@ def discover_grnh_(
     Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise, and
     the seed rows are left unresolved because a board CANDIDATE is not a resolved posting. Review
     it, delete any row whose evidence URL is ATS chrome rather than an employer board, then
-    `companies import` it. That human step is the owner's ruling (D-291 build).
+    `companies import` it. That human review step is required.
 
     **Because it writes nothing, a bounded `--limit` reads the SAME seeds every time** — the
     `(attempts, id)` order cannot move if no attempt is ever charged. So the document states its
@@ -539,6 +541,7 @@ def discover_grnh_(
     **This is not wired into a run.** Arming these boards costs ~3.2s each on every future run,
     so admission stays a separate, deliberate act.
     """
+    # The required human review step is the owner's ruling (D-291 build).
     # ensure=False for the reason `discover` states: a command whose docstring promises no store
     # write must not migrate a production database as a side effect of being asked a question.
     app_ctx = build_context(ctx.obj, ensure=False)
@@ -607,9 +610,10 @@ def discover_(
 
     Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise. Review
     it, delete any row whose evidence URL is not an employer board, then `companies import` it.
-    That human step is the owner's ruling (D-291 build): a bad slug becomes a permanently failing
-    board, and this repo has no quarantine and no backoff for one.
+    That human review step is required: a bad slug becomes a permanently failing board, and
+    boardwatch has no quarantine and no backoff for one.
     """
+    # The required human review step is the owner's ruling (D-291 build).
     # ensure=False, the same reason `doctor` uses it: this command reads the store and must never
     # migrate it. `build_context`'s default runs `alembic upgrade head`, so without this a command
     # whose own docstring promises no store write would silently upgrade a 1.4 GB production
@@ -673,7 +677,7 @@ def unscanned(
     """Census the boards this store already holds but never scans, for review before import.
 
     `upsert_lane_company` writes `watched=False` for a new row, and that default is correct for
-    an AGGREGATOR-keyed row: `scan/coordinator.py` looks every watched company's provider up in
+    an AGGREGATOR-keyed row: the scanner looks every watched company's provider up in
     the registry, so a watched `hiringcafe` row would append `unknown provider` to every future
     run's errors. But a lane also discovers companies sitting on a REAL supported board, and
     those are stored unwatched too — so `get_watched_companies` (`watched IS TRUE`) never sees
@@ -682,8 +686,8 @@ def unscanned(
 
     Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise, and
     no network. Review it, delete any row you do not want, then `companies import`. That human
-    step is the owner's ruling (D-291 build): nothing here promotes a board, and `companies
-    import` stays the only admission route.
+    review step is required: nothing here promotes a board, and `companies import` stays the
+    only admission route.
 
     A provider with no scanner adapter is EXCLUDED, not bucketed. Watching one would add an
     `unknown provider` line to every run forever, so it is not a candidate in any sense — the
@@ -693,6 +697,8 @@ def unscanned(
     on purpose, and a stored slug `companies import` refuses, which would abort the import of
     every row beside it.
     """
+    # The scanner's registry lookup is `scan/coordinator.py`; the required human review step is
+    # the owner's ruling (D-291 build).
     # ensure=False for the reason `discover` states: a command whose docstring promises no store
     # write must not migrate a production database as a side effect of being asked a question.
     app_ctx = build_context(ctx.obj, ensure=False)

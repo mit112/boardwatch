@@ -154,11 +154,12 @@ def approve_projection(
     """Record the owner's approval of `projection.yaml`'s exact resolved content, on a
     controlling terminal.
 
-    Mirrors `profile-bundle approve` (`cli/profile_bundle_cmd.py:979-1051`): there is no `--yes`,
-    no environment variable and no piped answer. §13's fail-safe direction applies identically —
-    a run that cannot establish it has the owner's attention has not got it, so it refuses rather
-    than assuming consent.
+    As with `profile-bundle approve`, there is no `--yes`, no environment variable and no piped
+    answer: a run that cannot establish it has the owner's attention refuses rather than assuming
+    consent.
     """
+    # Mirrors `profile-bundle approve` (`cli/profile_bundle_cmd.py:979-1051`); the design's §13
+    # fail-safe direction applies identically.
     config_dir = load_settings(data_dir=ctx.obj).config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
@@ -322,15 +323,18 @@ def project(
 ) -> None:
     """Serialize the JD-blind Stage 1 pool for the owner's review, JD-blind and no database.
 
-    `projection.pool.project_pool` runs the owner gate unconditionally now (D-167): `stamp_exists`
-    proves `projection.yaml`'s own digest was approved, and `read_stamp` then compares the stamp's
-    `bundle_digest` against the bundle actually being read, refusing (`STALE_PROJECTION_APPROVAL`,
-    folded to the bundle's own `STALE_APPROVAL_STAMP`) when the bundle has moved since approval —
-    the one case an unedited, still-approved declaration would otherwise hide entirely. There used
-    to be a `--check` flag gating that second half; it was deleted (D-167) once the comparison
-    became unconditional, because an opt-in flag on a consent control is the wrong shape and a
-    check that cannot fire differently from plain `project` is a check that is deleted, not kept.
+    Refuses unless `projection.yaml` has been approved with `approve-projection`, and refuses
+    (`STALE_APPROVAL_STAMP`) when the bundle has changed since that approval, even if the
+    declaration itself is unedited.
     """
+    # `projection.pool.project_pool` runs the owner gate unconditionally now (D-167): `stamp_exists`
+    # proves `projection.yaml`'s own digest was approved, and `read_stamp` then compares the stamp's
+    # `bundle_digest` against the bundle actually being read, refusing (`STALE_PROJECTION_APPROVAL`,
+    # folded to the bundle's own `STALE_APPROVAL_STAMP`) when the bundle has moved since approval —
+    # the one case an unedited, still-approved declaration would otherwise hide entirely. There used
+    # to be a `--check` flag gating that second half; it was deleted (D-167) once the comparison
+    # became unconditional, because an opt-in flag on a consent control is the wrong shape and a
+    # check that cannot fire differently from plain `project` is a check that is deleted, not kept.
     config_dir = load_settings(data_dir=ctx.obj).config_dir
     declaration_path = declaration if declaration is not None else config_dir / "projection.yaml"
     bundle_root = resolve_bundle_root(config_dir, bundle)
@@ -384,17 +388,17 @@ resume_app = typer.Typer(
 )
 
 POSTING_OPTION = typer.Option(..., "--posting", help="Posting id (the # column of top).")  # noqa: B008
+# The default, mean_per_bullet, was adopted by the owner-labeled selection matrix (D-198): it had
+# the highest mean rank agreement with the matrix's ten postings. Agreement is weak in absolute
+# terms (mean Kendall tau-b <= 0.16), so the pick stays overridable rather than silent.
 SCORER_OPTION = typer.Option(  # noqa: B008
     "mean_per_bullet",
     "--scorer",
     help=(
         "Entry scorer ranking candidates against the JD's skills. Defaults to mean_per_bullet, "
-        "adopted by the owner-labeled selection matrix (D-198): it had the highest mean rank "
-        "agreement with the matrix's ten postings and, being normalized per bullet, resists the "
-        "bullet-count inflation that fools total_distinct. Agreement is weak in absolute terms "
-        "(mean Kendall tau-b <= 0.16), so the pick stays overridable rather than silent. Choices: "
-        "coverage_then_density, mean_per_bullet, mean_top_k, total_distinct. An unknown name is "
-        "refused with the live list of registered choices."
+        "which, being normalized per bullet, resists the bullet-count inflation that fools "
+        "total_distinct. Choices: coverage_then_density, mean_per_bullet, mean_top_k, "
+        "total_distinct. An unknown name is refused with the live list of registered choices."
     ),
 )
 RESUME_OUT_OPTION = typer.Option(  # noqa: B008
@@ -415,12 +419,13 @@ def resume_project(
     `posting_id`'s JD skills and page budget (Stage 2). Writes `resume.projected.yaml` and
     `projection-manifest.json` beside each other under `--out`.
 
-    The flow is two commands, deliberately: this one, then `tailor run <id> --resume <path>`.
-    Folding projection into `tailor run` would require `tailor` to know about the bundle — the
-    exact wall this design keeps up. Two costs are accepted rather than optimised away: the JD is
-    read twice, and the résumé compiles twice (a scratch compile here, just to fit the page
-    budget; the real artifact in `tailor run`).
+    Then run `tailor run <id> --resume <path>` to build the tailored résumé. The résumé is
+    compiled here too, as a scratch build to fit the page budget.
     """
+    # The flow is two commands, deliberately. Folding projection into `tailor run` would require
+    # `tailor` to know about the bundle — the exact wall this design keeps up. Two costs are
+    # accepted rather than optimised away: the JD is read twice, and the résumé compiles twice (a
+    # scratch compile here, just to fit the page budget; the real artifact in `tailor run`).
     # Deferred for the same reason `project`'s own imports are (see the module docstring):
     # `projection.scoring` reaches `boardwatch.store` too, via `extract.taxonomy`, so it is
     # never imported at this module's top level either.

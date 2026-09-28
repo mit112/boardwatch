@@ -1707,8 +1707,9 @@ def top(
     include_lane_copy: bool = typer.Option(
         False,
         "--include-lane-copy",
+        # The redundancy rule is D-498 rule (a).
         help="Show aggregator-lane leads removed because the employer's own board posting for "
-        "the same job is already in front of you (D-498).",
+        "the same job is already in front of you.",
     ),
     include_handled: bool = typer.Option(
         False,
@@ -1731,7 +1732,8 @@ def top(
     ),
     json_output: bool = typer.Option(False, "--json", help="Output ranked postings as JSON."),
 ) -> None:
-    """Rank open postings against your profile (on-demand, §3.6)."""
+    """Rank open postings against your profile, on demand."""
+    # On-demand ranking is PROGRAM.md §3.6.
     app_ctx = build_context(ctx.obj)
     output_console = Console(stderr=json_output)
     try:

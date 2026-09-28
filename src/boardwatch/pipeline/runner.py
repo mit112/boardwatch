@@ -3769,12 +3769,13 @@ def _run_pipeline_leased(
                 and summary.gate_readings_absent * 2 > len(summary.tailored)
                 and summary.gate_readings_absent
             ):
+                # A released hold on an unreadable gate reading is D-537.
                 staleness_alert = (
                     "gate: no readable gate reading under the judge's current inputs for "
                     f"{summary.gate_readings_absent} of {len(summary.tailored)} delivered "
                     "lead(s) — a stored reading counts only for the same facts, `gate.model` and "
                     "gate policy/prompt version, and the read fails open, so every gate-derived "
-                    "hold on them has RELEASED, not merely failed to apply (D-537). A changed "
+                    "hold on them has RELEASED, not merely failed to apply. A changed "
                     "fact, judge or gate version does this silently; re-judge before trusting the "
                     "apply lane"
                 )

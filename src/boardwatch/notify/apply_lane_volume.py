@@ -73,7 +73,8 @@ def check_apply_lane_volume(
         else ""
     )
     return (
-        f"apply lane: {cohort.in_apply} lead(s) reached the blind-apply queue, under B8's bar "
-        f"of {bar} — {cohort.placeable} placeable, {cohort.placeable - cohort.in_apply} held "
-        f"for review{reasons}"
+        # The target is B8's volume bar; the text names it plainly for a user who has no B8.
+        f"apply lane: {cohort.in_apply} lead(s) reached the blind-apply queue, under the daily "
+        f"target of {bar} — {cohort.placeable} placeable, "
+        f"{cohort.placeable - cohort.in_apply} held for review{reasons}"
     )

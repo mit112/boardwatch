@@ -57,8 +57,9 @@ def coverage(
 ) -> None:
     """Per-board BOARD DISCOVERY coverage: held postings against each board's stated total.
 
-    Not resume keyword coverage (that is `tailor/coverage.py`, reported in the funnel).
+    Not résumé keyword coverage, which the run funnel reports.
     """
+    # Résumé keyword coverage is `tailor/coverage.py`.
     app_ctx = build_context(ctx.obj, ensure=False)
     # Every readable line, refusals included, goes to stderr under `--json`: `boardwatch guide`
     # promises the whole of stdout is the one JSON document, and a schema refusal printed to

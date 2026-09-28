@@ -498,7 +498,7 @@ nothing.""",
     ),
     "eligibility score": Entry(
         ("reads store",),
-        "Precision against the human-verified labeled set in `--worksheet`, the Gate P5 number.",
+        "Precision against the human-verified labeled set in `--worksheet`.",
     ),
     "eligibility label request": Entry(
         ("reads store", "writes files"),
@@ -543,7 +543,7 @@ only.""",
     ),
     "identities leakage": Entry(
         ("reads store",),
-        "Duplicate leakage over `--days` (the Gate P6 number). Takes `--json`.",
+        "Duplicate leakage over `--days`. Takes `--json`.",
     ),
     "identities memberships": Entry(
         ("reads store",),
