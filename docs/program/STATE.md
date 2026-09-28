@@ -27,6 +27,31 @@
 
 ## Current standing
 
+### 2026-09-27b — **THE VIEWER IS UP AND EVERY APPLY-LANE PDF SERVES; DAY 2 IS UNREAD** (D-603). The owner asked for `boardwatch web` up and every eligible job lined up to apply. Found: 126 of 572 apply-lane PDFs lived under the config dir, outside the viewer's `--out-root`, so its PDF button refused them; 4 more had no PDF. All 130 re-rendered (manual runs 487, 488; static, 0 failed); `pdf_available` 572/572. The session wrote nothing else to the store. The 04:00 day-2 run had not started at close.
+
+**Verify first:** `git log --oneline -3 origin/main`, the primary on `main`, no run active, the viewer alive
+(`ps -Ao pid,args | grep '[b]oardwatch web'`; port via `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`; URL = line 2 of
+`~/Library/Logs/boardwatch-web.log`, token stable). Start it only with the parenthesised form in memory/D-603 — the plain
+`nohup … & disown` form dies in seconds from an agent shell.
+
+**Next, in order:**
+1. **Read the 2026-09-28 04:00 run as DAY 2** (D-600): find its PID (`ps -Ao args | grep -E '(^|/)boardwatch run '`), wait
+   with `kill -0 <pid>` until it EXITS (the funnel lands ~13 min after `runs.status` reads `ok`), then
+   `python3 .agent/acceptance/day_row.py <run_id> 2` and `.venv/bin/python .agent/acceptance/b4_audit.py --run <run_id>`.
+   Day 1 (run 486) for comparison: B1 73 net-new, B2 55/55, B3 one page, B4 0, B8 53 net-new, gate 67 judged / 0 failed open.
+2. **D-601 ruling 6 (tier 0 above decided-eligible):** `.venv/bin/python .agent/2026-09-27-session/buried_split.py`. Pre-run
+   baseline (18:45 CDT, `.agent/2026-09-27b-session/notes.md`): buried-open 70, stale 5, 66 judged in run 486. If buried-open
+   does not fall, tier 0 is starving the unmarked judge-cleared leads — report it; do not change the ranking unasked.
+3. **The 35 held `linkedin:jobapps:*` captures:** `.venv/bin/python .agent/2026-09-27-session/held_captures.py
+   .agent/2026-09-27-session/held_baseline.json`. Baseline: 35 held, 0 released. Still 0 ⇒ owner-gated item 0.
+4. **#510's first effect** (jobright records resolved before boardwatch stores them file under the board's tier-1 key,
+   watched) — today's one resolution was `other`, so expect none; and `inventory.py` (`pdf missing` must be 0).
+5. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
+
+**Changed this session (live store / machine):** runs 487 and 488 (manual render rows); 130 `resume_tailored` artifacts under
+`~/boardwatch-applications/2026-09-27/`; 130 queue folders updated. Worktrees `bw-slice` and `bw-jobright` removed
+(branches kept). job-apps `5fd9f94` still committed, not pushed.
+
 ### 2026-09-27 — **DAY 1 (run 486) MEETS EVERY BAR; the LinkedIn JD slice (#509) and jobright employer resolution (#510) ship before it; job-apps' resolver runs alone again** (D-602). Owner rulings 00:04 and 02:31: "no sponsorship" roles stay blocked; the resolver runs as a resolver-only step (build and autoapply stay off); new jobright jobs only; the 35 held LinkedIn-provider captures are measured after day 1.
 
 **Verify first:** `git log --oneline -5 origin/main` (the session record, then #510 `9aaae4ae`, #509 `791f70a5`), the primary
