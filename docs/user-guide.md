@@ -107,10 +107,10 @@ their paths):
   name and metadata, unless `answers.yaml` sets `identity.full_name`.
 - **`resume_template.tex`** — the page layout, and the source of the name, contact line and
   education block printed at the top of the page. `init` wrote a starter copy, and a run
-  refuses it until its placeholder identity is replaced ("Your Name", "555 555 5555",
-  "you@example.com", "Example University", "Example Field"). Replace the rest of that block
-  too — the city, the sample links, courses and GPA — because only those five phrases are
-  checked.
+  refuses it, naming every placeholder it still finds, until its sample identity is replaced
+  ("Your Name", "555 555 5555", "you@example.com", the city, the sample links, the courses)
+  and its `% BOARDWATCH-STARTER-TEMPLATE` line is deleted. Replace the GPA and dates too:
+  they are not checked, because a real value can equal a sample one.
 
 What a run leaves behind:
 

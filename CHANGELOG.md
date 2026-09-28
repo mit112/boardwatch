@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The starter résumé template's refusal now covers the whole sample block (T268, 2026-09-28).** Three more of the
+  starter's sample values are checked ("Your City, ST", "linkedin.com/in/[username]", "Course One"), and the bundled
+  template carries a `% BOARDWATCH-STARTER-TEMPLATE` comment line above its header that a config-dir copy is refused for
+  until it is deleted. The line marks the GPA, dates and sample links without matching them, so a real value that equals
+  a sample one ("GPA: 3.5/4") is never refused. A copy seeded before this change has no marker line and is still checked
+  by the eight phrases.
+
 - **Intake-death alert ignores manual scans.** Its window is now the last non-incremental delivery
   runs with a recorded scan count, so a bare `boardwatch scan` or an untagged pre-purpose row can
   no longer raise it. A positive count on any later scan still counts as intake. Corpus regression

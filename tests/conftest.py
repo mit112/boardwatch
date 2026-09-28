@@ -42,6 +42,14 @@ TEST_RESUME_TEMPLATE = (
     .replace("555 555 5555", "555 555 0000")
     .replace("Example University", "Test University")
     .replace("Example Field", "Test Field")
+    .replace("Your City, ST", "Test City, ST")
+    .replace("linkedin.com/in/[username]", "example.org/profile")
+    .replace("Course One", "Course A")
+    .replace(
+        "% BOARDWATCH-STARTER-TEMPLATE -- replace the sample header and education below with "
+        "your own, then delete this line.\n",
+        "",
+    )
 )
 
 

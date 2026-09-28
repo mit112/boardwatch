@@ -66,13 +66,25 @@ _PREAMBLE_END = "\\begin{document}"
 # multi-word phrases, not single tokens, so they cannot share `_word_token_pattern`'s word-boundary
 # regex — a plain case-insensitive substring match is enough and does not risk a false positive
 # the way a single common word might.
+#
+# T268 added the three below "Example Field": the starter's other sample values that no real
+# résumé carries. The rest of the sample block ("GPA: 3.5/4", the dates, the github link) could
+# be a real user's own text, so it is not matched by content; `_STARTER_SENTINEL` covers it.
 _PLACEHOLDER_PHRASES: tuple[str, ...] = (
     "Your Name",
     "you@example.com",
     "555 555 5555",
     "Example University",
     "Example Field",
+    "Your City, ST",
+    "linkedin.com/in/[username]",
+    "Course One",
 )
+# A comment line the bundled template carries above its sample header and education, and which a
+# config-dir copy is refused for until the owner deletes it (T268). It marks the WHOLE sample
+# block without matching any of its content, so a real value that happens to equal a sample one
+# can never be refused — only the owner's own "I have edited this" act clears it.
+_STARTER_SENTINEL = "BOARDWATCH-STARTER-TEMPLATE"
 
 
 def _word_token_pattern(token: str) -> re.Pattern[str]:
@@ -124,12 +136,13 @@ def _validate_template(text: str, *, check_placeholder_phrases: bool = True) -> 
         # Every hit in one refusal, so a newcomer edits them all before rerunning instead of
         # meeting them one run at a time (T268).
         lowered = text.lower()
-        found = [phrase for phrase in _PLACEHOLDER_PHRASES if phrase.lower() in lowered]
+        found = [repr(phrase) for phrase in _PLACEHOLDER_PHRASES if phrase.lower() in lowered]
+        if _STARTER_SENTINEL in text:
+            found.append(f"the {_STARTER_SENTINEL} marker line (delete it once edited)")
         if found:
             raise TemplateArtifactError(
-                f"template still carries the bundled placeholder(s) "
-                f"{', '.join(repr(phrase) for phrase in found)} — edit the header/education "
-                "before using this template"
+                f"template still carries the bundled placeholder(s) {', '.join(found)} — edit "
+                "the header/education before using this template"
             )
 
 

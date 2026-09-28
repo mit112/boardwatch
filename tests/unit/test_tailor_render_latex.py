@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
@@ -336,9 +338,9 @@ def test_validate_template_rejects_bundled_placeholder_phrase(tmp_path):
         resolve_template(tmp_path)
 
 
-def test_placeholder_refusal_names_every_phrase_at_once(tmp_path):
+def test_placeholder_refusal_names_every_phrase_and_the_marker_at_once(tmp_path):
     """T268: one refusal lists everything left to edit, so a newcomer does not rerun once per
-    phrase. The unedited starter carries all five catalog phrases."""
+    phrase. The unedited starter carries all eight catalog phrases and the marker line."""
     from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
 
     (tmp_path / "resume_template.tex").write_text(resolve_template(None), encoding="utf-8")
@@ -347,8 +349,47 @@ def test_placeholder_refusal_names_every_phrase_at_once(tmp_path):
     message = str(excinfo.value)
     for phrase in (
         "Your Name", "you@example.com", "555 555 5555", "Example University", "Example Field",
+        "Your City, ST", "linkedin.com/in/[username]", "Course One",
     ):
         assert repr(phrase) in message, phrase
+    assert "BOARDWATCH-STARTER-TEMPLATE marker line" in message
+
+
+@pytest.mark.parametrize(
+    "phrase", ["Your City, ST", "linkedin.com/in/[username]", "Course One"]
+)
+def test_each_added_starter_phrase_is_refused_on_its_own(tmp_path, phrase):
+    """A copy seeded before the marker existed carries no marker line, so the sample values no
+    real résumé holds are still caught by content."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+    from tests.conftest import TEST_RESUME_TEMPLATE
+
+    (tmp_path / "resume_template.tex").write_text(
+        TEST_RESUME_TEMPLATE.replace("\\end{document}", phrase + "\n\\end{document}"),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateArtifactError, match=re.escape(repr(phrase))):
+        resolve_template(tmp_path)
+
+
+def test_the_marker_line_alone_is_refused_and_sample_like_real_values_are_not(tmp_path):
+    """The marker covers the sample block the phrase catalog deliberately does not match:
+    "GPA: 3.5/4", the dates and the github link could be a real owner's own text, so a template
+    that still carries them but has had its marker deleted must load."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+    from tests.conftest import TEST_RESUME_TEMPLATE
+
+    assert "GPA: 3.5/4" in TEST_RESUME_TEMPLATE
+    assert "github.com/example" in TEST_RESUME_TEMPLATE
+    (tmp_path / "resume_template.tex").write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
+    assert "GPA: 3.5/4" in resolve_template(tmp_path)
+
+    marked = TEST_RESUME_TEMPLATE.replace(
+        "\\begin{center}", "% BOARDWATCH-STARTER-TEMPLATE -- delete me\n\\begin{center}", 1
+    )
+    (tmp_path / "resume_template.tex").write_text(marked, encoding="utf-8")
+    with pytest.raises(TemplateArtifactError, match="BOARDWATCH-STARTER-TEMPLATE"):
+        resolve_template(tmp_path)
 
 
 def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
