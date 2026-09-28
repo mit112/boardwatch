@@ -918,7 +918,8 @@ def score_cmd(
     console.print(f"audited: {report.audited_coverage:.0%}")
     if report.audited_coverage < SHIP_AUDIT_COVERAGE_BAR:
         console.print(
-            "[yellow]NOT integrity-anchored; run the audit before shipping B1-B4[/yellow]"
+            "[yellow]NOT integrity-anchored; audit more of the labeled set before relying on "
+            "this precision[/yellow]"
         )
     if report.is_measurable and not report.meets_ship_gate():
         raise typer.Exit(1)

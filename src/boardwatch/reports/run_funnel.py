@@ -1296,7 +1296,8 @@ def _apply_lane_lines(cohort: ApplyLaneCohort | None) -> list[str]:
         f"**{cohort.in_apply} of {cohort.placeable} placeable lead(s) reached the blind-apply "
         "queue.**",
         "",
-        "*This is B8's volume reading, and it is NOT the `pdf` stage's `entered` above. That "
+        # The count is B8's volume reading.
+        "*This is the apply lane's volume, and it is NOT the `pdf` stage's `entered` above. That "
         "stage counts leads that attempted a RENDER, which is decided before the tailor loop; "
         "this counts leads that survive every gate that runs after it — including the "
         "application-form sweep, which routes a rendered lead to review in the same run. The two "
@@ -3853,7 +3854,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "overmatch filter (a structural reject, not a caught fabrication — excluded from "
         "`rejected` above)",
         "",
-        "*Bar metric B4 is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
+        # The target is bar metric B4.
+        "*The target is 0 fabrications over n≥100. `bullets_seen` is n; the two truth gates "
         "are the fail-closed entailment judge and the deterministic overmatch filter. Tier A is "
         "structural and cannot fabricate, so it is not counted here. 0 bullets means the LLM "
         "lane did not run this run — an honest zero.*",

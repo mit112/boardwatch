@@ -164,7 +164,7 @@ def test_score_reports_audited_coverage_warning_and_drains_on_unaudited_ineligib
 
     result = _run(env, ["eligibility", "score", "--worksheet", str(ws_dir)])
     assert "audited: 0%" in result.stdout
-    assert "NOT integrity-anchored; run the audit before shipping B1-B4" in result.stdout
+    assert "NOT integrity-anchored; audit more of the labeled set" in result.stdout
     # M1: at least one reference-ineligible label + unmet ship gate (0% audited) -> exit 1.
     assert result.exit_code == 1
 

@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format follows
   `eligibility`, `companies`, `identities`, `ledger reopen`, `profile-bundle` and `resume project`
   dropped ticket, decision and section numbers, file references and design history (kept as code
   comments). The apply-lane soft alert now reads "under the daily target of 20" instead of
-  "under B8's bar of 20". No behaviour changes.
+  "under B8's bar of 20". The gate-staleness alert drops its decision number, `eligibility score`'s
+  audit warning no longer names "B1-B4", and the run funnel's apply-lane and fabrication notes no
+  longer name B8 and B4. No behaviour changes.
 
 ### Fixed
 
