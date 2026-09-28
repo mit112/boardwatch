@@ -31,9 +31,16 @@
 
 **Verify first:** `git log --oneline -5 origin/main` (this record, #519 the 0.6.0 cut, #517, #518); `curl -s https://pypi.org/pypi/boardwatch/json` reads `0.6.0`; GHCR tags carry `0.6.0` and `latest`; the primary on `main`.
 
-**Done:** #517 (README, SECURITY, CONTRIBUTING, configuration.md at 57 of 57 keys with a drift test, provider matrix/notes for all twelve providers, guides), #518 (`ENV BOARDWATCH_CONFIG_DIR=/data/config`), #519 (0.6.0 cut), tag `v0.6.0` on `9776acc0`. Published and verified from outside `release.yml` (run 36484337861): PyPI 0.6.0 (wheel, sdist, the new README as its page), GHCR `0.6.0` = `latest` (amd64 + arm64, the config fix inside), the GitHub release with curated notes. The GitHub About panel now carries a current description, the PyPI page as homepage, and five more topics. T268–T270 filed from a fresh-clone walk-through; worktree `bw-t255` removed (its held cut was superseded; branch kept).
+**Done:** #517 (the docs), #518 (the Docker config dir), #519 (the cut); tag `v0.6.0` on `9776acc0`; PyPI, GHCR (`0.6.0` =
+`latest`) and the GitHub release published and each verified from outside `release.yml` (D-607). About panel updated;
+T268–T270 filed; worktree `bw-t255` removed (branch kept).
 
-**Next:** the 2026-09-28b block's items 1–4. T268 is résumé-gate input (after day 14); T269 is text only and may ship under the freeze.
+**Next:** first the 2026-09-28b block's items 1–4 — the day-3 read is time-bound. Then **T268–T270, on the owner's ruling of
+16:41 (D-608): "make sure the remaining items are taken care of in the next session".** T269 (text) and T270 (`config show`'s
+descriptions, a `lanes_enabled` check at `config set`, the image's tectonic cache, the token mode) touch nothing on D-598
+r5's restart list; check the live `config.toml`'s `lanes_enabled` against the five lane names before adding any check that
+runs at load. **T268 changes what the résumé gate refuses and the delivered files' names**: build it on a branch and ask
+the owner before merging (owner-gated item 9).
 
 ### 2026-09-28b — **THE OWNER'S THREE D-605 RULINGS ARE CARRIED OUT BEFORE DAY 3: the 35 held LinkedIn captures are repaired, `slate_ceiling` is 100, and the refresh fix is filed as T265** (D-606). The owner did not want to wait for day 3 in this session, so day 3 (the 2026-09-29 04:00 run) is UNREAD at close and is the next session's first job.
 
@@ -234,6 +241,10 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
    (fail-open, so the cost is 12 stale readings, not lost jobs). Candidate fixes, none built: isolate a failed batch by
    re-sending its items singly; read one fenced array out of a response that carries prose around it; withhold a body
    carrying AI-directed text. Any of them changes the final gate, which restarts the count.
+9. **When T268 merges** (D-608) — the owner ruled it is done next session, but listing the placeholders at once is the only
+   part that changes nothing a run accepts: more phrases change what the résumé gate refuses, one identity source renames
+   delivered PDFs, and `top`'s seen-marking is a design call. Options: merge and restart the count, or merge after the
+   2026-10-10 run (day 14). Ask with the branch in hand.
 
 ## Open questions and carried gaps (settled guidance is in `STANDING-FACTS.md`)
 
