@@ -392,6 +392,27 @@ def test_the_marker_line_alone_is_refused_and_sample_like_real_values_are_not(tm
         resolve_template(tmp_path)
 
 
+def test_the_owner_name_must_be_printed_by_the_template():
+    """T268: the file name and /Info Author come from the owner's files while the page prints
+    the template's header, so a name the template never prints is refused with a typed subclass
+    every `TemplateArtifactError` handler already routes."""
+    from boardwatch.tailor.render.latex import (
+        TemplateArtifactError,
+        TemplateOwnerMismatchError,
+        require_owner_printed,
+    )
+
+    template = "\\textbf{\\Huge \\scshape Pat   Example} \\\\ \\small Jo\\_Ann Ltd\n"
+    require_owner_printed(template, "Pat Example")
+    require_owner_printed(template, "pat example")  # case never refuses
+    require_owner_printed(template, "Pat\nExample")  # nor does whitespace
+    require_owner_printed(template, "Jo_Ann")  # the name as LaTeX-escaped in the template
+    with pytest.raises(TemplateOwnerMismatchError) as excinfo:
+        require_owner_printed(template, "Ada Lovelace")
+    assert isinstance(excinfo.value, TemplateArtifactError)
+    assert "'Ada Lovelace'" in str(excinfo.value)
+
+
 def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
     """The bundled default's own header/education literally ARE "Your Name" / "Example
     University" / etc, so the phrase catalog must not fire when the caller has explicitly asked

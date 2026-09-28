@@ -35,7 +35,7 @@ from sqlalchemy import Connection, Engine, select
 
 from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.settings import Settings
-from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.api import FALLBACK_OWNER_NAME, resolve_owner_name
 from boardwatch.delivery.names import ResumeNaming, plan_resume_naming
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy
@@ -83,7 +83,7 @@ from boardwatch.tailor.load import load_resume, load_resume_bytes, read_resume_b
 from boardwatch.tailor.model import Resume
 from boardwatch.tailor.persona import apply_persona, load_personas, select_persona
 from boardwatch.tailor.plan import Delete, EquivalenceSwap, TailorPlan, build_plan
-from boardwatch.tailor.render.latex import LatexRenderer
+from boardwatch.tailor.render.latex import LatexRenderer, require_owner_printed, resolve_template
 from boardwatch.tailor.render.outcome import (
     CompileOutcome,
     CompileReason,
@@ -636,6 +636,11 @@ def run_tailor(
     # authored résumé, so naming a file needs no round trip. The `profile` table has no name
     # column at all, which is why `get_profile` below cannot be the source.
     owner_name = resolve_owner_name(None, settings.config_dir)
+    # The page prints the TEMPLATE's header while the name above comes from the owner's files, so
+    # refuse when the template never prints it (T268). The fallback is exempt: it names nobody,
+    # so there is no second identity for the page to contradict.
+    if owner_name != FALLBACK_OWNER_NAME:
+        require_owner_printed(resolve_template(settings.config_dir), owner_name)
 
     def plan_name(variant: str = "") -> ResumeNaming:
         """This lead's naming, per artifact. The tailored render, the untailored safety net and

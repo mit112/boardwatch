@@ -103,6 +103,13 @@ class TemplateArtifactError(RuntimeError):
     template."""
 
 
+class TemplateOwnerMismatchError(TemplateArtifactError):
+    """Raised by `require_owner_printed` when the PDF is to be named for an owner the template's
+    own text never prints (T268): the page shows the template's header, while the file name and
+    the /Info Author come from `resolve_owner_name`. A subclass so every `TemplateArtifactError`
+    handler routes it unchanged."""
+
+
 class TemplateMissingError(TemplateArtifactError):
     """Raised by `resolve_template` when `{config_dir}/resume_template.tex` does not exist and
     the caller has not explicitly opted into the bundled default via `allow_bundled_default=True`
@@ -324,6 +331,25 @@ def _extracurricular(resume: Resume) -> str:
         lines.append(f"\\item \\small{{{escape(line)}}}")
     lines.append("\\end{itemize}")
     return "\n".join(lines) + "\n"
+
+
+def require_owner_printed(template: str, owner: str) -> None:
+    """Refuse a template whose text never prints `owner`, the name the PDF is filed under.
+
+    Refusing rather than picking a winner: the header is free LaTeX, so reading a name back out
+    of it is a guess, and either guess could file one person's page under another's name. The
+    match is a case- and whitespace-insensitive substring, raw or LaTeX-escaped, so styling
+    macros around the name (`\\scshape`, `\\textbf{...}`) never cause a refusal.
+    """
+    haystack = " ".join(template.split()).casefold()
+    raw = " ".join(owner.split()).casefold()
+    if raw in haystack or escape(owner).casefold() in haystack:
+        return
+    raise TemplateOwnerMismatchError(
+        f"the résumé would be filed as {owner!r} (answers.yaml identity.full_name, else "
+        "resume.yaml's first header line), but resume_template.tex never prints that name; "
+        "make the two agree"
+    )
 
 
 class LatexRenderer:

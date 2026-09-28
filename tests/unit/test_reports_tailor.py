@@ -557,3 +557,28 @@ def test_coverage_is_not_a_veto_a_zero_coverage_lead_still_ships(tmp_path: Path)
     assert res.coverage is not None
     assert res.coverage.fraction == 0.0
     assert res.coverage.covered_count == 0
+
+
+def test_a_resume_filed_under_a_name_the_template_never_prints_is_refused(tmp_path: Path) -> None:
+    """T268: the file name and /Info Author come from the config dir's `resume.yaml` header
+    while the page prints the template's, so a disagreement is refused before any render — and
+    agreement, the configured user's normal case, still ships."""
+    from boardwatch.tailor.render.latex import TemplateOwnerMismatchError
+
+    settings = _settings(tmp_path)  # its template prints "Ada Lovelace"
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    owned = settings.config_dir / "resume.yaml"
+    owned.write_text(scaffold_template().replace("Ada Lovelace", "Grace Hopper"), encoding="utf-8")
+    out = tmp_path / "out"
+    with pytest.raises(TemplateOwnerMismatchError, match="'Grace Hopper'"):
+        run_tailor(
+            engine, settings, pid, resume_path=owned, out_dir=out, typst_runner=_runner_ok,
+        )
+    assert not out.exists() or not list(out.glob("*"))
+
+    owned.write_text(scaffold_template(), encoding="utf-8")
+    res = run_tailor(
+        engine, settings, pid, resume_path=owned, out_dir=out, typst_runner=_runner_ok,
+    )
+    assert res.pdf_path is not None and res.pdf_path.name.startswith("Ada_Lovelace_")

@@ -110,7 +110,9 @@ their paths):
   refuses it, naming every placeholder it still finds, until its sample identity is replaced
   ("Your Name", "555 555 5555", "you@example.com", the city, the sample links, the courses)
   and its `% BOARDWATCH-STARTER-TEMPLATE` line is deleted. Replace the GPA and dates too:
-  they are not checked, because a real value can equal a sample one.
+  they are not checked, because a real value can equal a sample one. The name the header
+  prints must also be the name above (`answers.yaml` or `resume.yaml`), or `tailor run`
+  refuses rather than file your page under a different name.
 
 What a run leaves behind:
 
