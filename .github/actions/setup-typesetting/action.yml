@@ -30,7 +30,8 @@ runs:
     - uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/tectonic-cache
-        key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v2
+        # Bump the suffix whenever the warmup fetches more: a hit is restored as-is, never re-saved.
+        key: tectonic-${{ inputs.tectonic-version }}-${{ runner.os }}-v3
 
     - name: linux — poppler from apt, tectonic from the pinned release
       if: runner.os == 'Linux'
@@ -107,6 +108,10 @@ runs:
     # tectonic `compile_failed` flake: every run needed the network for the same missing files,
     # and any CDN hiccup took ~52 render tests with it. Deriving the warmup from the template
     # means it cannot drift from what the tests compile.
+    #
+    # The WHOLE template is compiled, plus one nested bullet in its sections slot: the preamble
+    # alone fetched the packages but not the fonts the body typesets in (cmmi9, lasy*, … — 14
+    # files), and the template's body has no bullet, whose `\tiny$\bullet$` label needs cmsy5.pfb.
     - name: prove both binaries work and warm the bundle
       shell: bash
       working-directory: ${{ runner.temp }}
@@ -116,10 +121,11 @@ runs:
         pdfinfo -v
         template="$GITHUB_WORKSPACE/src/boardwatch/tailor/render/templates/resume_base.tex"
         test -f "$template"
-        awk '/\\begin\{document\}/{exit} {print}' "$template" > warmup.tex
-        printf '\\begin{document}x\\end{document}\n' >> warmup.tex
-        # Fail loudly if the preamble did not come through, rather than warming a stub bundle.
+        awk '{print} /%%SECTIONS_START%%/{print "\\resumeSubHeadingListStart\\resumeSubheading{a}{b}{c}{d}\\resumeItemListStart\\resumeItem{x}\\resumeItemListEnd\\resumeSubHeadingListEnd"}' "$template" > warmup.tex
+        # Fail loudly if the preamble or the bullet did not come through, rather than warming a
+        # stub bundle.
         grep -q 'fontspec' warmup.tex
+        grep -q 'resumeItem{x}' warmup.tex
         tectonic warmup.tex
         pdfinfo warmup.pdf | grep -q '^Pages:'
         rm -f warmup.tex warmup.pdf

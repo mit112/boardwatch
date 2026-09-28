@@ -28,15 +28,17 @@ RUN useradd --create-home --uid 10001 boardwatch
 #
 # It runs AS `boardwatch`, because tectonic caches under the invoking user's home: warmed as
 # root, the bundle sat in /root/.cache, which the runtime user cannot enter. And it compiles
-# the résumé template's own preamble, not a bare `article`, which fetches almost none of the
-# packages a render needs — the same warm-up the CI typesetting action runs (D-269).
+# the WHOLE résumé template plus one nested bullet in its sections slot — the same warm-up the
+# CI typesetting action runs (D-269). The preamble alone fetches the packages but not the fonts
+# the body typesets in (cmmi9, lasy*, … — 14 files), and the template's body has no bullet, whose
+# `\tiny$\bullet$` label needs cmsy5.pfb; without both, an offline first render failed.
 COPY --chown=boardwatch:boardwatch src/boardwatch/tailor/render/templates/resume_base.tex /tmp/resume_base.tex
 USER boardwatch
 RUN set -eux; \
     cd /tmp; \
-    awk '/\\begin\{document\}/{exit} {print}' resume_base.tex > warmup.tex; \
-    printf '\\begin{document}x\\end{document}\n' >> warmup.tex; \
+    awk '{print} /%%SECTIONS_START%%/{print "\\resumeSubHeadingListStart\\resumeSubheading{a}{b}{c}{d}\\resumeItemListStart\\resumeItem{x}\\resumeItemListEnd\\resumeSubHeadingListEnd"}' resume_base.tex > warmup.tex; \
     grep -q 'fontspec' warmup.tex; \
+    grep -q 'resumeItem{x}' warmup.tex; \
     tectonic warmup.tex; \
     pdfinfo warmup.pdf | grep -q '^Pages:'; \
     rm -f resume_base.tex warmup.tex warmup.pdf
