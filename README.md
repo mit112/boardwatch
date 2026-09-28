@@ -6,28 +6,31 @@ early, and ranks them against your profile with an explainable score. It also re
 posting for the hard eligibility requirements that quietly rule people out (visa
 sponsorship, security clearance, a required degree, years of experience, a location) and
 flags the ones you could not actually apply to, each backed by the exact sentence it read
-as evidence. Nothing is guessed, nothing phones home, and it all runs on your own machine.
+as evidence. For the leads worth your time it renders a one-page résumé PDF tailored from what
+you wrote, never adding a claim you did not make, and lays them out in a local web page to work
+through. Nothing is guessed, nothing phones home, and it all runs on your own machine.
 
 [![CI](https://github.com/mit112/boardwatch/actions/workflows/ci.yml/badge.svg)](https://github.com/mit112/boardwatch/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/boardwatch.svg)](https://pypi.org/project/boardwatch/)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/mit112/boardwatch/blob/main/LICENSE)
 
 > **Status: pre-release, under active development.** boardwatch does not submit
 > applications: it finds and evaluates postings, and you decide what to do with them.
 > No telemetry. The default install needs no accounts and no API keys (the LLM tiers are opt-in).
-> Your data stays in a local SQLite file.
+> Your data stays on your machine: a local SQLite file and the folders `run` writes.
 
 ```console
-$ boardwatch top
- #   Title                            Company     Score   Eligible   Why
- 12  Senior Backend Engineer          Stripe      0.86    no flags   covers 9/11 skills · title · 1d
- 7   Software Engineer, Platform      Linear      0.81    check      covers 7/10 skills · title · 3d
- 33  Backend Engineer (Payments)      Ramp        0.74    no flags   covers 6/9 skills · 2d
- 5   Full-Stack Engineer              Supabase    0.68    no flags   covers 5/8 skills · title · 6d
- 18  Infrastructure Engineer          OpenAI      0.61    check      covers 4/9 skills · 4d
-
-2 postings hidden as ineligible (run with --include-ineligible to see them).
+$ boardwatch top 5
+ #   Title                            Company     Score   Eligibility   Why
+ 12  Senior Backend Engineer          Stripe      0.86    no flags      covers 9/11 skills · title · 1d
+ 7   Software Engineer, Platform      Linear      0.81    check         covers 7/10 skills · title · 3d
+ 33  Backend Engineer (Payments)      Ramp        0.74    no flags      covers 6/9 skills · 2d
+ 5   Full-Stack Engineer              Supabase    0.68    no flags      covers 5/8 skills · title · 6d
+ 18  Infrastructure Engineer          OpenAI      0.61    check         covers 4/9 skills · 4d
+2 hidden as ineligible. "no flags" means no catalogued disqualifier was detected, not that you qualify.
+41 hidden as non-software roles — see them with --include-non-swe, each with the title text that vetoed it.
+→ `boardwatch show <#>` for the full posting and eligibility evidence
 ```
 
 *(Illustrative output. `#` is the posting id; pass it to `boardwatch show <id>` for the
@@ -44,10 +47,10 @@ under sponsored noise and stale reposts; paid trackers put a subscription (and t
 servers, and your search history) between you and postings that are **already public**.
 
 boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, SmartRecruiters,
-Workday, Eightfold, Oracle HCM, Phenom and Jibe each expose a **public, keyless JSON endpoint**
-for every board they host (as do Amazon's and Apple's own career sites), the same data the
-company's own careers page renders. boardwatch polls those endpoints politely, on
-your schedule, and tells you what's *new* since last time.
+Workday, Eightfold, Oracle HCM, Phenom and Jibe each serve every board they host from a
+**public, keyless endpoint**, the same data the company's own careers page renders; Amazon's
+and Apple's own career sites are read the same way. boardwatch polls those endpoints politely,
+on your schedule, and tells you what's *new* since last time.
 
 |                          | boardwatch            | LinkedIn/Indeed        | Paid trackers          |
 |--------------------------|-----------------------|------------------------|------------------------|
@@ -61,16 +64,21 @@ your schedule, and tells you what's *new* since last time.
 **Honest limits.** boardwatch's boards cover companies hosted on **Greenhouse, Lever, Ashby,
 Workable, SmartRecruiters, Workday, Eightfold, Oracle HCM, Phenom or Jibe**, plus Amazon and
 Apple (a large slice of tech, but not everyone, no Taleo/etc. yet). Opt-in discovery lanes
-(`lanes_enabled`, off by default) can add postings from public listings such as LinkedIn and
-Indeed guest pages, hiring.cafe, GitHub new-grad lists and schema.org JSON-LD pages. It reads exactly what those APIs expose. It is pre-release:
-expect rough edges, and read [Responsible use](#responsible-use--legality) before
-pointing it at boards you don't own.
+(`lanes_enabled`, off by default) can add postings from listings beyond the ATS boards —
+LinkedIn guest search, Indeed, hiring.cafe, GitHub new-grad lists and schema.org JSON-LD
+pages — and are held to a different standard, set out under
+[Responsible use](#responsible-use--legality). It reads exactly what those sources expose. Its
+bundled role knowledge covers software roles: another field can declare its own role families
+at `init`, but the eligibility catalog is still software-first. It is pre-release: expect rough
+edges, and read [Responsible use](#responsible-use--legality) before pointing it at boards you
+don't own.
 
 ---
 
-## Quickstart (≈2 minutes to your first shortlist)
+## Quickstart (a first shortlist in a few minutes)
 
-**Prerequisites.** Scanning and ranking need nothing beyond the install. Building résumé PDFs
+**Prerequisites.** Python 3.11–3.13 and [pipx](https://pipx.pypa.io/) (or
+[uv](https://docs.astral.sh/uv/)). Scanning and ranking need nothing else. Building résumé PDFs
 additionally needs two binaries on `PATH` — [tectonic](https://tectonic-typesetting.github.io/)
 and poppler's `pdfinfo`:
 
@@ -81,35 +89,56 @@ sudo apt-get install poppler-utils                  # Debian/Ubuntu (tectonic: s
 
 `boardwatch doctor` reports whether both are present. The Docker image bundles them.
 
-> Supported on macOS and Linux. Windows is best-effort — see [platform support](docs/platform-support.md).
+> Supported on macOS and Linux. Windows is best-effort — see [platform support](https://github.com/mit112/boardwatch/blob/main/docs/platform-support.md).
 
 ```bash
-pipx install boardwatch      # isolated, on your PATH
-boardwatch init              # pick a starter set of companies + paste your profile
+pipx install boardwatch      # isolated, on your PATH (or: uv tool install boardwatch)
+boardwatch init              # pick companies, then describe what you are looking for
 boardwatch scan              # poll the watched boards (polite, conditional GETs)
 boardwatch top               # ranked shortlist
+boardwatch show <#>          # one posting: score breakdown and eligibility evidence
 ```
 
-New here? Run `boardwatch guide` at any time to see the whole journey.
+`boardwatch init` is interactive. Pick **[1] Starter set** to watch 15 well-known boards in one
+keystroke, **[2] Search registry** to pick from the bundled catalog, or **[3] Paste** any
+`provider:slug` or board URL. Then paste your résumé text or a short profile, a few target and
+excluded titles, and locations. The eligibility questions are optional (you can answer them
+later). Last, name your field for the role filter: `software` uses the bundled role knowledge,
+any other name asks for your own role families, and blank leaves the filter off. On the
+starter set the first `scan` takes well under a minute (about 30 s and 3,200 postings when this
+was written), and the first `top` about two minutes, because it reads and evaluates every new
+posting once; after that `top` answers in a second or two.
 
-`boardwatch init` is interactive. Pick **[1] Starter set** to watch a curated group of
-well-known boards in one keystroke, **[2] Search registry** to pick from the bundled
-catalog, or **[3] Paste** any `provider:slug` or board URL. Then paste your résumé text
-and a few target/exclude titles and locations. A cold `init → scan → top` lands your
-first ranked shortlist in well under ten minutes.
+Two settings most people want next, both in `boardwatch profile edit`: a **target seniority
+band** (`entry`, `mid` or `senior`; the default `any` leaves the seniority filter off) and
+**target countries** (ISO-3166 alpha-3 codes such as `USA`), without which the country-based
+location filters stay off.
+
+`top` remembers what it showed you: a lead it surfaced stays off `run`'s shortlist for
+`seen_ttl_days` (7 by default), so the same job is not served twice. `top --no-record` looks
+without marking anything seen.
+
+New here? `boardwatch guide` prints the full command reference, generated from your installed
+copy. It is written for a coding agent working on your behalf, so it also says what each command
+reads and writes; `boardwatch skill` prints a short skill file for that agent to save.
 
 ### Other install methods
 
 #### Docker
 
 ```bash
-docker run --rm -v boardwatch-data:/data \
+docker run --rm -it -v boardwatch-data:/data \
   ghcr.io/mit112/boardwatch:latest --data-dir /data init
 docker run --rm -v boardwatch-data:/data \
   ghcr.io/mit112/boardwatch:latest --data-dir /data scan
 docker run --rm -v boardwatch-data:/data \
   ghcr.io/mit112/boardwatch:latest --data-dir /data top
 ```
+
+`init` asks questions, so it needs `-it`. Everything lives in the `boardwatch-data` volume: the
+database at `/data`, and your settings, résumé files and role taxonomy under `/data/config`. The
+review app (`boardwatch web`) binds loopback only, so it cannot be reached from outside the
+container; for [the daily pipeline](#the-daily-pipeline), install natively.
 
 #### From source
 
@@ -118,6 +147,58 @@ git clone https://github.com/mit112/boardwatch && cd boardwatch
 uv sync                      # https://docs.astral.sh/uv/
 uv run boardwatch init
 ```
+
+---
+
+## The daily pipeline
+
+`scan` and `top` answer "what is new and worth a look". **`boardwatch run`** does the whole job
+in one command: it scans, evaluates eligibility, ranks, re-checks that each shortlisted posting
+is still live, and renders a tailored one-page résumé PDF for every lead it delivers.
+**`boardwatch web`** then opens those leads in a local review page.
+
+It needs a résumé to tailor, which you write once as structured YAML — boardwatch never parses
+a PDF or Word file:
+
+```bash
+boardwatch tailor init       # scaffold {config_dir}/resume.yaml, then edit it
+boardwatch tailor validate   # confirm it loads: entry and bullet counts, detected skills
+boardwatch run --top 10      # scan → eligibility → rank → liveness → tailored PDFs
+boardwatch web               # review the delivered leads in your browser
+```
+
+Edit two files in your config directory before the first `run` (`init` and `tailor init` print
+their paths):
+
+- **`resume.yaml`** — your skills and your experience entries and bullets: the only text a
+  tailored résumé selects from. Its first `header` line is also your name in each PDF's file
+  name and metadata, unless `answers.yaml` sets `identity.full_name`.
+- **`resume_template.tex`** — the page layout, and the source of the name, contact line and
+  education block printed at the top of the page. `init` wrote a starter copy, and a run
+  refuses it until its placeholder identity is replaced ("Your Name", "555 555 5555",
+  "you@example.com", "Example University", "Example Field"). Replace the rest of that block
+  too — the city, the sample links, courses and GPA — because only those five phrases are
+  checked.
+
+What a run leaves behind:
+
+- **`~/boardwatch-queue/`** — one folder per delivered lead, holding its PDF, the job description,
+  an `apply.webloc` link to the posting and a `details.json`. Leads a check could not clear
+  wait in `_review/`; what you act on moves to `_applied/`, `_skipped/` or `_reported/`.
+- **`~/boardwatch-applications/<date>/`** — the day's render folders, a `morning-<run>.md`
+  summary, and a `funnel-<run>.md` that accounts for every posting the run considered.
+
+The review app reads that queue. It lists the apply and review lanes with each lead's PDF,
+job description and eligibility evidence, and marking a lead **applied** there keeps it from
+resurfacing, just like `track`. It binds `127.0.0.1` only and authenticates with a token kept in
+`{config_dir}/web-token`, so the URL it prints can be bookmarked. An optional
+`{config_dir}/answers.yaml` fills a copy-to-clipboard panel with the answers every application
+form asks for; nothing is ever typed into an employer's page.
+
+Schedule `run` once a day and it becomes an unattended driver: see
+[the unattended run guide](https://github.com/mit112/boardwatch/blob/main/docs/unattended-run.md)
+for launchd, cron and systemd recipes, the heartbeat URL, and what a normal day's exit code
+means.
 
 ---
 
@@ -148,9 +229,10 @@ uv run boardwatch init
   boards. `boardwatch companies add https://boards.greenhouse.io/acme` just works.
 - **`doctor`**: per-board connectivity and freshness, plus a local DB integrity check.
 - **`config show` / `config set`**: tune politeness and ranking weights (see below).
-
-`run` performs the same pipeline unattended — scan, evaluate, rank, and tailor — as one
-scheduled command; see [the unattended run guide](docs/unattended-run.md).
+- **`run`** and **`web`**: the whole pipeline as one scheduled command, and the local review page
+  for what it delivered. See [The daily pipeline](#the-daily-pipeline).
+- **`guide`** / **`skill`**: the full command reference and a short agent skill file, both
+  generated from your installed copy.
 
 ### Ranking, briefly
 
@@ -196,9 +278,11 @@ Three properties are deliberate:
   verdict. Out of the box there is no language model in the loop and nothing to hallucinate:
   the vocabulary and rules are a versioned catalog, and a verdict is invalidated and
   recomputed only when your profile or the catalog changes. There is an **opt-in,
-  off-by-default** model-assisted gate that can additionally hide a posting it reads as
-  ineligible; it can only ever hide, never clear, and turning it off restores the fully
-  deterministic path.
+  off-by-default** model-assisted final gate inside `run` (`gate.enabled`, which calls your own
+  `claude` CLI): it can withhold a lead it reads as ineligible, quoting the sentence it relied
+  on, and when it reads a posting as eligible it can release into the apply lane a lead held
+  for review only because the rules found no requirements to read or could not decide its
+  experience bar. Turning it off restores the fully deterministic path.
 - **Honest.** A clean posting reads as "no flags", never as a guarantee. "no flags" means
   only that no catalogued disqualifier was found, not that you are cleared to apply, and
   ambiguous wording reads as "check" rather than a false all-clear.
@@ -225,7 +309,7 @@ the count appears under the table, `stats` reports it, `show <id>` explains any 
 `top --include-over-seniority` lists the hidden rows with the title text that decided each one.
 
 Only a confident hit hides a posting; an unresolved level token abstains rather than guessing.
-Level-aware gating is optional and documented in [configuration](docs/configuration.md#level-aware-gating).
+Level-aware gating is optional and documented in [configuration](https://github.com/mit112/boardwatch/blob/main/docs/configuration.md#level-aware-gating).
 
 **The application form is not part of the posting boardwatch reads**, and on a Greenhouse board
 a form question stating a citizenship, US-person or export-control requirement holds the lead for
@@ -323,18 +407,18 @@ recomputation of verdicts.
 
 `boardwatch config show` prints every key, its value, and its default;
 `boardwatch config set <key> <value>` changes it (validated at set time and load time).
-The full key table lives in [docs/configuration.md](docs/configuration.md).
+The full key table lives in [docs/configuration.md](https://github.com/mit112/boardwatch/blob/main/docs/configuration.md).
 
 `boardwatch settings` gives a read-only view of every opt-in feature (LLM tiers,
 notifications) — state, what it does, what it sends anywhere — and `boardwatch settings
 toggle` flips them interactively; both share the same validation as `config set`. See
-[docs/configuration.md](docs/configuration.md#settings-menu).
+[docs/configuration.md](https://github.com/mit112/boardwatch/blob/main/docs/configuration.md#settings-menu).
 
 ---
 
-Schedule scans and get notified — see [scheduling](docs/scheduling.md).
+Schedule scans and get notified — see [scheduling](https://github.com/mit112/boardwatch/blob/main/docs/scheduling.md).
 
-Run the whole pipeline unattended — see [the unattended run guide](docs/unattended-run.md).
+Run the whole pipeline unattended — see [the unattended run guide](https://github.com/mit112/boardwatch/blob/main/docs/unattended-run.md).
 
 ---
 
@@ -351,7 +435,7 @@ boardwatch tailor run <posting-id>     # tailor it against one posting's extract
 ```
 
 `validate` and `run` read `{config_dir}/resume.yaml` unless you pass `--resume PATH`. `run`
-also takes `--out DIR` (default `{data_dir}/tailored`), `--format latex` (the only 1.0
+also takes `--out DIR` (default `{data_dir}/tailored`), `--format latex` (the only
 adapter), and `--dry-run` (report only; writes no file and records no artifact). It prints
 one line per bullet — kept, reordered, swapped, or dropped, with the JD skills that bullet
 covers — and the same per-bullet audit is stored on the artifact row.
@@ -378,7 +462,8 @@ bundled example template (whose header/education are placeholder text, e.g. "You
 "you@example.com"). A copy of that bundled template that was never edited is refused too. A
 lead without a shippable PDF is refused rather than delivered as rendered source: a missing
 `tectonic` on `PATH` fails the run loudly, and a résumé that compiles to more pages than
-`resume_max_pages` (default 1) is rejected. **Two binaries are required, not one** — `tectonic`
+your profile's page limit (`resume_max_pages`, default 1, set with `boardwatch profile edit`)
+is rejected. **Two binaries are required, not one** — `tectonic`
 to compile and poppler's `pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
 lead is refused. `boardwatch doctor` probes for both and exits non-zero if either is
 missing. Output lands at
@@ -393,25 +478,28 @@ about. If a later compile
 fails, the stale PDF from the previous run is removed rather than left behind next to the
 new source.
 
-Opt-in LLM rewriting is covered in [tailoring](docs/tailoring.md).
+Opt-in LLM rewriting is covered in [tailoring](https://github.com/mit112/boardwatch/blob/main/docs/tailoring.md).
 
 ---
 
-## Career-profile bundle (unstable, not wired to anything yet)
+## Career-profile bundle (advanced, optional)
 
 `boardwatch profile-bundle` is a private, revisioned, filesystem-only store for the career
 facts a résumé is assembled from: typed YAML records, evidence captured by digest, owner
 approval bound to a content digest, and immutable content-addressed revisions. It lives at
 `{config_dir}/career-profile` (override with `--bundle PATH`) and nothing leaves your machine.
 
-**It is not connected to anything.** `boardwatch tailor` still reads
-`{config_dir}/resume.yaml`; there is deliberately no bundle-to-résumé bridge yet, and the
-bundle's on-disk grammar, digests and JSON reports may still change. Use it only if you want
-to try the authoring model.
+It is an alternative to hand-writing `resume.yaml`, not a requirement. **Projection** turns a
+promoted revision into a résumé: `profile-bundle approve-projection` records your approval of
+the exact text it will print, and `boardwatch run --project` then renders each lead from the
+bundle instead of `resume.yaml` (`resume project` followed by `tailor run --resume` does the
+same for one posting). The bundle's on-disk format and JSON reports may still change between
+releases.
 
-See [docs/profile-bundle-authoring.md](docs/profile-bundle-authoring.md) for the format, the
-twelve commands, the 0/1/2/3 exit contract, and recovery from a stale draft or a corrupt
-evidence blob.
+See [docs/profile-bundle-authoring.md](https://github.com/mit112/boardwatch/blob/main/docs/profile-bundle-authoring.md) for the format, every
+command, the 0/1/2/3 exit contract, and recovery from a stale draft or a corrupt evidence blob,
+and [docs/projection-rendering.md](https://github.com/mit112/boardwatch/blob/main/docs/projection-rendering.md) for the path from a promoted
+bundle to a PDF.
 
 ---
 
@@ -425,20 +513,38 @@ evidence blob.
 | Workable        | `apply.workable.com/api/v1/widget/accounts/<slug>?details=true` (single request, whole board) | none |
 | SmartRecruiters | `api.smartrecruiters.com/v1/companies/<slug>/postings?limit=100&offset=0` (paginated list, plus one detail fetch per unseen posting) | none |
 | Workday         | `<tenant>.wd<N>.myworkdayjobs.com/wday/cxs/<tenant>/<site>/jobs` (**POST**-only, paginated at the server's hard maximum of 20/page, plus one detail fetch per unseen posting) | none |
+| Oracle HCM      | `<host>/hcmRestApi/resources/latest/recruitingCEJobRequisitions` (paginated list, plus one detail fetch per unseen posting) | none |
+| Eightfold       | `<host>/api/pcsx/search`, after reading the tenant's `domain` from its public career page (plus one detail fetch per unseen posting) | none |
+| Phenom          | `POST <host>/widgets` on the employer's own domain (plus one detail fetch per unseen posting) | none |
+| Jibe            | `<careers-host>/api/jobs?page=<n>&limit=100` on the employer's own domain | none |
+| Amazon          | `www.amazon.jobs/en/search.json`, one job category per board | none |
+| Apple           | `jobs.apple.com/en-us/search` — the data embedded in the public search page, one country per board (plus one detail page per unseen posting) | none |
 
-**Workday boards need three parts, not one.** A Workday board is identified by a host, a
-tenant and a career-site slug, so its target form is
-`workday:<host>/<tenant>/<CareerSite>` — for example
-`workday:acme.wd5.myworkdayjobs.com/acme/AcmeCareers`. Pasting the career-site URL
-(`acme.wd5.myworkdayjobs.com/AcmeCareers`) works too and derives the tenant for you. Site
-slugs are **case-sensitive**; hosts and tenants are not. One tenant can serve several
-disjoint career sites, so each site is watched as its own board.
+**Naming a board.** `companies add` takes a board URL or a `provider:slug`:
 
-boardwatch ships a bundled **registry** of verified public boards (35+ companies, with a
-curated **starter set**), so `init` works offline out of the box. You can watch any board
-these providers host, not just the registry, with `companies add`. The registry is
-community-maintainable by PR; see
-[`src/boardwatch/registry/README.md`](src/boardwatch/registry/README.md).
+- **Greenhouse, Lever, Ashby, Workable, SmartRecruiters** — paste the board URL
+  (`https://boards.greenhouse.io/acme`), or `greenhouse:acme` and so on.
+- **Workday needs three parts, not one.** A Workday board is identified by a host, a tenant
+  and a career-site slug, so its target form is `workday:<host>/<tenant>/<CareerSite>` — for
+  example `workday:acme.wd5.myworkdayjobs.com/acme/AcmeCareers`. Pasting the career-site URL
+  (`acme.wd5.myworkdayjobs.com/AcmeCareers`) works too and derives the tenant for you. Site
+  slugs are **case-sensitive**; hosts and tenants are not. One tenant can serve several
+  disjoint career sites, so each site is watched as its own board.
+- **Oracle HCM** — paste the `…/hcmUI/CandidateExperience/en/sites/<Site>` URL, or
+  `oraclehcm:<host>/<Site>`.
+- **Eightfold** — paste `https://<tenant>.eightfold.ai/careers`, or `eightfold:<host>` for a
+  career site on the employer's own domain.
+- **Jibe and Phenom** live on the employer's own domain, so a pasted URL cannot name them:
+  use `jibe:<careers-host>` and `phenom:<host>/<country>/<lang>`.
+- **Amazon and Apple** are one board per job category or country: `amazon:<category>` (for
+  example `amazon:software-development`) and `apple:<country>` (for example
+  `apple:united-states`).
+
+boardwatch ships a bundled **registry** of 37 verified public boards on Greenhouse, Lever,
+Ashby, Workable and SmartRecruiters, 15 of them a curated **starter set**, so `init` works
+offline out of the box. You can watch any board these providers host, not just the registry,
+with `companies add`. The registry is community-maintainable by PR; see
+[`src/boardwatch/registry/README.md`](https://github.com/mit112/boardwatch/blob/main/src/boardwatch/registry/README.md).
 
 **Verifying a slug before you watch it.** `companies add` and `companies import` are
 offline by default — they accept any well-formed `provider:slug` and let the next `scan`
@@ -448,17 +554,18 @@ that return 404 or cannot be reached are skipped rather than written. `import --
 exits non-zero if it skipped anything, so a partial import does not read as a clean one.
 
 Provider capabilities at a glance — bodies, registry counts, starter membership, and honest
-limits — are in the [provider matrix](docs/provider-matrix.md); per-provider coverage limits
-are in [provider notes](docs/providers.md).
+limits — are in the [provider matrix](https://github.com/mit112/boardwatch/blob/main/docs/provider-matrix.md); per-provider coverage limits
+are in [provider notes](https://github.com/mit112/boardwatch/blob/main/docs/providers.md).
 
 ---
 
 ## Responsible use & legality
 
-boardwatch reads the **same public, keyless endpoints that power each company's own
-careers page**: it does not scrape rendered HTML, log in, or bypass any access control.
-That is deliberately the least-invasive way to get this data. Still, these are
-third-party services, and using them responsibly is on you:
+By default boardwatch reads the **same public, keyless endpoints that power each company's own
+careers page** — a JSON API for most providers, and for Apple (and the first request of an
+Eightfold scan) the data embedded in that public page. It does not log in, send cookies or
+tokens, or bypass any access control. That is deliberately the least-invasive way to get this
+data. Still, these are third-party services, and using them responsibly is on you:
 
 - **Keep the politeness defaults.** The defaults (≥1 request/sec per host, conditional
   GETs, bounded retries, a descriptive User-Agent) are intentionally gentle. Don't crank
@@ -474,6 +581,17 @@ third-party services, and using them responsibly is on you:
 If you're unsure whether your use is appropriate, err toward watching fewer boards, less
 often. A job seeker checking a dozen companies once a day is the intended shape.
 
+**The opt-in discovery lanes do not all meet that bar, which is why each is off unless you name
+it in `lanes_enabled`** (`linkedin`, `indeed`, `hiringcafe`, `jsonld`, `jobapps`). They read
+listings beyond an employer's own board. `jsonld` — like the GitHub new-grad lists and `grnh.se`
+links that it and `companies discover` read — sends no key or cookie and identifies itself
+honestly, and `jobapps` only reads a folder another local tool writes. The rest go further: the
+LinkedIn guest-search pages and the hiring.cafe search those lanes read are disallowed by those
+sites' `robots.txt`, and the Indeed lane calls Indeed's mobile-app API while presenting that
+app's own client identity. Each lane's module docstring under `src/boardwatch/lanes/` states
+exactly what it requests and why. Whether to enable one is your decision, under that site's
+terms.
+
 ---
 
 ## Privacy & data
@@ -482,10 +600,21 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
   the opt-in LLM tier also caches raw responses there as plain files on disk (override with
   `--data-dir`). No server, no account, no cloud.
 - **No telemetry.** boardwatch phones home to nobody.
-- **Two optional secrets, env-only.** The default path authenticates to nothing. The
-  opt-in LLM tier reads `BOARDWATCH_LLM_API_KEY` and the opt-in webhook notifier reads
-  `BOARDWATCH_NOTIFY_WEBHOOK_URL`, both from the environment only and never written to
-  disk. See [SECURITY.md](SECURITY.md).
+- **Every secret is opt-in and read from the environment only**, never written to disk. The
+  default path authenticates to nothing. The LLM tiers read `BOARDWATCH_LLM_API_KEY`, the
+  webhook notifier `BOARDWATCH_NOTIFY_WEBHOOK_URL`, and an unattended `run` can ping
+  `BOARDWATCH_HEARTBEAT_URL` (a dead-man's switch) and post its warnings to
+  `BOARDWATCH_ALERT_URL`. The optional final-eligibility gate takes no key: it runs your own
+  `claude` CLI. [SECURITY.md](https://github.com/mit112/boardwatch/blob/main/SECURITY.md) says exactly what each one sends.
+
+**Where your files live.**
+
+| What | macOS | Linux | Override |
+|---|---|---|---|
+| Settings and authored files (`config.toml`, `resume.yaml`, `resume_template.tex`, `answers.yaml`, `career-profile/`) | `~/Library/Application Support/boardwatch/` | `~/.config/boardwatch/` | `BOARDWATCH_CONFIG_DIR` |
+| The database (`boardwatch.db`) and caches | `~/Library/Application Support/boardwatch/` | `~/.local/share/boardwatch/` | `--data-dir`, `BOARDWATCH_DATA_DIR` |
+| The delivery queue | `~/boardwatch-queue/` | `~/boardwatch-queue/` | `run`/`web --queue-root` |
+| Each run's PDFs and reports | `~/boardwatch-applications/` | `~/boardwatch-applications/` | `run --out`, `web --out-root` |
 
 ---
 
@@ -494,10 +623,12 @@ often. A job seeker checking a dozen companies once a day is the intended shape.
 - [x] PyPI + GHCR published releases (`pipx install boardwatch`, `docker run …`)
 - [x] Notifications on new matches (desktop / webhook)
 - [x] `digest` and `top --new` change detection (only what changed since last run)
-- [x] More ATS providers (community-driven)
+- [x] More ATS providers: Workable, SmartRecruiters, Oracle HCM, Eightfold, Phenom, Jibe, and
+      Amazon's and Apple's own career sites
 - [x] Data-portability export (`--format jsonl|csv`)
 - [x] Résumé tailoring (`tailor init/validate/run`, local, no-fabrication guarantee)
 - [x] Workday provider (host/tenant/site composite board identity)
+- [x] The unattended daily pipeline (`boardwatch run`) and a local review app (`boardwatch web`)
 - [x] More eligibility rule families (contract vs. full-time, internships)
 - [x] A readable settings surface, so every opt-in feature is discoverable and reversible
       without hand-editing `config.toml`
@@ -511,12 +642,12 @@ Next:
 
 - [ ] An onboarding flow that fits fields other than software, so the eligibility taxonomy is
       gathered from you rather than assumed
-- [ ] A measured acceptance run — the daily numbers published rather than asserted
+- [ ] A measured acceptance run — the daily numbers published rather than asserted (in progress)
 - [ ] Broader company coverage, but only after the above shows the funnel converts; breadth
       multiplies whatever is downstream of it, including the mistakes
 
 > **These boxes track `main`, which can run ahead of the latest published release.**
-> [CHANGELOG.md](CHANGELOG.md) is the authoritative record of what shipped in the version
+> [CHANGELOG.md](https://github.com/mit112/boardwatch/blob/main/CHANGELOG.md) is the authoritative record of what shipped in the version
 > `pipx install boardwatch` gives you; anything under *Unreleased* needs an install from
 > source.
 
@@ -528,11 +659,12 @@ Have a company on a board boardwatch doesn't reach yet, or an ATS you want suppo
 ## Contributing
 
 Contributions welcome: code, registry entries, or bug reports. The smallest useful one is
-adding a public board — see the [Contributing a board walkthrough](CONTRIBUTING.md#contributing-a-board),
-which has a one-command local check. See [CONTRIBUTING.md](CONTRIBUTING.md) for dev setup
-(`uv sync`, `make check`) and the [registry guide](src/boardwatch/registry/README.md) for the
-catalog schema. All changes land via PR against a branch-protected `main`.
+adding a public board — see the [Contributing a board walkthrough](https://github.com/mit112/boardwatch/blob/main/CONTRIBUTING.md#contributing-a-board),
+which has a one-command local check. See [CONTRIBUTING.md](https://github.com/mit112/boardwatch/blob/main/CONTRIBUTING.md) for dev setup
+(`uv sync`, `make check`) and the [registry guide](https://github.com/mit112/boardwatch/blob/main/src/boardwatch/registry/README.md) for the
+catalog schema. All changes land via PR against a branch-protected `main`. Questions and ideas
+are welcome as [issues](https://github.com/mit112/boardwatch/issues) too.
 
 ## License
 
-[MIT](LICENSE).
+[MIT](https://github.com/mit112/boardwatch/blob/main/LICENSE).

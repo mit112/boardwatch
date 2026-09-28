@@ -47,8 +47,14 @@ What to expect from an unattended run:
   steady-state day where every eligible posting was already handled can legitimately exit 0 with
   no new leads; the zero-output guard fails a run only when it produced nothing it provably
   should have.
-- **It makes no network LLM calls by default.** Tier-B rewriting is opt-in and requires an
-  explicit API key, so a scheduled `run` never spends tokens unattended.
+- **It makes no LLM calls by default.** Tier B rewording is not part of `run` at all. The one
+  model call a run can make is the final-eligibility gate, off until you arm `gate.enabled`;
+  armed, each run calls your local `claude` CLI and spends that account's usage (see
+  [configuration](configuration.md#gate) and [SECURITY.md](../SECURITY.md)).
+- **What it leaves behind** is the delivery queue (`~/boardwatch-queue/`, one folder per lead)
+  and a dated folder under `--out` (`~/boardwatch-applications/<date>/`) holding the render
+  folders and the `morning-<run_id>`/`funnel-<run_id>` reports. Review the leads with
+  `boardwatch web`.
 - **The first scheduled run migrates the store to head** before doing anything, so any pending
   schema repair is applied automatically.
 - **Liveness checking is on by default** — each run re-fetches shortlisted postings and withholds
@@ -100,6 +106,11 @@ arrive. The ping fires **only on a clean run**, so a run that failed, crashed, o
 all leave the monitor silent and it alerts — the failure mode a local check can't see. It is
 presence-gated (unset ⇒ no ping) and, like the webhook URL, the value is a secret read from the
 environment, never `config.toml`; put it in the agent's `EnvironmentVariables` alongside `PATH`.
+
+**Alerting when a run succeeds but degrades.** The heartbeat cannot see a run that finished while
+raising warnings — it still pings. Set `BOARDWATCH_ALERT_URL` too and each such run POSTs its
+warning lines there; a healthchecks.io `/fail` URL for the same check turns silence-watching into
+degradation-watching as well. Presence-gated, and a failed post never fails the run.
 
 Everything the `scan` schedule notes — environment variables, running as the same user that ran
 `init`, and running the command once by hand first — applies here too. See

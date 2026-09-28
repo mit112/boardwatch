@@ -1,6 +1,6 @@
 # Provider compatibility matrix
 
-The six ATS providers boardwatch reads, at a glance. For the exact public endpoints and auth,
+The twelve providers boardwatch reads, at a glance. For the exact public endpoints and auth,
 see the [Supported boards table in the README](../README.md#supported-boards); for the
 behavioural limits behind the last column, see [provider notes](providers.md).
 
@@ -16,6 +16,12 @@ registry.
 | **Workable** | 1 | no (catalog only) | inline (whole board in one request) | yes — a wrong slug returns no board | 1 catalog entry so `doctor` can probe real connectivity; not curated into the starter set |
 | **SmartRecruiters** | 1 | no (catalog only) | one detail fetch per unseen posting, bounded by `detail_fetch_budget`, never refreshed | **no** — an unknown slug returns an *empty* board, not an error, so a typo reads as "unverifiable", not "wrong" | bodies fill in across scans; a description-only edit is not re-fetched (no revision signal) |
 | **Workday** | 0 | no | one detail fetch per unseen posting, bounded by `detail_fetch_budget`, never refreshed | reported "not checked" until you watch one with `companies add` | no `ETag`/`Last-Modified`, so every scan re-reads the whole board; large boards report `partial` and fill in over many scans |
+| **Oracle HCM** | 0 | no | one detail fetch per unseen posting, bounded by `detail_fetch_budget` | **no** — an unknown site number silently serves the host's default board, and no response field tells the two apart | a mistyped site watches a real but different board: check the first scan's postings are the employer's |
+| **Eightfold** | 0 | no | one detail fetch per unseen posting, bounded by `detail_fetch_budget` | yes — a host that does not resolve, or a career page that answers 404, is skipped | each scan first reads the public career page for the tenant's `domain` value |
+| **Phenom** | 0 | no | one detail fetch per unseen posting, bounded by `detail_fetch_budget` | partly — a host that does not answer is skipped, but a wrong country or language reads as an empty board | no `ETag`/`Last-Modified`, so every scan re-reads the board; a pasted URL cannot name one — use `phenom:<host>/<country>/<lang>` |
+| **Jibe** | 0 | no | inline with the listing | partly — a host that does not answer is skipped | a pasted URL cannot name one — use `jibe:<careers-host>` |
+| **Amazon** | 0 | no | inline with the listing | a category outside the closed catalog is refused by `companies add` itself | the API cannot page past 10,000 results, so each board is one category (the largest held 3,370 when measured) |
+| **Apple** | 0 | no | one detail page per unseen posting, bounded by `detail_fetch_budget` | a country outside the closed catalog is refused by `companies add` itself | no JSON API: boardwatch reads the data embedded in the public search page, so a front-end change surfaces as an error, never as an empty board |
 
 ## Reading the columns
 
@@ -24,22 +30,24 @@ registry.
   budget, provider diversity, owner recognizability sign-off) is documented in the
   [registry README](../src/boardwatch/registry/README.md#starter-set-selection-rule). Workable
   and SmartRecruiters ship as catalog-only entries so `doctor` can exercise those providers;
-  Workday ships no bundled board.
+  the other seven providers ship no bundled board.
 
-- **JD body** — four providers (Greenhouse, Lever, Ashby, Workable) return the job description
-  inline with the listing, so a scan has the body without a second request. SmartRecruiters and
-  Workday require a separate per-posting detail fetch, capped each scan by `detail_fetch_budget`
-  (default 50) and never refreshed once fetched.
+- **JD body** — six providers (Greenhouse, Lever, Ashby, Workable, Jibe, Amazon) return the job
+  description inline with the listing, so a scan has the body without a second request. The
+  other six require a separate per-posting detail fetch, capped each scan by
+  `detail_fetch_budget` (default 50).
 
 - **`--verify` catches a wrong slug** — `companies add --verify` probes a board before watching
   it and skips any it cannot confirm. It works by the health vocabulary where a wrong slug reads
-  as *dead* (no board). The one exception is **SmartRecruiters**, whose API returns an empty
+  as *dead* (no board). **SmartRecruiters** is the clearest exception: its API returns an empty
   board for an unknown company, so `--verify` cannot tell a typo from a genuinely empty board —
-  it says so rather than confirming. **Workday** ships no registry board, so `doctor` reports it
-  as "not checked" until you watch one.
+  it says so rather than confirming. **Oracle HCM** is worse, since a wrong site serves a real,
+  different board. **Amazon** and **Apple** need no probe for this: their categories and
+  countries are closed catalogs that `companies add` checks. **Workday** ships no registry
+  board, so `doctor` reports it as "not checked" until you watch one.
 
 - **Honest limit** — the behaviour a new operator is most likely to be surprised by. Full detail,
-  including the incremental fill both detail-fetch providers exhibit, is in
+  including the incremental fill the detail-fetch providers exhibit, is in
   [provider notes](providers.md).
 
 ## Adding a board or a provider
@@ -48,4 +56,5 @@ registry.
   ["Contributing a board" walkthrough](../CONTRIBUTING.md#contributing-a-board).
 - A **new provider** → its identity is a provider class plus one line in `PROVIDER_CLASSES`
   (`src/boardwatch/providers/registry.py`); the file's module docstring is the contract. This is
-  a larger change and a good Discussions thread before a PR.
+  a larger change, so open an [issue](https://github.com/mit112/boardwatch/issues/new/choose)
+  before a PR.

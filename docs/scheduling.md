@@ -1,5 +1,9 @@
 # Scheduling scans and notifications
 
+To schedule the whole daily pipeline — scan, eligibility, ranking and tailored PDFs — schedule
+`boardwatch run` instead; [the unattended run guide](unattended-run.md) builds on the mechanics
+below.
+
 ## Schedule scans
 
 Run `boardwatch init` once interactively before scheduling scans. The scheduler must run as the same user that ran `init`, so it reads the same local profile and database. Start with a daily scan; the default politeness settings are designed for that cadence.

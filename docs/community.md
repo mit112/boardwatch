@@ -70,7 +70,7 @@ deliberately manual):
 >
 > boardwatch ships a bundled registry of public company boards so `init` works offline. It is
 > community-maintainable: the fastest way to add a board that a supported provider already hosts
-> (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday) is a small PR — see the
+> (any of the twelve in the provider matrix) is a small PR — see the
 > ["Contributing a board" walkthrough](../CONTRIBUTING.md#contributing-a-board), which includes a
 > one-command local check before the full gate.
 >

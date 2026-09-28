@@ -4,8 +4,11 @@ Dev setup: install [uv](https://docs.astral.sh/uv/), then `uv sync` and
 `uv run pre-commit install`. `make check` (generalization + index-check + ruff + mypy --strict + the React
 suite + pytest) must be green before every PR — the React suite needs node, which `make check` installs
 into `web/node_modules` on first run; CI runs the same commands: pull requests run the test suite on ubuntu with
-Python 3.11-3.13, plus gitleaks and a dedicated generalization job; pushes to `main` additionally
-run that test matrix on macOS and Windows.
+Python 3.11-3.13, plus gitleaks, perf, a dedicated generalization job and a web-bundle job;
+pushes to `main` additionally run the test matrix on macOS, and Windows runs nightly and on
+demand. The web-bundle job also runs ESLint, which `make check` does not, so after changing
+anything under `web/` run `cd web && npm run lint && npm run typecheck`, then `make web`, and
+commit the rebuilt bundle with your change.
 
 ## What must never enter this repo
 
@@ -50,9 +53,8 @@ The bundled registry catalog (company boards) has its own bar — see
 ## Contributing a board
 
 Adding a public company board to the bundled registry is the smallest useful contribution.
-The registry (`src/boardwatch/registry/companies.yaml`) is a plain YAML catalog; a board on a
-[supported provider](docs/provider-matrix.md) — Greenhouse, Lever, Ashby, Workable,
-SmartRecruiters, or Workday — is a few lines.
+The registry (`src/boardwatch/registry/companies.yaml`) is a plain YAML catalog; a board on any
+[supported provider](docs/provider-matrix.md) is a few lines.
 
 1. **Confirm the board is public and reachable.** Let boardwatch probe it for you:
 
@@ -83,5 +85,6 @@ SmartRecruiters, or Workday — is a few lines.
    generalization, index, ruff, mypy, and full pytest checks that CI also runs); the narrow check
    in step 3 is only to catch the common mistake early. One board per PR keeps review simple.
 
-Not sure which provider a board is on, or want a provider boardwatch does not support yet? That
-is a good [Discussions](docs/community.md) thread before a PR.
+Not sure which provider a board is on, or want a provider boardwatch does not support yet? Open
+an [issue](https://github.com/mit112/boardwatch/issues/new/choose) with the board or provider
+template before a PR.
