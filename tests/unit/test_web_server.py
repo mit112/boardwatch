@@ -2567,6 +2567,19 @@ def test_the_token_is_stable_per_install_and_stored_at_mode_0600(tmp_path: Path)
     assert not list(config_dir.glob(f"{TOKEN_FILENAME}.*")), "a temp file was left behind"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX mode bits")
+def test_a_reused_token_file_is_tightened_to_mode_0600(tmp_path: Path) -> None:
+    """A restored or copied token keeps its value but not a broader mode."""
+    config_dir = tmp_path / "cfg"
+    config_dir.mkdir()
+    path = config_dir / TOKEN_FILENAME
+    path.write_text("a-restored-token-value", encoding="utf-8")
+    path.chmod(0o644)
+
+    assert load_or_create_token(config_dir) == "a-restored-token-value"
+    assert oct(path.stat().st_mode & 0o777) == "0o600"
+
+
 def test_a_missing_bundle_is_refused_with_a_named_error(
     ctx: ApiContext, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

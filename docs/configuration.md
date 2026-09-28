@@ -6,10 +6,8 @@ show` to see current values (and their defaults) and `boardwatch config set <key
 out-of-range values are rejected with a clear error. Weights are read live on
 every `top` run (no restart needed).
 
-`config show` prints every key on this page except `llm.base_url` and
-`lane_new_companies_per_run_overrides`, with its value and, for most keys, its default, range and
-when it takes effect. Where the two disagree, this page states what `config set` accepts:
-`config show` describes `lane_posting_budget` as `≥0`, but its floor is 1. **An unknown key in `config.toml` is ignored silently**, so read any hand edit back
+`config show` prints every key on this page with its value and, for most keys, its default, range
+and when it takes effect. **An unknown key in `config.toml` is ignored silently**, so read any hand edit back
 with `config show` — the file alone cannot tell a typo from success.
 
 ### Scanning and politeness
@@ -61,11 +59,11 @@ enabling one: the lanes are held to a different standard than the ATS boards.
 
 | Key | Type / Range | Default | What it controls | Takes effect |
 |---|---|---|---|---|
-| `lanes_enabled` | comma-separated names | empty | Which lanes run: `linkedin`, `indeed`, `hiringcafe`, `jsonld`, `jobapps`. Blank disarms every lane | next run |
+| `lanes_enabled` | comma-separated names | empty | Which lanes run: `linkedin`, `indeed`, `hiringcafe`, `jsonld`, `jobapps`; `config set` refuses any other name. Blank disarms every lane | next run |
 | `lane_search_hubs` | JSON array | empty | LinkedIn search hubs, e.g. `'["Austin, TX", "Boston, MA"]'`; blank disables hub nets | next run |
 | `lane_github_lists` | comma-separated `owner/repo` | empty | Public GitHub job lists to read, e.g. `SimplifyJobs/New-Grad-Positions`; blank reads none | next run |
 | `lane_new_companies_per_run` | int, ≥ 0 | 10 | Companies one lane may add per run (already-known ones are free) | next run |
-| `lane_new_companies_per_run_overrides` | table of lane name → int ≥ 0 or `"unlimited"` | `jobapps` and `hiringcafe` unlimited | Per-lane replacements for `lane_new_companies_per_run`; an `"indeed.tier1"` key bounds the Indeed lane's tier-1 admissions separately. Hand-edit only, and not printed by `config show` | next run |
+| `lane_new_companies_per_run_overrides` | table of lane name → int ≥ 0 or `"unlimited"` | `jobapps` and `hiringcafe` unlimited | Per-lane replacements for `lane_new_companies_per_run`; an `"indeed.tier1"` key bounds the Indeed lane's tier-1 admissions separately. Hand-edit only; `config show` prints it | next run |
 | `lane_posting_budget` | int, ≥ 1 | 60 | Job-description requests one lane may make per run (to switch a lane off, leave it out of `lanes_enabled`) | next run |
 | `lane_search_pages` | int, ≥ 1 | 1 | Search pages one lane requests per facet | next run |
 | `lane_hub_combos_per_run` | int, ≥ 0 | 12 | LinkedIn term/hub combinations searched per run | next run |

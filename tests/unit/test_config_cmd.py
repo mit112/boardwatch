@@ -310,7 +310,7 @@ def test_every_scalar_setting_is_reachable_from_the_cli() -> None:
     # A per-lane MAPPING, not a scalar `_SCALAR_KEYS` can cast: `config set`'s casters each
     # parse one string into one value, and a lane name isn't known ahead of time to give one a
     # key of its own. Deliberately config.toml-only — hand-edit the `[lane_new_companies_per_run_overrides]`
-    # table; `config show` omits it for the same reason.
+    # table; `config show` prints it read-only.
     non_scalar = {"lane_new_companies_per_run_overrides"}
     scalar = set(Settings.model_fields) - nested - paths - non_scalar
 
@@ -391,3 +391,34 @@ def test_set_lane_github_lists_round_trips_and_refuses_a_non_pair(cfg) -> None:
     refused = runner.invoke(app, [*_base(cfg), "config", "set", "lane_github_lists", "a/b/c"])
     assert refused.exit_code == 1
     assert (cfg / "config.toml").read_text() == before
+
+
+def test_set_lanes_enabled_refuses_a_name_outside_the_lane_catalog(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "lanes_enabled", "jsonld,bogus"])
+    assert result.exit_code == 1
+    assert "'bogus' is not a lane" in result.stdout
+    assert not (cfg / "config.toml").exists()  # nothing written on the failure path
+
+
+def test_set_lanes_enabled_accepts_every_catalog_lane(cfg) -> None:
+    lanes = "linkedin,indeed,hiringcafe,jsonld,jobapps"
+    result = runner.invoke(app, [*_base(cfg), "config", "set", "lanes_enabled", lanes])
+    assert result.exit_code == 0, result.stdout
+    written = tomllib.loads((cfg / "config.toml").read_text())["lanes_enabled"]
+    assert written == lanes.split(",")
+
+
+def test_an_unknown_lane_in_config_toml_still_loads(cfg) -> None:
+    """The catalog check is `config set`'s alone: a load-time refusal would stop the daily run
+    over one stale lane name, which the runner instead reports into the run's errors."""
+    (cfg / "config.toml").write_text('lanes_enabled = ["bogus"]\n')
+    assert load_settings(data_dir=cfg / "data").lanes_enabled == ("bogus",)
+
+
+def test_show_prints_base_url_and_the_new_companies_overrides(cfg) -> None:
+    result = runner.invoke(app, [*_base(cfg), "config", "show", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["llm.base_url"]["value"] is None
+    overrides = payload["lane_new_companies_per_run_overrides"]["value"]
+    assert overrides == {"jobapps": "unlimited", "hiringcafe": "unlimited"}

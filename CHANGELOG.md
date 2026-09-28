@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `config show` now prints `llm.base_url` and `lane_new_companies_per_run_overrides`, describes
+  `lane_posting_budget`'s floor as 1 (it said 0), and says `gate.claude_config_dir` is passed
+  verbatim (it claimed an expanded absolute path; `~` is not expanded) (T270).
+- `config set lanes_enabled` refuses a name that is not a lane (`linkedin`, `indeed`, `hiringcafe`,
+  `jsonld`, `jobapps`) instead of writing it. Loading `config.toml` still accepts any name, so a
+  stale lane name never stops a run; the run reports it and skips it (T270).
+- `boardwatch web` resets an existing `web-token` to mode 0600 when it reuses it, so a restored or
+  copied token with broader permissions no longer stays readable by other users (T270).
+- The Docker image warms tectonic's package cache as the runtime `boardwatch` user, so the cache is
+  in that user's home rather than in `/root`, which the user cannot read. The warm-up also compiles
+  the résumé template's preamble instead of a bare `article`, the same warm-up CI runs (T270).
+
 ## [0.6.0] - 2026-09-28
 
 Catches the published package up to `main` (about 790 commits since 0.5.0). The headline change for

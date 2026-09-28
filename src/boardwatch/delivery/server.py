@@ -219,13 +219,17 @@ def load_or_create_token(config_dir: Path) -> str:
     and the exclusive create is also what makes two simultaneous first launches produce one token
     instead of racing each other to overwrite it.
 
-    An existing file is trusted as-is and never rewritten. An empty or whitespace-only one is
-    treated as absent, because a zero-byte token would authenticate every request that sent
+    An existing file's token is reused and never rewritten, but its mode is reset to 0600: a
+    restored or copied file can arrive with broader permissions. A file already at 0600 is left
+    untouched, so a read-only mount of a correct token still works. An empty or whitespace-only one
+    is treated as absent, because a zero-byte token would authenticate every request that sent
     nothing.
     """
     path = config_dir / TOKEN_FILENAME
     existing = _read_token(path)
     if existing is not None:
+        if path.stat().st_mode & 0o777 != TOKEN_MODE:
+            os.chmod(path, TOKEN_MODE)
         return existing
     config_dir.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(TOKEN_BYTES)
