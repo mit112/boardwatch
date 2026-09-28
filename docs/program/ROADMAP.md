@@ -54,8 +54,8 @@ to eligibility, the profile or the résumé gate restarts the count; a scan/boar
 
 ## In scope, small, not a bar
 
-- An accurate README (done 2026-09-25b), the numbers recorded (METRICS), the v0.6.0 version cut (T255 — the PyPI publish is
-  an owner confirmation).
+- An accurate README and user docs (done 2026-09-28c, D-607; the 25b pass had fixed two lines), the numbers recorded
+  (METRICS), the v0.6.0 version cut (T255 — published 2026-09-28c on the owner's confirmation, D-607).
 - Keep the run healthy: the seat stays quiet from ~03:00 through a run's gate stage (T247 ruling); Windows is best-effort
   (T251).
 
