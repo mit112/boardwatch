@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-28
+
+Catches the published package up to `main` (about 790 commits since 0.5.0). The headline change for
+users is daily delivery: `run` writes each lead into a queue folder with its one-page résumé PDF, split
+into an apply lane and a review lane, and a local review web app (`boardwatch web`) reads that queue.
+Target countries and the role taxonomy are now profile data gathered at onboarding, and scanning
+reaches more employer boards (Amazon, Apple, Eightfold, Jibe, Oracle HCM and Phenom providers are new).
+The README and the user docs are rewritten for this release.
+
+### Notes
+
+- Upgrading from 0.5.0 applies nine store migrations automatically the first time a command opens the
+  store. No manual step is required for them.
+- **Approve your projection once more after upgrading** (`boardwatch profile-bundle approve-projection`):
+  the approval is now bound to the résumé header and education and staked on the rendered content, so
+  every stamp written by 0.5.0 reads as stale (see Changed and Fixed below).
+- A run now refuses when `{config_dir}/resume_template.tex` is missing or still the unedited starter.
+  If you upgraded rather than ran `init`, re-running `boardwatch init` writes the starter copy (it never
+  overwrites one); edit its header and education before your next run.
+- Each queue folder's `details.json` moves to `schema` 2; the first sync after upgrading rewrites every
+  folder once.
+- The Docker image keeps its config directory in the data volume, at `/data/config`. Settings written
+  under the 0.5.0 image lived in the container itself and were already lost when it exited.
+
 ### Added
 
 - **A jobright record that job-apps' resolver sent to an employer's own posting is filed under that
@@ -4332,6 +4356,8 @@ First public release.
   disk. Overridable with `--data-dir`. No server, no cloud, no telemetry.
 - **`doctor`** for connectivity, per-board health and freshness, and database integrity.
 
+[0.6.0]: https://github.com/mit112/boardwatch/releases/tag/v0.6.0
+[0.5.0]: https://github.com/mit112/boardwatch/releases/tag/v0.5.0
 [0.3.0]: https://github.com/mit112/boardwatch/releases/tag/v0.3.0
 [0.2.0]: https://github.com/mit112/boardwatch/releases/tag/v0.2.0
 [0.1.0]: https://github.com/mit112/boardwatch/releases/tag/v0.1.0
