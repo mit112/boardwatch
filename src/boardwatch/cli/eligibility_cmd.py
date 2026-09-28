@@ -889,8 +889,9 @@ def score_cmd(
     """Precision report against the human-verified labeled set.
 
     Exits non-zero when the labeled set contains at least one reference INELIGIBLE case
-    and the set misses the precision bar or has too few human-audited cases: a set labeled
-    only by the oracle cannot pass on precision alone.
+    and the set misses the precision bar, has an INELIGIBLE verdict without a quoted span, or
+    has too few human-audited cases: a set labeled only by the oracle cannot pass on precision
+    alone.
     """
     # This is Gate P5 (PROGRAM.md §3.P5); the exit condition is `meets_ship_gate()`, the
     # mechanical audit drain (M1).
