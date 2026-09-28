@@ -27,6 +27,14 @@
 
 ## Current standing
 
+### 2026-09-28c — **THE PUBLIC DOCS ARE BROUGHT UP TO DATE FOR A NEW USER AND v0.6.0 IS PUBLISHED (T255, owner-approved 14:51)**; the Docker image keeps its config in its volume (D-607). Nothing touched the live store, the config or a run; **day 3 (the 2026-09-29 04:00 run) is still unread** — the 2026-09-28b block's steps are the next session's first job, unchanged.
+
+**Verify first:** `git log --oneline -5 origin/main` (this record, #519 the 0.6.0 cut, #517, #518); `curl -s https://pypi.org/pypi/boardwatch/json` reads `0.6.0`; GHCR tags carry `0.6.0` and `latest`; the primary on `main`.
+
+**Done:** #517 (README, SECURITY, CONTRIBUTING, configuration.md at 57 of 57 keys with a drift test, provider matrix/notes for all twelve providers, guides), #518 (`ENV BOARDWATCH_CONFIG_DIR=/data/config`), #519 (0.6.0 cut), tag `v0.6.0` on `9776acc0`. Published and verified from outside `release.yml` (run 36484337861): PyPI 0.6.0 (wheel, sdist, the new README as its page), GHCR `0.6.0` = `latest` (amd64 + arm64, the config fix inside), the GitHub release with curated notes. The GitHub About panel now carries a current description, the PyPI page as homepage, and five more topics. T268–T270 filed from a fresh-clone walk-through; worktree `bw-t255` removed (its held cut was superseded; branch kept).
+
+**Next:** the 2026-09-28b block's items 1–4. T268 is résumé-gate input (after day 14); T269 is text only and may ship under the freeze.
+
 ### 2026-09-28b — **THE OWNER'S THREE D-605 RULINGS ARE CARRIED OUT BEFORE DAY 3: the 35 held LinkedIn captures are repaired, `slate_ceiling` is 100, and the refresh fix is filed as T265** (D-606). The owner did not want to wait for day 3 in this session, so day 3 (the 2026-09-29 04:00 run) is UNREAD at close and is the next session's first job.
 
 **Verify first:** `git log --oneline -3 origin/main` (this session's record on top of #515), the primary on `main`, no run
@@ -55,7 +63,7 @@ read it with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`; the token is stable).
    linkedin 35/35 released.
 3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`. Grep
    `~/Library/Logs/boardwatch-run.log` for `gate refresh batch` — T265's failure does not show in `day_row.py`.
-4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
+4. The 2026-09-26b block's item 3 stands (T264); its item 4, T255, is DONE (D-607).
 
 ### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — the owner approved all three recommendations for the next session** (D-604, D-605). The owner was away after the day-2 read, so nothing owner-gated was done; at 12:26 CDT the owner ruled "we'll do your recs in the next session".
 
@@ -89,7 +97,7 @@ the fix; the scan should return to ~70 min.** Apparatus note: this session's rea
 2. **DONE 2026-09-28b (D-606):** the owner's rulings (D-605) — the held-35 repair, `slate_ceiling` 100 and T265 — all
    before the 09-29 04:00 tick, so (a) and (b) reach day 3.
 3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`.
-4. The 2026-09-26b block's items 3–4 stand (T264, T255 held).
+4. The 2026-09-26b block's item 3 stands (T264); its item 4, T255, is DONE (D-607).
 
 **Changed this session (live store / machine):** nothing written to the live store. #513 merged; the primary pulled to
 `50ff5262` after run 489 exited; worktree `bw-reset-hint` removed (branch kept); one headless judge call (the repro, no store
@@ -149,7 +157,7 @@ PDFs of the day) · B5–B7 ok · B8 28 funnel / **1 net-new** · gate judged 5,
 2. **Each following day:** the same, plus `inventory.py` (`pdf missing` must be 0; render T259 stubs with `render_pending.py`).
    The census is closed; spot-check a day's placements only if a defect is suspected.
 3. **T264** is a delivery-side fix and may ship under the freeze; it is not urgent while nobody drains.
-4. **T255 v0.6.0:** `release-0.6.0` (worktree `bw-t255`) HELD — rebase onto `main`, re-gate, merge and tag together on the
+4. **T255 v0.6.0 — DONE 2026-09-28c (D-607).** Was: `release-0.6.0` (worktree `bw-t255`) HELD — rebase onto `main`, re-gate, merge and tag together on the
    owner's confirmation.
 
 **Changed this session (live store / machine):** 1,018 `job_dispositions.reopened_at` cleared; 18 `resume_tailored` artifacts and
@@ -208,7 +216,7 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
    drain then releases them) — 35 postings, 17 distinct JDs, all slice to a body the
    detector passes; the LinkedIn lane has never written a second version for any of its 2,942 job-apps postings. A live-store
    write, not an eligibility change. Measure: `.agent/2026-09-28-session/held35_measure.py`.
-1. **The v0.6.0 PyPI publish** (T255) — the tag is outward-facing and effectively irreversible.
+1. **The v0.6.0 PyPI publish** (T255) — **RULED 2026-09-28 14:51 and DONE 2026-09-28c (D-607)**: published after the docs refresh.
 2. **Puerto Rico for a USA-target profile** (T253 d) — measured 2026-09-25: PR locations resolve `unknown`, fail open and
    ARE delivered (5 built, HPE graduate roles). Default while unruled: keep them. Excluding them is profile data and restarts the count.
 3. **dominos** (SmartRecruiters; 2,271 open after run 478, 0 ever delivered, 2 software-ish titles; holds the shared SR
