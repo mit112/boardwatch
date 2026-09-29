@@ -27,6 +27,21 @@
 
 ## Current standing
 
+### 2026-09-28e — **ONE EMPLOYER'S WORKDAY BOARD IS WATCHED AND SCANNED BY HAND; 32 OF ITS POSTINGS GET RÉSUMÉS; THE UNIMPORTED-BOARD BACKLOG (308 + 83) IS FOUND AND IS THE NEXT SESSION'S FOCUS BY OWNER RULING** (D-610). No code, config, profile or rule change; live-store writes only, no run active.
+
+**Verify first:** company row 7280 (Palo Alto Networks, workday, watched); **run 490 is a SCAN-ONLY row** (1,509 new postings), not
+an acceptance run; `.agent/2026-09-28-panw-coverage/README.md` (the two board lists and this session's writes).
+
+**Done:** the board watched (`companies add --verify`, then its name set by hand: T273); one company-only scan with the detail
+budget raised in memory (run 490: complete, 0 errors, 1,658 s); 32 postings chosen by required-years floor, rendered with
+`resume project` + `tailor run --out <per-posting>` (T274: same-titled postings otherwise overwrite one file), all one page,
+Tier A PASS, not degraded. T273–T275 filed.
+
+**Next, in order:** (1) **the day-3 read**, unchanged (28b block items 1–4). Day 3 judges the 1,509 new postings for the first
+time, so its eligibility stage may run longer, and `day_row.py` may name run 490 as "previous ok run". (2) **T275, the owner's
+ruled focus:** re-run `companies discover` and `companies unscanned`, review each evidence URL (D-291), then import in chunks of
+about 100 Workday boards, reading each next run's `stage_durations` before the next chunk. Board additions do not restart the count.
+
 ### 2026-09-28d — **T269 AND T270 SHIP; T268 IS SPLIT — its one-refusal half ships, the rest waits for day 14 AND a redesign; T251 (Windows) ships test-only** (D-609). The owner ruled five calls at 18:42 ("go with your recommendations"). Nothing touched the live store, the config or a run. **Day 3 (the 2026-09-29 04:00 run) is UNREAD: its read is the next session's first job** — the 2026-09-28b block's items 1–4, unchanged.
 
 **Verify first:** `git log --oneline -6 origin/main` (this record, T251 #525, T268a #524, #523 T269, #522 T270); the primary on
