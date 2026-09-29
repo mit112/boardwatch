@@ -19,6 +19,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A résumé template that still carries the starter's placeholder text is refused with every
+  leftover phrase named at once, instead of one phrase per run (T268).
 - `config show` now prints `llm.base_url` and `lane_new_companies_per_run_overrides`, describes
   `lane_posting_budget`'s floor as 1 (it said 0), and says `gate.claude_config_dir` is passed
   verbatim (it claimed an expanded absolute path; `~` is not expanded) (T270).
