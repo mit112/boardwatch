@@ -4615,6 +4615,91 @@ r5's restart list; check the live `config.toml`'s `lanes_enabled` against the fi
 runs at load. **T268 changes what the résumé gate refuses and the delivered files' names**: build it on a branch and ask
 the owner before merging (owner-gated item 9).
 
+## Settled session blocks moved out of STATE on 2026-09-28f (verbatim)
+
+### 2026-09-28e — **ONE EMPLOYER'S WORKDAY BOARD IS WATCHED AND SCANNED BY HAND; 32 OF ITS POSTINGS GET RÉSUMÉS; THE UNIMPORTED-BOARD BACKLOG (308 + 83) IS FOUND AND IS THE NEXT SESSION'S FOCUS BY OWNER RULING** (D-610). No code, config, profile or rule change; live-store writes only, no run active.
+
+**Verify first:** company row 7280 (Palo Alto Networks, workday, watched); **run 490 is a SCAN-ONLY row** (1,509 new postings), not
+an acceptance run; `.agent/2026-09-28-panw-coverage/README.md` (the two board lists and this session's writes).
+
+**Done:** the board watched (`companies add --verify`, then its name set by hand: T273); one company-only scan with the detail
+budget raised in memory (run 490: complete, 0 errors, 1,658 s); 32 postings chosen by required-years floor, rendered with
+`resume project` + `tailor run --out <per-posting>` (T274: same-titled postings otherwise overwrite one file), all one page,
+Tier A PASS, not degraded. T273–T275 filed.
+
+**Next, in order:** (1) **the day-3 read**, unchanged (28b block items 1–4). Day 3 judges the 1,509 new postings for the first
+time, so its eligibility stage may run longer, and `day_row.py` may name run 490 as "previous ok run". (2) **T275, the owner's
+ruled focus:** re-run `companies discover` and `companies unscanned`, review each evidence URL (D-291), then import in chunks of
+about 100 Workday boards, reading each next run's `stage_durations` before the next chunk. Board additions do not restart the count.
+
+### 2026-09-28b — **THE OWNER'S THREE D-605 RULINGS ARE CARRIED OUT BEFORE DAY 3: the 35 held LinkedIn captures are repaired, `slate_ceiling` is 100, and the refresh fix is filed as T265** (D-606). The owner did not want to wait for day 3 in this session, so day 3 (the 2026-09-29 04:00 run) is UNREAD at close and is the next session's first job.
+
+**Verify first:** `git log --oneline -3 origin/main` (this session's record on top of #515), the primary on `main`, no run
+active, the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; it was restarted this session, so the port changed —
+read it with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`; the token is stable).
+
+**Done (live store / machine), all with no run active:**
+- **Held-35 repair (owner-gated item 0).** `.agent/2026-09-29-session/held35_repair.py` (the `postings reparse-bodies`
+  shape, one transaction): dry-run 35 postings / 17 distinct slices / 0 problems; applied with the viewer stopped —
+  35 runless `revised` versions, 64 identity rows. `held35_measure.py`: 2 versions on every one, all open; a second dry-run
+  writes 0. They stay `held` until the next run's preflight `drain_quarantine` releases them (the "superseded" condition).
+- **`slate_ceiling` 80 → 100 (item 7)** in the live `config.toml` (backup `config.toml.bak-preslateceiling100-20260928`);
+  `load_settings().slate_ceiling` reads 100.
+- **T265** (item 8: the refresh's poisoned batch, BUILD AFTER DAY 14), **T266** (#507's eligibility residuals, parked) and
+  **T267** (lane residuals) filed in `TICKETS-2026-09-22c.md` — D-601's `followups.md` is filed; its closed items are named in T267.
+- The viewer was stopped and restarted for the write; `/api/queue` 614 rows, `pdf_available` 614/614.
+
+**Next, in order:**
+1. **Read the 2026-09-29 04:00 run as DAY 3** (D-600): PID via `ps -Ao pid,args | grep -E '(^|/)boardwatch run '`, wait with
+   `kill -0` until it EXITS (the funnel lands ~14 min after `runs.status` reads `ok`), then `day_row.py <id> 3` and
+   `b4_audit.py --run <id>`. Day 2 for comparison: B1 65 · B2 42/42 · B4 0 · B8 41 · gate 59 judged, 0 failed open.
+2. **Three first-run checks:** (a) #513 — Workday apply median in `board_scans` under 2 s, `stage_durations` scan near day 1's
+   4,157 s; (b) `slate_ceiling` 100 — up to 100 leads, and `.agent/2026-09-28-session/delivered_tiers.py <id> <date>` should
+   show some leads NOT tier 0; `buried_split.py`'s buried-open (116 after run 489) should fall (read its totals — its by-run
+   split hardcodes run 486); (c) the repair — `held_captures.py .agent/2026-09-27-session/held_baseline.json` should read
+   linkedin 35/35 released.
+3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`. Grep
+   `~/Library/Logs/boardwatch-run.log` for `gate refresh batch` — T265's failure does not show in `day_row.py`.
+4. The 2026-09-26b block's item 3 stands (T264); its item 4, T255, is DONE (D-607).
+
+### 2026-09-28 — **DAY 2 (run 489) MEETS EVERY BAR; a scan crawl is found and fixed (#513); tier 0 fills the whole slate and one posting poisons the gate refresh — the owner approved all three recommendations for the next session** (D-604, D-605). The owner was away after the day-2 read, so nothing owner-gated was done; at 12:26 CDT the owner ruled "we'll do your recs in the next session".
+
+**Verify first:** `git log --oneline -3 origin/main` (the session record, then #513 `50ff5262`), the primary on `main` at it, no
+run active, the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; URL = line 2 of `~/Library/Logs/boardwatch-web.log`).
+
+**Day 2, run 489** (METRICS "Acceptance run"): B1 **65 net-new** · B2 42/42 · B3 one page · B4 0 on 42 · B5–B7 ok · B8 **41
+net-new** · gate 59 judged, 0 failed open · backlog 150 judged (117 eligible) · refresh 13 sent, its 1 batch failed open ·
+wall 3 h 12 m, of which the scan took 2 h 42 m (day 1: 69 min). Viewer: `pdf_available` 614/614.
+
+**Found and fixed — the scan crawl (#513, merged 06:50 CDT, pulled into the primary after the run).** Workday applies took
+~41 s a board (day 1: 0.88 s) and SmartRecruiters 23.9 s: `_reset_listed_but_unrefreshed`'s UPDATE, reached only by the six
+bodiless-list providers, kept a bare `status = 'open'` term, so from three ids SQLite walked all 341k open postings — T256
+(#500) had hinted the two reads beside it. The 18 GB store no longer fits the ~5 GB of page cache. **Day 3 is the first run on
+the fix; the scan should return to ~70 min.** Apparatus note: this session's read-only timing query walked the same index at
+11:10Z and warmed the cache — run 489's remaining Workday applies then took ~0.5 s, so day 2's scan time is not clean.
+
+**Found, owner calls (items 0, 7 and 8 below — all RULED 2026-09-28, D-605):**
+- **Tier 0 fills the whole slate (D-601 ruling 6's check FAILED).** All 66 of run 489's leads and all 76 of run 486's are
+  entry-marked (tier 0). The rank window is `slate_ceiling` = 80 and tier 0 fills it, so judge-cleared leads (tier 1) never
+  enter: buried-open 70 → **116**; 65 of the 66 cleared in run 486 are still buried; the backlog clears ~117 a day into tier 1.
+- **The gate refresh's first batch fails open every run.** Posting **29849** (Volarisgroup, Jr. Software Engineer; the only open
+  posting of its kind) carries text addressed to AI screeners; the judge answers all 13 correctly but adds a prose note beside
+  the fenced JSON, and the strict parser fails the batch. The refresh order is fixed, so the same 13 leads fail each run
+  (day 1: note before, `char 0`; day 2: `Extra data`). Reproduced once: `.agent/2026-09-28-session/refresh_repro.py --call`.
+- **The 35 held LinkedIn captures released 0 again** (item 0).
+
+**Next, in order:**
+1. **Read the 2026-09-29 04:00 run as DAY 3** — `day_row.py <id> 3`, `b4_audit.py --run <id>`, after its PID exits. Check the
+   fix took: Workday apply median in `board_scans` for the run under 2 s, `stage_durations` scan near day 1's 4,157 s.
+2. **DONE 2026-09-28b (D-606):** the owner's rulings (D-605) — the held-35 repair, `slate_ceiling` 100 and T265 — all
+   before the 09-29 04:00 tick, so (a) and (b) reach day 3.
+3. Each day: `inventory.py`, `pdf_available` on `/api/queue`, `buried_split.py`, `held_captures.py`.
+4. The 2026-09-26b block's item 3 stands (T264); its item 4, T255, is DONE (D-607).
+
+**Changed this session (live store / machine):** nothing written to the live store. #513 merged; the primary pulled to
+`50ff5262` after run 489 exited; worktree `bw-reset-hint` removed (branch kept); one headless judge call (the repro, no store
+write); a stale 0-byte `.git/index.lock` (09-27 21:30, no git process) removed.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
