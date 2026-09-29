@@ -27,6 +27,24 @@
 
 ## Current standing
 
+### 2026-09-29 — **T276 DONE: THE FIVE OUT-ROOT PDFs ARE RE-RENDERED (MANUAL RUN 525), THE VIEWER SERVES 648/648; THE OWNER RULES ITEM 7 AND THE GATE BACKLOG "KEEP AS IS" TO DAY 14** (D-612). No code, profile, rule or config change; live-store writes only (run 525). **Day 4 is UNREAD: it is the next session's first job** — the 2026-09-28f block's items 1–2, unchanged.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #528); the primary on `main`; no run active; the
+tick **enabled**; watched boards 2,662; the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; restarted this session,
+so read its port with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN` — its log's line 2 appears only ~30 s after start).
+
+**Done:** #528 merged and pulled; `make check` on it EXIT 0 (12,869 passed, 4 xfailed, 95.35%). T276 as manual run 525
+(`render_pending.py`, D-603's path): 5/5 rendered into the out-root; `/api/queue` `pdf_available` **648/648**. Item 7 and
+the 6,417 backlog ruled "keep as is" through day 14; the post-day-14 path is filed as **T277** (audit, then a tier-1 reserve,
+then a larger `backlog_budget`).
+
+**Next, in order:**
+1. **Read the 2026-09-30 04:00 run as DAY 4** (28f block item 1). **`day_row.py` will name run 525 as "previous ok run"** —
+   read its board-deadline comparison against run 524 by hand. Report `stage_durations` as T275's steady-state cost.
+2. The daily checks (28f block item 2). `pdf_available` should stay at every row. **Disk was 12 GiB free at 15:05**
+   (swap 4.25 of 5.1 GB), below day 3's 16–19 — check `sysctl vm.swapusage` before blaming the store.
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+
 ### 2026-09-28f — **T275 DONE ALL AT ONCE AND DAY 3 PREPONED ON THE OWNER'S WORD: 359 BOARDS WATCHED, RUN 524 MEETS EVERY BAR, #513 HOLDS; THE LIVE DETAIL BUDGET IS 5,000, NOT 50** (D-611). No code, profile, rule or config change; live-store writes only.
 
 **Verify first:** `git log --oneline -3 origin/main` (this record on top of #527); the primary on `main`; no run active; the tick
@@ -193,7 +211,7 @@ are denominated in eligible postings, which is the wrong unit once the slate cap
 5. **How job-apps summary leads count in the B8 census** — closed census: short bodies 0/38, long 7/87 (a short reading is
    a floor). Default until ruled: counted, with the split reported beside the pooled number.
 6. **When to fix T258** (graduation-window wording; 52 open postings) — an eligibility change, so it restarts the count.
-7. **Tier 0 vs judge-cleared leads** (D-604) — **RULED 2026-09-28 12:26 (D-605); DONE 2026-09-28b (D-606): the live `slate_ceiling` is 100.** **OPEN AGAIN after day 3 (D-611): all 59 leads were tier 0 and buried-open rose 116 → 131 — 100 did not let a judge-cleared lead in, and T275's boards add tier-0 postings. The remaining options are ranking changes (reserve slots) or keeping it.** Tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
+7. **Tier 0 vs judge-cleared leads** (D-604) — **RULED 2026-09-28 12:26 (D-605); DONE 2026-09-28b (D-606): the live `slate_ceiling` is 100.** **OPEN AGAIN after day 3 (D-611): all 59 leads were tier 0 and buried-open rose 116 → 131 — 100 did not let a judge-cleared lead in, and T275's boards add tier-0 postings. The remaining options are ranking changes (reserve slots) or keeping it.** **RULED AGAIN 2026-09-29 15:56 (D-612): keep as is through day 14 — `slate_ceiling` 100, `backlog_budget` 150; after the 10-10 run, T277 (audit, then a ~10-slot tier-1 reserve, then a larger backlog budget).** Tier 0 fills all 80 ranked places, so 116 judge-cleared open roles wait (growing
    ~46 a day). Options: raise `slate_ceiling` 80 → 100 (config only; tier 0 stays first, up to ~20 judge-cleared a day
    behind it; the judge sees up to 100 a run) — **recommended**; reserve slots within 80 (ranking code); or keep as is.
    The ruling did not address the count separately; D-598 r5's restart list (eligibility, profile, résumé gate) does not name it.
