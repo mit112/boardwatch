@@ -2,6 +2,7 @@ import gzip
 import json
 import socket
 import ssl
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -19,6 +20,15 @@ from boardwatch.core.models import ResponseValidators
 from boardwatch.core.politeness import PER_HOST_DELAY_FLOOR, Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import detail_phase_stops
+
+#: Before 3.13, `time.monotonic()` on Windows is `GetTickCount64`, which ticks every ~15.6 ms (3.13
+#: moved it to `QueryPerformanceCounter`). A 0.3 s sleep then reads back as 0.296-0.297 s, and two
+#: reads a few microseconds apart return the SAME value, so `_bounded`'s `left < timeout` is false
+#: and a clamped timeout is reported as the caller's own (T251: 3.11 and 3.12 only, every night).
+_coarse_windows_clock = pytest.mark.skipif(
+    sys.platform == "win32" and sys.version_info < (3, 13),
+    reason="time.monotonic() ticks at ~15.6 ms on Windows before Python 3.13",
+)
 
 
 def _settings(tmp_path: Path, delay: float = 0.25, retries: int = 3) -> Settings:
@@ -665,6 +675,7 @@ def test_a_request_fits_the_board_only_with_a_fetch_deadline_and_a_delay_left(
     assert not clock.tripped
 
 
+@_coarse_windows_clock
 def test_a_request_fits_the_board_on_the_slowest_request_it_has_seen(tmp_path: Path) -> None:
     """T243 round 2. Once the board has made a request, the estimate is one pacing delay plus
     TWICE the slowest request it has seen — not the whole fetch deadline, which made a valid 30 s
@@ -1109,6 +1120,7 @@ def test_a_header_trickle_ends_at_the_board_deadline(tmp_path: Path) -> None:
     assert clock.tripped  # T228: set on the backend's clamp too, not only on a refused start
 
 
+@_coarse_windows_clock
 def test_a_body_trickle_ends_at_the_deadline_not_at_the_next_byte(tmp_path: Path) -> None:
     """Headers and the first body byte at once, then the next byte WITHHELD past any bound.
     `_read_body`'s per-chunk check runs only when a chunk arrives, so it can never fire again
@@ -1244,6 +1256,15 @@ def test_a_small_post_over_the_fetchers_own_transport_is_unchanged(tmp_path: Pat
     """Control for the sliced write: a small body, answered at once."""
 
     def answer(conn: socket.socket) -> None:
+        # Drain the body before answering: httpcore writes it after the headers, so the first
+        # `recv` often holds only the headers, and a socket closed with unread data is reset.
+        # Windows discards the client's unread response on that reset, and each retry then
+        # waits in a backlog nothing accepts (T251). Bounded, as the first recv may hold it all.
+        conn.settimeout(0.5)
+        try:
+            conn.recv(65536)
+        except TimeoutError:
+            pass
         conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok")
 
     fetcher = Fetcher(_settings(tmp_path), pacing=politeness.HostPacing())
@@ -1340,6 +1361,7 @@ def test_three_black_holed_addresses_end_at_the_fetch_deadline(
     _assert_the_backend_fired(info.value)
 
 
+@_coarse_windows_clock
 def test_a_reachable_address_behind_a_black_hole_still_connects(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1384,6 +1406,7 @@ def test_every_address_refused_raises_the_connect_error_httpcore_raised() -> Non
     assert isinstance(info.value.__cause__, ConnectionRefusedError), repr(info.value.__cause__)
 
 
+@_coarse_windows_clock
 def test_a_resolver_that_hangs_ends_at_the_fetch_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
