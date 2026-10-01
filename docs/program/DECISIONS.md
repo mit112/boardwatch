@@ -33705,7 +33705,10 @@ the moved-aside copy. All four now read the SSD store (three by literal path, `b
 `/api/queue` serves 678/679 PDFs: the gap is Uber 110225 (delivered run 282, status `unverifiable`), its PDF under
 `<config_dir>/tailored/` — T276's class. Two owner calls were put at ~19:30 and went unanswered (away): delete the 21 GB
 `_pre-mit-ssd` rollback now that one SSD run is clean, and re-render the Uber PDF via `render_pending.py`. Neither was
-done. Two towerDef executors drew on the enterprise seat during the scan stage and finished before the gate; the gate
+done then. **At 19:27 the owner ruled "delete the rollback copy"**: checked first (no run active, nothing open in it, no config,
+plist or wrapper referencing it, the one-shot reminder already self-removed, `tailored/` 787 files in both copies), then
+`rm -rf` — disk 32 → 52 GiB free; the config-dir `tailored`/`projected` symlinks still resolve to the SSD. There is no
+rollback copy of the store any more. The Uber re-render stays open. Two towerDef executors drew on the enterprise seat during the scan stage and finished before the gate; the gate
 did not fail open.
 
 **Alternatives rejected.** Reading run 526's partial scan as day 4 (no funnel, no leads — B5 would fail); waiting for the

@@ -48,9 +48,9 @@ released (oraclehcm 1 held); no `gate refresh batch` failure; disk 32 GiB free (
 **Next, in order:**
 1. **Read the 2026-10-01 04:00 run as DAY 5** (`python3 .agent/acceptance/day_row.py <id> 5`, `b4_audit.py --run <id>`, after its
    PID exits). `day_row.py`'s "previous ok run" will correctly be 527. The daily checks above, unchanged.
-2. **Owner call, put 19:30 and unanswered:** delete the 21 GB rollback folder `_pre-mit-ssd` (the 2026-09-29b block's item 2 —
-   its condition, one clean SSD run, is now met by 527). Not done without an answer; it is irreversible.
-3. **Owner call, put 19:30 and unanswered:** `/api/queue` serves **678/679** PDFs. The missing row is Uber "Software Engineer"
+2. **DONE 19:27 on the owner's word (D-614):** the 21 GB rollback folder `_pre-mit-ssd` is deleted (the 2026-09-29b block's
+   item 2). Disk 32 → **52 GiB free**. There is no rollback copy of the store any more; D-613's backup gap stands.
+3. **Owner call, put 19:30, still open at close:** `/api/queue` serves **678/679** PDFs. The missing row is Uber "Software Engineer"
    (posting 110225, delivered run 282, status `unverifiable`), whose PDF exists under `<config_dir>/tailored/` — T276's class
    exactly. Recommended: re-render it with `render_pending.py` as a manual run row, as D-612 did; not a code change.
 4. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
@@ -63,7 +63,7 @@ released (oraclehcm 1 held); no `gate refresh batch` failure; disk 32 GiB free (
 
 **Next, in order (the 2026-09-29 block's items follow):**
 1. **Day 4 (the 2026-09-30 04:00 run) is also the FIRST run on the SSD store.** **DONE 2026-09-30 (D-614): the 04:00 run (526) was killed by a reboot; the rerun, run 527, is the first clean SSD run.** Read it for that too: the run id is above 525 in the SSD store, the wrapper did not exit 75, the log has no `WalUnsafe`/lock errors, and **`stage_durations` against run 524 are the only measure of any speed change** (unmeasured). If it failed on the store, do NOT delete the rollback copy; reversal is the `config.toml.bak-…` and plist `.bak-…` beside the originals.
-2. Only after a clean read: delete the rollback folder (~21 GB internal). Then re-take the disk-free number — it will step up ~21 GiB.
+2. Only after a clean read: delete the rollback folder (~21 GB internal). **DONE 2026-09-30 19:27 (D-614): deleted, disk 52 GiB free.** Then re-take the disk-free number — it will step up ~21 GiB.
 3. **Not armed:** the store and its newest full backup are on the same SSD. A backup to a different disk is an owner call; a manual `boardwatch` command with the SSD unmounted is unguarded (it would create an empty store on the boot disk).
 
 ### 2026-09-29 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-30.** T276's five out-root PDFs re-rendered (manual run 525, D-612) and the owner's keep-as-is ruling on item 7 and the gate backlog; its day-4 read is done (D-614).
