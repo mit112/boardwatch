@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -27,46 +27,48 @@
 
 ## Current standing
 
-### 2026-09-29 — **T276 DONE: THE FIVE OUT-ROOT PDFs ARE RE-RENDERED (MANUAL RUN 525), THE VIEWER SERVES 648/648; THE OWNER RULES ITEM 7 AND THE GATE BACKLOG "KEEP AS IS" TO DAY 14** (D-612). No code, profile, rule or config change; live-store writes only (run 525). **Day 4 is UNREAD: it is the next session's first job** — the 2026-09-28f block's items 1–2, unchanged.
+### 2026-09-30 — **DAY 4 IS RUN 527, A SAME-DAY RERUN ON THE OWNER'S WORD, AND IT MEETS EVERY BAR; THE 04:00 RUN (526) WAS KILLED BY A HAND-INSTALLED macOS UPDATE; THE FIRST CLEAN RUN ON THE SSD STORE; THE WARM FLEET SCANS IN 2 h 57 m** (D-614). No code, profile, rule or config change; live-store writes only (run 527), plus four `.agent/` scripts repointed at the SSD store.
 
-**Verify first:** `git log --oneline -3 origin/main` (this record on top of #528); the primary on `main`; no run active; the
-tick **enabled**; watched boards 2,662; the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; restarted this session,
-so read its port with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN` — its log's line 2 appears only ~30 s after start).
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #529); the primary on `main`; no run active; the tick
+**enabled**; the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`, restarted 13:15 on port 58030 — re-read the port with
+`lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`). **Watched boards grow by lane promotion every run** (2,662 at the 09-28f import →
+2,710 before run 527 → 2,754 after); a rise is not an import. Read the store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613).
 
-**Done:** #528 merged and pulled; `make check` on it EXIT 0 (12,869 passed, 4 xfailed, 95.35%). T276 as manual run 525
-(`render_pending.py`, D-603's path): 5/5 rendered into the out-root; `/api/queue` `pdf_available` **648/648**. Item 7 and
-the 6,417 backlog ruled "keep as is" through day 14; the post-day-14 path is filed as **T277** (audit, then a tier-1 reserve,
-then a larger `backlog_budget`).
-
-**Next, in order:**
-1. **Read the 2026-09-30 04:00 run as DAY 4** (28f block item 1). **`day_row.py` will name run 525 as "previous ok run"** —
-   read its board-deadline comparison against run 524 by hand. Report `stage_durations` as T275's steady-state cost.
-2. The daily checks (28f block item 2). `pdf_available` should stay at every row. **Disk was 12 GiB free at 15:05**
-   (swap 4.25 of 5.1 GB), below day 3's 16–19 — check `sysctl vm.swapusage` before blaming the store.
-3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
-
-### 2026-09-28f — **T275 DONE ALL AT ONCE AND DAY 3 PREPONED ON THE OWNER'S WORD: 359 BOARDS WATCHED, RUN 524 MEETS EVERY BAR, #513 HOLDS; THE LIVE DETAIL BUDGET IS 5,000, NOT 50** (D-611). No code, profile, rule or config change; live-store writes only.
-
-**Verify first:** `git log --oneline -3 origin/main` (this record on top of #527); the primary on `main`; no run active; the tick
-**enabled** (`launchctl print-disabled gui/$(id -u) | grep boardwatch.run`); watched boards **2,662** (Python `sqlite3 ?mode=ro`,
-`companies where watched=1`); `.agent/2026-09-29-t275/NOTES.md` (review files, probe, reversal list, the day-3 read).
-
-**Done:** both censuses re-run; all 389 boards probed with `import --verify`'s healthcheck and reviewed (D-291): 360 imported,
-29 dropped with reasons; watched 2,303 → 2,662. Day 3 kickstarted at 20:53 (run 524, the plist's own args); launchd absorbed the
-04:00 tick. **Day 3:** B1 59 · B2 35/35 · B3 one page · B4 0 on 35 · B5–B7 ok · B8 35 · gate 62 judged, 0 failed open · wall 10 h
-24 m (scan 7.7 h, most of it the 359 cold boards). #513: old-fleet Workday per-board median 0.12 s. Held-35: 35/35 released.
-T265 did not fire. A swap-driven disk dip to 2 GiB at 01:28 was cleared with the owner's `brew cleanup` (6.6 GB).
+**Done:** run 526 (the 04:00 tick, first on the SSD store) died at ~05:50 when the owner installed macOS 27.0.1 and the Mac
+rebooted (05:53); it had only scanned boards (2,535 of 2,710 in 1 h 49 m) and is a phantom `running` row, reaped by age.
+Owner ruled "rerun now as day 4": run **527** kickstarted 13:14 with the plist's own args through the mount guard.
+**Day 4:** B1 47 · B2 42/42 · B3 one page · B4 0 on 42 · B5–B7 ok · B8 40 · gate 54 judged, 0 failed open · wall 5 h 23 m
+(+~32 min finalize to process exit). `stage_durations` against run 524 (cold, 359 new boards): **scan 10,643 s vs 27,800 s**,
+eligibility 1,419 vs 2,530 (68,903 vs 159,012 postings), tailor 6,684 vs 4,896 (42 vs 35 PDFs), gate 59 vs 105 — so T275's
+steady-state cost is a ~3 h scan and a ~5.5 h run. Board-deadline hits 35 → 9, partial 96 → 125. The SSD's own speed effect
+cannot be separated from warm-vs-cold. No `WalUnsafe`, lock error or traceback in the log; no `boardwatch.db` reappeared under
+the config dir. Daily checks: `inventory.py` 679 apply-lane, pdf missing 0; buried-open 131 → 165; held captures 9/9 and 35/35
+released (oraclehcm 1 held); no `gate refresh batch` failure; disk 32 GiB free (swap 4.9 of 6 GB).
 
 **Next, in order:**
-1. **Read the 2026-09-30 04:00 run as DAY 4** — `python3 .agent/acceptance/day_row.py <id> 4`, `b4_audit.py --run <id>`, after
-   its PID exits. It is the first warm run of the 2,662-board fleet: known ids skip the body fetch, so its scan should fall
-   far below 7.7 h — read `stage_durations` and report it as T275's steady-state cost. healthchecks.io may page once (day 3's
-   ping came ~7 h early); that page is not a failure.
-2. Each day: `inventory.py`, `/api/queue` `pdf_available` (643/648 now — T276), `buried_split.py`, `held_captures.py`, grep the
-   run log for `gate refresh batch`, and `df -g /System/Volumes/Data` (16–19 GiB free after day 3; D-361).
-3. **T276** (five delivered leads' PDFs outside the out-root; D-603's fix) may ship under the freeze.
-4. **Owner call (item 7 below):** `slate_ceiling` 100 did not let a judge-cleared lead in — 59/59 tier 0, buried-open 131.
-5. The gate backlog holds 6,417 unjudged (~43 days at `backlog_budget = 150`) — a sizing for the owner, not a defect.
+1. **Read the 2026-10-01 04:00 run as DAY 5** (`python3 .agent/acceptance/day_row.py <id> 5`, `b4_audit.py --run <id>`, after its
+   PID exits). `day_row.py`'s "previous ok run" will correctly be 527. The daily checks above, unchanged.
+2. **Owner call, put 19:30 and unanswered:** delete the 21 GB rollback folder `_pre-mit-ssd` (the 2026-09-29b block's item 2 —
+   its condition, one clean SSD run, is now met by 527). Not done without an answer; it is irreversible.
+3. **Owner call, put 19:30 and unanswered:** `/api/queue` serves **678/679** PDFs. The missing row is Uber "Software Engineer"
+   (posting 110225, delivered run 282, status `unverifiable`), whose PDF exists under `<config_dir>/tailored/` — T276's class
+   exactly. Recommended: re-render it with `render_pending.py` as a manual run row, as D-612 did; not a code change.
+4. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+
+### 2026-09-29b — **THE LIVE STORE NOW LIVES ON THE OWNER'S EXTERNAL NVMe SSD (config `data_dir`); THE NIGHTLY RUN STARTS THROUGH A MOUNT GUARD** (D-613). No repo code change; machine-local config, launchd and a copied store. **The store is NOT under the config dir any more** — anything that read the old location (a probe, a scratch clone, a hand-typed `sqlite3` path) reads a STALE frozen copy.
+
+**Verify first (adds to the block below):** `python -c "from boardwatch.core.settings import load_settings; print(load_settings().data_dir)"` prints the SSD path; **no `boardwatch.db*` exists under the config dir** (a file there means something re-created the old store); the SSD volume is mounted; the viewer's open handle is the SSD store (`lsof -p <pid> | grep boardwatch.db`).
+
+**Done:** online backup → `quick_check` ok, 28/28 tables equal, same alembic head; `tailored/` and `projected/` copied byte-identical and the old paths left as **symlinks** (423 `artifacts.uri` rows point at the old `tailored/`; all resolve); config backed up; plist edited textually and reloaded; viewer restarted. The old store sits in a rollback folder under the config dir (its README says what to check) until **one clean run on the SSD store**; a one-shot reminder fires 2026-09-30 09:00.
+
+**Next, in order (the 2026-09-29 block's items follow):**
+1. **Day 4 (the 2026-09-30 04:00 run) is also the FIRST run on the SSD store.** **DONE 2026-09-30 (D-614): the 04:00 run (526) was killed by a reboot; the rerun, run 527, is the first clean SSD run.** Read it for that too: the run id is above 525 in the SSD store, the wrapper did not exit 75, the log has no `WalUnsafe`/lock errors, and **`stage_durations` against run 524 are the only measure of any speed change** (unmeasured). If it failed on the store, do NOT delete the rollback copy; reversal is the `config.toml.bak-…` and plist `.bak-…` beside the originals.
+2. Only after a clean read: delete the rollback folder (~21 GB internal). Then re-take the disk-free number — it will step up ~21 GiB.
+3. **Not armed:** the store and its newest full backup are on the same SSD. A backup to a different disk is an owner call; a manual `boardwatch` command with the SSD unmounted is unguarded (it would create an empty store on the boot disk).
+
+### 2026-09-29 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-30.** T276's five out-root PDFs re-rendered (manual run 525, D-612) and the owner's keep-as-is ruling on item 7 and the gate backlog; its day-4 read is done (D-614).
+
+### 2026-09-28f — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-30.** T275's 359 boards imported and day 3 (run 524) read (D-611); its day-4 read, T276 and owner calls 4–5 are done or ruled (D-612, D-614).
 
 ### 2026-09-28e — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-28f.** The PANW board watched and scanned by hand (run 490, scan-only), 32 résumés, the 308 + 83 backlog found (D-610); its day-3 read and T275 are done (D-611).
 
