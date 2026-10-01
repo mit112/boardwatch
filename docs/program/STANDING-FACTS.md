@@ -4743,6 +4743,36 @@ T265 did not fire. A swap-driven disk dip to 2 GiB at 01:28 was cleared with the
 4. **Owner call (item 7 below):** `slate_ceiling` 100 did not let a judge-cleared lead in — 59/59 tier 0, buried-open 131.
 5. The gate backlog holds 6,417 unjudged (~43 days at `backlog_budget = 150`) — a sizing for the owner, not a defect.
 
+## Settled session blocks moved out of STATE on 2026-10-01 (verbatim)
+
+### 2026-09-30 — **DAY 4 IS RUN 527, A SAME-DAY RERUN ON THE OWNER'S WORD, AND IT MEETS EVERY BAR; THE 04:00 RUN (526) WAS KILLED BY A HAND-INSTALLED macOS UPDATE; THE FIRST CLEAN RUN ON THE SSD STORE; THE WARM FLEET SCANS IN 2 h 57 m** (D-614). No code, profile, rule or config change; live-store writes only (run 527), plus four `.agent/` scripts repointed at the SSD store.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #529); the primary on `main`; no run active; the tick
+**enabled**; the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`, restarted 13:15 on port 58030 — re-read the port with
+`lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`). **Watched boards grow by lane promotion every run** (2,662 at the 09-28f import →
+2,710 before run 527 → 2,754 after); a rise is not an import. Read the store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613).
+
+**Done:** run 526 (the 04:00 tick, first on the SSD store) died at ~05:50 when the owner installed macOS 27.0.1 and the Mac
+rebooted (05:53); it had only scanned boards (2,535 of 2,710 in 1 h 49 m) and is a phantom `running` row, reaped by age.
+Owner ruled "rerun now as day 4": run **527** kickstarted 13:14 with the plist's own args through the mount guard.
+**Day 4:** B1 47 · B2 42/42 · B3 one page · B4 0 on 42 · B5–B7 ok · B8 40 · gate 54 judged, 0 failed open · wall 5 h 23 m
+(+~32 min finalize to process exit). `stage_durations` against run 524 (cold, 359 new boards): **scan 10,643 s vs 27,800 s**,
+eligibility 1,419 vs 2,530 (68,903 vs 159,012 postings), tailor 6,684 vs 4,896 (42 vs 35 PDFs), gate 59 vs 105 — so T275's
+steady-state cost is a ~3 h scan and a ~5.5 h run. Board-deadline hits 35 → 9, partial 96 → 125. The SSD's own speed effect
+cannot be separated from warm-vs-cold. No `WalUnsafe`, lock error or traceback in the log; no `boardwatch.db` reappeared under
+the config dir. Daily checks: `inventory.py` 679 apply-lane, pdf missing 0; buried-open 131 → 165; held captures 9/9 and 35/35
+released (oraclehcm 1 held); no `gate refresh batch` failure; disk 32 GiB free (swap 4.9 of 6 GB).
+
+**Next, in order:**
+1. **Read the 2026-10-01 04:00 run as DAY 5** (`python3 .agent/acceptance/day_row.py <id> 5`, `b4_audit.py --run <id>`, after its
+   PID exits). `day_row.py`'s "previous ok run" will correctly be 527. The daily checks above, unchanged.
+2. **DONE 19:27 on the owner's word (D-614):** the 21 GB rollback folder `_pre-mit-ssd` is deleted (the 2026-09-29b block's
+   item 2). Disk 32 → **52 GiB free**. There is no rollback copy of the store any more; D-613's backup gap stands.
+3. **Owner call, put 19:30, still open at close:** `/api/queue` serves **678/679** PDFs. The missing row is Uber "Software Engineer"
+   (posting 110225, delivered run 282, status `unverifiable`), whose PDF exists under `<config_dir>/tailored/` — T276's class
+   exactly. Recommended: re-render it with `render_pending.py` as a manual run row, as D-612 did; not a code change.
+4. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
