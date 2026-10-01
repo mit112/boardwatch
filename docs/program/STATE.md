@@ -27,10 +27,10 @@
 
 ## Current standing
 
-### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER IN THE OPEN OWNER CALL** (D-615). No code, profile, rule, config or live-store change this session; read-only.
+### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER; BOTH RE-RENDERED AS MANUAL RUN 529 ON THE OWNER'S WORD, THE VIEWER SERVES 707/707** (D-615). No code, profile, rule or config change; live-store writes only (manual run 529).
 
 **Verify first:** `git log --oneline -3 origin/main` (this record on top of #530); the primary on `main`; no run active; the tick
-**enabled**; the viewer alive (pid 29893, port 58030 at close — re-read with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`). Read the
+**enabled**; the viewer alive (pid 7471, port 51347 at close — re-read with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`). Read the
 store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613; the 2026-09-29b block below). Watched boards 2,754 before run 528.
 
 **Done:** #530 had merged and the primary was already clean on it. Run **528** (04:00 tick) `ok`, 09:00:05 → 12:26:07 UTC.
@@ -42,13 +42,10 @@ captures 9/9 and 35/35 released (oraclehcm 1 held); disk 47 GiB free.
 
 **Next, in order:**
 1. **Read the 2026-10-02 04:00 run as DAY 6** (`python3 .agent/acceptance/day_row.py <id> 6`, `b4_audit.py --run <id>`, after its PID
-   exits). "Previous ok run" will be 528, unless item 2 writes a render row first. The daily checks above, unchanged.
-2. **Owner call, put 2026-10-01 ~14:40, unanswered at close:** `/api/queue` serves **705/707** PDFs. The two rows without one are
-   Uber "Software Engineer" (posting 110225, run 282) and **Sally Beauty Holdings "Software Engineer" (posting 110865, run 277)**,
-   both `unverifiable`, both built PDFs under `<config_dir>/tailored/` (symlink to the SSD), outside the out-root — T276's class.
-   Sally Beauty's store rows did not change this session; why it shows in today's count and not 2026-09-30's was not traced.
-   Recommended: re-render both with `render_pending.py` as one manual run row, as D-612 did (viewer stopped for the write,
-   restarted after). Not a code change.
+   exits). "Previous ok run" will be 529, a render row (item 2); compare against 528 by hand. The daily checks above, unchanged.
+2. **DONE 15:20 CDT on the owner's word (D-615):** Uber 110225 and Sally Beauty 110865 were re-rendered into the out-root as
+   manual run **529** (`render_pending.py`, viewer stopped and restarted). `/api/queue` serves **707/707**. **`day_row.py` will name
+   run 529 as day 6's "previous ok run"**: read the board-deadline comparison against run 528 by hand.
 3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
 
 ### 2026-09-30 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-01.** Day 4 read as run 527, a same-day rerun after a macOS update killed run 526 (D-614); its day-5 read is done (D-615) and its open owner call is restated above.
