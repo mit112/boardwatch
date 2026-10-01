@@ -4700,6 +4700,49 @@ the fix; the scan should return to ~70 min.** Apparatus note: this session's rea
 `50ff5262` after run 489 exited; worktree `bw-reset-hint` removed (branch kept); one headless judge call (the repro, no store
 write); a stale 0-byte `.git/index.lock` (09-27 21:30, no git process) removed.
 
+## Settled session blocks moved out of STATE on 2026-09-30 (verbatim)
+
+### 2026-09-29 — **T276 DONE: THE FIVE OUT-ROOT PDFs ARE RE-RENDERED (MANUAL RUN 525), THE VIEWER SERVES 648/648; THE OWNER RULES ITEM 7 AND THE GATE BACKLOG "KEEP AS IS" TO DAY 14** (D-612). No code, profile, rule or config change; live-store writes only (run 525). **Day 4 is UNREAD: it is the next session's first job** — the 2026-09-28f block's items 1–2, unchanged.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #528); the primary on `main`; no run active; the
+tick **enabled**; watched boards 2,662; the viewer alive (`ps -Ao pid,args | grep '[b]oardwatch web'`; restarted this session,
+so read its port with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN` — its log's line 2 appears only ~30 s after start).
+
+**Done:** #528 merged and pulled; `make check` on it EXIT 0 (12,869 passed, 4 xfailed, 95.35%). T276 as manual run 525
+(`render_pending.py`, D-603's path): 5/5 rendered into the out-root; `/api/queue` `pdf_available` **648/648**. Item 7 and
+the 6,417 backlog ruled "keep as is" through day 14; the post-day-14 path is filed as **T277** (audit, then a tier-1 reserve,
+then a larger `backlog_budget`).
+
+**Next, in order:**
+1. **Read the 2026-09-30 04:00 run as DAY 4** (28f block item 1). **`day_row.py` will name run 525 as "previous ok run"** —
+   read its board-deadline comparison against run 524 by hand. Report `stage_durations` as T275's steady-state cost.
+2. The daily checks (28f block item 2). `pdf_available` should stay at every row. **Disk was 12 GiB free at 15:05**
+   (swap 4.25 of 5.1 GB), below day 3's 16–19 — check `sysctl vm.swapusage` before blaming the store.
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+
+### 2026-09-28f — **T275 DONE ALL AT ONCE AND DAY 3 PREPONED ON THE OWNER'S WORD: 359 BOARDS WATCHED, RUN 524 MEETS EVERY BAR, #513 HOLDS; THE LIVE DETAIL BUDGET IS 5,000, NOT 50** (D-611). No code, profile, rule or config change; live-store writes only.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #527); the primary on `main`; no run active; the tick
+**enabled** (`launchctl print-disabled gui/$(id -u) | grep boardwatch.run`); watched boards **2,662** (Python `sqlite3 ?mode=ro`,
+`companies where watched=1`); `.agent/2026-09-29-t275/NOTES.md` (review files, probe, reversal list, the day-3 read).
+
+**Done:** both censuses re-run; all 389 boards probed with `import --verify`'s healthcheck and reviewed (D-291): 360 imported,
+29 dropped with reasons; watched 2,303 → 2,662. Day 3 kickstarted at 20:53 (run 524, the plist's own args); launchd absorbed the
+04:00 tick. **Day 3:** B1 59 · B2 35/35 · B3 one page · B4 0 on 35 · B5–B7 ok · B8 35 · gate 62 judged, 0 failed open · wall 10 h
+24 m (scan 7.7 h, most of it the 359 cold boards). #513: old-fleet Workday per-board median 0.12 s. Held-35: 35/35 released.
+T265 did not fire. A swap-driven disk dip to 2 GiB at 01:28 was cleared with the owner's `brew cleanup` (6.6 GB).
+
+**Next, in order:**
+1. **Read the 2026-09-30 04:00 run as DAY 4** — `python3 .agent/acceptance/day_row.py <id> 4`, `b4_audit.py --run <id>`, after
+   its PID exits. It is the first warm run of the 2,662-board fleet: known ids skip the body fetch, so its scan should fall
+   far below 7.7 h — read `stage_durations` and report it as T275's steady-state cost. healthchecks.io may page once (day 3's
+   ping came ~7 h early); that page is not a failure.
+2. Each day: `inventory.py`, `/api/queue` `pdf_available` (643/648 now — T276), `buried_split.py`, `held_captures.py`, grep the
+   run log for `gate refresh batch`, and `df -g /System/Volumes/Data` (16–19 GiB free after day 3; D-361).
+3. **T276** (five delivered leads' PDFs outside the out-root; D-603's fix) may ship under the freeze.
+4. **Owner call (item 7 below):** `slate_ceiling` 100 did not let a judge-cleared lead in — 59/59 tier 0, buried-open 131.
+5. The gate backlog holds 6,417 unjudged (~43 days at `backlog_budget = 150`) — a sizing for the owner, not a defect.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
