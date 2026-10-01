@@ -72,6 +72,16 @@ export function QueueToolbar({
   onQuery,
   minScore,
   onMinScore,
+  board,
+  onBoard,
+  boards,
+  mode,
+  onMode,
+  modes,
+  hideThin,
+  onHideThin,
+  hideUnverifiable,
+  onHideUnverifiable,
   selectedCount,
   onSkipSelected,
   onClearSelection,
@@ -80,6 +90,16 @@ export function QueueToolbar({
   onQuery: (value: string) => void;
   minScore: string;
   onMinScore: (value: string) => void;
+  board: string;
+  onBoard: (value: string) => void;
+  boards: readonly (readonly [string, number])[];
+  mode: string;
+  onMode: (value: string) => void;
+  modes: readonly (readonly [string, number])[];
+  hideThin: boolean;
+  onHideThin: (on: boolean) => void;
+  hideUnverifiable: boolean;
+  onHideUnverifiable: (on: boolean) => void;
   selectedCount: number;
   onSkipSelected: () => void;
   onClearSelection: () => void;
@@ -102,6 +122,40 @@ export function QueueToolbar({
             className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
           />
         </label>
+        <label className="flex w-44 flex-col gap-1.5">
+          <span className="label-micro text-fg-3">Job board</span>
+          <select
+            value={board}
+            onChange={(event) => {
+              onBoard(event.target.value);
+            }}
+            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
+          >
+            <option value="">all boards</option>
+            {boards.map(([name, count]) => (
+              <option key={name} value={name}>
+                {name} ({count.toLocaleString()})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex w-44 flex-col gap-1.5">
+          <span className="label-micro text-fg-3">Work mode</span>
+          <select
+            value={mode}
+            onChange={(event) => {
+              onMode(event.target.value);
+            }}
+            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
+          >
+            <option value="">any mode</option>
+            {modes.map(([name, count]) => (
+              <option key={name} value={name}>
+                {name} ({count.toLocaleString()})
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="flex w-40 flex-col gap-1.5">
           <span className="label-micro text-fg-3">Minimum score</span>
           <input
@@ -116,6 +170,29 @@ export function QueueToolbar({
             placeholder="any"
             className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg tabular-nums placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
           />
+        </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-fg-2">
+        <label className="flex min-h-11 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hideThin}
+            onChange={(event) => {
+              onHideThin(event.target.checked);
+            }}
+          />
+          Hide thin JD
+        </label>
+        <label className="flex min-h-11 items-center gap-2">
+          <input
+            type="checkbox"
+            checked={hideUnverifiable}
+            onChange={(event) => {
+              onHideUnverifiable(event.target.checked);
+            }}
+          />
+          Hide unverifiable
         </label>
       </div>
 

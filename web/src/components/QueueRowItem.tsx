@@ -253,6 +253,7 @@ export function QueueRowItem({
   onApplied,
   onSkip,
   onReport,
+  onBoard,
   marked,
   onMark,
 }: {
@@ -267,6 +268,8 @@ export function QueueRowItem({
   onApplied: () => void;
   onSkip: () => void;
   onReport: () => void;
+  /** Filter the queue to this row's board. Mouse accelerator; the toolbar select is the keyboard route. */
+  onBoard?: (provider: string) => void;
   /** Picked out for a BULK action. `undefined` on a table with no selection column at all. */
   marked?: boolean;
   onMark?: () => void;
@@ -354,10 +357,20 @@ export function QueueRowItem({
                   {row.company}
                 </span>
                 {row.provider == null ? null : (
-                  <span className="shrink-0">
+                  <span
+                    className={`shrink-0 ${onBoard === undefined ? "" : "cursor-pointer"}`}
+                    {...(onBoard === undefined
+                      ? {}
+                      : {
+                          onClick: (event: React.MouseEvent) => {
+                            event.stopPropagation();
+                            if (row.provider != null) onBoard(row.provider);
+                          },
+                        })}
+                  >
                     <Badge
                       label={row.provider}
-                      reason={`Applicant tracking system: ${row.provider}. Sort by "ats" to work the queue one form at a time.`}
+                      reason={`Applicant tracking system: ${row.provider}. Click to show only this board; click again to clear. Sort by "ats" to work the queue one form at a time.`}
                     />
                   </span>
                 )}
