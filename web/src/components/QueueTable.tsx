@@ -148,6 +148,7 @@ export function QueueTable({
   onApplied,
   onSkip,
   onReport,
+  onBoard,
   onFollowUp,
   selection,
   emptyHint = "Clear the text box or lower the minimum score.",
@@ -166,6 +167,7 @@ export function QueueTable({
   onApplied: (row: QueueRow) => void;
   onSkip: (row: QueueRow) => void;
   onReport: (row: QueueRow) => void;
+  onBoard?: (provider: string) => void;
   /** `f`: move the cursor INTO the pane's date input. Never sets a date by itself — see below. */
   onFollowUp: (row: QueueRow) => void;
   /** Omitted on a table with no multi-select: no checkbox column, no `x`. */
@@ -442,6 +444,7 @@ export function QueueTable({
               onSkip={() => {
                 onSkip(row);
               }}
+              {...(onBoard === undefined ? {} : { onBoard })}
               onReport={() => {
                 onReport(row);
               }}

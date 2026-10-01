@@ -120,11 +120,18 @@ function readStoredFlag(key: string): boolean | null {
 const QUEUE_KEYS = {
   query: "boardwatch.queue.query",
   minScore: "boardwatch.queue.minScore",
+  board: "boardwatch.queue.board",
+  mode: "boardwatch.queue.mode",
+  hideThin: "boardwatch.queue.hideThin",
+  hideUnverifiable: "boardwatch.queue.hideUnverifiable",
   facet: "boardwatch.queue.facet",
   reason: "boardwatch.queue.reason",
   sort: "boardwatch.queue.sort",
   reviewSort: "boardwatch.queue.reviewSort",
 } as const;
+
+/** The `mode` select value for a row whose board states no remote policy. */
+export const NO_MODE = "(not stated)";
 
 const decodeText = (raw: string | null): string | null => raw;
 const encodeText = (value: string): string => value;
@@ -302,6 +309,17 @@ export function QueuePage({
   const [query, setQuery] = useSessionState(QUEUE_KEYS.query, "", decodeText, encodeText);
   const [minScore, setMinScore] = useSessionState(
     QUEUE_KEYS.minScore,
+    "",
+    decodeText,
+    encodeText,
+  );
+  // The job board (`provider`) to show; "" is every board.
+  const [board, setBoard] = useSessionState(QUEUE_KEYS.board, "", decodeText, encodeText);
+  // Work mode is the row's own `remote_policy`; "" is every mode and NO_MODE is "the board states none".
+  const [mode, setMode] = useSessionState(QUEUE_KEYS.mode, "", decodeText, encodeText);
+  const [hideThin, setHideThin] = useSessionState(QUEUE_KEYS.hideThin, "", decodeText, encodeText);
+  const [hideUnverifiable, setHideUnverifiable] = useSessionState(
+    QUEUE_KEYS.hideUnverifiable,
     "",
     decodeText,
     encodeText,
@@ -682,6 +700,10 @@ export function QueuePage({
       if (removed.has(row.posting_id)) return false;
       if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
+      if (board !== "" && row.provider !== board) return false;
+      if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
+      if (hideThin !== "" && row.thin_jd) return false;
+      if (hideUnverifiable !== "" && row.status === "unverifiable") return false;
       // A null score is not below a floor, it is unmeasured — so a floor excludes it rather than
       // silently treating "unknown" as zero.
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
@@ -689,7 +711,7 @@ export function QueuePage({
       }
       return true;
     });
-  }, [data, removed, runFilter, query, minScore]);
+  }, [data, removed, runFilter, query, minScore, board, mode, hideThin, hideUnverifiable]);
 
   /*
    * Facet-blind and filter-scoped, exactly like `eligible` and `uncertain`: counted over
@@ -724,12 +746,16 @@ export function QueuePage({
       if (removed.has(row.posting_id)) return false;
       if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
+      if (board !== "" && row.provider !== board) return false;
+      if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
+      if (hideThin !== "" && row.thin_jd) return false;
+      if (hideUnverifiable !== "" && row.status === "unverifiable") return false;
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
         return false;
       }
       return true;
     });
-  }, [data, removed, runFilter, query, minScore]);
+  }, [data, removed, runFilter, query, minScore, board, mode, hideThin, hideUnverifiable]);
 
   const visibleReview = useMemo(() => {
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
@@ -1224,6 +1250,27 @@ export function QueuePage({
    * that re-counts itself against its own selection offers one entry with the number you already
    * chose and zeroes beside everything else.
    */
+  const boardCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of [...(data?.rows ?? []), ...(data?.review ?? [])]) {
+      if (row.provider != null) counts.set(row.provider, (counts.get(row.provider) ?? 0) + 1);
+    }
+    return [...counts].sort(([a], [b]) => a.localeCompare(b));
+  }, [data]);
+  const modeCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of [...(data?.rows ?? []), ...(data?.review ?? [])]) {
+      const key = row.remote_policy ?? NO_MODE;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    return [...counts].sort(([a], [b]) => a.localeCompare(b));
+  }, [data]);
+  const toggleBoard = useCallback(
+    (next: string) => {
+      setBoard(board === next ? "" : next);
+    },
+    [board, setBoard],
+  );
   const reasonCounts = useMemo(() => countReviewReasons(data?.review ?? []), [data]);
 
   const toggleReason = useCallback(
@@ -1365,6 +1412,20 @@ export function QueuePage({
           onQuery={setQuery}
           minScore={minScore}
           onMinScore={setMinScore}
+          board={board}
+          onBoard={setBoard}
+          boards={boardCounts}
+          mode={mode}
+          onMode={setMode}
+          modes={modeCounts}
+          hideThin={hideThin !== ""}
+          onHideThin={(on) => {
+            setHideThin(on ? "1" : "");
+          }}
+          hideUnverifiable={hideUnverifiable !== ""}
+          onHideUnverifiable={(on) => {
+            setHideUnverifiable(on ? "1" : "");
+          }}
           selectedCount={markedRows.length}
           onSkipSelected={skipSelected}
           onClearSelection={clearSelection}
@@ -1453,6 +1514,7 @@ export function QueuePage({
             </p>
           ) : (
             <QueueTable
+              onBoard={toggleBoard}
               label="Queue"
               rows={visible}
               rankOf={rankOf}
@@ -1561,6 +1623,7 @@ export function QueuePage({
                         </p>
                     ) : (
                         <QueueTable
+                          onBoard={toggleBoard}
                           label="Review"
                           rows={visibleReview}
                           rankOf={reviewRankOf}
