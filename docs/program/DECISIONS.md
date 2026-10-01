@@ -647,7 +647,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-612 | DECISIONS.md | 33603 | **The 2026-09-29 session: T276's five out-root PDFs are re-rendered (manual run 525, `pdf_available` 648/648); the owner rules item 7 and the gate backlog "keep as is" to day 14** |
 | D-613 | DECISIONS.md | 33642 | **The live store moves to the owner's external NVMe SSD via config `data_dir` (the exFAT drive rejected); the nightly run starts through a mount guard** |
 | D-614 | DECISIONS.md | 33675 | **The 2026-09-30 session: the 04:00 run is killed by an owner-installed macOS update; day 4 is a same-day rerun (run 527) on the owner's word and meets every bar; the first clean run on the SSD store** |
-| D-615 | DECISIONS.md | 33719 | **The 2026-10-01 session: day 5 is run 528, the 04:00 tick, and meets every bar; a second out-root PDF (Sally Beauty) joins the open Uber re-render call** |
+| D-615 | DECISIONS.md | 33719 | **The 2026-10-01 session: day 5 is run 528, the 04:00 tick, and meets every bar; a second out-root PDF (Sally Beauty) joins Uber and both are re-rendered as manual run 529** |
 
 ---
 
@@ -33716,7 +33716,7 @@ did not fail open.
 next 04:00 tick (a missing day); deleting the rollback copy or writing a render run without the owner's answer (one is
 irreversible, the other a live-store write the owner had not been asked about before).
 
-## D-615 — The 2026-10-01 session: day 5 is run 528, the 04:00 tick, and meets every bar; a second out-root PDF (Sally Beauty) joins the open Uber re-render call
+## D-615 — The 2026-10-01 session: day 5 is run 528, the 04:00 tick, and meets every bar; a second out-root PDF (Sally Beauty) joins Uber and both are re-rendered as manual run 529
 **Context.** Opened ~14:20 CDT. #530 (D-613, D-614) had merged at 00:35 UTC and the primary was already clean on it, the
 `bw-record-0930` worktree removed. The 04:00 tick had run and exited: run **528**, `ok`, 09:00:05 → 12:26:07 UTC, on the SSD
 store (D-613), 2,754 boards attempted.
@@ -33733,7 +33733,12 @@ released, oraclehcm 1 held; disk 47 GiB free.
 **Also.** `/api/queue` serves 705/707 PDFs. Besides Uber 110225 (D-614), Sally Beauty Holdings "Software Engineer" (posting
 110865, delivered run 277, `unverifiable`) has its built PDF under `<config_dir>/tailored/` — T276's class. Its store rows
 (postings, artifacts, dispositions, events) did not change; why it counts today and not on 2026-09-30 was not traced. The
-re-render of both was put to the owner at ~14:40 and went unanswered; not done.
+re-render of both was put to the owner at ~14:40 and went unanswered. **At 15:19 the owner ruled "do it"**: no run active, the
+viewer stopped, `render_pending.py` (D-603's path) wrote manual run **529** — 2/2 rendered, none degraded, into
+`~/boardwatch-applications/2026-10-01/<slug>`; `_sync_queue` 2 updated, 0 failures. The viewer restarted (pid 7471, port
+51347): `/api/queue` **707/707** `pdf_available`, `/api/pdf/110225` and `/api/pdf/110865` serve ~35 KB `application/pdf`;
+`inventory.py` pdf missing 0. Additive: the config-dir PDFs are untouched. Day 6's `day_row.py` will name run 529 as
+"previous ok run".
 
-**Alternatives rejected.** Writing the render run without the owner's answer (a live-store write the handoff reserved for
+**Alternatives rejected.** Writing the render run before the owner's answer (a live-store write the handoff reserved for
 the owner); tracing the Sally Beauty count change under the freeze (no bar depends on it; the fix is the same render).
