@@ -8,6 +8,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -35,7 +36,8 @@ function titles(grid: string): string[] {
 beforeEach(() => {
   vi.useRealTimers();
   window.sessionStorage.clear();
-  window.sessionStorage.setItem("boardwatch.review-open", "true");
+  // Both lists on one page: the board filter has to reach both, and says so.
+  window.sessionStorage.setItem("boardwatch.queue.lens", "all");
   vi.mocked(getQueue).mockResolvedValue(
     queueResponse(
       [
@@ -54,34 +56,21 @@ afterEach(() => {
 describe("the job board filter", () => {
   it("lists each board with its count and narrows both lanes", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     const select = screen.getByLabelText("Job board");
     expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "all boards",
+      "All boards",
       "linkedin (1)",
       "workday (2)",
     ]);
 
     fireEvent.change(select, { target: { value: "workday" } });
-    expect(titles("Queue")).toEqual(["APPLY-WD"]);
-    expect(titles("Review")).toEqual(["REVIEW-WD"]);
+    expect(titles("Jobs to explore")).toEqual(["APPLY-WD"]);
+    expect(titles("Needs review")).toEqual(["REVIEW-WD"]);
 
     fireEvent.change(select, { target: { value: "" } });
-    expect(titles("Queue")).toEqual(["APPLY-WD", "APPLY-LI"]);
-  });
-
-  it("narrows to a board when its badge is clicked, and clears on a second click", async () => {
-    render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
-
-    const queue = within(screen.getByRole("grid", { name: "Queue" }));
-    fireEvent.click(queue.getByText("linkedin"));
-    expect(titles("Queue")).toEqual(["APPLY-LI"]);
-    expect((screen.getByLabelText<HTMLSelectElement>("Job board")).value).toBe("linkedin");
-
-    fireEvent.click(within(screen.getByRole("grid", { name: "Queue" })).getByText("linkedin"));
-    expect(titles("Queue")).toEqual(["APPLY-WD", "APPLY-LI"]);
+    expect(titles("Jobs to explore")).toEqual(["APPLY-WD", "APPLY-LI"]);
   });
 
   it("hides thin-JD and unverifiable rows, and filters by work mode", async () => {
@@ -96,19 +85,19 @@ describe("the job board filter", () => {
       ),
     );
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
-    expect(titles("Queue")).toEqual(["APPLY-FULL", "APPLY-THIN", "APPLY-GONE"]);
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL", "APPLY-THIN", "APPLY-GONE"]);
 
-    fireEvent.click(screen.getByLabelText("Hide thin JD"));
-    expect(titles("Queue")).toEqual(["APPLY-FULL", "APPLY-GONE"]);
-    fireEvent.click(screen.getByLabelText("Hide unverifiable"));
-    expect(titles("Queue")).toEqual(["APPLY-FULL"]);
-    fireEvent.click(screen.getByLabelText("Hide thin JD"));
-    fireEvent.click(screen.getByLabelText("Hide unverifiable"));
+    fireEvent.click(screen.getByLabelText("Hide very short descriptions"));
+    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL", "APPLY-GONE"]);
+    fireEvent.click(screen.getByLabelText("Hide postings I can’t verify are open"));
+    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL"]);
+    fireEvent.click(screen.getByLabelText("Hide very short descriptions"));
+    fireEvent.click(screen.getByLabelText("Hide postings I can’t verify are open"));
 
-    fireEvent.change(screen.getByLabelText("Work mode"), { target: { value: "onsite" } });
-    expect(titles("Queue")).toEqual(["APPLY-THIN"]);
-    fireEvent.change(screen.getByLabelText("Work mode"), { target: { value: "(not stated)" } });
-    expect(titles("Queue")).toEqual(["APPLY-GONE"]);
+    fireEvent.change(screen.getByLabelText("Work arrangement"), { target: { value: "onsite" } });
+    expect(titles("Jobs to explore")).toEqual(["APPLY-THIN"]);
+    fireEvent.change(screen.getByLabelText("Work arrangement"), { target: { value: "(not stated)" } });
+    expect(titles("Jobs to explore")).toEqual(["APPLY-GONE"]);
   });
 });

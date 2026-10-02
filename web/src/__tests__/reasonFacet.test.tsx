@@ -17,6 +17,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -48,7 +49,7 @@ function laneQueue() {
 }
 
 function reviewTitles(): string[] {
-  return within(screen.getByRole("grid", { name: "Review" }))
+  return within(screen.getByRole("grid", { name: "Needs review" }))
     .getAllByRole("row")
     .filter((row) => row.hasAttribute("data-row-id"))
     .map((row) => within(row).getByText(/UNEVAL|ROLE/).textContent ?? "");
@@ -67,7 +68,9 @@ afterEach(() => {
 describe("the reason facet", () => {
   it("offers one chip per reason present, in count order, with its count", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    // A reason is a lever on the Needs review list, so the chips live there.
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
 
     const chips = within(screen.getByRole("group", { name: /review reason/i })).getAllByRole(
       "button",
@@ -80,19 +83,21 @@ describe("the reason facet", () => {
 
   it("filters the review list to that reason and takes the apply lane off the page", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
 
-    // No "show" click: selecting a reason must open the lane it filters, or the page is a header.
+    // Selecting a reason shows the list it filters, or the page would look empty.
     expect(reviewTitles()).toEqual(["UNEVAL-A", "UNEVAL-B", "UNEVAL-C"]);
-    expect(screen.queryByRole("grid", { name: "Queue" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
     expect(screen.queryByText("APPLY-ONE")).toBeNull();
   });
 
   it("composes with the verdict facet", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
     fireEvent.click(screen.getByRole("button", { name: /^eligible 2 —/i }));
@@ -103,7 +108,8 @@ describe("the reason facet", () => {
 
   it("leaves the band's counts alone, so the next chip is still clickable", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
 
@@ -115,22 +121,23 @@ describe("the reason facet", () => {
     ).toBe("true");
   });
 
-  it("clears on a second click, restoring the apply lane", async () => {
+  it("clears on a second click, showing every held job again", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
-    expect(screen.queryByRole("grid", { name: "Queue" })).toBeNull();
+    expect(reviewTitles()).toHaveLength(3);
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 — showing only these/ }));
 
-    expect(screen.getByRole("grid", { name: "Queue" })).toBeTruthy();
     expect(reviewTitles()).toHaveLength(5);
   });
 
   it("offers no chips when the review lane is empty", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], []));
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^All jobs/ }));
 
     expect(screen.queryByRole("group", { name: /review reason/i })).toBeNull();
   });

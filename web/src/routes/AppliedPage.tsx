@@ -42,9 +42,12 @@ import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
 
 /** The statuses the select offers, in lifecycle order. Must match the server's
  *  `SETTABLE_STATUSES`; the server refuses anything else, so a drift fails loudly. */
+/** How long the page waits before it says the history is slow and offers a retry. */
+const SLOW_LOAD_MS = 8_000;
+
 const SETTABLE_STATUSES = ["applied", "interviewing", "offer", "rejected", "withdrawn"] as const;
 
-/** The band's two filters. One at a time: "follow-up due" and "no reply" answer different
+/** The band's two filters. One at a time: "follow-up due" and "no update recorded" answer different
  *  questions, and AND-ing them would empty the list for a reason no cell names. */
 type AppliedFacet = "due" | "quiet";
 
@@ -216,14 +219,20 @@ function StatusCell({
         )}
         {SETTABLE_STATUSES.map((status) => (
           <option key={status} value={status}>
-            {status}
+            {/* "rejected" is an EMPLOYER's answer to an application you sent — said, because the
+                other page by that name was ours and is now "Filtered out". */}
+            {status === "rejected" ? "rejected by employer" : status}
           </option>
         ))}
       </select>
       {row.quiet === true ? (
         <Badge
-          label={quietDays == null ? "no reply" : `no reply · ${String(quietDays)} d`}
-          reason="Still applied, and nothing logged on it for three weeks or more. A note or a status change clears it."
+          label={
+            quietDays == null
+              ? "No update recorded"
+              : `No update recorded · ${String(quietDays)} d`
+          }
+          reason="Still marked applied, with nothing logged on it — no status change, no note — for three weeks or more. That is the absence of a record, not evidence that the employer has not replied; a note or a status change clears it."
         />
       ) : null}
     </span>
@@ -309,7 +318,7 @@ function CountsBand({
           [
             "responses",
             `${counts.responded.toLocaleString()} of ${counts.submitted.toLocaleString()}`,
-            "Submitted applications an employer has answered — interviewing, offer or rejected — out of every attempt still reading as submitted.",
+            "Submitted applications an employer has answered, as you recorded them — interviewing, offer or rejected — out of every attempt still reading as submitted.",
           ] as [string, string, string | undefined],
         ]),
   ];
@@ -354,10 +363,10 @@ function CountsBand({
         )}
         {counts.quiet == null ? null : (
           <FacetCell
-            label="no reply"
+            label="no update recorded"
             value={counts.quiet}
             pressed={facet === "quiet"}
-            title="Still applied, with nothing logged — no status change, no note — for three weeks or more. Click to show only these."
+            title="Still marked applied, with nothing logged — no status change, no note — for three weeks or more. That is the absence of a record, not evidence the employer has not replied. Click to show only these."
             onToggle={() => {
               onToggle("quiet");
             }}
@@ -505,9 +514,28 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
     [],
   );
 
+  /*
+   * A read that is taking too long says so, and offers a retry, while the layout holds — the page
+   * used to print "Loading…" for as long as the server took, which on a stale viewer was minutes
+   * (the read path itself was fixed in the store; a viewer started before that fix still has it).
+   * `slow` is set from a timer's callback, never synchronously in the effect.
+   */
+  const [attempt, setAttempt] = useState(0);
+  const [slow, setSlow] = useState(false);
   useEffect(() => {
     void load();
-  }, [load]);
+    const timer = window.setTimeout(() => {
+      setSlow(true);
+    }, SLOW_LOAD_MS);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [load, attempt]);
+  const retry = useCallback(() => {
+    setError(null);
+    setSlow(false);
+    setAttempt((current) => current + 1);
+  }, []);
 
   const onSort = useCallback((key: AppliedSortKey) => {
     setSort((current) =>
@@ -635,12 +663,12 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
         .then((result) => {
           if (result.outcome === "unchanged") {
             push({
-              message: `Nothing to withdraw for ${text(row.company)} — that attempt does not read as applied.`,
+              message: `Nothing to undo for ${text(row.company)} — that attempt is not recorded as submitted.`,
             });
             return;
           }
           push({
-            message: `Withdrawn: ${text(row.company)} — ${text(row.title)}. Undo marks it applied again.`,
+            message: `Undid the record for ${text(row.company)} — ${text(row.title)}. Its status is now withdrawn and the job is back on your list. Undo records it again.`,
             undo: () => {
               void markApplied(postingId)
                 .then(() => load())
@@ -649,7 +677,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     message:
                       caught instanceof Error
                         ? caught.message
-                        : "Could not mark that application applied again.",
+                        : "Could not record that application again.",
                     tone: "error",
                   });
                 });
@@ -662,7 +690,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
             message:
               caught instanceof Error
                 ? caught.message
-                : "Could not withdraw that application.",
+                : "Could not undo that record.",
             tone: "error",
           });
         })
@@ -777,16 +805,45 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
   if (error !== null) {
     // Announced, not merely printed: this replaces the whole page with no other signal.
     return (
-      <p role="alert" className="rounded-md border border-fg-2 bg-surface p-4 text-sm text-fg">
-        {error}
-      </p>
+      <div role="alert" className="max-w-2xl rounded-md bg-surface-2 p-5">
+        <h2 className="text-base text-fg">Your applied history could not be loaded.</h2>
+        <p className="mt-1 text-sm text-fg-2">
+          Nothing was changed. Trying again usually works; your jobs are unaffected.
+        </p>
+        <p className="mt-2 text-xs text-fg-3">{error}</p>
+        <button
+          type="button"
+          onClick={retry}
+          className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-4 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
+        >
+          Try again
+        </button>
+      </div>
     );
   }
   if (rows === null || counts === null) {
     return (
-      <p role="status" className="p-4 text-sm text-fg-2">
-        Loading the applied history…
-      </p>
+      <div aria-busy="true" className="flex flex-col gap-3">
+        <p role="status" className="text-sm text-fg-2">
+          {slow
+            ? "Still loading your applied history — this is taking longer than usual."
+            : "Loading your applied history…"}
+        </p>
+        <span className="skeleton h-16 w-full max-w-2xl" />
+        <span className="skeleton h-64 w-full" />
+        {slow ? (
+          <span className="flex flex-wrap items-center gap-3 text-sm text-fg-2">
+            <button
+              type="button"
+              onClick={retry}
+              className="inline-flex min-h-11 items-center rounded-sm bg-surface-2 px-4 text-sm font-medium text-fg hover:bg-surface-3"
+            >
+              Try again
+            </button>
+            Your jobs are unaffected; the Jobs page works while this loads.
+          </span>
+        ) : null}
+      </div>
     );
   }
 
@@ -820,7 +877,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
           header's offset then pushed the column header down over the first application at every
           scroll position. Borders are rationed to the divider between rows and the line under the
           header (`ux-table-scannable`) — padding does the rest of the separating. */}
-      <div className="overflow-x-auto rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]">
+      <div className="overflow-x-auto rounded-md bg-surface shadow-card">
         <table className="w-full text-sm">
           <caption className="sr-only">
             Every application boardwatch has recorded, newest first.
@@ -935,12 +992,12 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                           /* No posting id, so neither control has one to act on. Said in words
                              rather than left as two missing buttons the reader cannot account for. */
                           <span className="text-xs text-fg-3">
-                            never delivered — no résumé, no unmark
+                            never delivered — no résumé, nothing to undo here
                           </span>
                         ) : row.can_unmark === true ? (
                           <RowAction
-                            label="Unmark applied"
-                            title="Withdraws the application record and returns the lead to the queue. Undoable from the toast."
+                            label="Undo this record"
+                            title="Takes back a record made by mistake. The status becomes ‘withdrawn’ — exactly what choosing Withdrawn in the status menu does — the history keeps ‘applied, then withdrawn’, nothing is deleted, and the job returns to your list. Undoable from the toast."
                             busy={inFlight}
                             onClick={() => {
                               onUnmark(row);
@@ -956,8 +1013,8 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                              guessing between them would put words on the row the payload cannot
                              support. */
                           <span className="text-xs text-fg-3">
-                            no unmark — only a job&apos;s latest attempt, still reading as submitted,
-                            can be withdrawn
+                            no undo here — only a job&apos;s latest attempt, still recorded as
+                            submitted, can be taken back
                           </span>
                         )}
                       </span>
@@ -993,7 +1050,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     : query.trim() !== ""
                       ? "No application matches that search. Clear the text box to see them all."
                       : facet === "quiet"
-                        ? "No application has gone three weeks without a reply. Take the no reply cell again to see them all."
+                        ? "No application has gone three weeks without an update. Take the no update recorded cell again to see them all."
                         : "No application's follow-up date has arrived. Take the follow-up due cell again to see them all."}
                 </td>
               </tr>

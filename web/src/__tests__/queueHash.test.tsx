@@ -16,6 +16,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -48,7 +49,7 @@ function detailFor(row: QueueRow): QueueDetail {
 }
 
 function queueTitles(): string[] {
-  return within(screen.getByRole("grid", { name: "Queue" }))
+  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
     .getAllByRole("row")
     .filter((row) => row.hasAttribute("data-row-id"))
     .map((row) => within(row).getByText(/RUN-/).textContent ?? "");
@@ -86,7 +87,7 @@ describe("#/queue?run=&lead=", () => {
   it("opens the named lead and filters both lanes to the named run", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     // The lead the URL names is open, fetched by id — not merely highlighted. Awaited: the
     // detail fetch is an effect keyed on `selected`, which lands a render after the grid does,
@@ -103,7 +104,7 @@ describe("#/queue?run=&lead=", () => {
   it("clears `lead` on close and keeps `run`", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     fireEvent.click(await screen.findByRole("button", { name: /close/i }));
 
@@ -114,7 +115,7 @@ describe("#/queue?run=&lead=", () => {
 
   it("writes `lead` into the hash when a row is opened", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     fireEvent.click(screen.getByText("RUN-4-LEAD"));
 
@@ -124,7 +125,7 @@ describe("#/queue?run=&lead=", () => {
   it("ignores and clears a lead id that is not on the page", async () => {
     window.history.replaceState(null, "", "/#/queue?lead=999999");
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     // No pane, no fetch for a lead that is not here, and the stale key is dropped from the URL.
     expect(vi.mocked(getDetail)).not.toHaveBeenCalledWith(999999);
@@ -134,7 +135,7 @@ describe("#/queue?run=&lead=", () => {
   it("drops the run filter from the Show all runs control", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5");
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
     expect(queueTitles()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Show all runs" }));
@@ -148,7 +149,7 @@ describe("working state across a tab switch", () => {
   it("carries the run filter and the open lead back from the Runs tab", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     /*
      * The `hashchange` a real browser fires off each of these navigations, dispatched explicitly:
@@ -160,59 +161,56 @@ describe("working state across a tab switch", () => {
     // `#/runs` stays bare — a runs URL must not carry a queue lead id.
     expect(window.location.hash).toBe("#/runs");
 
-    fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Jobs" }));
     fireEvent(window, new HashChangeEvent("hashchange"));
 
     // Both keys are back: the round trip is a navigation, not a reset. The page re-mounts and
     // re-fetches, so the list is awaited rather than read out of the click's own turn.
     expect(window.location.hash).toBe("#/queue?run=5&lead=61310");
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
     expect(queueTitles()).toEqual(["RUN-5-LEAD", "RUN-5-OTHER"]);
   });
 
 
-  it("restores the filter text, the score floor and both facets", async () => {
+  it("restores the search, the ranking-score floor, the list and the reason facet", async () => {
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    fireEvent.change(screen.getByLabelText("Filter company, title, location"), {
-      target: { value: "RUN-5" },
-    });
-    fireEvent.change(screen.getByLabelText("Minimum score"), { target: { value: "3" } });
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "RUN-5" } });
+    fireEvent.change(screen.getByLabelText("Minimum ranking score"), { target: { value: "3" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 1 —/ }));
     view.unmount();
 
     render(<App />);
-    // The reason facet takes the apply lane off the page, so the chip is what says "loaded".
+    // The reason facet is what says "loaded": it lives on the Needs review list, which is the one
+    // the remount has to land on.
     await screen.findByRole("button", { name: /^not evaluated 1 —/ });
 
-    expect(screen.getByLabelText("Filter company, title, location")).toHaveProperty(
-      "value",
-      "RUN-5",
-    );
-    expect(screen.getByLabelText("Minimum score")).toHaveProperty("value", "3");
+    expect(screen.getByLabelText("Search")).toHaveProperty("value", "RUN-5");
+    expect(screen.getByLabelText("Minimum ranking score")).toHaveProperty("value", "3");
     expect(
       screen.getByRole("button", { name: /^not evaluated 1 —/ }).getAttribute("aria-pressed"),
     ).toBe("true");
   });
 
-  it("restores each lane's sort independently", async () => {
+  it("restores the sort", async () => {
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    fireEvent.click(
-      within(screen.getByRole("grid", { name: "Queue" })).getByRole("button", { name: "company" }),
-    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), {
+      target: { value: "company:asc" },
+    });
     view.unmount();
 
     render(<App />);
-    const queue = await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    // The apply lane kept its company sort. `aria-sort` is what a screen reader is told, so it is
-    // what this asserts — not the row order, which a rank sort could coincidentally match.
-    const header = within(queue)
-      .getByRole("button", { name: "company" })
-      .closest('[role="columnheader"]');
-    expect(header?.getAttribute("aria-sort")).toBe("descending");
+    // What the reader is told: the control still reads the choice they made. The row order alone
+    // could be matched by the default rank order, so it would prove nothing.
+    expect(screen.getByRole("combobox", { name: "Sort by" })).toHaveProperty(
+      "value",
+      "company:asc",
+    );
   });
 });

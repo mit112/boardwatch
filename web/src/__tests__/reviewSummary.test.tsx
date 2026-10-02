@@ -1,8 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ReviewReason } from "../api/types";
-import { ReviewReasonBadge } from "../components/ReviewReasonBadge";
+import { REASON_PLAIN } from "../lib/jobStatus";
 import {
   REVIEW_REASON_LABELS,
   reviewBreakdown,
@@ -24,6 +23,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -50,23 +50,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("REVIEW_REASON_LABELS", () => {
-  it("agrees with ReviewReasonBadge's own catalog, key for key", () => {
-    const keys = Object.keys(REVIEW_REASON_LABELS) as ReviewReason[];
-    // FIFTEEN, spelled out: a member dropped from the labels map would otherwise pass this
-    // vacuously. The count is hand-kept on purpose — deriving it from the map under test would
-    // make the guard agree with whatever the map happens to hold, which is the failure it exists
-    // to catch. Bump it with the server's `ReviewReason` catalog, never to make this go green.
-    // 13 -> 14 for T92's `provider_employment_type`, checked against the server catalog
-    // (`len(REVIEW_REASONS) == 14`) rather than against this test going green.
-    // 14 -> 15 for T184b's `role_gate_unmeasured`, checked the same way (`len(REVIEW_REASONS) == 15`).
-    expect(keys).toHaveLength(15);
-    for (const reason of keys) {
-      const view = render(<ReviewReasonBadge reason={reason} />);
-      // The badge renders exactly one element carrying its label text.
-      expect(screen.getByText(REVIEW_REASON_LABELS[reason])).toBeTruthy();
-      view.unmount();
-    }
+describe("the review-reason catalogs", () => {
+  it("hold the same fifteen members, so a reason has both its short label and its plain sentence", () => {
+    const labels = Object.keys(REVIEW_REASON_LABELS).sort();
+    const plain = Object.keys(REASON_PLAIN).sort();
+    // FIFTEEN, spelled out: a member dropped from one map would otherwise pass this vacuously. The
+    // count is hand-kept on purpose — deriving it from a map under test would make the guard agree
+    // with whatever the map happens to hold, which is the failure it exists to catch. Bump it with
+    // the server's `ReviewReason` catalog (`len(REVIEW_REASONS)`), never to make this go green.
+    // 13 -> 14 for T92's `provider_employment_type`; 14 -> 15 for T184b's `role_gate_unmeasured`.
+    expect(labels).toHaveLength(15);
+    expect(plain).toEqual(labels);
   });
 });
 
@@ -98,7 +92,8 @@ describe("the generated review sentence", () => {
   it("reaches the page, replacing the two hand-written reasons", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], rows));
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
 
     expect(
       screen.getByText(/6 held for a look: 3 not evaluated, 2 role unconfirmed, 1 outside the US/),
@@ -112,9 +107,9 @@ describe("the generated review sentence", () => {
   it("generates the band's review tooltip from the same counts", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], rows));
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    const note = screen.getByTitle(/Held for a look/);
+    const note = screen.getByTitle(/held for a look/i);
     expect(note.getAttribute("title") ?? "").toContain(
       "3 not evaluated, 2 role unconfirmed, 1 outside the US",
     );

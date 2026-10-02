@@ -118,7 +118,7 @@ describe("the applied route", () => {
     expect(screen.getByRole("button", { name: "Applied" }).getAttribute("aria-current")).toBe(
       "page",
     );
-    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Jobs" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Runs" })).toBeTruthy();
   });
 
@@ -140,7 +140,7 @@ describe("the applied route", () => {
     // The nav sits OUTSIDE the boundary, so the other two views are one click away — which is the
     // only way out this card offers. Asserted as a pair: a test that looked for the card alone
     // would pass just as happily against a blank document with one card in it.
-    expect(screen.getByRole("button", { name: "Queue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Jobs" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Runs" })).toBeTruthy();
   });
 });
@@ -207,21 +207,23 @@ describe("the counts band", () => {
 });
 
 describe("the row's controls", () => {
-  it("calls unapply and offers an undo that marks it applied again", async () => {
+  it("calls unapply and offers an undo that records it again", async () => {
     const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
     await renderApplied(appliedResponse([row]));
     vi.mocked(unapply).mockResolvedValue({ outcome: "transitioned", job_id: row.job_id });
     vi.mocked(markApplied).mockResolvedValue({ outcome: "created", job_id: row.job_id });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unmark applied" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo this record" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
     // The EXISTING inverse route, keyed on the posting the queue delivered — not a new write path.
     expect(vi.mocked(unapply)).toHaveBeenCalledWith(row.posting_id);
-    const toast = screen.getByText(/^Withdrawn: Acme Corp — Backend Engineer/);
-    expect(toast.textContent ?? "").toMatch(/Undo marks it applied again/);
+    const toast = screen.getByText(/^Undid the record for Acme Corp — Backend Engineer/);
+    // It says what the status IS now, so "undone" cannot be read as "deleted".
+    expect(toast.textContent ?? "").toMatch(/status is now withdrawn/);
+    expect(toast.textContent ?? "").toMatch(/Undo records it again/);
 
     // And the undo is real: it calls the forward route rather than restoring the row on screen.
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -237,12 +239,12 @@ describe("the row's controls", () => {
     await renderApplied(appliedResponse([row]));
     vi.mocked(unapply).mockResolvedValue({ outcome: "unchanged", job_id: row.job_id });
 
-    fireEvent.click(screen.getByRole("button", { name: "Unmark applied" }));
+    fireEvent.click(screen.getByRole("button", { name: "Undo this record" }));
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(screen.getByText(/Nothing to withdraw for Acme Corp/)).toBeTruthy();
+    expect(screen.getByText(/Nothing to undo for Acme Corp/)).toBeTruthy();
     // No undo is offered, because nothing was done to undo.
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
   });
@@ -254,7 +256,7 @@ describe("the row's controls", () => {
       appliedResponse([appliedRow({ posting_id: null, pdf_available: false })]),
     );
 
-    expect(screen.queryByRole("button", { name: "Unmark applied" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo this record" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Open PDF" })).toBeNull();
     expect(screen.getByText(/never delivered/)).toBeTruthy();
   });
@@ -306,7 +308,7 @@ describe("the row's controls", () => {
       ]),
     );
 
-    expect(screen.getAllByRole("button", { name: "Unmark applied" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Undo this record" })).toHaveLength(1);
     expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
   });
 
@@ -414,7 +416,7 @@ describe("the follow-up column", () => {
     });
 
     expect(vi.mocked(setJobFollowUp)).toHaveBeenCalledWith(row.job_id, FUTURE);
-    expect(screen.queryByRole("button", { name: /^Unmark applied/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Undo this record/ })).toBeNull();
   });
 
   it("filters the table to the due rows from the band, and back", async () => {
@@ -479,7 +481,7 @@ describe("a server older than this bundle", () => {
     await renderApplied(appliedResponse([row]));
 
     expect(dataRows()).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "Unmark applied" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Undo this record" })).toBeNull();
     expect(screen.getByText(/only a job's latest attempt/)).toBeTruthy();
   });
 
@@ -661,13 +663,13 @@ describe("the application lifecycle", () => {
       ]),
     );
 
-    expect(screen.getByText("no reply · 25 d")).toBeTruthy();
-    expect(screen.getAllByText(/^no reply ·/)).toHaveLength(1);
+    expect(screen.getByText("No update recorded · 25 d")).toBeTruthy();
+    expect(screen.getAllByText(/^No update recorded ·/)).toHaveLength(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^no reply 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^no update recorded 1/ }));
     expect(dataRows()).toHaveLength(1);
     expect(screen.getByText("Acme Corp")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^no reply 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^no update recorded 1/ }));
     expect(dataRows()).toHaveLength(2);
   });
 
@@ -786,7 +788,7 @@ describe("the application lifecycle", () => {
     });
 
     expect(screen.getByText("Acme Corp")).toBeTruthy();
-    expect(screen.queryByText(/^no reply/)).toBeNull();
+    expect(screen.queryByText(/^No update recorded/)).toBeNull();
     expect(screen.queryByText("responses")).toBeNull();
   });
 

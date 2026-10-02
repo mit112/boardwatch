@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import type { RunFunnel, RunSummary } from "../api/types";
 import { funnelStage, runFunnel, runSummary } from "../test/rows";
@@ -138,4 +138,107 @@ it("calls a run nothing has closed running, in the picker and in the summary", a
 
   expect(screen.getByRole("option", { name: /5 · started .* · running/ })).toBeDefined();
   expect(valueFor(screen.getByRole("region", { name: "Run summary" }), "status")).toBe("running");
+});
+
+/*
+ * Recovery. Run 529 was a résumé re-render: the store has a row for it and no funnel artifact, and
+ * the page used to open on it and print "404 from /api/runs/529" as the whole page. These pin what
+ * the reader gets instead — a real run, a plain sentence, and a way out — and that no status code
+ * is the message.
+ */
+function notFound(runId: number): Error {
+  return Object.assign(new Error(`404 from /api/runs/${String(runId)}`), { status: 404 });
+}
+
+function failing(runId: number): Error {
+  return Object.assign(new Error(`503 from /api/runs/${String(runId)}`), { status: 503 });
+}
+
+describe("a run that has no stored funnel", () => {
+  it("opens on the newest run that has one, and says which run it skipped", async () => {
+    vi.mocked(getRuns).mockResolvedValue({
+      runs: [runSummary({ id: 529 }), runSummary({ id: 528 })],
+    });
+    vi.mocked(getFunnel).mockImplementation((id: number) =>
+      id === 529 ? Promise.reject(notFound(529)) : Promise.resolve(runFunnel({ run_id: id })),
+    );
+    render(<RunsPage />);
+
+    await screen.findByText(/^funnel · artifact/);
+    screen.getByText(/Showing run 528 — the newest run with a stored funnel\. Run 529 is listed but has none\./);
+    // The picker still lists the run it skipped: nothing was hidden.
+    expect(screen.getByRole("option", { name: /^529 ·/ })).toBeTruthy();
+    expect(screen.queryByText(/404/)).toBeNull();
+  });
+
+  it("explains a run the reader picked, in words, and offers the way out", async () => {
+    vi.mocked(getRuns).mockResolvedValue({
+      runs: [runSummary({ id: 529 }), runSummary({ id: 528 })],
+    });
+    vi.mocked(getFunnel).mockImplementation((id: number) =>
+      id === 529 ? Promise.reject(notFound(529)) : Promise.resolve(runFunnel({ run_id: id })),
+    );
+    render(<RunsPage />);
+    await screen.findByText(/^funnel · artifact/);
+
+    // The reader chooses the run with no funnel on purpose.
+    fireEvent.change(screen.getByRole("combobox", { name: "run" }), { target: { value: "529" } });
+    const notice = await screen.findByRole("alert");
+    expect(within(notice).getByText("No funnel is stored for run 529.")).toBeTruthy();
+    // Not a status code, and not a reason invented for the missing file.
+    expect(notice.textContent).not.toMatch(/404|api\/runs/);
+    expect(notice.textContent).not.toMatch(/because|probably|crashed/i);
+    // The run's own summary is still on the page, so what is known is not taken away.
+    expect(screen.getByRole("region", { name: "Run summary" })).toBeTruthy();
+
+    fireEvent.click(within(notice).getByRole("button", { name: "Show the newest run that has one" }));
+    await screen.findByText(/^funnel · artifact/);
+  });
+
+  it("offers a retry, in words, when the request itself failed", async () => {
+    vi.mocked(getRuns).mockResolvedValue({ runs: [runSummary({ id: 7 })] });
+    vi.mocked(getFunnel).mockRejectedValueOnce(failing(7)).mockResolvedValue(runFunnel({ run_id: 7 }));
+    render(<RunsPage />);
+
+    const notice = await screen.findByRole("alert");
+    within(notice).getByText(/This run['’]s details could not be loaded just now\./);
+    expect(notice.textContent).not.toMatch(/503|api\/runs/);
+    fireEvent.click(within(notice).getByRole("button", { name: "Try again" }));
+    await screen.findByText(/^funnel · artifact/);
+  });
+
+  it("does not walk the whole table when no run has a funnel", async () => {
+    const runs = Array.from({ length: 40 }, (_, index) => runSummary({ id: 100 - index }));
+    vi.mocked(getRuns).mockResolvedValue({ runs });
+    // Counted from zero: the mock's call log is shared with every earlier test in this file.
+    vi.mocked(getFunnel).mockClear();
+    vi.mocked(getFunnel).mockImplementation((id: number) => Promise.reject(notFound(id)));
+    render(<RunsPage />);
+
+    await screen.findByText(/^No funnel is stored for run /);
+    // A bounded look-back: a store with none costs a handful of fast 404s, not forty.
+    expect(vi.mocked(getFunnel).mock.calls.length).toBeLessThanOrEqual(12);
+  });
+});
+
+describe("a run list that cannot be loaded", () => {
+  it("says so plainly and retries on request", async () => {
+    vi.mocked(getRuns)
+      .mockRejectedValueOnce(new Error("503 from /api/runs"))
+      .mockResolvedValue({ runs: [runSummary({ id: 3 })] });
+    vi.mocked(getFunnel).mockResolvedValue(runFunnel({ run_id: 3 }));
+    render(<RunsPage />);
+
+    const notice = await screen.findByRole("alert");
+    within(notice).getByText("The run list could not be loaded.");
+    expect(notice.textContent).not.toMatch(/503|api\/runs/);
+    fireEvent.click(within(notice).getByRole("button", { name: "Try again" }));
+    await screen.findByText(/^funnel · artifact/);
+  });
+
+  it("says no runs are recorded, rather than loading forever, when the table is empty", async () => {
+    vi.mocked(getRuns).mockResolvedValue({ runs: [] });
+    render(<RunsPage />);
+    await screen.findByText("No runs are recorded yet.");
+  });
 });

@@ -145,8 +145,6 @@ function Metric({
 export function StatusBand({
   counts,
   newSince,
-  showing,
-  total,
   reviewNote,
   activeFacet,
   onToggleFacet,
@@ -155,8 +153,6 @@ export function StatusBand({
   /* The `new` facet's count. Its own prop, not a `counts` field: it is per-viewer, computed from
      `localStorage`, and no server sends it. */
   newSince: number;
-  showing: number;
-  total: number;
   /* The `review` cell's tooltip, GENERATED from the lane's own reason counts by the caller. It
      used to hand-write two of the nine reasons here, which described none of the leads on the
      measured day. */
@@ -220,7 +216,7 @@ export function StatusBand({
    * engine flag" — the next question, not the first one. They are still facets, and `uncertain`
    * has been a folded facet since the fold existed, so folding a facet is not hiding a control.
    *
-   * Prefixed `gate` for the reason `JudgeVerdictBadge`'s labels are: a cell reading `uncertain`
+   * Prefixed `gate` so that a cell reading `uncertain`
    * beside a cell reading `uncertain` is two numbers and no way to tell which engine produced
    * either.
    */
@@ -334,25 +330,10 @@ export function StatusBand({
     </>
   );
 
-  /*
-   * `border-l-0` because `divide-x` was drawing this cell's rule against `ml-auto`'s dead space,
-   * leaving a hairline floating 600px from the nearest content. `role="status"` because this is
-   * the only readout that answers "did my filter match anything", and a count that changes
-   * silently is a change a screen-reader reader never learns about (SC 4.1.3).
-   */
-  const readout = (
-    <div
-      role="status"
-      className="ml-auto flex items-center border-l-0 px-6 py-5 text-sm text-fg-2 tabular-nums"
-    >
-      Showing {showing.toLocaleString()} of {total.toLocaleString()}
-    </div>
-  );
-
   return (
     <section
       aria-label="Queue status"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
+      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-card"
     >
       {inQueue}
       {eligible}
@@ -361,7 +342,6 @@ export function StatusBand({
       {newSinceCell}
       {wide ? judge : null}
       {wide ? rest : null}
-      {readout}
       {wide ? null : (
         <details className="w-full border-l-0 border-t border-divider">
           <summary className="flex min-h-11 cursor-pointer items-center px-6 label-micro text-fg-3">

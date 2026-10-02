@@ -2,6 +2,31 @@ import { useState } from "react";
 
 import type { Answers } from "../api/types";
 import { CopyButton } from "./CopyButton";
+import { Icon } from "./Icon";
+
+/*
+ * Whether the panel is open is a per-viewer convenience, kept in `localStorage` so that someone
+ * who copies answers on every application is not asked to open it on every job. Every access is
+ * wrapped: storage throws when it is disabled, and a panel that cannot remember is still a panel.
+ */
+const OPEN_KEY = "boardwatch.answers-open";
+
+function readOpen(): boolean | null {
+  try {
+    const stored = window.localStorage.getItem(OPEN_KEY);
+    return stored === "true" ? true : stored === "false" ? false : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOpen(open: boolean): void {
+  try {
+    window.localStorage.setItem(OPEN_KEY, String(open));
+  } catch {
+    /* Not remembering is not a failure. */
+  }
+}
 
 /*
  * Read-and-copy only. Nothing here types into an employer's page.
@@ -27,7 +52,7 @@ function Rows({
     <dl className="divide-y divide-divider">
       {entries.map(([key, value]) => (
         <div key={key} className="flex items-center gap-3 py-1.5">
-          <dt className="w-40 shrink-0 text-xs text-fg-3">{fieldLabel(key)}</dt>
+          <dt className="w-40 shrink-0 text-sm text-fg-3">{fieldLabel(key)}</dt>
           <dd className="min-w-0 flex-1 truncate text-sm text-fg">{value ?? "not set"}</dd>
           {value === null ? null : (
             <CopyButton value={value} label="Copy" onError={onError} title={`Copy ${key}`} />
@@ -87,7 +112,7 @@ export function AnswersPanel({
   defaultOpen?: boolean;
   onError: (message: string) => void;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpen] = useState(() => readOpen() ?? defaultOpen);
 
   const identityEntries = Object.entries(answers?.identity ?? {});
   const identityBlock = identityEntries
@@ -96,28 +121,36 @@ export function AnswersPanel({
     .join("\n");
 
   return (
-    <section className="rounded-md border border-divider bg-surface">
+    <section className="rounded-md bg-surface-2">
       <button
         type="button"
         onClick={() => {
-          setOpen((current) => !current);
+          const next = !open;
+          writeOpen(next);
+          setOpen(next);
         }}
         aria-expanded={open}
-        className="flex min-h-11 w-full items-center justify-between px-4 text-left text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface-2"
+        className="flex min-h-11 w-full items-center justify-between gap-3 rounded-md px-4 text-left text-sm font-medium text-fg transition-colors duration-150 ease-in-out hover:bg-surface-3"
       >
-        <span>Application answers</span>
-        <span aria-hidden="true" className="text-fg-3">
-          {open ? "collapse" : "expand"}
+        <span>
+          Application answers
+          <span className="ml-2 font-normal text-fg-2">
+            identity, work authorization, education and common questions — ready to copy
+          </span>
+        </span>
+        <span className="flex items-center gap-1 text-fg-2">
+          {open ? "Hide" : "Show"}
+          <Icon name={open ? "chevronUp" : "chevronDown"} />
         </span>
       </button>
 
       {!open ? null : answers === null ? (
-        <p className="px-4 pb-4 text-sm text-fg-2">Loading answers…</p>
+        <p role="status" className="px-4 pb-4 text-sm text-fg-2">Loading answers…</p>
       ) : (
-        <div className="flex flex-col gap-5 border-t border-divider px-4 py-4">
+        <div className="flex flex-col gap-5 px-4 pt-2 pb-4">
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-3">
-              <h3 className="label-micro text-fg-3">identity</h3>
+              <h3 className="text-sm font-semibold text-fg">Identity</h3>
               <CopyButton
                 value={identityBlock}
                 label="Copy whole block"
@@ -130,14 +163,12 @@ export function AnswersPanel({
           </div>
 
           <div>
-            <h3 className="mb-1.5 label-micro text-fg-3">
-              work authorisation
-            </h3>
+            <h3 className="mb-1.5 text-sm font-semibold text-fg">Work authorization</h3>
             <KeyValueRows entries={Object.entries(answers.work_auth)} onError={onError} />
           </div>
 
           <div>
-            <h3 className="mb-1.5 label-micro text-fg-3">education</h3>
+            <h3 className="mb-1.5 text-sm font-semibold text-fg">Education</h3>
             <div className="flex flex-col gap-3">
               {answers.education.map((entry, index) => (
                 <KeyValueRows
@@ -150,10 +181,10 @@ export function AnswersPanel({
           </div>
 
           <div>
-            <h3 className="mb-1.5 label-micro text-fg-3">questions</h3>
+            <h3 className="mb-1.5 text-sm font-semibold text-fg">Common questions</h3>
             <ul className="flex flex-col gap-3">
               {answers.questions.map((question) => (
-                <li key={question.q} className="border-t border-divider pt-3">
+                <li key={question.q} className="border-t border-divider pt-3 first:border-t-0 first:pt-0">
                   <p className="text-xs text-fg-3">{question.q}</p>
                   <div className="mt-1 flex items-start gap-3">
                     <p className="min-w-0 flex-1 text-sm whitespace-pre-wrap text-fg">
@@ -162,8 +193,8 @@ export function AnswersPanel({
                     <CopyButton value={question.a} label="Copy" onError={onError} />
                   </div>
                   {question.note ? (
-                    <p className="mt-2 border-l-2 border-control pl-3 text-xs text-fg-2">
-                      <span className="mr-1.5 tracking-wide text-fg-3 uppercase">note</span>
+                    <p className="mt-2 rounded-sm bg-surface px-3 py-2 text-xs text-fg-2">
+                      <span className="mr-1.5 font-semibold text-fg">Note:</span>
                       {question.note}
                       <span className="mt-1 block text-fg-3">
                         Shown here only. The copy button above copies the answer, never this note.

@@ -56,7 +56,7 @@ export function ApplyReturnPrompt({
         aria-modal="false"
         aria-labelledby={titleId}
         onKeyDown={onKeyDown}
-        className="pointer-events-auto flex w-full max-w-xl flex-wrap items-center gap-3 rounded-md border border-fg-2 bg-surface-2 px-4 py-3 shadow-lg"
+        className="pointer-events-auto flex w-full max-w-xl flex-wrap items-center gap-3 rounded-md bg-surface-2 px-4 py-3 shadow-card ring-1 ring-control"
       >
         <p id={titleId} className="min-w-0 flex-1 text-sm text-fg">
           Back from {row.company} — {row.title}. Did you apply?
@@ -67,14 +67,14 @@ export function ApplyReturnPrompt({
             type="button"
             onClick={onApplied}
             title="Record the application. Key: a. Undoable from the toast."
-            className="min-h-11 rounded-sm border border-fg-2 px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface"
+            className="min-h-11 rounded-sm bg-primary px-4 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
           >
-            Mark applied
+            Record application
           </button>
           <button
             type="button"
             onClick={onDismiss}
-            title="Leave the lead in the queue. Key: Esc"
+            title="Leave the job on your list. Key: Esc"
             className="min-h-11 rounded-sm px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
           >
             Not yet

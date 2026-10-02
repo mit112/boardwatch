@@ -424,42 +424,136 @@ function runLabel(run: RunSummary): string {
   return `${run.id} · ${formatTimestamp(run.finished)} · ${run.status ?? "unknown"}`;
 }
 
+
+function RunsNotice({
+  title,
+  body,
+  actions,
+}: {
+  title: string;
+  body: string;
+  actions: { label: string; onClick: () => void }[];
+}) {
+  return (
+    <section role="alert" className="max-w-2xl rounded-md bg-surface-2 p-5">
+      <h2 className="text-base text-fg">{title}</h2>
+      <p className="mt-1 text-sm text-fg-2">{body}</p>
+      {actions.length === 0 ? null : (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {actions.map((action, index) => (
+            <button
+              key={action.label}
+              type="button"
+              onClick={action.onClick}
+              className={`min-h-11 rounded-sm px-4 text-sm transition-colors duration-150 ease-in-out ${
+                index === 0
+                  ? "bg-primary text-on-primary hover:bg-primary-strong"
+                  : "text-fg-2 underline underline-offset-4 hover:text-fg"
+              }`}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Duck-typed rather than `instanceof ApiError`: this page is tested against a client mock that
+ *  exports no class, and the status is the only part of the error this decision reads. */
+function isNotFound(caught: unknown): boolean {
+  return typeof caught === "object" && caught !== null && "status" in caught && caught.status === 404;
+}
+
+/** How many older runs the page will try before it stops looking for one that has a funnel. A
+ *  bound, so a store where none has one costs a handful of fast 404s and not a walk of the table. */
+const FALLBACK_LOOKBACK = 12;
+
+type FunnelState =
+  | { kind: "loading" }
+  | { kind: "ready"; funnel: RunFunnel }
+  /** The run is listed but no funnel record is stored for it. NOT a failure of the request. */
+  | { kind: "absent" }
+  | { kind: "failed" };
+
 export function RunsPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null);
+  const [runsFailed, setRunsFailed] = useState(false);
   const [runId, setRunId] = useState<number | null>(null);
-  const [funnel, setFunnel] = useState<RunFunnel | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<FunnelState>({ kind: "loading" });
+  /*
+   * Set while the PAGE is choosing the run — the opening load — and cleared the moment the reader
+   * picks one. Run 529 was a résumé re-render, which writes a run row and no funnel; opening the
+   * page on it meant the first thing shown was an error, with the real runs a menu away. While
+   * this is set, a run with no stored funnel hands over to the next older one instead.
+   */
+  const [choosing, setChoosing] = useState(true);
+  /* The run the page skipped past, so the reader is told what was left out and not just shown a
+     different run than the newest in the list. */
+  const [skipped, setSkipped] = useState<number | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    let live = true;
     void getRuns()
       .then((response) => {
+        if (!live) return;
         setRuns(response.runs);
         setRunId(response.runs[0]?.id ?? null);
+        setChoosing(true);
+        setSkipped(null);
       })
-      .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : "Could not load the run list.");
+      .catch(() => {
+        if (live) setRunsFailed(true);
       });
-  }, []);
+    return () => {
+      live = false;
+    };
+  }, [attempt]);
 
   useEffect(() => {
     if (runId === null) return;
     let live = true;
     void getFunnel(runId)
-      .then((response) => {
-        if (live) setFunnel(response);
+      .then((funnel) => {
+        if (live) setState({ kind: "ready", funnel });
       })
       .catch((caught: unknown) => {
-        if (live) {
-          setError(
-            caught instanceof Error ? caught.message : "Could not load that run's funnel artifact.",
-          );
+        if (!live) return;
+        if (!isNotFound(caught)) {
+          setState({ kind: "failed" });
+          return;
         }
+        const list = runs ?? [];
+        const index = list.findIndex((run) => run.id === runId);
+        const next = list[index + 1];
+        if (choosing && next !== undefined && index + 1 < FALLBACK_LOOKBACK) {
+          setSkipped((current) => current ?? runId);
+          setState({ kind: "loading" });
+          setRunId(next.id);
+          return;
+        }
+        setState({ kind: "absent" });
       });
     return () => {
       live = false;
     };
-  }, [runId]);
+    // `runs` and `choosing` are read to decide where to go on a 404 and are not triggers: the run
+    // list only changes with `attempt`, which also resets `runId`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, attempt]);
 
+  /* "Show the newest run that has a funnel" — the same walk the opening load does, on request. */
+  const showNewestWithFunnel = () => {
+    setChoosing(true);
+    setSkipped(null);
+    setState({ kind: "loading" });
+    setRunId(runs?.[0]?.id ?? null);
+    setAttempt((current) => current + 1);
+  };
+
+  const funnel = state.kind === "ready" ? state.funnel : null;
   const selected = runs?.find((run) => run.id === runId) ?? null;
   /* `stage_durations` names its own stages, and the two lists agree only by convention — a stage
    * the timer never marked simply has no duration, which is why this is a lookup and not a zip. */
@@ -475,8 +569,9 @@ export function RunsPage() {
           <select
             value={runId ?? ""}
             onChange={(event) => {
-              setFunnel(null);
-              setError(null);
+              setChoosing(false);
+              setSkipped(null);
+              setState({ kind: "loading" });
               setRunId(Number(event.target.value));
             }}
             className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
@@ -538,17 +633,67 @@ export function RunsPage() {
         )}
       </div>
 
-      {error !== null ? (
-        // Announced, not just printed: this replaces the whole funnel with no other signal.
-        <p role="alert" className="rounded-md border border-fg-2 bg-surface p-4 text-sm text-fg">
-          {error}
-        </p>
+      {runsFailed ? (
+        <RunsNotice
+          title="The run list could not be loaded."
+          body="Your jobs are unaffected. This is the pipeline's own history, and it only reads from the store."
+          actions={[
+            {
+              label: "Try again",
+              onClick: () => {
+                setRunsFailed(false);
+                setAttempt((current) => current + 1);
+              },
+            },
+          ]}
+        />
+      ) : runs !== null && runs.length === 0 ? (
+        <RunsNotice
+          title="No runs are recorded yet."
+          body="A run appears here once the pipeline has run at least once."
+          actions={[]}
+        />
+      ) : state.kind === "absent" ? (
+        <RunsNotice
+          title={`No funnel is stored for run ${String(runId)}.`}
+          body="The run is listed above, but the funnel breakdown for it is not on disk, so it cannot be shown. Nothing about your jobs depends on it."
+          actions={[
+            { label: "Show the newest run that has one", onClick: showNewestWithFunnel },
+            {
+              label: "Try again",
+              onClick: () => {
+                setState({ kind: "loading" });
+                setAttempt((current) => current + 1);
+              },
+            },
+          ]}
+        />
+      ) : state.kind === "failed" ? (
+        <RunsNotice
+          title="This run's details could not be loaded just now."
+          body="The run list above is still current. The store may be busy; trying again usually works."
+          actions={[
+            {
+              label: "Try again",
+              onClick: () => {
+                setState({ kind: "loading" });
+                setAttempt((current) => current + 1);
+              },
+            },
+          ]}
+        />
       ) : funnel === null ? (
         <p role="status" className="p-4 text-sm text-fg-2">
-          Loading the run&apos;s funnel artifact…
+          Loading the run&apos;s funnel record…
         </p>
       ) : (
         <>
+          {skipped === null ? null : (
+            <p role="status" className="text-sm text-fg-2">
+              Showing run {runId} — the newest run with a stored funnel. Run {skipped} is listed
+              but has none.
+            </p>
+          )}
           {funnel.fatal != null || funnel.errors.length > 0 ? (
             <section className="rounded-md border border-fg-2 bg-surface p-4">
               <h2 className="text-sm text-fg">

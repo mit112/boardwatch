@@ -21,6 +21,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -77,7 +78,7 @@ afterEach(() => {
 describe("the final-gate facet", () => {
   it("counts the gate's three buckets over the apply lane, apart from the rules verdict", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     // All four apply rows are rules-`eligible`; the gate splits them 2 / 1 / 1. An
     // implementation reading `verdict` reports "gate eligible 4".
@@ -89,26 +90,26 @@ describe("the final-gate facet", () => {
 
   it("filters BOTH lanes to the gate's uncertain, keeping the uncertain review lead", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
-    fireEvent.click(screen.getByRole("button", { name: "show" }));
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
+    // Turning the facet on shows both lists, so the review job needs no extra step to be found.
     fireEvent.click(screen.getByRole("button", { name: /^gate uncertain 1 —/i }));
 
-    const queue = screen.getByRole("grid", { name: "Queue" });
+    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
     expect(hasRow(queue, "GATE-UNSURE")).toBe(true);
     expect(hasRow(queue, "GATE-CLEAR")).toBe(false);
     expect(hasRow(queue, "GATE-SILENT")).toBe(false);
     // The review lane is reached too. This is the assertion that fails if the gate facet skips it.
-    expect(hasRow(screen.getByRole("grid", { name: "Review" }), "REVIEW-UNSURE")).toBe(true);
+    expect(hasRow(screen.getByRole("grid", { name: "Needs review" }), "REVIEW-UNSURE")).toBe(true);
   });
 
   it("shows the unjudged lead alone for not judged, never the gate-uncertain one", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     fireEvent.click(screen.getByRole("button", { name: /^not judged 1 —/i }));
 
-    const queue = screen.getByRole("grid", { name: "Queue" });
+    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
     expect(hasRow(queue, "GATE-SILENT")).toBe(true);
     // The discriminating pair: "not judged" is `judge_verdict == null`, not "not gate-eligible".
     // An implementation that inverted `judge_eligible` shows GATE-UNSURE here as well.
@@ -118,7 +119,7 @@ describe("the final-gate facet", () => {
 
   it("leaves the other gate counts intact after clicking one, and names the filter in words", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     fireEvent.click(screen.getByRole("button", { name: /^gate eligible 2 —/i }));
 
@@ -130,18 +131,18 @@ describe("the final-gate facet", () => {
       screen.getByRole("button", { name: /^gate eligible 2 —/i }).getAttribute("aria-pressed"),
     ).toBe("true");
     // The words the reader clicked, not the wire member: "judge_eligible only" is a field name.
-    expect(screen.getByText("Showing gate eligible only.")).toBeTruthy();
+    expect(screen.getByText("Filtering by independent review found no blocker.")).toBeTruthy();
   });
 
-  it("clears the gate facet from the Show all control", async () => {
+  it("clears the gate facet from the Reset filters control", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
     fireEvent.click(screen.getByRole("button", { name: /^gate uncertain 1 —/i }));
-    expect(hasRow(screen.getByRole("grid", { name: "Queue" }), "GATE-CLEAR")).toBe(false);
+    expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "GATE-CLEAR")).toBe(false);
 
-    fireEvent.click(screen.getByRole("button", { name: "Show all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
-    expect(hasRow(screen.getByRole("grid", { name: "Queue" }), "GATE-CLEAR")).toBe(true);
+    expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "GATE-CLEAR")).toBe(true);
     expect(
       screen.getByRole("button", { name: /^gate uncertain 1 —/i }).getAttribute("aria-pressed"),
     ).toBe("false");

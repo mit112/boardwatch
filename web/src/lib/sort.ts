@@ -137,6 +137,17 @@ export function matchesQuery(row: QueueRow, query: string): boolean {
   );
 }
 
+/** A place filter: matches the primary location and every other location the posting lists, so a
+ *  job listed in several cities answers to any of them. Separate from the free-text search, which
+ *  also reads company and title — this one answers "where", and nothing else. */
+export function matchesLocation(row: QueueRow, place: string): boolean {
+  if (place === "") return true;
+  const needle = place.toLowerCase();
+  return [row.location ?? "", ...(row.locations ?? [])].some((entry) =>
+    entry.toLowerCase().includes(needle),
+  );
+}
+
 /*
  * The applied page's sort. Its own CLOSED catalog rather than a widening of `SORT_KEYS`: the two
  * lists share no column but company, and a single catalog would let a queue-only key be restored

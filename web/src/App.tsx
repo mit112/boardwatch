@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+import { Icon } from "./components/Icon";
+import { effectiveTheme, setTheme } from "./lib/theme";
+
 import { FIXTURE_MODE } from "./api/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { StaleViewerBanner } from "./components/StaleViewerBanner";
@@ -25,13 +28,39 @@ function NavTab({
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`min-h-11 rounded-sm px-3.5 font-display text-xs tracking-[0.08em] uppercase transition-colors duration-[120ms] ease-snap ${
+      className={`min-h-11 rounded-sm px-3.5 text-sm transition-colors duration-[120ms] ease-snap ${
         active
-          ? "bg-surface-2 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
-          : "text-fg-2 hover:bg-surface hover:text-fg"
+          ? "bg-surface-2 font-semibold text-fg shadow-[inset_0_-2px_0_0_var(--color-primary)]"
+          : "font-medium text-fg-2 hover:bg-surface-2 hover:text-fg"
       }`}
     >
       {label}
+    </button>
+  );
+}
+
+/*
+ * The theme switch: one button, pressed when the dark theme is in force. It sets an explicit
+ * choice (and remembers it in this browser); until it is pressed the system preference decides.
+ * The icon shows the theme you would switch TO, and the name says what it does, so neither carries
+ * the state alone.
+ */
+function ThemeToggle() {
+  const [dark, setDark] = useState(() => effectiveTheme() === "dark");
+  return (
+    <button
+      type="button"
+      aria-pressed={dark}
+      aria-label="Dark theme"
+      title={dark ? "Switch to the light theme" : "Switch to the dark theme"}
+      onClick={() => {
+        const next = dark ? "light" : "dark";
+        setTheme(next);
+        setDark(next === "dark");
+      }}
+      className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface-2 hover:text-fg"
+    >
+      <Icon name={dark ? "sun" : "moon"} size={18} />
     </button>
   );
 }
@@ -70,23 +99,41 @@ export function App() {
       >
         Skip to content
       </button>
-      <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg/95 backdrop-blur-sm">
+      <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg">
         <div className="mx-auto flex max-w-[160rem] flex-wrap items-center gap-6 px-6 py-3">
           {/* A real `h1`, not a styled span: it is the only document-level heading either route
               has, and without it a screen reader's heading list starts at `h2` under nothing.
               Set as a wordmark in the display voice. The accent rule beside it is the only place
               the accent appears outside a focus ring; it is `aria-hidden` and carries no meaning,
               because the word does. */}
-          <h1 className="flex items-center gap-2.5 font-display text-[0.8125rem] tracking-[0.2em] text-fg uppercase">
-            <span aria-hidden="true" className="h-3.5 w-0.5 rounded-full bg-accent" />
+          <h1 className="flex items-center gap-2 text-base font-semibold text-fg">
+            <span aria-hidden="true" className="size-2.5 rounded-full bg-primary" />
             boardwatch
           </h1>
           <nav aria-label="Views" className="flex items-center gap-1">
             <NavTab
-              label="Queue"
+              label="Jobs"
               active={route === "queue"}
               onClick={() => {
                 setRoute("queue");
+              }}
+            />
+            {/* In the order of the work: what to apply to, what has been sent, what the rules turned
+                away. The pipeline's own diagnostics are last and are not what this app is for. */}
+            <NavTab
+              label="Applied"
+              active={route === "applied"}
+              onClick={() => {
+                setRoute("applied");
+              }}
+            />
+            {/* Not "Rejected": that word belongs to an employer's answer to an application, and
+                this list is what OUR rules turned away, read to catch a wrong call. */}
+            <NavTab
+              label="Filtered out"
+              active={route === "rejected"}
+              onClick={() => {
+                setRoute("rejected");
               }}
             />
             <NavTab
@@ -96,37 +143,21 @@ export function App() {
                 setRoute("runs");
               }}
             />
-            {/* The third view. It is a READ of what has already been sent rather than work to do,
-                so it sits last: the tab order is "what is there to apply to", "what did the runs
-                produce", "what have I already sent". */}
-            <NavTab
-              label="Applied"
-              active={route === "applied"}
-              onClick={() => {
-                setRoute("applied");
-              }}
-            />
-            {/* Last: what the rules turned away, read to catch a wrong rejection. The queue only
-                counts these; this is the list behind its `ineligible` cell. */}
-            <NavTab
-              label="Rejected"
-              active={route === "rejected"}
-              onClick={() => {
-                setRoute("rejected");
-              }}
-            />
           </nav>
           {/* Dev-only by construction: `FIXTURE_MODE` is always false in a production build, so
               the `import.meta.env.DEV` literal folds this badge — and its mention of the fixture
               directory — out of the shipped bundle rather than leaving it as unreachable text. */}
-          {import.meta.env.DEV && FIXTURE_MODE ? (
-            <span
-              className="ml-auto rounded-sm border border-control px-2 py-1 label-micro text-fg-2"
-              title="Serving from src/fixtures/. Add ?live=1 to talk to the API instead."
-            >
-              fixture data
-            </span>
-          ) : null}
+          <span className="ml-auto flex items-center gap-2">
+            {import.meta.env.DEV && FIXTURE_MODE ? (
+              <span
+                className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-fg-2"
+                title="Serving from src/fixtures/. Add ?live=1 to talk to the API instead."
+              >
+                fixture data
+              </span>
+            ) : null}
+            <ThemeToggle />
+          </span>
         </div>
       </header>
 
@@ -145,7 +176,7 @@ export function App() {
         * the GRID's page, so it is raised here and the readable measure is held where the prose
         * actually is: the JD box in the detail pane and the queue's empty state.
         */}
-      <main id="view" tabIndex={-1} className="mx-auto max-w-[160rem] px-6 py-10">
+      <main id="view" tabIndex={-1} className="mx-auto max-w-[160rem] px-4 py-6 sm:px-6 sm:py-8">
         {/*
           * Wraps the route SWITCH, not the header — so a view that fails to draw leaves the nav
           * above it working, and the reader's way out is the tab they already know. `resetKeys`

@@ -9,130 +9,177 @@
 @source not "./__tests__";
 
 /*
- * Design tokens. Every colour, radius and easing curve in the application resolves here; nothing
- * downstream hard-codes a hex value, a pixel radius or a cubic-bezier.
+ * Design tokens. Every colour, radius, shadow and easing curve in the application resolves here;
+ * nothing downstream hard-codes a hex value, a pixel radius or a cubic-bezier.
  *
  * The default Tailwind palette, the default radius scale and the default easing namespace are ALL
  * cleared (`*: initial`). That is what keeps the promises structural rather than a matter of review
  * discipline: with the palette gone there is no `bg-white` to reach for, with the radius scale gone
  * there is no bare `rounded` to emit a fourth corner, and with `--ease-*` cleared there is no
  * `ease-in` or `ease-linear` utility to accidentally emit a fourth curve.
+ *
+ * THE VALUES BELOW ARE THE LIGHT THEME, which is the default. The dark theme is the second block
+ * in `@layer base`, applied by the system preference or by an explicit `data-theme`.
+ *
+ * Contrast is verified by computation (WCAG 2.2 AA), never by eye — against the WORST surface a
+ * token is ever painted on, not against `bg`. Checking a foreground against the page and then
+ * rendering it on an elevated surface is checking a guard in a different scope from the one it
+ * runs in. Ratios recorded beside each token are that worst case, over bg / surface / surface-2 /
+ * surface-3, and are recomputed whenever any surface or text colour moves. Light, then dark:
+ *
+ *   fg 11.01 / 11.81 · fg-2 6.38 / 7.29 · fg-3 4.54 / 5.11 · accent 5.98 / 7.54
+ *   ok 5.98 / 7.54 · warn 5.21 / 7.55 · bad 5.67 / 6.38 · control 3.47 / 3.09 (non-text, 3:1)
+ *   on-primary on primary 7.73 / 7.92
+ *
+ * Warmth comes from the HUE of the surfaces and the ink, never from a lowered ratio.
  */
 @theme {
   --color-*: initial;
   --color-transparent: transparent;
   --color-current: currentColor;
 
-  /*
-   * Verified against WCAG 2.2 AA by computation (design §8.4), not by eye — and verified against
-   * `surface-3`, the LIGHTEST surface a token is ever painted on, NOT against `bg`.
-   *
-   * That distinction is the whole point. Checking a foreground against `bg` and then rendering it
-   * on an elevated surface is checking the guard in a different scope from the one it runs in.
-   * The ratio recorded beside each token below is therefore its WORST case, not its best, and it
-   * is recomputed whenever any surface moves. `surface-3` is new in this palette and is the
-   * lightest thing a token now lands on, so every ratio below was recomputed against it.
-   *
-   * The ramp is warm-shifted and carries FOUR surfaces rather than three. Depth is now expressed
-   * by elevation — a card sits on a lighter surface than the page — instead of by drawing a
-   * border around every container, which is what made the previous palette read as a spreadsheet.
-   */
-  --color-bg: #08090c;
-  --color-surface: #101319;
-  --color-surface-2: #191d26;
-  --color-surface-3: #232833; /* elevated: selected rows, detail card, hover */
-  --color-fg: #f2f4f7; /* 13.40 on surface-3 */
-  --color-fg-2: #a7afbd; /* 6.68 on surface-3 */
-  --color-fg-3: #8d96a5; /* 4.95 on surface-3 — clears 4.5:1 on every surface */
-  --color-control: #70798a; /* 3.37 on surface-3 — clears 3:1 on every surface. Never darken. */
-  --color-accent: #5ec8f0; /* 7.73 on surface-3 — selection and focus rings ONLY */
-  --color-divider: #272c36; /* 1.05 — decorative ONLY, never carries meaning */
+  --color-bg: #f6f1e6; /* warm ivory page */
+  --color-surface: #fcfaf4; /* the working surface: lists, the detail workspace */
+  --color-surface-2: #efe8d8; /* panels and controls that sit on a surface */
+  --color-surface-3: #e6dcc7; /* hover and the open row: the strongest fill a token lands on */
+  --color-fg: #1b2a22; /* deep ink */
+  --color-fg-2: #3f4f46;
+  --color-fg-3: #566559;
+  --color-control: #68776c; /* a control's edge: clears 3:1 on every surface. Never lighten. */
+  --color-accent: #1d5a3c; /* forest: links, the selection mark, focus rings */
+  --color-primary: #1d5a3c; /* forest FILL: the one primary action per view */
+  --color-primary-strong: #154530;
+  --color-on-primary: #fbf9f2;
+  --color-ok: #1d5a3c; /* confirmed satisfied. Always beside a word and a glyph. */
+  --color-warn: #7d4e00; /* not confirmed: something to check */
+  --color-bad: #9a2a1c; /* confirmed unmet or closed */
+  --color-divider: #e0d6c0; /* decorative ONLY, never carries meaning */
 
   /*
    * A radius LANGUAGE, three steps, and the bare `rounded` utility is deliberately gone: a corner
-   * is now always chosen (`rounded-sm` for a chip, `rounded-md` for a card, `rounded-lg` for a
-   * panel) rather than defaulted. Clearing the namespace is what makes that a compile error rather
-   * than a review note.
+   * is always chosen (`rounded-sm` for a control, `rounded-md` for a panel, `rounded-lg` for the
+   * detail workspace) rather than defaulted.
    */
   --radius-*: initial;
-  --radius-sm: 0.5rem; /* chips, badges, inputs, row buttons */
-  --radius-md: 0.75rem; /* cards, tables, the status band */
-  --radius-lg: 1rem; /* panels, the detail sheet */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
   --radius-full: 9999px;
 
-  /* Motion personality: Surgical. Exactly three curves, no springs. */
+  /* Depth is a soft, offset, blurred shadow in the page's own ink: never a hard block, never a
+     coloured halo. `--shadow-ink` is themed below so the same token works on both grounds. */
+  --shadow-card: 0 1px 2px var(--shadow-ink), 0 14px 32px -22px var(--shadow-ink);
+
+  /* Motion: three curves, no springs. Everything is 120-250ms and conveys state. */
   --ease-*: initial;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* arriving */
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1); /* state */
   --ease-snap: cubic-bezier(0.22, 1, 0.36, 1); /* hover */
 
-  /* Tailwind's bare `transition` utility would otherwise emit its own default curve. */
   --default-transition-timing-function: var(--ease-in-out);
   --default-transition-duration: 150ms;
 
   /*
-   * The sticky app header's height, in ONE place. Each queue table's own header row sticks
-   * directly below it and `scroll-margin-top` reserves both, so a hard-coded pixel offset in three
-   * files could not drift apart from the header it is measuring.
-   *
-   * 4.3125rem = a 44px (`min-h-11`) control + `py-3` top and bottom + the 1px bottom border. It
-   * moved with the header's padding in this redesign; it is measured, never guessed.
+   * The sticky app header's height, in ONE place. 4.3125rem = a 44px (`min-h-11`) control + `py-3`
+   * top and bottom + the 1px bottom border; it is measured, never guessed.
    */
   --spacing-header: 4.3125rem;
 
   /*
-   * TWO VOICES. The mono face is the DISPLAY voice — headings, metric numerals, labels, chips,
-   * anything that is read as an instrument reading rather than as prose. The sans face carries
-   * prose: JD bodies, explanatory paragraphs, requirement text.
-   *
-   * A bundled webfont was rejected. This app ships inside the Python wheel and is served from
-   * localhost, frequently offline, so a CDN face would render as a flash of fallback and a
-   * self-hosted one would put a binary in the wheel for every user. The mono-as-display voice is
-   * not a consolation prize for that: a dense instrument reading in a mono face with a wide
-   * tracked micro-label is the idiom this application actually belongs to, and it costs no bytes.
+   * ONE sans voice. A task tool does not need a display face: headings, job facts, labels and
+   * prose all set in the platform's own UI sans, which renders offline with no request and no
+   * bytes shipped in the wheel. Monospace is kept for what is genuinely technical — file paths,
+   * rule names, quoted source text — and is reached only through `font-mono`.
    */
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --font-display: var(--font-mono);
   --font-sans:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  --font-display: var(--font-sans);
 }
 
 @layer base {
-  html {
-    background-color: var(--color-bg);
+  :root {
+    --shadow-ink: rgb(54 42 18 / 0.16);
+    color-scheme: light;
+  }
+
+  /*
+   * THE DARK THEME. Same hierarchy as the light one — page, surface, panel, hover — on warm
+   * near-black rather than blue-black, with the forest accent lifted to a green that holds its
+   * ratio on dark. Applied by the system preference unless the reader chose light explicitly, and
+   * by `data-theme="dark"` when they chose dark. Written twice because a media query and an
+   * attribute are two selectors with no way to share one rule block in plain CSS.
+   */
+  :root[data-theme="dark"] {
+    --color-bg: #14130f;
+    --color-surface: #1b1a15;
+    --color-surface-2: #24231c;
+    --color-surface-3: #2f2d24;
+    --color-fg: #f2ede0;
+    --color-fg-2: #c3bcaa;
+    --color-fg-3: #a49d8a;
+    --color-control: #7d7767;
+    --color-accent: #86cfa3;
+    --color-primary: #6dbd8b;
+    --color-primary-strong: #86cfa3;
+    --color-on-primary: #0e1a12;
+    --color-ok: #86cfa3;
+    --color-warn: #e7b95c;
+    --color-bad: #f09a8c;
+    --color-divider: #2c2a21;
+    --shadow-ink: rgb(0 0 0 / 0.55);
     color-scheme: dark;
   }
 
-  /*
-   * ATMOSPHERE: one warm radial anchored top-left, behind the header, so the page has a light
-   * source. It is painted onto the body's own background rather than into an overlay element,
-   * because this application has a full-screen detail SHEET and a toaster that must draw above
-   * everything, and any overlay high enough in the stack to be felt is also high enough to sit over
-   * the sheet. A grain layer used to sit beside it as a `data:` SVG; the server's CSP (`img-src
-   * 'self'`) refused that URI on every load, so it never rendered and only logged an error. It is
-   * gone rather than allow-listed: the radial gives the depth, and a CSP source is not a style knob.
-   */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --color-bg: #14130f;
+      --color-surface: #1b1a15;
+      --color-surface-2: #24231c;
+      --color-surface-3: #2f2d24;
+      --color-fg: #f2ede0;
+      --color-fg-2: #c3bcaa;
+      --color-fg-3: #a49d8a;
+      --color-control: #7d7767;
+      --color-accent: #86cfa3;
+      --color-primary: #6dbd8b;
+      --color-primary-strong: #86cfa3;
+      --color-on-primary: #0e1a12;
+      --color-ok: #86cfa3;
+      --color-warn: #e7b95c;
+      --color-bad: #f09a8c;
+      --color-divider: #2c2a21;
+      --shadow-ink: rgb(0 0 0 / 0.55);
+      color-scheme: dark;
+    }
+  }
+
+  html {
+    background-color: var(--color-bg);
+  }
+
   body {
     margin: 0;
     background-color: var(--color-bg);
-    background-image: radial-gradient(60rem 32rem at 12% -8%, color-mix(in oklab, var(--color-accent) 9%, transparent) 0%, transparent 70%);
-    background-attachment: fixed;
     color: var(--color-fg);
     font-family: var(--font-sans);
+    font-size: 0.9375rem;
+    line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
 
-  /*
-   * The display voice. Tightened tracking and compressed leading are what stop a mono face reading
-   * as terminal output and make it read as typography.
-   */
+  /* Headings: weight and size carry the hierarchy, tracking stays near neutral. */
   h1,
   h2,
-  h3 {
+  h3,
+  h4 {
     font-family: var(--font-display);
-    letter-spacing: -0.01em;
-    line-height: 1.15;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+    line-height: 1.25;
+    text-wrap: balance;
   }
 
   /* A visible focus ring on every interactive element, without exception. */
@@ -142,19 +189,32 @@
   }
 
   /*
-   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky, and the header row of each
-   * queue table is sticky below it, so tabbing to a control just below the fold would scroll it
-   * flush to the viewport top — underneath both, where the focus ring is invisible. This reserves
-   * the height of both for the browser's own scroll-into-view, so the fix cannot be forgotten by a
-   * component that adds a new control later.
+   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky and the detail workspace has a
+   * sticky action bar, so a control scrolled into view must stop clear of both. This reserves the
+   * height of the header above and the action bar below for the browser's own scroll-into-view,
+   * so a component that adds a control later cannot forget it.
    */
   :where(a, button, input, select, textarea, summary, [tabindex]) {
     scroll-margin-top: 7.5rem;
-    scroll-margin-bottom: 2rem;
+    scroll-margin-bottom: 6rem;
   }
 
   ::selection {
-    background-color: color-mix(in oklab, var(--color-accent) 35%, transparent);
+    background-color: color-mix(in oklab, var(--color-accent) 28%, transparent);
+  }
+
+  /* Form controls take the page's own accent rather than the browser's default blue. */
+  :root {
+    accent-color: var(--color-primary);
+  }
+
+  /* Caret and scrollbars belong to the palette too. */
+  input,
+  textarea {
+    caret-color: var(--color-accent);
+  }
+  * {
+    scrollbar-color: var(--color-control) transparent;
   }
 
   [hidden] {
@@ -164,30 +224,27 @@
 
 @layer utilities {
   /*
-   * A micro-label: the wide-tracked uppercase mono caption that names a metric or a column. It
-   * appeared as the same four utilities in twenty-four places, which is how the tracking drifts.
+   * A small label: sentence case in the body sans, medium weight. It was a wide-tracked uppercase
+   * mono caption in twenty-odd places; uppercase micro-labels read as shouting and are slower to
+   * scan, and the label's job — name the thing beside it — needs neither.
    */
   .label-micro {
-    font-family: var(--font-display);
-    font-size: 0.6875rem;
-    line-height: 1rem;
-    letter-spacing: 0.11em;
-    text-transform: uppercase;
+    font-family: var(--font-sans);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    line-height: 1.125rem;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   /*
-   * Staggered entry. Applied to the status band's metrics and to the two section headers only —
-   * NOT to queue rows, which can number in the hundreds and would animate as a wave every time a
-   * filter changes. `--stagger` is set inline per element.
-   *
-   * `both` fill so the element is hidden during its delay rather than flashing at full opacity
-   * first. The reduced-motion block below collapses this to a 1ms animation, which lands on the
-   * `to` frame immediately.
+   * Entry stagger. Applied to the two section headers only — NOT to rows, which can number in the
+   * hundreds and would animate as a wave every time a filter changes.
    */
   @keyframes enter-up {
     from {
       opacity: 0;
-      transform: translateY(0.5rem);
+      transform: translateY(0.375rem);
     }
     to {
       opacity: 1;
@@ -196,8 +253,21 @@
   }
 
   .enter-up {
-    animation: enter-up 0.5s var(--ease-out) both;
+    animation: enter-up 0.25s var(--ease-out) both;
     animation-delay: var(--stagger, 0ms);
+  }
+
+  /* A skeleton line: holds the layout of what is loading, and stops pulsing under reduced motion. */
+  @keyframes skeleton-pulse {
+    50% {
+      opacity: 0.55;
+    }
+  }
+
+  .skeleton {
+    background-color: var(--color-surface-3);
+    border-radius: var(--radius-sm);
+    animation: skeleton-pulse 1.6s var(--ease-in-out) infinite;
   }
 }
 

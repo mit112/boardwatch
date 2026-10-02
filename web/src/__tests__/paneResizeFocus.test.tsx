@@ -75,7 +75,7 @@ describe("the pane across a resize", () => {
         onToast={() => undefined}
       />,
     );
-    const pane = screen.getByRole("complementary", { name: "Lead detail" });
+    const pane = screen.getByRole("complementary", { name: "Job workspace" });
     // Side by side: the list keeps the cursor, so the pane must NOT have stolen it.
     expect(document.activeElement).not.toBe(pane);
 

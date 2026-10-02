@@ -25,6 +25,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -84,13 +85,13 @@ describe("new since last visit", () => {
     window.localStorage.setItem(WATERMARK_KEY, "430");
 
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
-    fireEvent.click(screen.getByRole("button", { name: "show" }));
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    // Two apply-lane leads on runs 431 and 432; the count is the apply lane, like `eligible`.
-    fireEvent.click(screen.getByRole("button", { name: /^new since last visit 2 —/i }));
+    // Two apply-list jobs (runs 431, 432) and one review job (run 432): the count is across BOTH
+    // lists, and clicking it shows both, so the number and the list cannot disagree.
+    fireEvent.click(screen.getByRole("button", { name: /^new since last visit 3 —/i }));
 
-    const queue = screen.getByRole("grid", { name: "Queue" });
+    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
     expect(hasRow(queue, "FRESH-431")).toBe(true);
     expect(hasRow(queue, "FRESH-432")).toBe(true);
     // The two that must NOT be in the set: one delivered at the watermark (strictly greater, not
@@ -98,12 +99,12 @@ describe("new since last visit", () => {
     expect(hasRow(queue, "SEEN-430")).toBe(false);
     expect(hasRow(queue, "NO-RUN")).toBe(false);
     // The review lane is reached too, exactly as every other row-level facet reaches it.
-    expect(hasRow(screen.getByRole("grid", { name: "Review" }), "REVIEW-432")).toBe(true);
+    expect(hasRow(screen.getByRole("grid", { name: "Needs review" }), "REVIEW-432")).toBe(true);
   });
 
   it("marks NOTHING new on a first visit, with no watermark stored", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     // Zero, not five. An absent watermark read as `0` reports every lead in the payload.
     expect(screen.getByRole("button", { name: /^new since last visit 0 —/i })).toBeTruthy();
@@ -113,12 +114,12 @@ describe("new since last visit", () => {
     window.localStorage.setItem(WATERMARK_KEY, "430");
 
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
     // 432 — the highest `delivered_run_id` in either lane. And the set was computed first: the
-    // cell still reads 2, which it could not if the watermark had advanced before the comparison.
+    // cell still reads 3, which it could not if the watermark had advanced before the comparison.
     expect(window.localStorage.getItem(WATERMARK_KEY)).toBe("432");
-    expect(screen.getByRole("button", { name: /^new since last visit 2 —/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^new since last visit 3 —/i })).toBeTruthy();
   });
 
   /*
@@ -157,12 +158,12 @@ describe("new since last visit", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_MS);
     });
-    fireEvent.click(screen.getByText("refresh"));
+    fireEvent.click(screen.getByText("Add them to the list"));
 
     // Still 2, and still the SAME two: the set did not recompute against the advanced watermark.
     expect(screen.getByRole("button", { name: /^new since last visit 2 —/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^new since last visit 2 —/i }));
-    const queue = screen.getByRole("grid", { name: "Queue" });
+    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
     expect(hasRow(queue, "FRESH-431")).toBe(true);
     expect(hasRow(queue, "FRESH-432")).toBe(true);
     expect(hasRow(queue, "NEWEST-433")).toBe(false);
@@ -183,10 +184,10 @@ describe("new since last visit", () => {
     });
     try {
       render(<App />);
-      await screen.findByRole("grid", { name: "Queue" });
+      await screen.findByRole("grid", { name: "Jobs to explore" });
 
       // The page drew, and nothing is new — the honest answer when there is no way to know.
-      expect(hasRow(screen.getByRole("grid", { name: "Queue" }), "FRESH-432")).toBe(true);
+      expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "FRESH-432")).toBe(true);
       expect(screen.getByRole("button", { name: /^new since last visit 0 —/i })).toBeTruthy();
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: real });

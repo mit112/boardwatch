@@ -4,18 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
- * Whether the review lane starts open.
+ * Which list the page opens on: Jobs to explore (the apply lane), Needs review (the review lane),
+ * or All jobs.
  *
- * Collapsed-by-default is right while there is an apply queue to work down — the lane is folded,
- * not hidden, and the count is always visible. It is wrong when the apply lane is EMPTY: the page
- * then opens on a placeholder above a closed section, and the reader clicks "show" every single
- * day the engine version moves. The stored preference outranks both, so the choice survives a
- * Runs→Queue round trip and a reload.
+ * Jobs to explore is right while there is an apply list to work down. It is wrong when that list
+ * is EMPTY: the page would open on "nothing here" with the work one click away, every day the
+ * engine version moves. So the default follows the work, and a stored choice outranks it — the
+ * reader who picked a list did so on purpose, and it survives a tab round trip and a reload.
  */
 
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -47,53 +48,65 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("the review lane's open state", () => {
-  it("starts EXPANDED when the apply lane is empty", async () => {
+describe("which list the page opens on", () => {
+  it("opens on Needs review when the apply list is empty", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([], REVIEW));
     render(<App />);
 
-    // No "show" click: the rows must be on screen as the page settles.
-    expect(await screen.findByRole("grid", { name: "Review" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "hide" })).toBeTruthy();
+    // No click: the rows must be on screen as the page settles.
+    expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /^Needs review/ }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 
-  it("stays COLLAPSED when the apply lane has rows", async () => {
+  it("opens on Jobs to explore when it has rows, leaving the review list one click away", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
     render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    expect(screen.queryByRole("grid", { name: "Review" })).toBeNull();
-    expect(screen.getByRole("button", { name: "show" })).toBeTruthy();
+    expect(screen.queryByRole("grid", { name: "Needs review" })).toBeNull();
+    // Not hidden: the list's button carries its count, scoped by its own name.
+    expect(screen.getByRole("button", { name: /^Needs review 2$/ })).toBeTruthy();
   });
 
-  it("lets a stored `false` beat the empty-lane default", async () => {
-    window.sessionStorage.setItem("boardwatch.review-open", "false");
+  it("lets a stored choice beat the empty-list default", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "explore");
     vi.mocked(getQueue).mockResolvedValue(queueResponse([], REVIEW));
     render(<App />);
-    await screen.findByRole("button", { name: "show" });
+    await screen.findByText("No jobs to explore right now.", { exact: false });
 
-    // The reader closed it on purpose; the default must not reopen it under them.
-    expect(screen.queryByRole("grid", { name: "Review" })).toBeNull();
+    // The reader chose it on purpose; the default must not move them under their own hands.
+    expect(screen.queryByRole("grid", { name: "Needs review" })).toBeNull();
   });
 
-  it("lets a stored `true` open it while the apply lane has rows", async () => {
-    window.sessionStorage.setItem("boardwatch.review-open", "true");
+  it("shows both lists under a stored All jobs", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "all");
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
     render(<App />);
 
-    expect(await screen.findByRole("grid", { name: "Review" })).toBeTruthy();
+    expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
+    expect(screen.getByRole("grid", { name: "Jobs to explore" })).toBeTruthy();
   });
 
-  it("records the toggle, so the next mount honours it", async () => {
+  it("ignores a stored list this bundle does not know, instead of showing nothing", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "a_list_from_a_newer_bundle");
+    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
+    render(<App />);
+
+    expect(await screen.findByRole("grid", { name: "Jobs to explore" })).toBeTruthy();
+  });
+
+  it("records the choice, so the next mount honours it", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Queue" });
+    await screen.findByRole("grid", { name: "Jobs to explore" });
 
-    fireEvent.click(screen.getByRole("button", { name: "show" }));
-    expect(window.sessionStorage.getItem("boardwatch.review-open")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    expect(window.sessionStorage.getItem("boardwatch.queue.lens")).toBe("review");
     view.unmount();
 
     render(<App />);
-    expect(await screen.findByRole("grid", { name: "Review" })).toBeTruthy();
+    expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
   });
 });
