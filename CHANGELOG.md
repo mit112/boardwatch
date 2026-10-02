@@ -16,6 +16,13 @@ All notable changes to this project are documented here. The format follows
   The detail pane adds one-click follow-up dates (in 3 days, 1 week, 2 weeks) and a "Show in
   description" jump from each evidence quote to the highlighted words in the job description.
   "Save view" keeps the current filters, facet and sort under a name in this browser.
+- **A Rejected tab in the web viewer** lists the delivered leads the eligibility rules rejected,
+  which the queue only counted as `ineligible`. Leads the final gate called eligible come first and
+  can be shown alone. "Why" shows each rule's reading with the failing one first and the span it
+  quoted. "Mark applied anyway" uses the queue's own mark. "Dispute" records that you disagree
+  (`queue.disputed.<job_id>`, kept for the next precision audit) and changes no verdict, lane or
+  folder; a disputed job is protected from regrouping like a skipped or reported one. New routes:
+  `GET /api/rejected`, `POST /api/queue/<id>/disputed` and `/undispute`.
 
 ### Changed
 

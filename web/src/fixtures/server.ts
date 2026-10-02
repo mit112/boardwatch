@@ -12,6 +12,7 @@
  */
 import type {
   AppliedHistoryResponse,
+  RejectedResponse,
   AppliedRow,
   QueueCounts,
   QueueResponse,
@@ -30,6 +31,7 @@ const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
 const skippedPostingIds = new Set<number>();
 const reportedPostingIds = new Set<number>();
+const disputedJobIds = new Set<number>();
 /*
  * Follow-up dates, by posting. Seeded relative to TODAY rather than to a fixed date, so the
  * due marker and the "follow-up due" facet are demonstrable on any day the fixtures are opened —
@@ -102,15 +104,49 @@ function reviewRows(): QueueRow[] {
   return visibleRows().filter(isReviewLane).map(withFollowUp);
 }
 
-/** Counted from the pool, the way the server counts before filtering — never a constant. */
+/** `GET /api/rejected`: the pool's ineligible, open leads not otherwise decided, gate-eligible
+ *  first — the server's `rejected_payload`, over this module's state. */
+function rejectedResponse(): RejectedResponse {
+  const rows = pool()
+    .filter(
+      (row) =>
+        row.verdict === "ineligible" &&
+        row.status !== "closed" &&
+        !appliedJobIds.has(row.job_id) &&
+        !skippedPostingIds.has(row.posting_id) &&
+        !reportedPostingIds.has(row.posting_id),
+    )
+    .sort((a, b) => Number(a.judge_verdict !== "eligible") - Number(b.judge_verdict !== "eligible"))
+    .map((row) => ({
+      posting_id: row.posting_id,
+      job_id: row.job_id,
+      title: row.title,
+      company: row.company,
+      provider: row.provider ?? null,
+      location: row.location,
+      remote_policy: row.remote_policy,
+      posted_days: row.posted_days,
+      first_seen: row.first_seen,
+      apply_url: row.apply_url,
+      delivered_run_id: row.delivered_run_id,
+      judge_verdict: row.judge_verdict ?? null,
+      pdf_available: row.pdf_available,
+      disputed: disputedJobIds.has(row.job_id),
+    }));
+  return {
+    rows,
+    counts: {
+      total: rows.length,
+      gate_eligible: rows.filter((row) => row.judge_verdict === "eligible").length,
+      disputed: rows.filter((row) => row.disputed).length,
+    },
+  };
+}
+
+/** The size of the rejected list, as the server's `_rejected` makes the cell and the list one set:
+ *  a closed lead drains to `_closed`, so it is in neither. */
 function ineligibleCount(): number {
-  return pool().filter(
-    (row) =>
-      row.verdict === "ineligible" &&
-      !appliedJobIds.has(row.job_id) &&
-      !skippedPostingIds.has(row.posting_id) &&
-      !reportedPostingIds.has(row.posting_id),
-  ).length;
+  return rejectedResponse().counts.total;
 }
 
 function counts(rows: QueueRow[]): QueueCounts {
@@ -273,6 +309,7 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
   if (method === "GET" && path === "/api/applied") return appliedResponse();
   if (method === "GET" && path === "/api/answers") return ANSWERS;
+  if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 
   const runMatch = /^\/api\/runs\/(\d+)$/.exec(path);
@@ -288,7 +325,7 @@ function route(method: string, path: string, body: unknown): unknown {
   }
 
   const actionMatch =
-    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$/.exec(
+    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup|reveal)$/.exec(
       path,
     );
   if (method === "POST" && actionMatch) {
@@ -320,6 +357,14 @@ function route(method: string, path: string, body: unknown): unknown {
     if (action === "unskip") {
       skippedPostingIds.delete(row.posting_id);
       return { outcome: "unskipped" };
+    }
+    if (action === "disputed") {
+      disputedJobIds.add(row.job_id);
+      return { outcome: "disputed" };
+    }
+    if (action === "undispute") {
+      disputedJobIds.delete(row.job_id);
+      return { outcome: "undisputed" };
     }
     if (action === "reported") {
       reportedPostingIds.add(row.posting_id);

@@ -20,6 +20,7 @@ from boardwatch.store.ledger_queries import (
 )
 from boardwatch.store.queue_state import (
     followup_job_dates,
+    mark_job_disputed,
     mark_job_reported,
     mark_job_skipped,
     reported_job_ids,
@@ -682,3 +683,13 @@ def test_one_actioned_member_holds_the_CLEAN_members_back_too(  # noqa: N802 - e
         assert job_anchors(conn, [survivor, clean, skipped]) == {
             survivor: canonical, clean: clean_job, skipped: skipped_job,
         }
+
+
+def test_a_disputed_job_is_one_a_regrouping_may_not_move_a_posting_off(engine: Engine) -> None:
+    """A dispute is keyed on `job_id` like a skip, so a merge off its job would strand the owner's
+    statement on a job nothing anchors. It joins the set the planner refuses on."""
+    (_survivor, _canonical), (_loser, loser_job) = _seed(engine, 2)
+    with engine.begin() as conn:
+        assert loser_job not in queue_action_job_ids(conn)
+        mark_job_disputed(conn, job_id=loser_job, at=NOW)
+        assert loser_job in queue_action_job_ids(conn)

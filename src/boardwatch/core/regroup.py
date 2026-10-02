@@ -62,8 +62,8 @@ def plan_regrouping(
     """Which postings move onto which canonical job, and which groups are refused.
 
     `protected_job_ids` are jobs carrying an `applications` or `artifacts` row.
-    `queue_action_job_ids` are jobs carrying a review-queue skip, report or follow-up. A group is
-    refused **whole** when any non-survivor member sits on either.
+    `queue_action_job_ids` are jobs carrying a review-queue skip, report, dispute or follow-up. A
+    group is refused **whole** when any non-survivor member sits on either.
 
     The two sets are separate parameters rather than one union because the refusal they raise is
     reported to the owner and the remedy differs: `tracked_job` means an application row would be
