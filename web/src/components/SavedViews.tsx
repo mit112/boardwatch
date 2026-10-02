@@ -32,7 +32,10 @@ function readSaved(): Saved[] {
         entry !== null &&
         typeof (entry as Saved).name === "string" &&
         typeof (entry as Saved).view === "object" &&
-        (entry as Saved).view !== null,
+        (entry as Saved).view !== null &&
+        // Every value a string, as this module writes them: storage is editable by anything on
+        // the origin, and a number restored into the filter box would throw on its first `.trim()`.
+        Object.values((entry as Saved).view).every((value) => typeof value === "string"),
     );
   } catch {
     return [];

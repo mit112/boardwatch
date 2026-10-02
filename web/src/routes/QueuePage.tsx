@@ -27,7 +27,7 @@ import type {
 import { TOKEN_EVENT, readWatermark, writeWatermark } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
 import { ApplyReturnPrompt } from "../components/ApplyReturnPrompt";
-import { DetailPane, FOLLOW_UP_INPUT_ID, SIDE_BY_SIDE } from "../components/DetailPane";
+import { DetailPane, FOLLOW_UP_INPUT_ID, PANE_ID, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import type { Selection } from "../components/QueueTable";
@@ -864,10 +864,12 @@ export function QueuePage({
 
   /*
    * "Did you apply?" on return. An apply page opened from here — `o`, or a click on an apply link
-   * — arms `pendingApply`; the page then has to actually be LEFT (hidden, or the window blurred)
-   * and come back before the question is put, so a link that opened in a background tab, or a
-   * click that never left the page, asks nothing. A ref, because it is written in handlers and
-   * read in DOM listeners and nothing renders from it; the prompt itself is state.
+   * — arms `pendingApply`; this TAB then has to be hidden and shown again before the question is
+   * put. Visibility and never window focus: switching to another application and back blurs and
+   * focuses the window without the reader having gone near the apply page, and a link
+   * middle-clicked into a background tab is asked about only once the reader has actually gone to
+   * it and come back. A ref, because it is written in handlers and read in DOM listeners and
+   * nothing renders from it; the prompt itself is state.
    */
   const pendingApply = useRef<{ row: QueueRow; left: boolean } | null>(null);
   const [returnPrompt, setReturnPrompt] = useState<QueueRow | null>(null);
@@ -889,12 +891,8 @@ export function QueuePage({
       else onReturn();
     };
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("blur", onLeave);
-    window.addEventListener("focus", onReturn);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("blur", onLeave);
-      window.removeEventListener("focus", onReturn);
     };
   }, []);
 
@@ -1887,7 +1885,10 @@ export function QueuePage({
           onDismiss={() => {
             const postingId = returnPrompt.posting_id;
             setReturnPrompt(null);
-            focusRow(postingId);
+            // Below `lg` the open lead is a sheet over an inert list, where a row cannot take
+            // focus; the sheet itself is where the reader was.
+            if (sheetOpen) document.getElementById(PANE_ID)?.focus();
+            else focusRow(postingId);
           }}
         />
       )}

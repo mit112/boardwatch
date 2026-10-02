@@ -142,10 +142,16 @@ describe("did you apply? on return", () => {
     vi.spyOn(window, "open").mockReturnValue(null);
   });
 
+  /* jsdom's tab never hides, so the visibility the listener reads is driven by hand. */
+  function setVisibility(state: "hidden" | "visible"): void {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => state });
+    document.dispatchEvent(new Event("visibilitychange"));
+  }
+
   function leaveAndReturn(): void {
     act(() => {
-      window.dispatchEvent(new Event("blur"));
-      window.dispatchEvent(new Event("focus"));
+      setVisibility("hidden");
+      setVisibility("visible");
     });
   }
 
@@ -167,13 +173,17 @@ describe("did you apply? on return", () => {
     expect(screen.queryByRole("dialog", { name: /Did you apply\?/ })).toBeNull();
   });
 
-  it("asks nothing when the page was never left", async () => {
+  it("asks nothing when the tab was never hidden, however the window's focus moved", async () => {
     await renderQueue();
     const row = rowFor("Backend Engineer");
     row.focus();
     fireEvent.keyDown(row, { key: "o" });
+    // Switching to another application and back: the window blurs and focuses, the tab stays
+    // visible throughout.
     act(() => {
+      window.dispatchEvent(new Event("blur"));
       window.dispatchEvent(new Event("focus"));
+      setVisibility("visible");
     });
     expect(screen.queryByRole("dialog", { name: /Did you apply\?/ })).toBeNull();
   });
@@ -281,6 +291,32 @@ describe("the detail pane", () => {
     expect(document.activeElement).toBe(mark);
   });
 
+  it("scrolls to the same quote again when it is asked for again", () => {
+    renderPane({
+      row: queueRow(),
+      jd_body: "About us. A degree is required. We ship weekly.",
+      requirements: [requirement({ quote: "A degree is required" })],
+      board_target: null,
+    });
+    const scrolled = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrolled;
+    const show = screen.getByRole("button", { name: "Show in description" });
+    fireEvent.click(show);
+    fireEvent.click(show);
+    expect(scrolled).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not case-fold where folding would shift the offsets", () => {
+    renderPane({
+      row: queueRow(),
+      jd_body: "İ experience matters",
+      requirements: [requirement({ quote: "EXPERIENCE" })],
+      board_target: null,
+    });
+    // No safe location, so no jump is offered rather than a highlight on the wrong letters.
+    expect(screen.queryByRole("button", { name: "Show in description" })).toBeNull();
+  });
+
   it("selects every listed lead at the company from the pane, through the page", async () => {
     const rows = await renderQueue();
     const lead = rows[3];
@@ -303,6 +339,21 @@ describe("the detail pane", () => {
 });
 
 describe("saved views", () => {
+  it("ignores a stored view whose values are not all text, instead of crashing the queue", async () => {
+    window.localStorage.setItem(
+      "boardwatch.queue.views",
+      JSON.stringify([
+        { name: "broken", view: { query: 42 } },
+        { name: "fine", view: { query: "globex" } },
+      ]),
+    );
+    await renderQueue();
+    const picker = screen.getByRole("combobox", { name: "Saved view" });
+    expect(within(picker).queryByRole("option", { name: "broken" })).toBeNull();
+    fireEvent.change(picker, { target: { value: "fine" } });
+    expect(dataRows()).toHaveLength(3);
+  });
+
   it("saves the filters under a name and puts them back when chosen", async () => {
     await renderQueue();
     const filter = screen.getByRole("searchbox", { name: /Filter company, title, location/ });

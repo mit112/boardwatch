@@ -31,6 +31,10 @@ import { VerdictChip } from "./VerdictChip";
  */
 export const SIDE_BY_SIDE = "(min-width: 64rem)";
 
+/** The pane's own element, so the page can put focus back into the sheet after a prompt that sat
+ *  above it closes. */
+export const PANE_ID = "lead-detail";
+
 /**
  * The lead's title, which is what the sheet is ABOUT and therefore what names it to a screen
  * reader. One pane is open at a time, so a constant id is unambiguous.
@@ -157,7 +161,13 @@ function Requirements({ requirements }: { requirements: RequirementView[] }) {
 export function locateQuote(body: string, quote: string): [number, number] | null {
   if (quote === "") return null;
   let start = body.indexOf(quote);
-  if (start === -1) start = body.toLowerCase().indexOf(quote.toLowerCase());
+  // Only where lower-casing keeps every length: "İ" lower-cases to two code units, and an offset
+  // found in the folded copy would then slice the wrong characters out of the original.
+  const folded = body.toLowerCase();
+  const foldedQuote = quote.toLowerCase();
+  if (start === -1 && folded.length === body.length && foldedQuote.length === quote.length) {
+    start = folded.indexOf(foldedQuote);
+  }
   return start === -1 ? null : [start, start + quote.length];
 }
 
@@ -301,6 +311,8 @@ export function DetailPane({
   const [jdExpanded, setJdExpanded] = useState(false);
   /* The evidence quote being shown in the description, and the mark that shows it. */
   const [highlight, setHighlight] = useState<string | null>(null);
+  /* Bumped on every jump, so asking for the same quote twice scrolls to it twice. */
+  const [jump, setJump] = useState(0);
   const mark = useRef<HTMLElement | null>(null);
   const pane = useRef<HTMLElement | null>(null);
   useEffect(() => {
@@ -351,7 +363,7 @@ export function DetailPane({
     if (highlight === null) return;
     mark.current?.scrollIntoView?.({ block: "center" });
     mark.current?.focus({ preventScroll: true });
-  }, [highlight]);
+  }, [highlight, jump]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -420,6 +432,7 @@ export function DetailPane({
 
   return (
     <aside
+      id={PANE_ID}
       ref={pane}
       tabIndex={-1}
       /*
@@ -734,6 +747,7 @@ export function DetailPane({
               onShow={(quote) => {
                 setJdExpanded(true);
                 setHighlight(quote);
+                setJump((current) => current + 1);
               }}
             />
           </section>
