@@ -1608,11 +1608,18 @@ def _mark_sources(conn: Connection) -> dict[int, str]:
     outgrow the shortlist it is read beside. No `.in_()`, per this module's rule.
     """
     rows = conn.execute(
-        select(application_events.c.application_id, application_events.c.source)
-        .where(application_events.c.event_type.in_(STATE_EVENTS))
-        .order_by(application_events.c.application_id, application_events.c.id)
+        select(
+            application_events.c.application_id,
+            application_events.c.source,
+            application_events.c.event_type,
+        ).order_by(application_events.c.application_id, application_events.c.id)
     ).all()
-    return {int(row.application_id): str(row.source) for row in rows}
+    # Filtered here rather than in SQL: this module binds no value lists (`.in_()`), by rule.
+    return {
+        int(row.application_id): str(row.source)
+        for row in rows
+        if row.event_type in STATE_EVENTS
+    }
 
 
 def _last_activity(conn: Connection) -> dict[int, datetime]:
