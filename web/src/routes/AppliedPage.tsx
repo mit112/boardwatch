@@ -814,18 +814,19 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
         />
       </label>
 
-      {/* A real `<table>` with real `<th scope="col">`, and the stickiness on the header cells
-          themselves (`ux-table-sticky`): a duplicated absolutely-positioned header row would
-          break the row/column association a screen reader navigates by. Borders are rationed to
-          the divider between rows and the line under the header (`ux-table-scannable`) — padding
-          does the rest of the separating. */}
+      {/* A real `<table>` with real `<th scope="col">`: a duplicated absolutely-positioned header
+          row would break the row/column association a screen reader navigates by. The header is
+          NOT sticky: `overflow-x-auto` makes the wrapper the sticky container, and the app
+          header's offset then pushed the column header down over the first application at every
+          scroll position. Borders are rationed to the divider between rows and the line under the
+          header (`ux-table-scannable`) — padding does the rest of the separating. */}
       <div className="overflow-x-auto rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]">
         <table className="w-full text-sm">
           <caption className="sr-only">
             Every application boardwatch has recorded, newest first.
           </caption>
           <thead>
-            <tr className="sticky top-header z-10 bg-surface label-micro text-fg-3 [&>*]:border-b [&>*]:border-divider">
+            <tr className="bg-surface label-micro text-fg-3 [&>*]:border-b [&>*]:border-divider">
               <SortHeader
                 label="applied"
                 sortKey="date"
