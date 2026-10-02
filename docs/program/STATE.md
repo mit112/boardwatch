@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The thirtieth, **2026-10-02b**, moved the 2026-10-01b and 2026-10-01 blocks WHOLE once day 6 was read. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -26,6 +26,30 @@
 ---
 
 ## Current standing
+
+### 2026-10-02b — **DAY 6 IS RUN 530, THE 04:00 TICK AND THE FIRST ON THE REDESIGNED VIEWER'S CODE, AND IT MEETS EVERY BAR** (D-618). No code, profile, rule, config or live-store change; reads only.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #542); the primary on `main`, still carrying the
+owner's uncommitted enterprise-seat note in `STATE.md`/`STANDING-FACTS.md` (stash by ref around any pull); no run active; the
+tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`). Read the store at
+`/Volumes/mit/boardwatch/boardwatch.db` (D-613).
+
+**Done:** run **530** (04:00 tick) `ok`, 09:00:05 → 13:00:24 UTC, 2,807 boards; run 526's phantom row was reaped to `failed` at its
+start. **Day 6:** B1 44 · B2 36/36 · B3 one page · B4 0 on 36 · B5–B7 ok · B8 36 · gate 46 judged, 0 failed open. `stage_durations`
+vs run 528 (by hand; `day_row.py` named render run 529): scan 6,620 vs 6,161 s, eligibility 1,105 vs 972, tailor 5,991 vs 4,606
+(36 vs 32 PDFs), gate 64 vs 59. Board-deadline hits 6 → 7, partial 83 → 85. Boards `unchanged` 1,147 → 162: validators expire at
+24 h and an `unchanged` scan does not refresh them, so runs 24 h apart refetch most boards in full (D-618) — expected, ~7% more
+scan time. No `WalUnsafe`, lock error, traceback or `gate refresh batch` line; no store under the config dir. Daily checks:
+`inventory.py` 657 apply-lane, pdf missing 0; `/api/queue` 657/657; buried-open 187 → 214; held captures 9/9 and 35/35 released
+(oraclehcm 1 held); no `queue.disputed.*` key exists, so delivery is unchanged by #535–#541. **Disk 17 GiB free (was 47):** ~11 GiB
+is the Claude desktop app's VM bundle (created 2026-10-01); the rest is not traced. The store is on the SSD (301 GiB free).
+
+**Next, in order:**
+1. **Read the 2026-10-03 04:00 run as DAY 7** (`python3 .agent/acceptance/day_row.py <id> 7`, `b4_audit.py --run <id>`, after its
+   PID exits; "previous ok run" will be 530). The daily checks above, unchanged; `/api/queue` takes `Authorization: Bearer
+   <web-token>`.
+2. The 2026-10-02 block's two viewer rulings, (a) and (b), still open.
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280 (filed 2026-10-01b).
 
 ### 2026-10-02 — **THE WEB VIEWER IS REDESIGNED AROUND APPLYING — MERGED (#541) AND SERVED** (D-617). Delivery-side code only: no eligibility, ranking, résumé, discovery, config or live-store change; the pipeline never calls the changed read.
 
@@ -42,7 +66,7 @@ an optional apply session; progress counted from the Applied ledger only after t
 `web bundle` byte check. Also merged: `PRODUCT.md`, `DESIGN.md`, a `verify` skill (`.claude/skills/verify/`), and the session record (D-617).
 
 **Next, in order:**
-1. **The 2026-10-02 04:00 run (day 6) is the first on this merged code.** The pipeline never calls `applied_rows`, so read day 6 as usual (the 2026-10-01b block's note still holds: delivered /
+1. **DONE 2026-10-02b (D-618): day 6 is run 530 and meets every bar.** **The 2026-10-02 04:00 run (day 6) is the first on this merged code.** The pipeline never calls `applied_rows`, so read day 6 as usual (the 2026-10-01b block's note still holds: delivered /
    drained counts against run 528).
 2. Rulings still open: (a) key `a` records the focused row, including the one the cursor moved to after `s` skipped the previous job (Undo toast, 7 s) — keep or require the workspace to be open;
    (b) "this week" = the past 7 days, not Monday–Sunday.
@@ -53,58 +77,9 @@ an optional apply session; progress counted from the Applied ledger only after t
 Open cosmetic: one stat cell wraps alone at 1280; the empty-state "Check: A degree is preferred" reads as noise on jobs the rules cleared (the server does not say a requirement is only preferred,
 so fixing it is a server change and an eligibility-adjacent call).
 
-### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
+### 2026-10-01b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-02b.** The viewer's lifecycle, triage, Rejected tab and stale/reuse check (#535–#538, D-616); its day-6 check is done (D-618) and T278–T280 are restated above.
 
-**Verify first:** `git log --oneline -3 origin/main` (this correction on top of #539). The primary is on `main` at #539 or later,
-pulled ~21:58 CDT on the owner's word; it still carries the owner's UNCOMMITTED `STATE.md`/`STANDING-FACTS.md` edits (the
-enterprise-seat note, 15:55) — stash them around any pull (`git stash push -m <name> -- <the two files>`, pull, `git stash pop
-<that ref>`; the stash list is shared across worktrees, so pop by ref). ONE viewer runs, on the new code: pid 3970, port **8799**
-(the default; re-read with `lsof -nP -iTCP:8799 -sTCP:LISTEN`). Checked on the live store at close: `/api/version` bundle =
-disk, `code_changed` false; `/api/rejected` 98 = the queue's `ineligible` 98 (0 gate-eligible, 0 disputed); `/api/applied` 268
-total, 229 submitted, 0 responded, 18 quiet; apply lane 685/685 PDFs (review lane 50/382, unchanged by this work); a second
-`boardwatch web` printed the running viewer's URL and exited 0.
-
-**Done:** #535 Applied page — status select through `set_application_status` with undo, a History panel over `application_events`
-with notes (new `note` event type; `_mark_sources` reads state events only), a server-decided "no reply" flag (still `applied`, no
-event for 21 days), "responses N of M"; and the Applied table's header no longer covers its first row. #536 queue — "Did you
-apply?" when the TAB returns after opening an apply page, "×N similar" + "Collapse similar roles", `c` / pane button to select a
-company, follow-up presets, "Show in description" for evidence quotes, saved views (localStorage). #537 Rejected tab — `GET
-/api/rejected` (one `_rejected` predicate shared with the queue's `ineligible` cell), gate-eligible first, "Why", apply anyway,
-dispute flag `queue.disputed.<job_id>` (moves nothing; joins `queue_action_job_ids`). #538 — `GET /api/version` + a stale banner
-(restart / Reload), and `boardwatch web` on a port held by this store's own viewer prints its URL (proved by `GET /api/hello`, an
-HMAC over a nonce and the server's own address and store; the token is never sent). Each reviewed by GPT-6.1 Sol (review +
-verification; #538 a third scoped round), every blocker fixed, `make check` exit 0 on each merged state.
-
-**Next, in order:**
-1. **DONE ~21:58 CDT on the owner's word:** primary pulled, both old viewers stopped, one started on 8799 with
-   `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null > ~/Library/Logs/boardwatch-web.log 2>&1 &)` — never
-   `--port 0`. **The 2026-10-02 04:00 run (day 6) is the first on this code**: its delivery-path changes are the shared `_rejected`
-   predicate (equivalent) and the regroup set (empty until a dispute exists); read day 6 for any change in delivered / drained
-   counts against run 528.
-2. The 2026-10-01 block's items (day 6 read, then the post-day-14 list), unchanged.
-3. Filed for after day 14: T278 (port hand-off after a probe), T279 (always-on viewer; needs T133), T280 (the below-the-cap view, an
-   owner call).
-
-### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER; BOTH RE-RENDERED AS MANUAL RUN 529 ON THE OWNER'S WORD, THE VIEWER SERVES 707/707** (D-615). No code, profile, rule or config change; live-store writes only (manual run 529).
-
-**Verify first:** `git log --oneline -3 origin/main` (this record on top of #530); the primary on `main`; no run active; the tick
-**enabled**; the viewer alive (superseded: see the 2026-10-01b block — one viewer, port 8799). Read the
-store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613; the 2026-09-29b block below). Watched boards 2,754 before run 528.
-
-**Done:** #530 had merged and the primary was already clean on it. Run **528** (04:00 tick) `ok`, 09:00:05 → 12:26:07 UTC.
-**Day 5:** B1 36 · B2 32/32 · B3 one page · B4 0 on 32 · B5–B7 ok · B8 32 · gate 51 judged, 0 failed open. `stage_durations` vs run
-527: scan 6,161 vs 10,643 s, eligibility 972 vs 1,419, tailor 4,606 vs 6,684 (32 vs 42 PDFs), gate 59 vs 59. Board-deadline hits
-9 → 6, partial 125 → 83. No `WalUnsafe`, lock error, traceback or `gate refresh batch` failure in run 528's log section; no
-`boardwatch.db` under the config dir. Daily checks: `inventory.py` 707 apply-lane, pdf missing 0; buried-open 165 → 187; held
-captures 9/9 and 35/35 released (oraclehcm 1 held); disk 47 GiB free.
-
-**Next, in order:**
-1. **Read the 2026-10-02 04:00 run as DAY 6** (`python3 .agent/acceptance/day_row.py <id> 6`, `b4_audit.py --run <id>`, after its PID
-   exits). "Previous ok run" will be 529, a render row (item 2); compare against 528 by hand. The daily checks above, unchanged.
-2. **DONE 15:20 CDT on the owner's word (D-615):** Uber 110225 and Sally Beauty 110865 were re-rendered into the out-root as
-   manual run **529** (`render_pending.py`, viewer stopped and restarted). `/api/queue` serves **707/707**. **`day_row.py` will name
-   run 529 as day 6's "previous ok run"**: read the board-deadline comparison against run 528 by hand.
-3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+### 2026-10-01 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-02b.** Day 5 read as run 528 and the Uber/Sally Beauty re-render as manual run 529 (D-615); its day-6 read is done (D-618).
 
 ### 2026-09-30 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-01.** Day 4 read as run 527, a same-day rerun after a macOS update killed run 526 (D-614); its day-5 read is done (D-615) and its open owner call is restated above.
 
