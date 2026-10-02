@@ -11,6 +11,7 @@ import {
   formatFraction,
   formatScore,
   formatTimestamp,
+  isoDaysFromToday,
   parentDirectory,
   pathFromFileUri,
 } from "../lib/format";
@@ -29,6 +30,10 @@ import { VerdictChip } from "./VerdictChip";
  * covers, and the two must never disagree about where the sheet begins.
  */
 export const SIDE_BY_SIDE = "(min-width: 64rem)";
+
+/** The pane's own element, so the page can put focus back into the sheet after a prompt that sat
+ *  above it closes. */
+export const PANE_ID = "lead-detail";
 
 /**
  * The lead's title, which is what the sheet is ABOUT and therefore what names it to a screen
@@ -147,8 +152,35 @@ function Requirements({ requirements }: { requirements: RequirementView[] }) {
   );
 }
 
+/**
+ * Where a quoted span sits in the description, as `[start, end)`, or null when it is not there.
+ * Exact first — the engine slices its quotes out of this same frozen body — and case-folded as the
+ * fallback. Never fuzzier than that: a highlight on text the rule did not read would be a claim
+ * about the evidence that is not true.
+ */
+export function locateQuote(body: string, quote: string): [number, number] | null {
+  if (quote === "") return null;
+  let start = body.indexOf(quote);
+  // Only where lower-casing keeps every length: "İ" lower-cases to two code units, and an offset
+  // found in the folded copy would then slice the wrong characters out of the original.
+  const folded = body.toLowerCase();
+  const foldedQuote = quote.toLowerCase();
+  if (start === -1 && folded.length === body.length && foldedQuote.length === quote.length) {
+    start = folded.indexOf(foldedQuote);
+  }
+  return start === -1 ? null : [start, start + quote.length];
+}
+
 /** One row per rule that fired, quoting the span it read out of the frozen description. */
-function Evidence({ requirements }: { requirements: RequirementView[] }) {
+function Evidence({
+  requirements,
+  jdBody,
+  onShow,
+}: {
+  requirements: RequirementView[];
+  jdBody: string | null;
+  onShow: (quote: string) => void;
+}) {
   const evidence = requirements.filter((item) => item.rule !== null);
   if (evidence.length === 0) {
     return (
@@ -181,6 +213,19 @@ function Evidence({ requirements }: { requirements: RequirementView[] }) {
           )}
           {item.quote === null ? null : (
             <blockquote className="mt-1 text-xs text-fg-3 italic">“{item.quote}”</blockquote>
+          )}
+          {/* Offered only where the span is actually in the description, so the button never
+              promises a jump it cannot make. */}
+          {item.quote === null || jdBody === null || locateQuote(jdBody, item.quote) === null ? null : (
+            <button
+              type="button"
+              onClick={() => {
+                if (item.quote !== null) onShow(item.quote);
+              }}
+              className="mt-1 inline-flex min-h-11 items-center rounded-sm px-1 text-xs text-fg-2 underline decoration-divider underline-offset-2 transition-colors duration-150 ease-in-out hover:text-fg hover:decoration-fg-2"
+            >
+              Show in description
+            </button>
           )}
         </li>
       ))}
@@ -228,6 +273,9 @@ export function DetailPane({
   onFollowUp,
   onToast,
   revealSupported = true,
+  onApplyOpened,
+  companyCount,
+  onSelectCompany,
 }: {
   detail: QueueDetail | null;
   loading: boolean;
@@ -247,6 +295,12 @@ export function DetailPane({
    * have worked is the worse of the two mistakes.
    */
   revealSupported?: boolean;
+  /** The apply link was followed, so the page can ask "did you apply?" on return. */
+  onApplyOpened?: () => void;
+  /** Apply-lane leads listed at this company, with the action that selects them. Both omitted for
+   *  a lead outside the apply lane, which has no selection to add to. */
+  companyCount?: number;
+  onSelectCompany?: () => void;
 }) {
   const [shown, setShown] = useState(false);
   /*
@@ -255,6 +309,11 @@ export function DetailPane({
    * owning the rest of the scroll.
    */
   const [jdExpanded, setJdExpanded] = useState(false);
+  /* The evidence quote being shown in the description, and the mark that shows it. */
+  const [highlight, setHighlight] = useState<string | null>(null);
+  /* Bumped on every jump, so asking for the same quote twice scrolls to it twice. */
+  const [jump, setJump] = useState(0);
+  const mark = useRef<HTMLElement | null>(null);
   const pane = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
@@ -294,6 +353,17 @@ export function DetailPane({
       opener?.focus();
     };
   }, [sideBySide]);
+
+  /*
+   * Bring the shown span into view and give it focus, so a keyboard or screen-reader reader lands
+   * on the words the rule read rather than being told they are highlighted somewhere below.
+   * `?.` on `scrollIntoView` because jsdom has none.
+   */
+  useEffect(() => {
+    if (highlight === null) return;
+    mark.current?.scrollIntoView?.({ block: "center" });
+    mark.current?.focus({ preventScroll: true });
+  }, [highlight, jump]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -362,6 +432,7 @@ export function DetailPane({
 
   return (
     <aside
+      id={PANE_ID}
       ref={pane}
       tabIndex={-1}
       /*
@@ -511,7 +582,10 @@ export function DetailPane({
             */}
           <section className="flex flex-wrap items-start gap-2">
             <span className="flex flex-wrap items-center gap-2">
-              <ApplyLink url={row.apply_url} />
+              <ApplyLink
+                url={row.apply_url}
+                {...(onApplyOpened === undefined ? {} : { onOpen: onApplyOpened })}
+              />
 
               {pdfPath === null ? (
                 <span className="inline-flex min-h-11 items-center rounded-sm border border-divider px-3 text-sm text-fg-3">
@@ -566,6 +640,18 @@ export function DetailPane({
               <ActionButton label="Skip" onClick={onSkip} />
               <ActionButton label="Report" onClick={onReport} />
             </span>
+
+            {/* A SELECTION, not a write: it fills the list's bulk bar, where Skip is one write with
+                an undo. Offered only when there is more than this one lead to select. */}
+            {companyCount === undefined || companyCount < 2 || onSelectCompany === undefined ? null : (
+              <span className="flex flex-wrap items-center gap-2 border-l border-divider pl-2">
+                <ActionButton
+                  label={`Select all ${String(companyCount)} at ${row.company}`}
+                  title="Add every listed lead at this company to the selection, so the bulk bar can skip them in one write. Key on a row: c"
+                  onClick={onSelectCompany}
+                />
+              </span>
+            )}
 
             {/*
               * The follow-up date, in the SAME action strip and behind its own rule, because it
@@ -625,6 +711,26 @@ export function DetailPane({
                   onFollowUp(null);
                 }}
               />
+              {/* The common intervals as one click each. Each names a whole date, so unlike the
+                  `f` key — which writes nothing — there is no guess to make. */}
+              <span role="group" aria-label="Follow up in" className="flex flex-wrap gap-2">
+                {(
+                  [
+                    ["In 3 days", 3],
+                    ["In 1 week", 7],
+                    ["In 2 weeks", 14],
+                  ] as const
+                ).map(([label, days]) => (
+                  <ActionButton
+                    key={days}
+                    label={label}
+                    title={`Follow up on ${isoDaysFromToday(days)}.`}
+                    onClick={() => {
+                      onFollowUp(isoDaysFromToday(days));
+                    }}
+                  />
+                ))}
+              </span>
             </span>
           </section>
 
@@ -635,7 +741,15 @@ export function DetailPane({
 
           <section>
             <h3 className="mb-2 label-micro text-fg-3">evidence</h3>
-            <Evidence requirements={requirements} />
+            <Evidence
+              requirements={requirements}
+              jdBody={detail?.jd_body ?? null}
+              onShow={(quote) => {
+                setJdExpanded(true);
+                setHighlight(quote);
+                setJump((current) => current + 1);
+              }}
+            />
           </section>
 
           {/* Roughly a thousand words, so it is what you read AFTER deciding — but BEFORE the
@@ -669,7 +783,25 @@ export function DetailPane({
                   }`}
                 >
                   <p className="max-w-[68ch] text-sm leading-relaxed whitespace-pre-wrap text-fg-2">
-                    {detail.jd_body}
+                    {(() => {
+                      const span =
+                        highlight === null ? null : locateQuote(detail.jd_body, highlight);
+                      if (span === null) return detail.jd_body;
+                      const [start, end] = span;
+                      return (
+                        <>
+                          {detail.jd_body.slice(0, start)}
+                          <mark
+                            ref={mark}
+                            tabIndex={-1}
+                            className="rounded-sm bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+                          >
+                            {detail.jd_body.slice(start, end)}
+                          </mark>
+                          {detail.jd_body.slice(end)}
+                        </>
+                      );
+                    })()}
                   </p>
                 </div>
                 <button
