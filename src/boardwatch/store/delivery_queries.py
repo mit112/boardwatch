@@ -1565,6 +1565,26 @@ def _applied_versions(conn: Connection) -> dict[int, int]:
     return {int(row.id): int(row.posting_id) for row in rows}
 
 
+def _applied_postings_select() -> Select[Any]:
+    """Every posting of every job that carries an application, oldest first.
+
+    The DISTINCT subquery is the plan, not tidiness. Joined to `applications` directly, SQLite
+    (no `sqlite_stat1` on this store, so no row estimates) scanned all ~687k `postings` and
+    probed `applications` once per row: ~106 s per Applied page, measured on the live store
+    2026-10-01. A DISTINCT subquery cannot be flattened into the outer join, so it is
+    materialised first (268 rows) and `ix_postings_job_id` is probed once per applied job:
+    0.07 s, the same 268 rows byte for byte. A job with several attempts used to join each
+    posting once per attempt; the winner is chosen per job by the caller, so the duplicates
+    never changed it. Its own function so a test can read the plan SQLite chooses for it.
+    """
+    applied_jobs = select(applications.c.job_id).distinct().subquery()
+    return (
+        _job_posting_select()
+        .join(applied_jobs, applied_jobs.c.job_id == postings.c.job_id)
+        .order_by(postings.c.first_seen_at, postings.c.id)
+    )
+
+
 def _applied_postings(conn: Connection) -> dict[int, Row[Any]]:
     """One posting per job that carries an application, chosen by `_supersedes` as usual.
 
@@ -1581,11 +1601,7 @@ def _applied_postings(conn: Connection) -> dict[int, Row[Any]]:
     recently seen posting.
     """
     winners: dict[int, Row[Any]] = {}
-    rows = conn.execute(
-        _job_posting_select()
-        .join(applications, applications.c.job_id == postings.c.job_id)
-        .order_by(postings.c.first_seen_at, postings.c.id)
-    ).all()
+    rows = conn.execute(_applied_postings_select()).all()
     for row in rows:
         job_id = int(row.job_id)
         incumbent = winners.get(job_id)
