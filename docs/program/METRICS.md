@@ -16741,12 +16741,12 @@ validated on real Windows.
 
 No run happened in this session and no pipeline number changed: the pipeline, eligibility, ranking and résumé code are untouched.
 
-**Loading (live store, read-only, called in-process on the branch's code; NOT measured through HTTP, because the live viewer
-on :8799 was not restarted and a second viewer on the live store was not started).**
+**Loading (live store, read-only. In-process figures are the branch's code called directly; the HTTP row was measured on the
+live viewer on :8799 after it was restarted on the merged code at 2026-10-02 00:50).**
 
 | read | before | after |
 |---|---|---|
-| `/api/applied` over HTTP, old code (the live viewer) | 101–108 s, warm and cold | not re-measured over HTTP |
+| `/api/applied` over HTTP on the live viewer | 101–108 s, warm and cold (old code) | **0.42 s first, 0.08 s warm** after the merge and restart (2026-10-02 00:50; 268 rows) |
 | `applied_rows`, 268 rows, first call in a fresh process | 106 s | 1.09 s (once) / 0.07 s (two of three processes) |
 | `applied_rows`, repeat call in the same process | 106 s | 0.06–0.07 s |
 | `_applied_postings` alone | 106 of the 110 s | the subquery drives the join; plan asserted by a test |
@@ -16754,7 +16754,7 @@ on :8799 was not restarted and a second viewer on the live store was not started
 | `/api/queue` (unchanged) | 0.62 s | not changed |
 | `/api/rejected` (unchanged) | 0.3–2.4 s | not changed |
 
-Unresolved: the live Applied page stays slow until the viewer is restarted on the new code. No `ANALYZE` or index was added to
+Resolved 2026-10-02 00:50: the viewer was restarted on the merged code. Unreproduced: a 300k-posting synthetic store did not show the slow plan with the old code (0.04 s), so the cause rests on the live-store profile. No `ANALYZE` or index was added to
 the live store, so the plan still depends on the query's shape, not on statistics.
 **Runs 404:** a cause, not a timing. Run 529 has no funnel artifact; the page now falls back and says so.
 
