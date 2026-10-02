@@ -336,7 +336,8 @@ function route(method: string, path: string, body: unknown): unknown {
       throw new FixtureError(400, "a note must be text");
     }
     const note = typeof sent.note === "string" && sent.note.trim() !== "" ? sent.note.trim() : null;
-    if (note !== null && note.length > 2000) {
+    // Code points, as Python's `len()` counts them — not UTF-16 units.
+    if (note !== null && [...note].length > 2000) {
       throw new FixtureError(400, "a note is at most 2000 characters");
     }
     if (method === "GET" && appMatch[2] === "events") return { events: eventsByJob.get(jobId) ?? [] };

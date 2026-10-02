@@ -870,4 +870,52 @@ describe("the application lifecycle", () => {
 
     expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(2);
   });
+
+  it("lets only the newest ledger read land when an older one answers late", async () => {
+    const row = appliedRow({
+      company: "Acme Corp",
+      title: "Backend Engineer",
+      last_activity_at: "2026-09-10T15:30:00+00:00",
+    });
+    await renderApplied(appliedResponse([row]));
+    const event = (id: number, to: string) => ({
+      id,
+      event_type: "status_change",
+      from_status: "applied",
+      to_status: to,
+      occurred_at: "2026-09-20T15:30:00+00:00",
+      source: "web",
+      note: null,
+    });
+    let answerFirst: (value: { events: ReturnType<typeof event>[] }) => void = () => undefined;
+    vi.mocked(getApplicationEvents)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ events: [event(2, "interviewing")] });
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "interviewing",
+      from_status: "applied",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    vi.mocked(getApplied).mockResolvedValue(
+      appliedResponse([
+        { ...row, status: "interviewing", last_activity_at: "2026-10-01T12:00:00+00:00" },
+      ]),
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "interviewing" } },
+    );
+    await settle();
+    // The opening read answers LAST, with the ledger as it stood before the move.
+    answerFirst({ events: [] });
+    await settle();
+
+    const ledger = screen.getByRole("list", { name: "History of Acme Corp — Backend Engineer" });
+    expect(within(ledger).getByText("applied → interviewing")).toBeTruthy();
+  });
 });

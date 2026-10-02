@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { addApplicationNote, getApplicationEvents } from "../api/client";
 import type { ApplicationEvent } from "../api/types";
@@ -56,19 +56,23 @@ export function ApplicationHistory({
   const [hint, setHint] = useState<string | null>(null);
   const noteId = useId();
   const hintId = useId();
+  /* Only the newest read may land: an older one answering late would put back a shorter ledger
+     over the one a status change just grew. */
+  const latest = useRef(0);
 
-  const load = useCallback(
-    () =>
-      getApplicationEvents(applicationId)
-        .then((response) => {
-          setEvents(response.events);
-          setFailed(null);
-        })
-        .catch((caught: unknown) => {
-          setFailed(caught instanceof Error ? caught.message : "Could not load the history.");
-        }),
-    [applicationId],
-  );
+  const load = useCallback(() => {
+    const ticket = ++latest.current;
+    return getApplicationEvents(applicationId)
+      .then((response) => {
+        if (ticket !== latest.current) return;
+        setEvents(response.events);
+        setFailed(null);
+      })
+      .catch((caught: unknown) => {
+        if (ticket !== latest.current) return;
+        setFailed(caught instanceof Error ? caught.message : "Could not load the history.");
+      });
+  }, [applicationId]);
 
   useEffect(() => {
     void load();
