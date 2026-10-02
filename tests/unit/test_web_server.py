@@ -30,7 +30,7 @@ import socket
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -2216,6 +2216,81 @@ def test_the_probe_never_sends_the_token_and_survives_a_listener_that_is_not_htt
     # Nothing listening at all: the port just released.
     assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
 
+
+
+def _hostile_listener(reply: bytes, *, endless: bool = False) -> tuple[int, Callable[[], None]]:
+    """A raw listener on a free port that answers one connection with `reply` — and, `endless`,
+    keeps streaming after it until the client goes away. Returns the port and a stopper."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def serve() -> None:
+        try:
+            client, _ = listener.accept()
+        except OSError:
+            return
+        with client:
+            client.recv(65536)
+            try:
+                client.sendall(reply)
+                while endless:
+                    client.sendall(b"x" * 65536)
+            except OSError:
+                return
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    def stop() -> None:
+        listener.close()
+        thread.join(timeout=5)
+
+    return int(listener.getsockname()[1]), stop
+
+
+@pytest.mark.parametrize(
+    ("reply", "endless"),
+    [
+        # A chunk size the client would accept as negative reads to EOF: refused unread.
+        (
+            b"HTTP/1.1 200 OK\r\nServer: boardwatch\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\n",
+            True,
+        ),
+        # A non-ASCII proof, which `compare_digest` would raise on.
+        (
+            b'HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{"proof": "\xc3\xa9"} ',
+            False,
+        ),
+        # Deeply nested, unterminated JSON inside the 4 KiB cap: whatever the decoder raises, a no.
+        (
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n" + b"[" * 4000,
+            False,
+        ),
+    ],
+)
+def test_a_hostile_listener_reads_as_not_a_viewer_promptly_and_without_raising(
+    live: Live, engine: Engine, ctx: ApiContext, reply: bytes, endless: bool
+) -> None:
+    port, stop = _hostile_listener(reply, endless=endless)
+    started = time.monotonic()
+    try:
+        assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
+    finally:
+        stop()
+    assert time.monotonic() - started < 5
+
+
+def test_the_proof_names_the_database_file_as_the_store_opener_does(ctx: ApiContext) -> None:
+    """A literal `~` is not expanded where the store is opened, so `~/data` and `$HOME/data` are
+    two stores — and must be two proofs."""
+    literal = replace(ctx, settings=ctx.settings.model_copy(update={"data_dir": Path("~/data")}))
+    expanded = replace(
+        ctx, settings=ctx.settings.model_copy(update={"data_dir": Path.home() / "data"})
+    )
+    assert server_mod.viewer_proof("t", "a" * 32, "127.0.0.1:1", literal) != server_mod.viewer_proof(
+        "t", "a" * 32, "127.0.0.1:1", expanded
+    )
 
 def test_the_hello_route_needs_a_well_formed_nonce_and_no_token(live: Live, engine: Engine) -> None:
     good = call(live, f"/api/hello?nonce={'a' * 32}", bearer=None)

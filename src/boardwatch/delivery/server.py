@@ -93,6 +93,7 @@ from boardwatch.store.applications import (
     mark_job_unapplied,
 )
 from boardwatch.store.db import (
+    DB_FILENAME,
     WalUnsafeFilesystemError,
     get_engine,
     get_readonly_engine,
@@ -198,6 +199,8 @@ _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
 #: A probe's challenge: 16 random bytes as hex, and nothing else.
 _NONCE = re.compile(r"[0-9a-f]{32}")
+#: A probe's expected answer: a SHA-256 HMAC as lowercase hex, and nothing else.
+_PROOF = re.compile(r"[0-9a-f]{64}")
 #: Cap on the probe's reply, in bytes. The real one is ~80; a listener that is not a viewer gets
 #: this much read and no more.
 _HELLO_MAX_BYTES = 4096
@@ -1091,7 +1094,9 @@ def viewer_proof(token: str, nonce: str, authority: str, ctx: ApiContext) -> str
             "boardwatch-viewer",
             nonce,
             authority,
-            str(Path(ctx.settings.data_dir).expanduser().resolve()),
+            # The database file exactly as `get_readonly_engine` opens it — not a path re-derived
+            # from the setting, which can differ (a literal `~` is not expanded there).
+            str((Path(ctx.settings.data_dir) / DB_FILENAME).resolve()),
             str(ctx.out_root),
             str(ctx.queue_root),
         )
@@ -1113,16 +1118,20 @@ def viewer_answers(host: str, port: int, token: str, ctx: ApiContext) -> bool:
     try:
         connection.request("GET", f"/api/hello?nonce={nonce}", headers={"Host": f"{host}:{port}"})
         response = connection.getresponse()
-        body = response.read(_HELLO_MAX_BYTES)
-        if response.status != HTTPStatus.OK:
+        # The real viewer answers with a Content-Length and never chunks. A chunked reply is
+        # refused BEFORE any body is read: a chunk size the client accepts as negative reads to
+        # EOF, which a hostile listener can make endless. Otherwise the read is capped in bytes.
+        if response.status != HTTPStatus.OK or response.chunked:
             return False
-        proof = json.loads(body).get("proof")
-    except (OSError, http.client.HTTPException, ValueError, AttributeError):
+        proof = json.loads(response.read(_HELLO_MAX_BYTES)).get("proof")
+    except (OSError, http.client.HTTPException, ValueError, AttributeError, RecursionError):
         return False
     finally:
         connection.close()
-    expected = viewer_proof(token, nonce, f"{host}:{port}", ctx)
-    return isinstance(proof, str) and hmac.compare_digest(proof, expected)
+    # Shape-checked before the comparison: `compare_digest` raises on a non-ASCII str.
+    if not isinstance(proof, str) or not _PROOF.fullmatch(proof):
+        return False
+    return hmac.compare_digest(proof, viewer_proof(token, nonce, f"{host}:{port}", ctx))
 
 
 def build_server(*, ctx: ApiContext, token: str, host: str, port: int) -> ReviewServer:
