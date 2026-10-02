@@ -143,15 +143,10 @@ function rejectedResponse(): RejectedResponse {
   };
 }
 
-/** Counted from the pool, the way the server counts before filtering — never a constant. */
+/** The size of the rejected list, as the server's `_rejected` makes the cell and the list one set:
+ *  a closed lead drains to `_closed`, so it is in neither. */
 function ineligibleCount(): number {
-  return pool().filter(
-    (row) =>
-      row.verdict === "ineligible" &&
-      !appliedJobIds.has(row.job_id) &&
-      !skippedPostingIds.has(row.posting_id) &&
-      !reportedPostingIds.has(row.posting_id),
-  ).length;
+  return rejectedResponse().counts.total;
 }
 
 function counts(rows: QueueRow[]): QueueCounts {
