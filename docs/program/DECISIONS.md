@@ -33789,7 +33789,7 @@ the changed read (`applied_rows`) is `/api/applied`.
   `sqlite_stat1`, picked `postings` (687k rows) as the driving table and scanned it (106 of 110 s). A DISTINCT subquery over the
   applications cannot be flattened, so it drives the join. Rows and order are byte-identical (sha256 of the 268 rows equal before
   and after); a test asserts the plan, with a presence control. After: 0.06–0.07 s warm, 1.09 s for the first call of one cold
-  process (read-only, new code, live store, called in-process, NOT through HTTP).
+  process (read-only, new code, live store, called in-process; after the merge and restart the HTTP figure was 0.42 s first and 0.08 s warm).
 - **Runs 404.** Run 529 is a manual re-render with no funnel artifact; the page selected the newest run. The page now falls back
   to the newest run that has a funnel and says so in plain words. No server change.
 
@@ -33825,10 +33825,10 @@ Answers controls beyond appearance, overflow, contrast and target size. Nothing 
 is claimed: none was observed.
 
 **Open.** `a` after `s` records the NEXT row (focus moved to it, Undo available) — kept, owner's call. The Undo toast lasts 7 s
-(the Applied page has "Undo this record"). One stat
-cell still wraps alone at 1280. **The live viewer on :8799 still runs the old Python and the old bundle**, so `/api/applied`
-stays slow until the owner restarts it; the client now times out and recovers rather than blank. Merging this branch changes the
-editable venv's code for the 04:00 run: the pipeline does not call `applied_rows`, but the owner decides when to merge.
+(the Applied page has "Undo this record"). One stat cell still wraps alone at 1280. **Shipped:** merged as #541 (squash; CI green including
+the `web bundle` byte check) and the viewer on :8799 restarted on the merged code at 2026-10-02 00:50 on the owner's word. Over HTTP on the
+live store `/api/applied` then took 0.42 s first and 0.08 s warm for 268 rows (it was 101–108 s). The pipeline does not call `applied_rows`;
+the 04:00 run is the first on this code.
 
 **Alternatives rejected.** An index or `ANALYZE` on the live store (a migration; refused); caching `/api/applied` (hides the
 plan instead of fixing it); one combined "fit" score (the four readings answer different questions); streaks, daily goals or a
