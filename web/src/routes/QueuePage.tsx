@@ -26,11 +26,14 @@ import type {
 } from "../api/types";
 import { TOKEN_EVENT, readWatermark, writeWatermark } from "../api/token";
 import { openApplyUrl } from "../components/ApplyLink";
+import { ApplyReturnPrompt } from "../components/ApplyReturnPrompt";
 import { DetailPane, FOLLOW_UP_INPUT_ID, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
 import { QueueTable } from "../components/QueueTable";
 import type { Selection } from "../components/QueueTable";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
+import { SavedViews } from "../components/SavedViews";
+import type { QueueView } from "../components/SavedViews";
 import { QUEUE_FACETS, StatusBand } from "../components/StatusBand";
 import type { QueueFacet } from "../components/StatusBand";
 import { useHashRoute } from "../hooks/useHashRoute";
@@ -43,6 +46,7 @@ import {
   reviewLaneSentence,
 } from "../lib/reviewReasons";
 import { isFollowUpDue } from "../lib/format";
+import { firstOfEachGroup, similarCounts } from "../lib/similar";
 import { matchesQuery, parseSortState, sortRows } from "../lib/sort";
 import type { SortKey, SortState } from "../lib/sort";
 
@@ -124,6 +128,7 @@ const QUEUE_KEYS = {
   mode: "boardwatch.queue.mode",
   hideThin: "boardwatch.queue.hideThin",
   hideUnverifiable: "boardwatch.queue.hideUnverifiable",
+  hideSimilar: "boardwatch.queue.hideSimilar",
   facet: "boardwatch.queue.facet",
   reason: "boardwatch.queue.reason",
   sort: "boardwatch.queue.sort",
@@ -320,6 +325,13 @@ export function QueuePage({
   const [hideThin, setHideThin] = useSessionState(QUEUE_KEYS.hideThin, "", decodeText, encodeText);
   const [hideUnverifiable, setHideUnverifiable] = useSessionState(
     QUEUE_KEYS.hideUnverifiable,
+    "",
+    decodeText,
+    encodeText,
+  );
+  // Fold leads at one company under one title into the best-placed one (`lib/similar`).
+  const [hideSimilar, setHideSimilar] = useSessionState(
+    QUEUE_KEYS.hideSimilar,
     "",
     decodeText,
     encodeText,
@@ -723,7 +735,7 @@ export function QueuePage({
     [filtered, newIds],
   );
 
-  const visible = useMemo(() => {
+  const sortedApply = useMemo(() => {
     // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
     // list is empty. The verdict facets narrow it; `null` shows all.
     const base =
@@ -734,6 +746,13 @@ export function QueuePage({
           : filtered.filter((row) => matchesFacet(row, facet, newIds));
     return sortRows(base, sort, rankOf);
   }, [filtered, facet, newIds, sort, rankOf]);
+  /* Counted BEFORE the fold, so a folded group's one visible row still says how many it stands
+     for. Folding last keeps the best-placed lead of each group, in whatever order is sorting. */
+  const similarApply = useMemo(() => similarCounts(sortedApply), [sortedApply]);
+  const visible = useMemo(
+    () => (hideSimilar === "" ? sortedApply : firstOfEachGroup(sortedApply)),
+    [sortedApply, hideSimilar],
+  );
 
   /*
    * The toolbar's search and score floor apply to BOTH lanes. A filter that silently skipped the
@@ -757,7 +776,7 @@ export function QueuePage({
     });
   }, [data, removed, runFilter, query, minScore, board, mode, hideThin, hideUnverifiable]);
 
-  const visibleReview = useMemo(() => {
+  const sortedReview = useMemo(() => {
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
     // its location — so filtering "eligible" while skipping this list is the documented "make the
     // review list look empty for a matching filter" failure. `review` shows the whole lane.
@@ -771,6 +790,11 @@ export function QueuePage({
         : byVerdict.filter((row) => row.review_reason === reasonFacet);
     return sortRows(base, reviewSort, reviewRankOf);
   }, [filteredReview, facet, reasonFacet, newIds, reviewSort, reviewRankOf]);
+  const similarReview = useMemo(() => similarCounts(sortedReview), [sortedReview]);
+  const visibleReview = useMemo(
+    () => (hideSimilar === "" ? sortedReview : firstOfEachGroup(sortedReview)),
+    [sortedReview, hideSimilar],
+  );
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -836,6 +860,42 @@ export function QueuePage({
       next.delete(postingId);
       return next;
     });
+  }, []);
+
+  /*
+   * "Did you apply?" on return. An apply page opened from here — `o`, or a click on an apply link
+   * — arms `pendingApply`; the page then has to actually be LEFT (hidden, or the window blurred)
+   * and come back before the question is put, so a link that opened in a background tab, or a
+   * click that never left the page, asks nothing. A ref, because it is written in handlers and
+   * read in DOM listeners and nothing renders from it; the prompt itself is state.
+   */
+  const pendingApply = useRef<{ row: QueueRow; left: boolean } | null>(null);
+  const [returnPrompt, setReturnPrompt] = useState<QueueRow | null>(null);
+  const noteApplyOpened = useCallback((row: QueueRow) => {
+    pendingApply.current = { row, left: false };
+  }, []);
+  useEffect(() => {
+    const onLeave = () => {
+      if (pendingApply.current !== null) pendingApply.current.left = true;
+    };
+    const onReturn = () => {
+      const pending = pendingApply.current;
+      if (pending === null || !pending.left) return;
+      pendingApply.current = null;
+      setReturnPrompt(pending.row);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") onLeave();
+      else onReturn();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onLeave);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onLeave);
+      window.removeEventListener("focus", onReturn);
+    };
   }, []);
 
   /*
@@ -916,6 +976,9 @@ export function QueuePage({
 
   const act = useCallback(
     (row: QueueRow, kind: Removal) => {
+      // Whatever was decided about this lead answers the question the prompt would have asked.
+      if (pendingApply.current?.row.posting_id === row.posting_id) pendingApply.current = null;
+      setReturnPrompt((current) => (current?.posting_id === row.posting_id ? null : current));
       /*
        * Where the cursor lands once this row leaves. Without it, marking a lead by keyboard
        * destroyed the focused element and focus fell back to `<body>` — so triaging ten leads
@@ -1069,6 +1132,24 @@ export function QueuePage({
     setMarked(new Set());
   }, []);
 
+  /* The apply-lane rows listed at a row's company — the ones `c` and the pane's button select. */
+  const companyRows = useCallback(
+    (row: QueueRow) => {
+      const company = row.company.trim().toLowerCase();
+      return visible.filter((candidate) => candidate.company.trim().toLowerCase() === company);
+    },
+    [visible],
+  );
+  const selectCompany = useCallback(
+    (row: QueueRow) => {
+      selection.onMarkMany(
+        companyRows(row).map((candidate) => candidate.posting_id),
+        true,
+      );
+    },
+    [companyRows, selection],
+  );
+
   /*
    * Bulk skip: ONE write for the whole selection and ONE for its undo.
    *
@@ -1219,9 +1300,11 @@ export function QueuePage({
     (row: QueueRow) => {
       if (!openApplyUrl(row.apply_url)) {
         push({ message: `No usable apply link for ${row.company} — ${row.title}.`, tone: "error" });
+        return;
       }
+      noteApplyOpened(row);
     },
-    [push],
+    [push, noteApplyOpened],
   );
 
   const nextSort = (current: SortState, key: SortKey): SortState =>
@@ -1300,6 +1383,39 @@ export function QueuePage({
     },
     [facet, setFacet, setReviewOpen],
   );
+
+  /*
+   * The view a saved view captures and restores: every toolbar filter, the two facets and the
+   * apply sort, each in its session encoding. Restoring decodes through the same functions a
+   * reload uses, so a view saved by an older bundle with a facet this one no longer knows drops
+   * that facet instead of applying it.
+   */
+  const currentView: QueueView = {
+    query,
+    minScore,
+    board,
+    mode,
+    hideThin,
+    hideUnverifiable,
+    hideSimilar,
+    facet: encodeFacet(facet),
+    reason: encodeReason(reasonFacet),
+    sort: encodeSort(sort),
+  };
+  const applyView = (view: QueueView) => {
+    setQuery(view["query"] ?? "");
+    setMinScore(view["minScore"] ?? "");
+    setBoard(view["board"] ?? "");
+    setMode(view["mode"] ?? "");
+    setHideThin(view["hideThin"] ?? "");
+    setHideUnverifiable(view["hideUnverifiable"] ?? "");
+    setHideSimilar(view["hideSimilar"] ?? "");
+    setFacet(decodeFacet(view["facet"] ?? null));
+    const reason = decodeReason(view["reason"] ?? null);
+    setReasonFacet(reason);
+    if (reason !== null) setReviewOpen(true);
+    setSort(parseSortState(view["sort"] ?? null) ?? { key: "rank", direction: "asc" });
+  };
 
   /*
    * The apply lane is off the page entirely — the `review` facet asks for that lane alone. The
@@ -1426,6 +1542,19 @@ export function QueuePage({
           onHideUnverifiable={(on) => {
             setHideUnverifiable(on ? "1" : "");
           }}
+          hideSimilar={hideSimilar !== ""}
+          onHideSimilar={(on) => {
+            setHideSimilar(on ? "1" : "");
+          }}
+          views={
+            <SavedViews
+              current={currentView}
+              onApply={applyView}
+              onError={(message) => {
+                push({ message, tone: "error" });
+              }}
+            />
+          }
           selectedCount={markedRows.length}
           onSkipSelected={skipSelected}
           onClearSelection={clearSelection}
@@ -1523,6 +1652,9 @@ export function QueuePage({
               /* The APPLY lane alone. The review lane below is deliberately left single-row: its
                  leads are held for a look, so "skip the whole block" is not what it is for. */
               selection={selection}
+              similarOf={(row) => similarApply.get(row.posting_id)}
+              onApplyOpened={noteApplyOpened}
+              onSelectCompany={selectCompany}
               emptyHint={emptyHint}
               selectedId={selected}
               activeId={activeId}
@@ -1627,6 +1759,8 @@ export function QueuePage({
                           label="Review"
                           rows={visibleReview}
                           rankOf={reviewRankOf}
+                          similarOf={(row) => similarReview.get(row.posting_id)}
+                          onApplyOpened={noteApplyOpened}
                           sort={reviewSort}
                           onSort={onReviewSort}
                           selectedId={selected}
@@ -1722,10 +1856,41 @@ export function QueuePage({
                 push({ message, tone });
               }}
               revealSupported={data.meta?.reveal_supported ?? true}
+              onApplyOpened={() => {
+                const row = shownDetail?.row;
+                if (row) noteApplyOpened(row);
+              }}
+              {...(shownDetail === null ||
+              !visible.some((row) => row.posting_id === shownDetail.row.posting_id)
+                ? {}
+                : {
+                    companyCount: companyRows(shownDetail.row).length,
+                    onSelectCompany: () => {
+                      selectCompany(shownDetail.row);
+                    },
+                  })}
             />
           </ErrorBoundary>
         )}
       </div>
+
+      {/* Only while the lead is still on the page: one decided some other way meanwhile, or
+          drained by a refresh, has nothing left to ask about. */}
+      {returnPrompt === null ||
+      removed.has(returnPrompt.posting_id) ||
+      ![...data.rows, ...data.review].some((row) => row.posting_id === returnPrompt.posting_id) ? null : (
+        <ApplyReturnPrompt
+          row={returnPrompt}
+          onApplied={() => {
+            act(returnPrompt, "applied");
+          }}
+          onDismiss={() => {
+            const postingId = returnPrompt.posting_id;
+            setReturnPrompt(null);
+            focusRow(postingId);
+          }}
+        />
+      )}
     </div>
   );
 }
