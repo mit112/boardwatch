@@ -29,9 +29,14 @@
 
 ### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
 
-**Verify first:** `git log --oneline -6 origin/main` (this record on top of #538, #535, #537, #536). The primary checkout was NOT
-pulled: it carries the owner's uncommitted `STATE.md`/`STANDING-FACTS.md` edits (the enterprise-seat note, 15:55) — commit or stash
-them before any pull. Two viewers were running at close: pid 7471 (port 51347) and pid 33710 (port 8799), both on the old code.
+**Verify first:** `git log --oneline -3 origin/main` (this correction on top of #539). The primary is on `main` at #539 or later,
+pulled ~21:58 CDT on the owner's word; it still carries the owner's UNCOMMITTED `STATE.md`/`STANDING-FACTS.md` edits (the
+enterprise-seat note, 15:55) — stash them around any pull (`git stash push -m <name> -- <the two files>`, pull, `git stash pop
+<that ref>`; the stash list is shared across worktrees, so pop by ref). ONE viewer runs, on the new code: pid 3970, port **8799**
+(the default; re-read with `lsof -nP -iTCP:8799 -sTCP:LISTEN`). Checked on the live store at close: `/api/version` bundle =
+disk, `code_changed` false; `/api/rejected` 98 = the queue's `ineligible` 98 (0 gate-eligible, 0 disputed); `/api/applied` 268
+total, 229 submitted, 0 responded, 18 quiet; apply lane 685/685 PDFs (review lane 50/382, unchanged by this work); a second
+`boardwatch web` printed the running viewer's URL and exited 0.
 
 **Done:** #535 Applied page — status select through `set_application_status` with undo, a History panel over `application_events`
 with notes (new `note` event type; `_mark_sources` reads state events only), a server-decided "no reply" flag (still `applied`, no
@@ -45,11 +50,11 @@ HMAC over a nonce and the server's own address and store; the token is never sen
 verification; #538 a third scoped round), every blocker fixed, `make check` exit 0 on each merged state.
 
 **Next, in order:**
-1. **Owner, when convenient (not during a run):** commit/stash the two dirty docs, `git pull` the primary, stop BOTH old viewers,
-   start ONE on the default port: `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null >
-   ~/Library/Logs/boardwatch-web.log 2>&1 &)` — no `--port 0`, so the URL (and saved views) survive restarts. The pull also
-   moves the 04:00 driver's code (editable venv); the delivery-path changes are the shared `_rejected` predicate (equivalent) and
-   the regroup set (empty until a dispute exists).
+1. **DONE ~21:58 CDT on the owner's word:** primary pulled, both old viewers stopped, one started on 8799 with
+   `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null > ~/Library/Logs/boardwatch-web.log 2>&1 &)` — never
+   `--port 0`. **The 2026-10-02 04:00 run (day 6) is the first on this code**: its delivery-path changes are the shared `_rejected`
+   predicate (equivalent) and the regroup set (empty until a dispute exists); read day 6 for any change in delivered / drained
+   counts against run 528.
 2. The 2026-10-01 block's items (day 6 read, then the post-day-14 list), unchanged.
 3. Filed for after day 14: T278 (port hand-off after a probe), T279 (always-on viewer; needs T133), T280 (the below-the-cap view, an
    owner call).
@@ -57,7 +62,7 @@ verification; #538 a third scoped round), every blocker fixed, `make check` exit
 ### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER; BOTH RE-RENDERED AS MANUAL RUN 529 ON THE OWNER'S WORD, THE VIEWER SERVES 707/707** (D-615). No code, profile, rule or config change; live-store writes only (manual run 529).
 
 **Verify first:** `git log --oneline -3 origin/main` (this record on top of #530); the primary on `main`; no run active; the tick
-**enabled**; the viewer alive (pid 7471, port 51347 at close — re-read with `lsof -nP -p <pid> -a -iTCP -sTCP:LISTEN`). Read the
+**enabled**; the viewer alive (superseded: see the 2026-10-01b block — one viewer, port 8799). Read the
 store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613; the 2026-09-29b block below). Watched boards 2,754 before run 528.
 
 **Done:** #530 had merged and the primary was already clean on it. Run **528** (04:00 tick) `ok`, 09:00:05 → 12:26:07 UTC.
