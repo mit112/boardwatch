@@ -4773,6 +4773,61 @@ released (oraclehcm 1 held); no `gate refresh batch` failure; disk 32 GiB free (
    exactly. Recommended: re-render it with `render_pending.py` as a manual run row, as D-612 did; not a code change.
 4. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
 
+## Settled session blocks moved out of STATE on 2026-10-02b (verbatim)
+
+### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
+
+**Verify first:** `git log --oneline -3 origin/main` (this correction on top of #539). The primary is on `main` at #539 or later,
+pulled ~21:58 CDT on the owner's word; it still carries the owner's UNCOMMITTED `STATE.md`/`STANDING-FACTS.md` edits (the
+enterprise-seat note, 15:55) — stash them around any pull (`git stash push -m <name> -- <the two files>`, pull, `git stash pop
+<that ref>`; the stash list is shared across worktrees, so pop by ref). ONE viewer runs, on the new code: pid 3970, port **8799**
+(the default; re-read with `lsof -nP -iTCP:8799 -sTCP:LISTEN`). Checked on the live store at close: `/api/version` bundle =
+disk, `code_changed` false; `/api/rejected` 98 = the queue's `ineligible` 98 (0 gate-eligible, 0 disputed); `/api/applied` 268
+total, 229 submitted, 0 responded, 18 quiet; apply lane 685/685 PDFs (review lane 50/382, unchanged by this work); a second
+`boardwatch web` printed the running viewer's URL and exited 0.
+
+**Done:** #535 Applied page — status select through `set_application_status` with undo, a History panel over `application_events`
+with notes (new `note` event type; `_mark_sources` reads state events only), a server-decided "no reply" flag (still `applied`, no
+event for 21 days), "responses N of M"; and the Applied table's header no longer covers its first row. #536 queue — "Did you
+apply?" when the TAB returns after opening an apply page, "×N similar" + "Collapse similar roles", `c` / pane button to select a
+company, follow-up presets, "Show in description" for evidence quotes, saved views (localStorage). #537 Rejected tab — `GET
+/api/rejected` (one `_rejected` predicate shared with the queue's `ineligible` cell), gate-eligible first, "Why", apply anyway,
+dispute flag `queue.disputed.<job_id>` (moves nothing; joins `queue_action_job_ids`). #538 — `GET /api/version` + a stale banner
+(restart / Reload), and `boardwatch web` on a port held by this store's own viewer prints its URL (proved by `GET /api/hello`, an
+HMAC over a nonce and the server's own address and store; the token is never sent). Each reviewed by GPT-6.1 Sol (review +
+verification; #538 a third scoped round), every blocker fixed, `make check` exit 0 on each merged state.
+
+**Next, in order:**
+1. **DONE ~21:58 CDT on the owner's word:** primary pulled, both old viewers stopped, one started on 8799 with
+   `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null > ~/Library/Logs/boardwatch-web.log 2>&1 &)` — never
+   `--port 0`. **The 2026-10-02 04:00 run (day 6) is the first on this code**: its delivery-path changes are the shared `_rejected`
+   predicate (equivalent) and the regroup set (empty until a dispute exists); read day 6 for any change in delivered / drained
+   counts against run 528.
+2. The 2026-10-01 block's items (day 6 read, then the post-day-14 list), unchanged.
+3. Filed for after day 14: T278 (port hand-off after a probe), T279 (always-on viewer; needs T133), T280 (the below-the-cap view, an
+   owner call).
+
+### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER; BOTH RE-RENDERED AS MANUAL RUN 529 ON THE OWNER'S WORD, THE VIEWER SERVES 707/707** (D-615). No code, profile, rule or config change; live-store writes only (manual run 529).
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #530); the primary on `main`; no run active; the tick
+**enabled**; the viewer alive (superseded: see the 2026-10-01b block — one viewer, port 8799). Read the
+store at `/Volumes/mit/boardwatch/boardwatch.db` (D-613; the 2026-09-29b block below). Watched boards 2,754 before run 528.
+
+**Done:** #530 had merged and the primary was already clean on it. Run **528** (04:00 tick) `ok`, 09:00:05 → 12:26:07 UTC.
+**Day 5:** B1 36 · B2 32/32 · B3 one page · B4 0 on 32 · B5–B7 ok · B8 32 · gate 51 judged, 0 failed open. `stage_durations` vs run
+527: scan 6,161 vs 10,643 s, eligibility 972 vs 1,419, tailor 4,606 vs 6,684 (32 vs 42 PDFs), gate 59 vs 59. Board-deadline hits
+9 → 6, partial 125 → 83. No `WalUnsafe`, lock error, traceback or `gate refresh batch` failure in run 528's log section; no
+`boardwatch.db` under the config dir. Daily checks: `inventory.py` 707 apply-lane, pdf missing 0; buried-open 165 → 187; held
+captures 9/9 and 35/35 released (oraclehcm 1 held); disk 47 GiB free.
+
+**Next, in order:**
+1. **Read the 2026-10-02 04:00 run as DAY 6** (`python3 .agent/acceptance/day_row.py <id> 6`, `b4_audit.py --run <id>`, after its PID
+   exits). "Previous ok run" will be 529, a render row (item 2); compare against 528 by hand. The daily checks above, unchanged.
+2. **DONE 15:20 CDT on the owner's word (D-615):** Uber 110225 and Sally Beauty 110865 were re-rendered into the out-root as
+   manual run **529** (`render_pending.py`, viewer stopped and restarted). `/api/queue` serves **707/707**. **`day_row.py` will name
+   run 529 as day 6's "previous ok run"**: read the board-deadline comparison against run 528 by hand.
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
