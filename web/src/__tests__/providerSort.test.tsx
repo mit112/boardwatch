@@ -4,22 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
- * The ATS header, through the page rather than through `lib/sort`.
+ * Sorting by job board, through the page rather than through `lib/sort`.
  *
  * `sort.test.tsx` covers the comparator; what is only reachable from here is the WIRING — that
- * the affordance is on screen at all, that clicking it re-orders the real grid, and that the
- * columnheader it lives in reports the sort to a screen reader. The control was added to the
- * title | company cell because that is the column the ATS is rendered in, and a sort control
- * over a cell the reader is not looking at is exactly the hidden affordance the data-table
- * card refuses (`ux-table-sort-filter`).
+ * the control is on screen with a name, and that choosing it re-orders the real list. The owner
+ * applies in batches by board, so what the sort has to produce is blocks.
  *
- * Nothing here touches the hash: sort lives in `sessionStorage` (`QUEUE_KEYS.sort`), not in
- * `useHashRoute`, so `provider` has no hash round-trip to honour.
+ * Nothing here touches the hash: sort lives in `sessionStorage` (`QUEUE_KEYS.sort`).
  */
 
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -46,7 +43,7 @@ beforeEach(() => {
   window.location.hash = "";
 });
 
-describe("the ATS column", () => {
+describe("sorting by job board", () => {
   // Interleaved, so neither the delivered order nor a plain reversal of it can pass for a sort.
   const rows = [
     queueRow({ title: "Alpha Engineer", provider: "workday" }),
@@ -54,35 +51,29 @@ describe("the ATS column", () => {
     queueRow({ title: "Charlie Engineer", provider: "workday" }),
   ];
 
-  it("offers a visible sort control that groups the grid into ATS blocks", async () => {
+  it("groups the list into job-board blocks, each still in the delivered order", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse(rows));
     render(<App />);
 
-    const grid = await screen.findByRole("grid", { name: "Queue" });
-    // Delivered order: the ranker's, which interleaves the two providers.
+    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
+    // Delivered order: the ranker's, which interleaves the two boards.
     expect(dataRows(grid).map((row) => row.textContent)).toEqual([
       expect.stringContaining("Alpha Engineer"),
       expect.stringContaining("Bravo Engineer"),
       expect.stringContaining("Charlie Engineer"),
     ]);
 
-    // Found by its accessible name, not by a test id: if it is not nameable it is not usable.
-    fireEvent.click(screen.getByRole("button", { name: "ats" }));
+    // Found by its label, not by a test id: if the control cannot be named it cannot be used.
+    fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), {
+      target: { value: "provider:asc" },
+    });
 
-    // Descending first, which is what `nextSort` gives every non-rank, non-age column — so the
-    // `workday` block leads. Rank order inside a block is untouched: Alpha before Charlie.
+    // Ascending by board name: `greenhouse` leads, then the `workday` block with Alpha before
+    // Charlie — the order INSIDE a block is the delivered one and is never reversed.
     expect(dataRows(grid).map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Bravo Engineer"),
       expect.stringContaining("Alpha Engineer"),
       expect.stringContaining("Charlie Engineer"),
-      expect.stringContaining("Bravo Engineer"),
     ]);
-
-    // The header cell the control sits in must SAY the table is sorted. Keyed on `title` alone,
-    // this read `none` while the grid was in fact re-ordered — a screen reader told the table
-    // was unsorted by the same markup that had just sorted it.
-    const header = within(grid)
-      .getAllByRole("columnheader")
-      .find((cell) => within(cell).queryByRole("button", { name: "ats" }) !== null);
-    expect(header?.getAttribute("aria-sort")).toBe("descending");
   });
 });

@@ -30,6 +30,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -102,7 +103,7 @@ afterEach(() => {
 /** Open `LEAD` from its grid row and wait for the pane to have drawn the lead. */
 async function openFromRow(): Promise<void> {
   render(<App />);
-  await screen.findByRole("grid", { name: "Queue" });
+  await screen.findByRole("grid", { name: "Jobs to explore" });
   fireEvent.click(rowElement(LEAD.posting_id));
   await screen.findByRole("heading", { name: "Compiler Engineer" });
 }
@@ -147,6 +148,6 @@ describe("the narrow-tier detail sheet", () => {
     await openFromRow();
 
     expect(screen.queryByRole("dialog")).toBeNull();
-    screen.getByRole("complementary", { name: "Lead detail" });
+    screen.getByRole("complementary", { name: "Job workspace" });
   });
 });

@@ -67,14 +67,10 @@ function renderRow(row: QueueRow) {
   return render(
     <QueueRowItem
       row={row}
-      rank={1}
       selected={false}
       active={false}
       collapsing={false}
       onSelect={() => undefined}
-      onApplied={() => undefined}
-      onSkip={() => undefined}
-      onReport={() => undefined}
     />,
   );
 }
@@ -83,21 +79,21 @@ describe("the pane", () => {
   it("names the applied posting's location and date", () => {
     renderPane(queueRow({ applied_identical_jd: [ALEXANDRIA] }));
     screen.getByText(
-      `Applied to an identical JD: Alexandria, VA · ${formatDateWithYear(ALEXANDRIA.applied_at)}`,
+      `Applied to an identical description: Alexandria, VA · ${formatDateWithYear(ALEXANDRIA.applied_at)}`,
     );
   });
 
   it("renders nothing when the list is empty, or when an older server omits it", () => {
     renderPane(queueRow({ applied_identical_jd: [] }));
-    expect(screen.queryByText(/identical JD/)).toBeNull();
+    expect(screen.queryByText(/identical description/)).toBeNull();
     renderPane(withoutFields(queueRow(), ["applied_identical_jd"]));
-    expect(screen.queryByText(/identical JD/)).toBeNull();
+    expect(screen.queryByText(/identical description/)).toBeNull();
   });
 
   it("shows the first plus +N, and every entry stays readable in the pane", () => {
     renderPane(queueRow({ applied_identical_jd: [ALEXANDRIA, RESTON, ARLINGTON] }));
     const summary = screen.getByText(
-      `Applied to an identical JD: Alexandria, VA · ${formatDateWithYear(ALEXANDRIA.applied_at)} +2`,
+      `Applied to an identical description: Alexandria, VA · ${formatDateWithYear(ALEXANDRIA.applied_at)} +2`,
     );
     // A native disclosure: the full list is its content, reachable by keyboard and in the tree.
     expect(summary.tagName).toBe("SUMMARY");
@@ -116,16 +112,13 @@ describe("the pane", () => {
 describe("the list row", () => {
   it("carries a text badge that says it in words", () => {
     renderRow(queueRow({ applied_identical_jd: [ALEXANDRIA] }));
-    // TEXT, never colour alone (SC 1.4.1). The row renders `Flags` in two tiers, hence `All`.
-    const badges = screen.getAllByText("applied: identical JD");
-    expect(badges.length).toBeGreaterThan(0);
-    for (const badge of badges) {
-      expect(badge.getAttribute("title")).toMatch(/identical job description/);
-    }
+    // TEXT, never colour alone (SC 1.4.1), with the explanation one hover away.
+    const note = screen.getByText("Applied to an identical posting");
+    expect(note.getAttribute("title")).toMatch(/identical description/);
   });
 
   it("carries no badge when the list is empty", () => {
     renderRow(queueRow({ applied_identical_jd: [] }));
-    expect(screen.queryByText("applied: identical JD")).toBeNull();
+    expect(screen.queryByText("Applied to an identical posting")).toBeNull();
   });
 });

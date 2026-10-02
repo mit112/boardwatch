@@ -16,6 +16,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -68,7 +69,7 @@ describe("QueuePage load", () => {
 
     render(<App />);
 
-    const grid = await screen.findByRole("grid", { name: "Queue" });
+    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
     expect(dataRows(grid)).toHaveLength(apply.length);
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -82,7 +83,7 @@ describe("QueuePage load", () => {
     // card never appears.
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("503 from /api/queue")).toBeTruthy();
-    expect(screen.queryByRole("grid", { name: "Queue" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
   });
 });
 
@@ -102,19 +103,19 @@ describe("QueuePage background poll", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(dataRows(screen.getByRole("grid", { name: "Queue" }))).toHaveLength(2);
+    expect(dataRows(screen.getByRole("grid", { name: "Jobs to explore" }))).toHaveLength(2);
 
     // First poll: one unseen posting surfaces the quiet "1 new" indicator.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_MS);
     });
-    expect(screen.getByText(/\b1 new\b/)).toBeTruthy();
+    expect(screen.getByText(/\b1 newly delivered\b/)).toBeTruthy();
 
     // Second poll REJECTS. The poll `.catch` swallows it deliberately; the indicator the reader is
     // looking at must survive. If that catch cleared `newCount`/`stashed`, this assertion fails.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(POLL_MS);
     });
-    expect(screen.getByText(/\b1 new\b/)).toBeTruthy();
+    expect(screen.getByText(/\b1 newly delivered\b/)).toBeTruthy();
   });
 });

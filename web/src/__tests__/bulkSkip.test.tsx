@@ -16,6 +16,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -34,12 +35,11 @@ vi.mock("../api/client", () => ({
 // Imported AFTER the mock factory, which vitest hoists above both.
 import { getQueue, markApplied, skipMany, unskipMany } from "../api/client";
 import { App } from "../App";
-import { GRID_TEMPLATE, SELECT_GRID_TEMPLATE, SELECT_TRACK } from "../components/QueueRowItem";
 
 const COLLAPSE_MS = 200;
 
 function grid(): HTMLElement {
-  return screen.getByRole("grid", { name: "Queue" });
+  return screen.getByRole("grid", { name: "Jobs to explore" });
 }
 
 function dataRows(): HTMLElement[] {
@@ -94,18 +94,6 @@ async function renderRows() {
 }
 
 describe("bulk skip", () => {
-  it("templatesAgree: the selectable grid is the plain one with one track in front", () => {
-    /*
-     * The two templates are written out separately because Tailwind only generates a class for a
-     * candidate that appears LITERALLY in the source — so this is the drift guard that replaces
-     * deriving one from the other. Flip a track width in `GRID_TEMPLATE` and forget the twin, and
-     * the selectable table silently loses a column's width at one tier only.
-     */
-    expect(SELECT_GRID_TEMPLATE).toBe(
-      GRID_TEMPLATE.replaceAll("grid-cols-[", `grid-cols-[${SELECT_TRACK}`),
-    );
-  });
-
   it("renders no bulk bar until at least one row is selected", async () => {
     await renderRows();
 

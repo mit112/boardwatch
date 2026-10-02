@@ -29,22 +29,53 @@ export function similarKey(row: Pick<QueueRow, "company" | "title">): string {
   return `${row.company.trim().toLowerCase()}\u0000${normaliseTitle(row.title)}`;
 }
 
-/** How many rows of `rows` share each row's key, by posting id. Only groups of two or more are
- *  listed, so a lookup that misses means "no similar lead in this list". */
-export function similarCounts(rows: readonly QueueRow[]): Map<number, number> {
-  const byKey = new Map<string, number[]>();
+/** What a group of similar postings contains, in the facts a reader decides on. */
+export interface SimilarGroup {
+  /** Postings in the group, this one included. */
+  count: number;
+  /** Distinct locations across the group, compared case-insensitively. */
+  locations: number;
+  /** Distinct job boards (`provider`) across the group. */
+  boards: number;
+}
+
+/** The key's group for each row that has a similar lead in `rows`, with what the group holds.
+ *  Nothing is merged, and nothing here decides what is a
+ *  duplicate — a group is "same company, same title once formatting is folded away", no more. */
+export function similarGroups(rows: readonly QueueRow[]): Map<number, SimilarGroup> {
+  const byKey = new Map<string, QueueRow[]>();
   for (const row of rows) {
     const key = similarKey(row);
     const group = byKey.get(key);
-    if (group === undefined) byKey.set(key, [row.posting_id]);
-    else group.push(row.posting_id);
+    if (group === undefined) byKey.set(key, [row]);
+    else group.push(row);
   }
-  const counts = new Map<number, number>();
-  for (const group of byKey.values()) {
-    if (group.length < 2) continue;
-    for (const id of group) counts.set(id, group.length);
+  const groups = new Map<number, SimilarGroup>();
+  for (const members of byKey.values()) {
+    if (members.length < 2) continue;
+    const info: SimilarGroup = {
+      count: members.length,
+      locations: new Set(members.map((row) => (row.location ?? "").trim().toLowerCase())).size,
+      boards: new Set(members.map((row) => row.provider ?? "")).size,
+    };
+    for (const row of members) groups.set(row.posting_id, info);
   }
-  return counts;
+  return groups;
+}
+
+/** The OTHER postings of a row's group, in the order given — the ones "Collapse similar roles"
+ *  folds under it. Every one stays an opening the reader can open; none is discarded. */
+export function relatedPostings(row: QueueRow, rows: readonly QueueRow[]): QueueRow[] {
+  const key = similarKey(row);
+  return rows.filter((candidate) => candidate.posting_id !== row.posting_id && similarKey(candidate) === key);
+}
+
+/** How a group reads on a row: what it contains, never a claim that its members are the same job. */
+export function describeGroup(group: SimilarGroup): string {
+  const parts = [`${String(group.count)} related postings`];
+  if (group.locations > 1) parts.push(`${String(group.locations)} locations`);
+  if (group.boards > 1) parts.push(`${String(group.boards)} job boards`);
+  return parts.join(" · ");
 }
 
 /** The first row of each group, in the order given — so after sorting, the best-placed lead of a

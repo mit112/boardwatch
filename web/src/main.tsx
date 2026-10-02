@@ -3,12 +3,16 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
 import { captureToken } from "./api/token";
+import { applyStoredTheme } from "./lib/theme";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./index.css";
 
 // FIRST, before the first render and before the first fetch: read the bearer token out of the URL
 // fragment and erase it from the address bar.
 captureToken();
+
+// Before the first render, so a stored theme never flashes the other one.
+applyStoredTheme();
 
 const container = document.getElementById("root");
 if (container === null) throw new Error("#root is missing from index.html");

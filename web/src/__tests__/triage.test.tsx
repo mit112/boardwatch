@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { QueueDetail, RequirementView } from "../api/types";
+import type { QueueDetail, QueueRow, RequirementView } from "../api/types";
 import { DetailPane } from "../components/DetailPane";
-import { firstOfEachGroup, normaliseTitle, similarCounts } from "../lib/similar";
+import { describeGroup, firstOfEachGroup, normaliseTitle, relatedPostings, similarGroups } from "../lib/similar";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
@@ -16,6 +16,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -38,7 +39,7 @@ import { getAnswers, getDetail, getQueue, markApplied } from "../api/client";
 import { App } from "../App";
 
 function grid(): HTMLElement {
-  return screen.getByRole("grid", { name: "Queue" });
+  return screen.getByRole("grid", { name: "Jobs to explore" });
 }
 
 function dataRows(): HTMLElement[] {
@@ -60,11 +61,19 @@ async function settle(): Promise<void> {
 }
 
 async function renderQueue(rows = defaultRows()) {
+  lastRows = rows;
   vi.mocked(getQueue).mockResolvedValue(queueResponse(rows));
   vi.mocked(getAnswers).mockResolvedValue({ identity: {}, work_auth: {}, education: [], questions: [] });
   render(<App />);
   await settle();
   return rows;
+}
+
+let lastRows: QueueRow[] = [];
+function rows0(): QueueRow {
+  const first = lastRows[0];
+  if (first === undefined) throw new Error("no rows");
+  return first;
 }
 
 function defaultRows() {
@@ -99,25 +108,59 @@ describe("similar roles", () => {
     expect(normaliseTitle("Engineer (Payments)")).toBe("engineer payments");
   });
 
-  it("counts groups of two or more and keeps the first of each in the order given", () => {
+  it("groups two or more, says what a group holds, and keeps the first of each in the order given", () => {
     const rows = defaultRows();
-    const counts = similarCounts(rows);
-    expect([...counts.values()]).toEqual([2, 2]);
-    expect(counts.has(rows[2]?.posting_id ?? -1)).toBe(false);
+    const groups = similarGroups(rows);
+    // Two groups' worth of members, each knowing its own size and how many places it spans.
+    expect([...groups.values()].map((group) => group.count)).toEqual([2, 2]);
+    expect([...groups.values()].map((group) => group.locations)).toEqual([2, 2]);
+    expect(groups.has(rows[2]?.posting_id ?? -1)).toBe(false);
+    expect(describeGroup(groups.get(rows[0]?.posting_id ?? -1) ?? { count: 0, locations: 0, boards: 0 })).toBe(
+      "2 related postings · 2 locations",
+    );
     expect(firstOfEachGroup(rows).map((row) => row.posting_id)).toEqual(
       [rows[0], rows[2], rows[3]].map((row) => row?.posting_id),
     );
+    // What the fold hides is still reachable: the siblings of the one that stays.
+    expect(relatedPostings(rows[0] as QueueRow, rows).map((row) => row.posting_id)).toEqual([
+      rows[1]?.posting_id,
+    ]);
   });
 
-  it("marks both grouped rows and folds the second under the first on request", async () => {
+  it("does not call differently-placed postings one job: the group says how many places it spans", () => {
+    const rows = [
+      queueRow({ company: "Globex", title: "Engineer", location: "Austin, TX", provider: "greenhouse" }),
+      queueRow({ company: "Globex", title: "Engineer", location: "Boston, MA", provider: "workday" }),
+    ];
+    const group = similarGroups(rows).get(rows[0]?.posting_id ?? -1);
+    expect(group).toEqual({ count: 2, locations: 2, boards: 2 });
+    expect(describeGroup(group ?? { count: 0, locations: 0, boards: 0 })).toBe(
+      "2 related postings · 2 locations · 2 job boards",
+    );
+  });
+
+  it("marks both grouped rows, folds the second under the first on request, and keeps it reachable", async () => {
     await renderQueue();
-    expect(screen.getAllByText("×2 similar")).toHaveLength(2);
+    expect(screen.getAllByText("2 related postings · 2 locations")).toHaveLength(2);
     expect(dataRows()).toHaveLength(4);
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Collapse similar roles" }));
     expect(dataRows()).toHaveLength(3);
     // The one left still says how many it stands for.
-    expect(screen.getAllByText("×2 similar")).toHaveLength(1);
+    expect(screen.getAllByText("2 related postings · 2 locations")).toHaveLength(1);
+
+    // And the one that was folded is not discarded: opening the survivor lists it, by place.
+    const survivor = rows0();
+    vi.mocked(getDetail).mockResolvedValue({
+      row: survivor,
+      jd_body: "A description.",
+      requirements: [],
+      board_target: null,
+    });
+    fireEvent.click(within(rowFor("Software Engineer, New Grad")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    screen.getByRole("heading", { name: "Related postings (1)" });
+    screen.getByRole("button", { name: /^Remote/ });
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Collapse similar roles" }));
     expect(dataRows()).toHaveLength(4);
@@ -155,7 +198,7 @@ describe("did you apply? on return", () => {
     });
   }
 
-  it("asks after o opened the apply page and the reader came back, and a marks it applied", async () => {
+  it("asks after o opened the apply page and the reader came back, and a records it", async () => {
     const rows = await renderQueue();
     vi.mocked(markApplied).mockResolvedValue({ outcome: "created", job_id: 1 });
     const row = rowFor("Backend Engineer");
@@ -165,7 +208,7 @@ describe("did you apply? on return", () => {
 
     const prompt = screen.getByRole("dialog", { name: /Did you apply\?/ });
     expect(within(prompt).getByText(/Back from Initech — Backend Engineer/)).toBeTruthy();
-    expect(document.activeElement?.textContent).toBe("Mark applied");
+    expect(document.activeElement?.textContent).toBe("Record application");
 
     fireEvent.keyDown(prompt, { key: "a" });
     await settle();
@@ -188,11 +231,26 @@ describe("did you apply? on return", () => {
     expect(screen.queryByRole("dialog", { name: /Did you apply\?/ })).toBeNull();
   });
 
-  it("asks after a click on a row's apply link too, and Escape dismisses without a write", async () => {
-    await renderQueue();
-    fireEvent.click(
-      screen.getByRole("link", { name: "Open apply link: Backend Engineer at Initech" }),
-    );
+  it("asks after a click on the workspace's Open application link too, and Escape dismisses without a write", async () => {
+    const rows = await renderQueue();
+    const lead = rows[3];
+    if (lead === undefined) throw new Error("no lead");
+    vi.mocked(getDetail).mockResolvedValue({
+      row: lead,
+      jd_body: "A description.",
+      requirements: [],
+      board_target: null,
+    });
+    fireEvent.click(within(rowFor("Backend Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    const link = screen.getByRole("link", { name: /Open application/ });
+    // Cancel the navigation jsdom would attempt: the click's EFFECT on the page is what is tested.
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+    });
+    fireEvent.click(link);
+    // Opening the page recorded nothing — it only armed the question.
+    expect(vi.mocked(markApplied)).not.toHaveBeenCalled();
     leaveAndReturn();
 
     const prompt = screen.getByRole("dialog", { name: /Did you apply\?/ });
@@ -329,7 +387,7 @@ describe("the detail pane", () => {
       requirements: [],
       board_target: null,
     });
-    fireEvent.click(within(rowFor("Austin, TX")).getAllByRole("button")[0] as HTMLElement);
+    fireEvent.click(within(rowFor("Software Engineer, New Grad")).getAllByRole("button")[0] as HTMLElement);
     await settle();
 
     fireEvent.click(screen.getByRole("button", { name: "Select all 3 at Globex" }));
@@ -356,7 +414,7 @@ describe("saved views", () => {
 
   it("saves the filters under a name and puts them back when chosen", async () => {
     await renderQueue();
-    const filter = screen.getByRole("searchbox", { name: /Filter company, title, location/ });
+    const filter = screen.getByRole("searchbox", { name: "Search" });
     fireEvent.change(filter, { target: { value: "globex" } });
     fireEvent.click(screen.getByRole("checkbox", { name: "Collapse similar roles" }));
 

@@ -3,9 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ReviewReason, Verdict } from "../api/types";
 import { QueueRowItem } from "../components/QueueRowItem";
-import { ReviewReasonBadge } from "../components/ReviewReasonBadge";
-import { VerdictChip } from "../components/VerdictChip";
 import { EM_DASH, formatAge, formatCount, formatFraction, formatScore } from "../lib/format";
+import { availabilityMark, materialsMark, requirementsMark, reviewMark, rowNote } from "../lib/jobStatus";
 import { sortRows } from "../lib/sort";
 import type { SortState } from "../lib/sort";
 import { absent, queueRow, withoutFields } from "../test/rows";
@@ -35,15 +34,30 @@ const ABSENT_NUMBER = absent<number | null>();
 const PROVIDER_SORT: SortState = { key: "provider", direction: "asc" };
 
 describe("a field an older server never sent", () => {
-  it("renders no review badge instead of throwing", () => {
-    const { container } = render(<ReviewReasonBadge reason={ABSENT_REASON} />);
-    // No badge is the honest render: the server cannot say why the lead was held.
-    expect(container.textContent).toBe("");
+  it("gives a job with no review reason no status line instead of throwing", () => {
+    const row = withoutFields(queueRow({ verdict: "eligible", judge_verdict: "eligible" }), [
+      "review_reason",
+    ]);
+    // No line is the honest render: the server cannot say why the job was held, and a job with
+    // nothing to flag is a job with nothing to say.
+    expect(() => rowNote(row)).not.toThrow();
+    expect(rowNote(row)).toBeNull();
+    expect(ABSENT_REASON).toBeUndefined();
   });
 
-  it("renders the no-verdict chip instead of throwing", () => {
-    render(<VerdictChip verdict={ABSENT_VERDICT} />);
-    expect(screen.getByText("no verdict")).toBeTruthy();
+  it("reads an absent verdict as not assessed — never as a pass", () => {
+    // The reading nobody took, in words, and in the tone that claims nothing.
+    expect(requirementsMark(ABSENT_VERDICT)).toEqual({
+      label: "Requirements not assessed yet",
+      tone: "quiet",
+    });
+    expect(reviewMark(ABSENT_VERDICT)).toEqual({ label: "No independent review yet", tone: "quiet" });
+  });
+
+  it("reads an absent status and an absent résumé flag as unknown and not-ready", () => {
+    expect(availabilityMark(absent<"open" | null>()).tone).toBe("quiet");
+    // Not "ready": a flag the server never sent must not promise a résumé that may not exist.
+    expect(materialsMark(absent<boolean | null>()).tone).toBe("warn");
   });
 
   it("renders an em dash from every display helper", () => {
@@ -63,26 +77,22 @@ describe("a field an older server never sent", () => {
       "posted_days",
     ]);
 
-    render(
+    const { container } = render(
       <QueueRowItem
         row={row}
-        rank={1}
         selected={false}
         active={false}
         collapsing={false}
         onSelect={() => undefined}
-        onApplied={() => undefined}
-        onSkip={() => undefined}
-        onReport={() => undefined}
       />,
     );
 
     expect(screen.getAllByTitle("Backend Engineer").length).toBeGreaterThan(0);
-    // The numbers it could not be told read as absent, never as zero.
-    expect(screen.getAllByText(EM_DASH).length).toBeGreaterThan(0);
+    // A posting date it could not be told is absent, never "today" or "0d ago".
+    expect(container.textContent).not.toMatch(/today|0d ago/);
   });
 
-  it("renders no ATS label, and still sorts by provider, when the key is absent", () => {
+  it("renders no job-board label, and still sorts by provider, when the key is absent", () => {
     // A row from a server that predates `provider`: the key is not there at all, so the read is
     // `undefined`. Rendering must produce nothing rather than an empty chip, and `sortRows` must
     // not reach `localeCompare` on it — a guard written `=== null` does both wrong.
@@ -91,14 +101,10 @@ describe("a field an older server never sent", () => {
     const { container } = render(
       <QueueRowItem
         row={stale}
-        rank={1}
         selected={false}
         active={false}
         collapsing={false}
         onSelect={() => undefined}
-        onApplied={() => undefined}
-        onSkip={() => undefined}
-        onReport={() => undefined}
       />,
     );
     expect(container.textContent).not.toContain("greenhouse");
@@ -107,19 +113,15 @@ describe("a field an older server never sent", () => {
     ).not.toThrow();
   });
 
-  it("CONTROL: the same row WITH a provider does render the ATS label", () => {
+  it("CONTROL: the same row WITH a provider does render the job-board label", () => {
     // Without this, the assertion above is green for a component that renders no label at all.
     render(
       <QueueRowItem
         row={queueRow({ provider: "greenhouse" })}
-        rank={1}
         selected={false}
         active={false}
         collapsing={false}
         onSelect={() => undefined}
-        onApplied={() => undefined}
-        onSkip={() => undefined}
-        onReport={() => undefined}
       />,
     );
     expect(screen.getByText("greenhouse")).toBeTruthy();

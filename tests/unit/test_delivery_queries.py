@@ -1020,6 +1020,25 @@ def test_the_module_binds_no_id_list_of_its_own() -> None:
     assert "in_" not in calls
 
 
+def test_the_applied_postings_read_is_driven_from_the_applications_not_a_postings_scan(
+    engine: Engine,
+) -> None:
+    """The Applied page took ~106 s because SQLite chose to SCAN every posting (~687k rows) and
+    probe `applications` per row. With no `sqlite_stat1` it has no estimate to prefer the other
+    order, so the order has to be forced by the query's own shape.
+
+    Read as the PLAN, because the result is identical either way — a test over rows cannot tell
+    a 0.07 s read from a 106 s one. The presence assertion is the control for the absence: it
+    proves the plan text was actually read and that the index the fix depends on is the one used.
+    """
+    select_ = delivery_queries._applied_postings_select()
+    sql = str(select_.compile(engine, compile_kwargs={"literal_binds": True}))
+    with engine.connect() as conn:
+        plan = "\n".join(str(row[3]) for row in conn.execute(text(f"EXPLAIN QUERY PLAN {sql}")))
+    assert "SEARCH postings USING INDEX ix_postings_job_id" in plan, plan
+    assert "SCAN postings" not in plan, plan
+
+
 def test_requirement_view_is_the_audits_own_requirement_type() -> None:
     """Locked in the plan as `RequirementView`; reusing `AuditRequirement` is what keeps the
     span slicing in one place instead of copying half of it."""

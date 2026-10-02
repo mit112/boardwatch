@@ -11,31 +11,38 @@ import {
 } from "../api/client";
 import type { QueueDetail, RejectedResponse, RejectedRow, RequirementView } from "../api/types";
 import { Badge } from "../components/Badge";
-import { JudgeVerdictBadge } from "../components/JudgeVerdictBadge";
+import { Icon } from "../components/Icon";
+import { StatusMark } from "../components/StatusMark";
 import type { ToastRequest } from "../hooks/useToasts";
 import { EM_DASH, isSafeHttpUrl } from "../lib/format";
+import { requirementState, reviewMark } from "../lib/jobStatus";
 
 /*
- * The rejected leads: what the rules turned away, which the queue only COUNTS in its `ineligible`
- * cell. Read to catch a wrong rejection — each lead's evidence names the rule and quotes the span
- * it read — and to act on one: apply anyway (an owner statement outranks a derived verdict), or
- * dispute it, which records the disagreement for the next precision audit and moves nothing.
+ * FILTERED OUT: the jobs the automatic rules turned away, which the queue only COUNTS in its
+ * `ineligible` cell. Read to catch a wrong call — each job's evidence names the rule and quotes
+ * the span it read — and to act on one: record that you applied anyway (an owner statement
+ * outranks a derived verdict), or flag the call as wrong, which records the disagreement for the
+ * next precision audit and moves nothing.
  *
- * Leads the final gate called eligible arrive first and can be shown alone: the rules and the gate
- * disagreeing is the likeliest sign of a false reject.
+ * The page is NOT called "Rejected". That word belongs to an employer's answer to an application
+ * you sent, and nothing was sent for any job here: these are our rules' calls, and they can be
+ * wrong. (The route key and the `/api/rejected` endpoint keep their names.)
+ *
+ * Jobs the independent review found no blocker in arrive first and can be shown alone: the rules
+ * and the review disagreeing is the likeliest sign of a wrong call.
  */
 
 const BUTTON =
-  "inline-flex min-h-11 items-center rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg disabled:text-fg-3";
+  "inline-flex min-h-11 items-center rounded-sm px-3 text-sm font-medium text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface-3 hover:text-fg disabled:text-fg-3";
 
 /** Evidence rows the rules recorded — the ones carrying a `rule` — with what failed first. A row
  *  without a rule is a résumé-coverage term, which is not about the rejection. */
-const ORDER: Record<string, number> = { unmet: 0, unknown: 1, met: 2 };
+const ORDER: Record<string, number> = { unmet: 0, unconfirmed: 1, not_assessed: 2, satisfied: 3 };
 
 function evidenceRows(requirements: RequirementView[]): RequirementView[] {
   return requirements
     .filter((item) => item.rule !== null)
-    .sort((a, b) => (ORDER[a.disposition ?? ""] ?? 3) - (ORDER[b.disposition ?? ""] ?? 3));
+    .sort((a, b) => (ORDER[requirementState(a)] ?? 4) - (ORDER[requirementState(b)] ?? 4));
 }
 
 function Evidence({ postingId, named }: { postingId: number; named: string }) {
@@ -49,7 +56,13 @@ function Evidence({ postingId, named }: { postingId: number; named: string }) {
         if (live) setDetail(response);
       })
       .catch((caught: unknown) => {
-        if (live) setFailed(caught instanceof Error ? caught.message : "Could not load the evidence.");
+        if (live) {
+          setFailed(
+            caught instanceof Error
+              ? "The evidence for this job could not be loaded just now. Closing and opening it again usually works."
+              : "Could not load the evidence.",
+          );
+        }
       });
     return () => {
       live = false;
@@ -74,22 +87,25 @@ function Evidence({ postingId, named }: { postingId: number; named: string }) {
   return (
     <div className="flex flex-col gap-3 px-3 py-3">
       {rows.length === 0 ? (
-        <p className="text-sm text-fg-2">No eligibility rule recorded evidence against this posting.</p>
+        <p className="text-sm text-fg-2">No eligibility rule recorded evidence for this posting.</p>
       ) : (
-        <ul aria-label={`Why ${named} was rejected`} className="flex flex-col gap-3">
+        <ul aria-label={`Why ${named} was filtered out`} className="flex flex-col gap-3">
           {rows.map((item) => (
-            <li
-              key={`${item.rule ?? ""}-${item.requirement}`}
-              className="border-l-2 border-control pl-3"
-            >
-              <p className="flex flex-wrap items-center gap-2 text-xs text-fg-2">
-                <span className="text-fg">{item.rule}</span>
-                {/* In words: "not met" is the reading that rejects, and it must not be told apart
-                    from "unknown" by colour alone. */}
-                {item.disposition === "unmet" ? (
+            <li key={`${item.rule ?? ""}-${item.requirement}`} className="rounded-sm bg-surface px-3 py-2">
+              <p className="flex flex-wrap items-center gap-2 text-sm text-fg-2">
+                <span className="font-mono text-xs text-fg">{item.rule}</span>
+                {/* In words: "not met" is the reading that filters, and it must not be told apart
+                    from "not confirmed" by colour alone. */}
+                {requirementState(item) === "unmet" ? (
                   <Badge label="not met" emphasis="strong" />
                 ) : (
-                  <span>{item.disposition ?? EM_DASH}</span>
+                  <span>
+                    {requirementState(item) === "satisfied"
+                      ? "met"
+                      : requirementState(item) === "unconfirmed"
+                        ? "not confirmed"
+                        : EM_DASH}
+                  </span>
                 )}
                 {item.profile_field === null ? null : (
                   <span>
@@ -98,7 +114,7 @@ function Evidence({ postingId, named }: { postingId: number; named: string }) {
                 )}
               </p>
               {item.rationale === null ? null : (
-                <p className="mt-1 text-xs text-fg-2">{item.rationale}</p>
+                <p className="mt-1 text-sm text-fg-2">{item.rationale}</p>
               )}
               {item.quote === null ? null : (
                 <blockquote className="mt-1 text-sm text-fg italic">“{item.quote}”</blockquote>
@@ -113,7 +129,7 @@ function Evidence({ postingId, named }: { postingId: number; named: string }) {
             The job description
           </summary>
           {/* Third-party text, rendered as text and never as markup. */}
-          <p className="mt-2 max-h-96 max-w-[68ch] overflow-y-auto leading-relaxed whitespace-pre-wrap">
+          <p className="mt-2 max-w-[68ch] leading-[1.7] whitespace-pre-wrap">
             {detail.jd_body}
           </p>
         </details>
@@ -138,7 +154,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
           setError(null);
         })
         .catch((caught: unknown) => {
-          setError(caught instanceof Error ? caught.message : "Could not load the rejected leads.");
+          setError(caught instanceof Error ? caught.message : "Could not load the filtered-out jobs.");
         }),
     [],
   );
@@ -166,8 +182,8 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
         .then(() => {
           push({
             message: row.disputed
-              ? `Withdrew the dispute on ${named}.`
-              : `Disputed the rejection of ${named}. It stays rejected; the dispute is kept for the next audit.`,
+              ? `Withdrew the flag on ${named}.`
+              : `Flagged the call on ${named} as wrong. It stays filtered out; the flag is kept for the next audit.`,
           });
           return load();
         })
@@ -187,12 +203,11 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
   /* Apply anyway: the queue's own mark, whose undo is the queue's own withdrawal. */
   const onApplied = useCallback(
     (row: RejectedRow) => {
-      const named = `${row.company} — ${row.title}`;
       mark(row.posting_id, true);
       void markApplied(row.posting_id)
         .then(() => {
           push({
-            message: `Marked applied: ${named}. Undo withdraws it.`,
+            message: `Application recorded for ${row.company} — ${row.title}. Undo withdraws it.`,
             undo: () => {
               void unapply(row.posting_id)
                 .then(() => load())
@@ -209,7 +224,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
         })
         .catch((caught: unknown) => {
           push({
-            message: caught instanceof Error ? caught.message : "Could not mark that applied.",
+            message: caught instanceof Error ? caught.message : "Could not record that application.",
             tone: "error",
           });
         })
@@ -234,100 +249,119 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
 
   if (error !== null) {
     return (
-      <p role="alert" className="rounded-md border border-fg-2 bg-surface p-4 text-sm text-fg">
-        {error}
-      </p>
+      <div role="alert" className="max-w-2xl rounded-md bg-surface-2 p-5">
+        <h2 className="text-base text-fg">The filtered-out jobs could not be loaded.</h2>
+        <p className="mt-1 text-sm text-fg-2">
+          Your jobs are unaffected. Trying again usually works.
+        </p>
+        <p className="mt-2 text-xs text-fg-3">{error}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setError(null);
+            void load();
+          }}
+          className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-4 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
+        >
+          <Icon name="refresh" />
+          Try again
+        </button>
+      </div>
     );
   }
   if (data === null) {
     return (
-      <p role="status" className="p-4 text-sm text-fg-2">
-        Loading the rejected leads…
-      </p>
+      <div aria-busy="true" className="flex flex-col gap-3">
+        <p role="status" className="text-sm text-fg-2">
+          Loading the filtered-out jobs…
+        </p>
+        <span className="skeleton h-16 w-full max-w-xl" />
+        <span className="skeleton h-64 w-full" />
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <section aria-label="Rejected leads status" className="flex flex-col">
-        <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
-          <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
-            <dt className="label-micro text-fg-3">rejected</dt>
-            <dd className="font-display text-lg text-fg-2 tabular-nums">
+      <section aria-label="Filtered-out jobs status" className="flex flex-col">
+        <dl className="flex flex-wrap items-stretch gap-x-8 gap-y-2 rounded-md bg-surface p-4 shadow-card">
+          <div className="flex min-w-28 flex-col gap-1">
+            <dt className="label-micro text-fg-2">Filtered out</dt>
+            <dd className="text-2xl leading-none font-semibold text-fg tabular-nums">
               {data.counts.total.toLocaleString()}
             </dd>
           </div>
-          <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
-            <dt className={`label-micro ${gateOnly ? "text-fg-2" : "text-fg-3"}`}>gate eligible</dt>
+          <div className="flex min-w-28 flex-col gap-1">
+            <dt className={`label-micro ${gateOnly ? "text-fg" : "text-fg-2"}`}>
+              Independent review found no blocker
+            </dt>
             <dd>
               <button
                 type="button"
                 aria-pressed={gateOnly}
-                aria-label={`gate eligible ${data.counts.gate_eligible.toLocaleString()} — ${
+                aria-label={`independent review found no blocker ${data.counts.gate_eligible.toLocaleString()} — ${
                   gateOnly ? "showing only these, activate to clear" : "show only these"
                 }`}
-                title="Rejected by the rules, but the final gate read the posting as eligible. Click to show only these."
+                title="Filtered out by the rules, but the independent review read the posting and found no blocker. Click to show only these."
                 onClick={() => {
                   setGateOnly((current) => !current);
                 }}
-                className={`inline-flex min-h-11 w-full cursor-pointer items-center rounded-sm px-1 font-display text-lg tabular-nums transition-colors duration-[120ms] ease-snap ${
-                  gateOnly
-                    ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
-                    : "text-fg-2 hover:bg-surface-2"
+                className={`inline-flex min-h-11 cursor-pointer items-center rounded-sm px-2 text-2xl leading-none font-semibold tabular-nums transition-colors duration-[120ms] ease-snap ${
+                  gateOnly ? "bg-primary text-on-primary" : "text-fg hover:bg-surface-2"
                 }`}
               >
                 {data.counts.gate_eligible.toLocaleString()}
               </button>
             </dd>
           </div>
-          <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
-            <dt className="label-micro text-fg-3">disputed</dt>
-            <dd className="font-display text-lg text-fg-2 tabular-nums">
+          <div className="flex min-w-28 flex-col gap-1">
+            <dt className="label-micro text-fg-2">Flagged as wrong</dt>
+            <dd className="text-2xl leading-none font-semibold text-fg tabular-nums">
               {data.counts.disputed.toLocaleString()}
             </dd>
           </div>
-          <div
-            role="status"
-            className="ml-auto flex items-center px-4 py-3 text-sm text-fg-2 tabular-nums"
-          >
-            Showing {visible.length.toLocaleString()} of {data.counts.total.toLocaleString()}
+          <div role="status" className="ml-auto flex items-end text-sm text-fg-2 tabular-nums">
+            Showing {visible.length.toLocaleString()} of {data.counts.total.toLocaleString()} filtered-out jobs
           </div>
         </dl>
       </section>
 
       <p className="max-w-[80ch] text-sm text-fg-2">
-        Leads the eligibility rules rejected after a run delivered them. They are not in the queue
-        and their folders sit in <code className="text-fg-3">_ineligible</code>. Open “Why” to read
-        the rule and the words it quoted. Dispute records that you disagree and changes nothing
-        else; apply anyway if you are sure.
+        Jobs the automatic eligibility rules filtered out after a run delivered them. This is our
+        rules’ call, not an employer’s answer — nothing was sent for any of them, and a call can be
+        wrong. They are not in your job lists, and their folders sit in{" "}
+        <code className="font-mono text-fg-3">_ineligible</code>. Open “Why filtered out” to read the
+        rule and the words it quoted. “Flag as wrongly filtered” records that you disagree and
+        changes nothing else; record an application anyway if you are sure.
       </p>
 
       <label className="flex min-w-64 max-w-md flex-col gap-1.5">
-        <span className="label-micro text-fg-3">Filter company, title, location</span>
+        <span className="label-micro text-fg-2">Search</span>
         <input
           type="search"
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
           }}
-          className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
+          placeholder="Company, title or place"
+          className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg placeholder:text-fg-3 transition-colors duration-150 ease-in-out hover:border-fg-2 focus:border-fg-2"
         />
       </label>
 
-      <div className="overflow-x-auto rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]">
+      <div className="overflow-x-auto rounded-md bg-surface shadow-card">
         <table className="w-full text-sm">
           <caption className="sr-only">
-            Leads the eligibility rules rejected, those the final gate called eligible first.
+            Jobs the eligibility rules filtered out, those the independent review found no blocker in first.
           </caption>
           <thead>
             {/* Not sticky: inside `overflow-x-auto` the wrapper is the sticky container, and the
                 app header's offset would push this row down over the first lead. */}
-            <tr className="bg-surface label-micro text-fg-3 [&>*]:border-b [&>*]:border-divider">
-              <th scope="col" className="px-3 py-2 text-left font-normal">company</th>
-              <th scope="col" className="px-3 py-2 text-left font-normal">title</th>
-              <th scope="col" className="px-3 py-2 text-left font-normal">location</th>
-              <th scope="col" className="px-3 py-2 text-left font-normal">gate</th>
-              <th scope="col" className="px-3 py-2 text-right font-normal">actions</th>
+            <tr className="bg-surface text-fg-2 [&>*]:border-b [&>*]:border-divider">
+              <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Company</th>
+              <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Title</th>
+              <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Location</th>
+              <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Independent review</th>
+              <th scope="col" className="px-3 py-2 text-right text-sm font-medium">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-divider">
@@ -346,15 +380,19 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                         {row.title}
                         {row.disputed ? (
                           <Badge
-                            label="disputed"
-                            reason="You disputed this rejection. The verdict stands until the rules change."
+                            label="flagged as wrong"
+                            reason="You flagged this call as wrong. It stands until the rules change."
                           />
                         ) : null}
                       </span>
                     </td>
                     <td className="px-3 py-1.5 text-fg-3">{row.location ?? EM_DASH}</td>
                     <td className="px-3 py-1.5">
-                      <JudgeVerdictBadge verdict={row.judge_verdict} />
+                      {row.judge_verdict == null ? (
+                        <span className="text-sm text-fg-3">Not reviewed</span>
+                      ) : (
+                        <StatusMark mark={reviewMark(row.judge_verdict)} />
+                      )}
                     </td>
                     <td className="px-3 py-1.5">
                       <span className="flex flex-wrap items-center justify-end gap-2">
@@ -362,7 +400,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                           type="button"
                           aria-expanded={isOpen}
                           aria-controls={evidenceId}
-                          aria-label={`Why: ${named}`}
+                          aria-label={`Why filtered out: ${named}`}
                           onClick={() => {
                             setOpen((current) => {
                               const next = new Set(current);
@@ -372,23 +410,23 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                           }}
                           className={BUTTON}
                         >
-                          Why
+                          Why filtered out
                         </button>
                         {isSafeHttpUrl(url) && url !== null ? (
                           <a
                             href={url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label={`Open apply link: ${named}`}
+                            aria-label={`Open application: ${named}`}
                             className={BUTTON}
                           >
-                            Apply link
+                            Open application
                           </a>
                         ) : null}
                         {row.pdf_available ? (
                           <button
                             type="button"
-                            aria-label={`Open PDF: ${named}`}
+                            aria-label={`Preview résumé: ${named}`}
                             onClick={() => {
                               void openPdf(row.posting_id).catch((caught: unknown) => {
                                 push({
@@ -400,38 +438,38 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                             }}
                             className={BUTTON}
                           >
-                            Open PDF
+                            Preview résumé
                           </button>
                         ) : null}
                         <button
                           type="button"
                           disabled={inFlight}
                           aria-busy={inFlight}
-                          aria-label={`${row.disputed ? "Withdraw dispute" : "Dispute"}: ${named}`}
+                          aria-label={`${row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}: ${named}`}
                           title={
                             row.disputed
-                              ? "Withdraw your dispute of this rejection."
-                              : "Record that you think this rejection is wrong. The lead stays rejected."
+                              ? "Withdraw your flag on this call."
+                              : "Record that you think this call is wrong. The job stays filtered out."
                           }
                           onClick={() => {
                             onDispute(row);
                           }}
                           className={BUTTON}
                         >
-                          {row.disputed ? "Withdraw dispute" : "Dispute"}
+                          {row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}
                         </button>
                         <button
                           type="button"
                           disabled={inFlight}
                           aria-busy={inFlight}
-                          aria-label={`Mark applied anyway: ${named}`}
-                          title="You applied despite the rejection. Moves it to the Applied page; undoable from the toast."
+                          aria-label={`Record application anyway: ${named}`}
+                          title="You applied despite the filter. Moves it to the Applied page; undoable from the toast."
                           onClick={() => {
                             onApplied(row);
                           }}
                           className={BUTTON}
                         >
-                          Mark applied anyway
+                          Record application anyway
                         </button>
                       </span>
                     </td>
@@ -450,10 +488,10 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
               <tr>
                 <td colSpan={5} className="px-4 py-10 text-center text-sm text-fg-2">
                   {data.rows.length === 0
-                    ? "No delivered lead is rejected right now."
+                    ? "No delivered job has been filtered out right now."
                     : query.trim() !== ""
-                      ? "No rejected lead matches that search. Clear the text box to see them all."
-                      : "No rejected lead was called eligible by the final gate. Take the gate eligible cell again to see them all."}
+                      ? "No filtered-out job matches that search. Clear the search to see them all."
+                      : "None of these was read as clear by the independent review. Press the count above again to see them all."}
                 </td>
               </tr>
             )}

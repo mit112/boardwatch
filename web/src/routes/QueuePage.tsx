@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   clearFollowUp,
   getAnswers,
+  getApplied,
   getDetail,
   getQueue,
   markApplied,
@@ -17,6 +18,7 @@ import {
 } from "../api/client";
 import type {
   Answers,
+  AppliedHistoryResponse,
   FollowUpResponse,
   QueueCounts,
   QueueDetail,
@@ -29,9 +31,14 @@ import { openApplyUrl } from "../components/ApplyLink";
 import { ApplyReturnPrompt } from "../components/ApplyReturnPrompt";
 import { DetailPane, FOLLOW_UP_INPUT_ID, PANE_ID, SIDE_BY_SIDE } from "../components/DetailPane";
 import { ErrorBoundary } from "../components/ErrorBoundary";
+import { Icon } from "../components/Icon";
 import { QueueTable } from "../components/QueueTable";
 import type { Selection } from "../components/QueueTable";
+import { LENSES, LensTabs, QueueSummary } from "../components/QueueSummary";
+import type { Lens, RecordedState } from "../components/QueueSummary";
 import { FILTER_INPUT_ID, QueueToolbar } from "../components/QueueToolbar";
+import { RecordedPanel, SessionBar, SessionDone } from "../components/ApplySession";
+import type { SessionEnd } from "../components/ApplySession";
 import { SavedViews } from "../components/SavedViews";
 import type { QueueView } from "../components/SavedViews";
 import { QUEUE_FACETS, StatusBand } from "../components/StatusBand";
@@ -42,16 +49,56 @@ import type { ToastRequest } from "../hooks/useToasts";
 import {
   REVIEW_REASON_LABELS,
   countReviewReasons,
-  reviewBreakdown,
   reviewLaneSentence,
 } from "../lib/reviewReasons";
 import { isFollowUpDue } from "../lib/format";
-import { firstOfEachGroup, similarCounts } from "../lib/similar";
-import { matchesQuery, parseSortState, sortRows } from "../lib/sort";
-import type { SortKey, SortState } from "../lib/sort";
+import { SUBMITTED_STATUSES, countRecorded } from "../lib/progress";
+import { firstOfEachGroup, relatedPostings, similarGroups } from "../lib/similar";
+import { matchesLocation, matchesQuery, parseSortState, sortRows } from "../lib/sort";
+import type { SortState } from "../lib/sort";
 
 const COLLAPSE_MS = 200;
 const POLL_MS = 30_000;
+/** How long the summary waits for the application history before it says it could not read it and
+ *  offers a retry. The page never waits on it: jobs load and work with or without the count. */
+const APPLIED_TIMEOUT_MS = 12_000;
+/**
+ * After a job is recorded, a further record is refused for this long. The write is irreversible
+ * enough to be worth a guard that costs nothing to a deliberate click — nobody reads a job and
+ * decides in half a second — and that a held key or a double click cannot get past: the workspace
+ * has already moved to the NEXT job, so a repeat would otherwise record that one unseen.
+ */
+const RECORD_LOCK_MS = 600;
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => {
+      reject(new Error("timed out"));
+    }, ms);
+    promise.then(
+      (value) => {
+        window.clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        window.clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error("failed"));
+      },
+    );
+  });
+}
+
+type AppliedState =
+  | { kind: "loading" }
+  | { kind: "ready"; data: AppliedHistoryResponse }
+  | { kind: "failed" };
+
+/** An apply session: optional, with no goal until the person chooses a batch. `count` is
+ *  applications CONFIRMED recorded this session — a failed write never moves it. */
+interface Session {
+  batch: number | null;
+  count: number;
+}
 
 /*
  * Working state kept across a tab switch and a reload, in `sessionStorage` and never in
@@ -62,8 +109,6 @@ const POLL_MS = 30_000;
  * it is disabled or the quota is gone, and a viewer that cannot remember a filter must still be a
  * viewer that runs.
  */
-const REVIEW_OPEN_KEY = "boardwatch.review-open";
-
 function readSession(key: string): string | null {
   try {
     return window.sessionStorage.getItem(key);
@@ -105,13 +150,6 @@ function focusRow(postingId: number): void {
   }, 0);
 }
 
-/** A stored flag, or `null` when nothing is stored — which is NOT the same as `false`, because a
- *  default only applies while the reader has expressed no preference. */
-function readStoredFlag(key: string): boolean | null {
-  const stored = readSession(key);
-  return stored === "true" ? true : stored === "false" ? false : null;
-}
-
 /*
  * The queue's working state, restored on mount and written on every change. Taking the Runs tab
  * and coming back used to throw away the filter text, the score floor, both facets and both sort
@@ -123,6 +161,8 @@ function readStoredFlag(key: string): boolean | null {
  */
 const QUEUE_KEYS = {
   query: "boardwatch.queue.query",
+  location: "boardwatch.queue.location",
+  lens: "boardwatch.queue.lens",
   minScore: "boardwatch.queue.minScore",
   board: "boardwatch.queue.board",
   mode: "boardwatch.queue.mode",
@@ -132,7 +172,6 @@ const QUEUE_KEYS = {
   facet: "boardwatch.queue.facet",
   reason: "boardwatch.queue.reason",
   sort: "boardwatch.queue.sort",
-  reviewSort: "boardwatch.queue.reviewSort",
 } as const;
 
 /** The `mode` select value for a row whose board states no remote policy. */
@@ -141,24 +180,37 @@ export const NO_MODE = "(not stated)";
 const decodeText = (raw: string | null): string | null => raw;
 const encodeText = (value: string): string => value;
 
-const decodeFacet = (raw: string | null): QueueFacet | null =>
-  (QUEUE_FACETS as readonly string[]).includes(raw ?? "") ? (raw as QueueFacet) : null;
-const encodeFacet = (value: QueueFacet | null): string => value ?? "";
+/*
+ * `review` is a LANE, and the page now has a control for lanes (the three lists above the table),
+ * so it is no longer a facet that can be switched on here. A stored or saved `review` facet — from
+ * before that — decodes to nothing; `applyView` turns it into the Needs review list instead.
+ */
+type RowFacet = Exclude<QueueFacet, "review">;
+
+const decodeFacet = (raw: string | null): RowFacet | null =>
+  raw !== "review" && (QUEUE_FACETS as readonly string[]).includes(raw ?? "")
+    ? (raw as RowFacet)
+    : null;
+
+const LENS_KEYS = LENSES.map((entry) => entry.key) as readonly string[];
+const decodeLens = (raw: string | null): Lens | null =>
+  raw !== null && LENS_KEYS.includes(raw) ? (raw as Lens) : null;
+const encodeLens = (value: Lens): string => value;
+const encodeFacet = (value: RowFacet | null): string => value ?? "";
 
 /**
  * What a facet is called in prose — the "Showing …" sentence and the empty-list hint. The wire
  * member is not the words: `judge_unjudged only` is a field name, and the reader clicked a cell
  * labelled `not judged`.
  */
-const FACET_LABELS: Record<QueueFacet, string> = {
-  eligible: "eligible",
-  uncertain: "uncertain",
-  review: "review",
-  judge_eligible: "gate eligible",
-  judge_uncertain: "gate uncertain",
-  judge_unjudged: "not judged",
+const FACET_LABELS: Record<RowFacet, string> = {
+  eligible: "rules found no blocker",
+  uncertain: "some requirements not confirmed",
+  judge_eligible: "independent review found no blocker",
+  judge_uncertain: "independent review unsure",
+  judge_unjudged: "not independently reviewed",
   follow_up_due: "follow-up due",
-  new: "new since last visit",
+  new: "new since your last visit",
 };
 
 /** The frozen "new since last visit" set before the first response has arrived. A module constant
@@ -173,7 +225,7 @@ const NOTHING_NEW: ReadonlySet<number> = new Set();
  */
 function matchesFacet(
   row: QueueRow,
-  facet: Exclude<QueueFacet, "review">,
+  facet: RowFacet,
   newIds: ReadonlySet<number>,
 ): boolean {
   switch (facet) {
@@ -237,10 +289,10 @@ function errorMessage(caught: unknown, fallback: string): string {
 }
 
 /*
- * One review reason, as a toggle. The pressed treatment is the band's own (`Metric` in
- * `StatusBand`): a fill plus an inset accent bar plus brighter text — three channels, never colour
- * alone (SC 1.4.1) — and the `aria-label` starts with the visible label and count so Label in Name
- * holds (SC 2.5.3) before it names the action `aria-pressed` cannot convey.
+ * One review reason, as a toggle. Pressed is a filled chip with the word "pressed" carried by
+ * `aria-pressed` and by the fill — never colour alone (SC 1.4.1) — and the `aria-label` starts
+ * with the visible label and count so Label in Name holds (SC 2.5.3) before it names the action
+ * `aria-pressed` cannot convey.
  */
 function ReasonChip({
   label,
@@ -261,12 +313,14 @@ function ReasonChip({
       onClick={onToggle}
       className={`inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-sm px-3 text-sm transition-colors duration-[120ms] ease-snap ${
         active
-          ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
-          : "text-fg-2 hover:bg-surface-2"
+          ? "bg-primary font-medium text-on-primary"
+          : "bg-surface text-fg-2 shadow-card hover:bg-surface-2 hover:text-fg"
       }`}
     >
       <span>{label}</span>
-      <span className="tabular-nums text-fg-3">{count.toLocaleString()}</span>
+      <span className={`tabular-nums ${active ? "text-on-primary" : "text-fg-3"}`}>
+        {count.toLocaleString()}
+      </span>
     </button>
   );
 }
@@ -294,24 +348,23 @@ export function QueuePage({
   const [marked, setMarked] = useState<ReadonlySet<number>>(() => new Set());
 
   /*
-   * Collapsed by default while there is an apply queue to work down, and that IS the feature: the
-   * top of the page has to be the list you can work through without re-deriving anything. Open is
-   * one click and the count is always visible, so the lane is never hidden — only folded.
-   *
-   * With an EMPTY apply lane the default flips, because then the fold hides the only work on the
-   * page: the reader met a placeholder above a closed section and had to click "show" every day
-   * the engine version moved. A stored preference outranks both — the reader who folded it did so
-   * on purpose.
+   * Which list the page is showing: the jobs to explore (the apply lane), the jobs that need a
+   * review (the review lane), or both. A view of data the server already splits, not a new
+   * classification — and a plain list switch, where the review lane used to be a section folded
+   * shut under the apply table. The default is the apply lane while it has anything in it and the
+   * review lane when it is empty (see `lens` below), so the page never opens on an empty list with
+   * the work one click away.
    */
-  const [reviewOpenPref, setReviewOpenPref] = useState<boolean | null>(() =>
-    readStoredFlag(REVIEW_OPEN_KEY),
+  const [lensPref, setLensPref] = useSessionState<Lens | null>(
+    QUEUE_KEYS.lens,
+    null,
+    decodeLens,
+    (value) => value ?? "",
   );
-  const setReviewOpen = useCallback((next: boolean) => {
-    setReviewOpenPref(next);
-    writeSession(REVIEW_OPEN_KEY, String(next));
-  }, []);
 
   const [query, setQuery] = useSessionState(QUEUE_KEYS.query, "", decodeText, encodeText);
+  // A place, matched against every location a posting lists. "" is everywhere.
+  const [location, setLocation] = useSessionState(QUEUE_KEYS.location, "", decodeText, encodeText);
   const [minScore, setMinScore] = useSessionState(
     QUEUE_KEYS.minScore,
     "",
@@ -343,7 +396,7 @@ export function QueuePage({
    * the band's own counts stay put and the reader can switch straight from one facet to another
    * instead of the cell they need to click dropping to zero.
    */
-  const [facet, setFacet] = useSessionState<QueueFacet | null>(
+  const [facet, setFacet] = useSessionState<RowFacet | null>(
     QUEUE_KEYS.facet,
     null,
     decodeFacet,
@@ -368,21 +421,6 @@ export function QueuePage({
     parseSortState,
     encodeSort,
   );
-  /*
-   * The review lane sorts INDEPENDENTLY. Sharing one `sort` meant clicking a header in the review
-   * table silently re-ordered the apply list above it — a list the reader is working top-down and
-   * is not currently looking at, with no visible cue, because `#` prints the server rank rather
-   * than the display position. Query and score floor are still shared, deliberately: those
-   * express "what am I looking for", which spans both lanes, while sort expresses "how do I want
-   * THIS list arranged".
-   */
-  const [reviewSort, setReviewSort] = useSessionState<SortState>(
-    QUEUE_KEYS.reviewSort,
-    { key: "rank", direction: "asc" },
-    parseSortState,
-    encodeSort,
-  );
-
   /*
    * The open lead and the run filter live in the URL (`#/queue?run=5&lead=61310`), not in state:
    * they are the two things a reader points AT rather than does, so they have to be sendable,
@@ -423,8 +461,8 @@ export function QueuePage({
     selected !== null &&
     [...data.rows, ...data.review].some((row) => row.posting_id === selected);
 
-  const reviewOpen =
-    reviewOpenPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0);
+  const lens: Lens =
+    lensPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0 ? "review" : "explore");
 
   const knownIds = useRef<Set<number>>(new Set());
 
@@ -706,95 +744,176 @@ export function QueuePage({
     [rankByPosting],
   );
 
-  const filtered = useMemo(() => {
-    const floor = minScore.trim() === "" ? null : Number(minScore);
-    return (data?.rows ?? []).filter((row) => {
+  /*
+   * ONE predicate for both lists. The toolbar's filters apply to the apply lane AND the review
+   * lane: a filter that silently skipped one would make it look empty for a query that matches,
+   * which is the worst version of this feature — a reader concludes there is nothing to review
+   * when there is.
+   *
+   * A null score is not below a floor, it is unmeasured — so a floor excludes it rather than
+   * silently treating "unknown" as zero.
+   */
+  const passesFilters = useCallback(
+    (row: QueueRow): boolean => {
+      const floor = minScore.trim() === "" ? null : Number(minScore);
       if (removed.has(row.posting_id)) return false;
       if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
+      if (!matchesLocation(row, location.trim())) return false;
       if (board !== "" && row.provider !== board) return false;
       if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
       if (hideThin !== "" && row.thin_jd) return false;
       if (hideUnverifiable !== "" && row.status === "unverifiable") return false;
-      // A null score is not below a floor, it is unmeasured — so a floor excludes it rather than
-      // silently treating "unknown" as zero.
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
         return false;
       }
       return true;
-    });
-  }, [data, removed, runFilter, query, minScore, board, mode, hideThin, hideUnverifiable]);
-
-  /*
-   * Facet-blind and filter-scoped, exactly like `eligible` and `uncertain`: counted over
-   * `filtered`, so the cell agrees with the list the reader is looking at without collapsing to
-   * whatever they have already selected.
-   */
-  const newSinceCount = useMemo(
-    () => filtered.filter((row) => newIds.has(row.posting_id)).length,
-    [filtered, newIds],
+    },
+    [removed, runFilter, query, location, minScore, board, mode, hideThin, hideUnverifiable],
   );
 
+  const filtered = useMemo(() => (data?.rows ?? []).filter(passesFilters), [data, passesFilters]);
+
   const sortedApply = useMemo(() => {
-    // `review` selects a LANE, not a verdict: the apply queue is hidden entirely for it, so its
-    // list is empty. The verdict facets narrow it; `null` shows all.
+    // The verdict facets narrow it; `null` shows all.
     const base =
-      facet === "review"
-        ? []
-        : facet === null
-          ? filtered
-          : filtered.filter((row) => matchesFacet(row, facet, newIds));
+      facet === null ? filtered : filtered.filter((row) => matchesFacet(row, facet, newIds));
     return sortRows(base, sort, rankOf);
   }, [filtered, facet, newIds, sort, rankOf]);
   /* Counted BEFORE the fold, so a folded group's one visible row still says how many it stands
      for. Folding last keeps the best-placed lead of each group, in whatever order is sorting. */
-  const similarApply = useMemo(() => similarCounts(sortedApply), [sortedApply]);
+  const similarApply = useMemo(() => similarGroups(sortedApply), [sortedApply]);
   const visible = useMemo(
     () => (hideSimilar === "" ? sortedApply : firstOfEachGroup(sortedApply)),
     [sortedApply, hideSimilar],
   );
 
-  /*
-   * The toolbar's search and score floor apply to BOTH lanes. A filter that silently skipped the
-   * review list would make it look empty for a query that matches, which is the worst version of
-   * this feature: a reader concludes there is nothing to review when there is.
-   */
-  const filteredReview = useMemo(() => {
-    const floor = minScore.trim() === "" ? null : Number(minScore);
-    return (data?.review ?? []).filter((row) => {
-      if (removed.has(row.posting_id)) return false;
-      if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
-      if (!matchesQuery(row, query.trim())) return false;
-      if (board !== "" && row.provider !== board) return false;
-      if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
-      if (hideThin !== "" && row.thin_jd) return false;
-      if (hideUnverifiable !== "" && row.status === "unverifiable") return false;
-      if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
-        return false;
-      }
-      return true;
-    });
-  }, [data, removed, runFilter, query, minScore, board, mode, hideThin, hideUnverifiable]);
+  const filteredReview = useMemo(
+    () => (data?.review ?? []).filter(passesFilters),
+    [data, passesFilters],
+  );
 
   const sortedReview = useMemo(() => {
     // A verdict facet reaches the review lane too: a review lead can be `eligible` — held only for
     // its location — so filtering "eligible" while skipping this list is the documented "make the
     // review list look empty for a matching filter" failure. `review` shows the whole lane.
     const byVerdict =
-      facet === null || facet === "review"
+      facet === null
         ? filteredReview
         : filteredReview.filter((row) => matchesFacet(row, facet, newIds));
     const base =
       reasonFacet === null
         ? byVerdict
         : byVerdict.filter((row) => row.review_reason === reasonFacet);
-    return sortRows(base, reviewSort, reviewRankOf);
-  }, [filteredReview, facet, reasonFacet, newIds, reviewSort, reviewRankOf]);
-  const similarReview = useMemo(() => similarCounts(sortedReview), [sortedReview]);
+    return sortRows(base, sort, reviewRankOf);
+  }, [filteredReview, facet, reasonFacet, newIds, sort, reviewRankOf]);
+  const similarReview = useMemo(() => similarGroups(sortedReview), [sortedReview]);
   const visibleReview = useMemo(
     () => (hideSimilar === "" ? sortedReview : firstOfEachGroup(sortedReview)),
     [sortedReview, hideSimilar],
   );
+
+  /*
+   * THE VISIBLE ORDER: the one sequence "next job", the position count, the previous/next buttons
+   * and the apply session all walk. It is exactly what the reader sees, top to bottom, under the
+   * current list, filters, sort and fold — never a re-ranked or re-derived order, and never a job
+   * outside the list on screen.
+   */
+  const navList = useMemo<QueueRow[]>(
+    () =>
+      lens === "explore" ? visible : lens === "review" ? visibleReview : [...visible, ...visibleReview],
+    [lens, visible, visibleReview],
+  );
+
+  /*
+   * Each list's count is the number of jobs IN THAT LIST matching the search, place and filters —
+   * never a sum across lists that could overlap. The two lanes are disjoint by construction (a job
+   * is in the apply lane or the review lane, never both), which is the only reason "All jobs" may
+   * be their sum.
+   */
+  const lensCounts: Record<Lens, number> = {
+    explore: filtered.length,
+    review: filteredReview.length,
+    all: filtered.length + filteredReview.length,
+  };
+
+  /*
+   * THE APPLICATION HISTORY, for the summary's "recorded today / past 7 days". Read once, with a
+   * deadline: the page never waits on it, because jobs are the work and this is a count. On a
+   * failure or a timeout the summary says so and offers a retry instead of loading forever.
+   *
+   * `confirmed` is what THIS visit has recorded, keyed by posting and added only AFTER the server
+   * said yes (see `act`) — so a failed write can never inflate it. An entry whose posting the
+   * history already lists as submitted is not counted twice.
+   */
+  const [applied, setApplied] = useState<AppliedState>({ kind: "loading" });
+  const [appliedAttempt, setAppliedAttempt] = useState(0);
+  const [confirmed, setConfirmed] = useState<ReadonlyMap<number, string>>(() => new Map());
+  useEffect(() => {
+    let live = true;
+    void withTimeout(getApplied(), APPLIED_TIMEOUT_MS)
+      .then((data) => {
+        if (live) setApplied({ kind: "ready", data });
+      })
+      .catch(() => {
+        if (live) setApplied({ kind: "failed" });
+      });
+    return () => {
+      live = false;
+    };
+  }, [appliedAttempt, tokenNonce]);
+  const retryApplied = useCallback(() => {
+    setApplied({ kind: "loading" });
+    setAppliedAttempt((current) => current + 1);
+  }, []);
+
+  const recordedState: RecordedState = useMemo(() => {
+    const entries = [...confirmed].map(([postingId, at]) => ({ postingId, at }));
+    if (applied.kind === "loading") return { kind: "loading" };
+    if (applied.kind === "failed") {
+      return { kind: "failed", sessionOnly: entries.length };
+    }
+    // Only postings the history ALREADY counts as submitted: a withdrawn attempt on the same
+    // posting is not a record, and recording it again is a new application that must count.
+    const already = new Set(
+      applied.data.rows
+        .filter((row) => row.posting_id !== null && SUBMITTED_STATUSES.includes(row.status))
+        .map((row) => row.posting_id),
+    );
+    const fresh = entries
+      .filter((entry) => !already.has(entry.postingId))
+      .map((entry) => ({ status: "applied", submitted_at: entry.at }));
+    const counted = countRecorded([...applied.data.rows, ...fresh]);
+    return { kind: "ready", today: counted.today, week: counted.week };
+  }, [applied, confirmed]);
+
+  /*
+   * THE APPLY SESSION. Optional, and off until the person starts it. A ref mirrors the state so a
+   * write's `.then` — which runs long after the render that created it — reads the session as it
+   * is NOW, not as it was when the button was pressed.
+   */
+  const [session, setSessionState] = useState<Session | null>(null);
+  const sessionRef = useRef<Session | null>(null);
+  const setSession = useCallback((next: Session | null) => {
+    sessionRef.current = next;
+    setSessionState(next);
+  }, []);
+  const [sessionEnd, setSessionEnd] = useState<SessionEnd | null>(null);
+  /* The workspace's own acknowledgement after "Record application" when NO session is running:
+     the job has left the list, so the workspace says what just happened and what comes next. */
+  const [recordedPanel, setRecordedPanel] = useState<{
+    row: QueueRow;
+    nextId: number | null;
+    /** True until the server has confirmed the write; the panel says "recording", not "recorded". */
+    pending: boolean;
+    undo: () => void;
+  } | null>(null);
+  const recordLock = useRef(0);
+  const wantsPaneFocus = useRef(false);
+  /* The panel as the last render left it, for the Undo that outlives it: once the panel is gone
+     the reader has moved on, and an Undo from the toast must not drag them back. */
+  const recordedPanelRef = useRef<typeof recordedPanel>(null);
+  const [focusRequests, setFocusRequests] = useState(0);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -972,34 +1091,122 @@ export function QueuePage({
     [applyFollowUp, push],
   );
 
+  /** Open a job and put the cursor in its workspace. Not on a write control: a held Enter must
+   *  never reach "Record application" of a job nobody has read yet. */
+  const openAndFocus = useCallback(
+    (postingId: number) => {
+      wantsPaneFocus.current = true;
+      openLead(postingId);
+      // Guarantees a render, and so a run of the effect below, even when nothing else changes.
+      setFocusRequests((count) => count + 1);
+    },
+    [openLead],
+  );
+  /*
+   * A timer cannot do this: when the pane is swapped (the recorded panel is dismissed and the
+   * workspace comes back) it fires first, focuses the panel that is about to be replaced, and
+   * leaves focus on `<body>` (SC 2.4.3). So the request is a flag, honoured by the first render
+   * after it that has the pane on screen.
+   */
+  useEffect(() => {
+    recordedPanelRef.current = recordedPanel;
+  });
+  useEffect(() => {
+    if (!wantsPaneFocus.current) return;
+    const pane = document.getElementById(PANE_ID);
+    if (pane === null) return;
+    wantsPaneFocus.current = false;
+    pane.focus();
+  }, [focusRequests, selected, recordedPanel]);
+
   const act = useCallback(
     (row: QueueRow, kind: Removal) => {
+      /* The second record inside the lock is refused outright. See `RECORD_LOCK_MS`. */
+      if (kind === "applied") {
+        if (Date.now() < recordLock.current) return;
+        recordLock.current = Date.now() + RECORD_LOCK_MS;
+      }
       // Whatever was decided about this lead answers the question the prompt would have asked.
       if (pendingApply.current?.row.posting_id === row.posting_id) pendingApply.current = null;
       setReturnPrompt((current) => (current?.posting_id === row.posting_id ? null : current));
+
       /*
-       * Where the cursor lands once this row leaves. Without it, marking a lead by keyboard
-       * destroyed the focused element and focus fell back to `<body>` — so triaging ten leads
-       * meant ten trips back through Tab. The neighbour BELOW, or above at the end of a list.
+       * Where to go next, in the VISIBLE order. `forward` is strictly the job below this one: an
+       * apply session walks down the list and never turns back, and when there is nothing below it
+       * says so rather than quietly picking something else. `successor` is the older rule for the
+       * cursor — the job below, or above at the end of a list — and still decides where focus
+       * lands when the workspace is not involved.
        */
-      let successor: QueueRow | undefined;
-      for (const list of [visible, visibleReview]) {
-        const index = list.findIndex((candidate) => candidate.posting_id === row.posting_id);
-        if (index !== -1) {
-          successor = list[index + 1] ?? list[index - 1];
-          break;
-        }
-      }
+      const index = navList.findIndex((candidate) => candidate.posting_id === row.posting_id);
+      const forward = index === -1 ? undefined : navList[index + 1];
+      const successor = index === -1 ? undefined : (navList[index + 1] ?? navList[index - 1]);
+
+      const openedHere = selected === row.posting_id;
+      const live = sessionRef.current;
+      /* In a session, finishing a job in the open workspace moves the workspace on. */
+      const advance = openedHere && live !== null;
+      /* Outside one, recording says what happened and offers the next step. */
+      const showPanel = openedHere && live === null && kind === "applied";
+
+      /*
+       * Set when the write FAILED. The write can be refused on either side of the collapse timer
+       * below — a dead connection answers in microseconds — and a restore that runs first would
+       * be undone by the timer removing the row a moment later, leaving a job gone from the list
+       * after the page had said it was back. Whoever runs second honours this.
+       */
+      let reverted = false;
+
+      /*
+       * Taking the application back. The toast's Undo and the recorded panel's Undo are this one
+       * function, so a second press of either — the toast outlives the panel — finds the work done
+       * and changes nothing: no second session decrement, no pull back to the job.
+       */
+      let withdrawn = false;
+      const withdraw = () => {
+        void unapply(row.posting_id)
+          .then(() => {
+            if (withdrawn) return;
+            withdrawn = true;
+            restore(row.posting_id);
+            setConfirmed((current) => {
+              const next = new Map(current);
+              next.delete(row.posting_id);
+              return next;
+            });
+            const now = sessionRef.current;
+            if (now !== null) setSession({ ...now, count: Math.max(0, now.count - 1) });
+            setRecordedPanel((panel) => (panel?.row.posting_id === row.posting_id ? null : panel));
+            setSessionEnd(null);
+            // Put the reader back on the job they just took back — but only when the workspace
+            // had moved on from it (this also gives focus back when the panel's own Undo button
+            // unmounts). An undo from the list's own key leaves the reader where they are:
+            // stealing focus from whatever they are doing now would be worse than the row quietly
+            // coming back.
+            if (advance || (showPanel && recordedPanelRef.current?.row.posting_id === row.posting_id)) {
+              openAndFocus(row.posting_id);
+            }
+          })
+          .catch((caught: unknown) => {
+            push({
+              message: errorMessage(caught, "Could not withdraw that application."),
+              tone: "error",
+            });
+          });
+      };
 
       // Optimistic: the row collapses to zero height, then leaves the list.
       setCollapsing((current) => new Set(current).add(row.posting_id));
       window.setTimeout(() => {
+        if (reverted) return;
         setRemoved((current) => new Map(current).set(row.posting_id, kind));
         setCollapsing((current) => {
           const next = new Set(current);
           next.delete(row.posting_id);
           return next;
         });
+        // The workspace has taken the cursor (or is about to put up its own panel): do not drag
+        // it back onto a list row.
+        if (advance || showPanel) return;
         if (successor === undefined) {
           // Nothing left to move to — a filtered-down list whose last lead was just acted on.
           // Without this the focused row unmounts and focus falls to `<body>`, which strands a
@@ -1015,7 +1222,23 @@ export function QueuePage({
           .querySelector<HTMLElement>(`[data-row-id="${String(successor.posting_id)}"]`)
           ?.focus();
       }, COLLAPSE_MS);
-      if (selected === row.posting_id) openLead(null);
+
+      if (openedHere) {
+        if (advance) {
+          if (forward === undefined) {
+            openLead(null);
+            setSessionEnd("end-of-list");
+          } else {
+            setActiveId(forward.posting_id);
+            openAndFocus(forward.posting_id);
+          }
+        } else if (showPanel) {
+          // `pending`: the panel must not say "recorded" until the write has been answered.
+          setRecordedPanel({ row, nextId: forward?.posting_id ?? null, pending: true, undo: withdraw });
+        } else {
+          openLead(null);
+        }
+      }
 
       const call =
         kind === "applied" ? markApplied : kind === "skipped" ? markSkipped : report;
@@ -1057,37 +1280,55 @@ export function QueuePage({
             });
             return;
           }
+
+          /*
+           * The write LANDED. Only now does anything count it: the progress figure, the session's
+           * tally and the batch check all move here, after the server's yes, so a failed write
+           * can never leave a number that is higher than the truth.
+           */
+          setConfirmed((current) => new Map(current).set(row.posting_id, new Date().toISOString()));
+          const during = sessionRef.current;
+          if (during !== null) {
+            const next = { ...during, count: during.count + 1 };
+            setSession(next);
+            if (next.batch !== null && next.count >= next.batch) {
+              openLead(null);
+              setSessionEnd("batch");
+            }
+          }
           push({
             /*
-             * Says what the button DOES, now that there is an inverse route to call: the undo
-             * withdraws the application record and only then puts the row back — the same
-             * write-then-restore order as skip and report, so a failed withdrawal leaves the row
-             * out rather than showing a lead the store still counts as applied.
+             * Says what happened, in the past tense, and what Undo does: it withdraws the
+             * application record and only then puts the row back — the same write-then-restore
+             * order as skip and report, so a failed withdrawal leaves the row out rather than
+             * showing a job the store still counts as applied.
              */
-            message: `Marked applied: ${row.company} — ${row.title}. Undo withdraws it and puts the row back.`,
-            undo: () => {
-              void unapply(row.posting_id)
-                .then(() => {
-                  restore(row.posting_id);
-                })
-                .catch((caught: unknown) => {
-                  push({
-                    message: errorMessage(caught, "Could not withdraw that application."),
-                    tone: "error",
-                  });
-                });
-            },
+            message: `Application recorded for ${row.company}.`,
+            undo: withdraw,
           });
+          // The panel may now say what happened: the store has answered.
+          setRecordedPanel((panel) =>
+            panel?.row.posting_id === row.posting_id ? { ...panel, pending: false } : panel,
+          );
         })
         .catch((caught: unknown) => {
+          reverted = true;
           restore(row.posting_id);
+          setRecordedPanel((panel) => (panel?.row.posting_id === row.posting_id ? null : panel));
+          setSessionEnd(null);
+          // The workspace moved on before the write answered; take the reader back to the job the
+          // failure is about, so what went wrong and what to do are in the same place.
+          if (advance || showPanel) openAndFocus(row.posting_id);
           push({
-            message: errorMessage(caught, "The write failed and the row was restored."),
+            message:
+              kind === "applied"
+                ? `Could not record the application for ${row.company} — nothing was saved, and the job is back on your list. Try again in a moment.`
+                : errorMessage(caught, "The write failed and the row was restored."),
             tone: "error",
           });
         });
     },
-    [push, restore, selected, openLead, visible, visibleReview],
+    [push, restore, selected, openLead, openAndFocus, navList, setSession],
   );
 
   /*
@@ -1305,27 +1546,6 @@ export function QueuePage({
     [push, noteApplyOpened],
   );
 
-  const nextSort = (current: SortState, key: SortKey): SortState =>
-    current.key === key
-      ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-      : { key, direction: key === "rank" || key === "age" ? "asc" : "desc" };
-
-  // The current sort is read from the render rather than through a functional update: the setters
-  // persist to storage, so they take a value rather than a reducer.
-  const onSort = useCallback(
-    (key: SortKey) => {
-      setSort(nextSort(sort, key));
-    },
-    [sort, setSort],
-  );
-
-  const onReviewSort = useCallback(
-    (key: SortKey) => {
-      setReviewSort(nextSort(reviewSort, key));
-    },
-    [reviewSort, setReviewSort],
-  );
-
   /*
    * Counted over the WHOLE lane, never over `visibleReview`: these counts are the menu, and a menu
    * that re-counts itself against its own selection offers one entry with the number you already
@@ -1346,50 +1566,53 @@ export function QueuePage({
     }
     return [...counts].sort(([a], [b]) => a.localeCompare(b));
   }, [data]);
-  const toggleBoard = useCallback(
-    (next: string) => {
-      setBoard(board === next ? "" : next);
-    },
-    [board, setBoard],
-  );
   const reasonCounts = useMemo(() => countReviewReasons(data?.review ?? []), [data]);
+
+  const setLens = useCallback(
+    (next: Lens) => {
+      setLensPref(next);
+    },
+    [setLensPref],
+  );
 
   const toggleReason = useCallback(
     (next: ReviewReason) => {
       const clearing = reasonFacet === next;
       setReasonFacet(clearing ? null : next);
-      // Same reason `review` opens the lane: with the apply queue off the page, a folded review
-      // section would leave a filter whose entire result is invisible.
-      if (!clearing) setReviewOpen(true);
+      // A reason belongs to the review lane, so choosing one shows that lane: a filter whose entire
+      // result is on a list that is not on screen would look like an empty page.
+      if (!clearing) setLensPref("review");
     },
-    [reasonFacet, setReasonFacet, setReviewOpen],
+    [reasonFacet, setReasonFacet, setLensPref],
   );
 
-  // Clicking the active facet's band cell again clears it — one control, both directions.
+  // Clicking the active facet's cell again clears it — one control, both directions.
   const toggleFacet = useCallback(
     (next: QueueFacet) => {
+      if (next === "review") {
+        // A lane, not a row predicate: it is the Needs review list.
+        setFacet(null);
+        setLensPref(lens === "review" ? "explore" : "review");
+        return;
+      }
       const clearing = facet === next;
       setFacet(clearing ? null : next);
-      /*
-       * Selecting the `review` lane opens its section: it is collapsed by default, and with the
-       * apply queue hidden a collapsed one would leave the page showing only a header. Done here on
-       * the click — not in an effect keyed on `facet`, because a setState synchronised into an
-       * effect body is a cascading render the lint rule rejects, and the event already knows the
-       * answer. The reader can still collapse it afterward.
-       */
-      if (!clearing && next === "review") setReviewOpen(true);
+      // A facet reaches both lanes, so turning one on shows both: the number that was clicked
+      // counts jobs across them, and a list that held back half of those would disagree with it.
+      if (!clearing) setLensPref("all");
     },
-    [facet, setFacet, setReviewOpen],
+    [facet, lens, setFacet, setLensPref],
   );
 
   /*
-   * The view a saved view captures and restores: every toolbar filter, the two facets and the
-   * apply sort, each in its session encoding. Restoring decodes through the same functions a
-   * reload uses, so a view saved by an older bundle with a facet this one no longer knows drops
-   * that facet instead of applying it.
+   * The view a saved view captures and restores: every filter, the facet, the list and the sort,
+   * each in its session encoding. Restoring decodes through the same functions a reload uses, so a
+   * view saved by an older bundle with a facet this one no longer knows drops that facet instead of
+   * applying it — and a view saved with the old `review` facet becomes the Needs review list.
    */
   const currentView: QueueView = {
     query,
+    location,
     minScore,
     board,
     mode,
@@ -1399,9 +1622,11 @@ export function QueuePage({
     facet: encodeFacet(facet),
     reason: encodeReason(reasonFacet),
     sort: encodeSort(sort),
+    lens: encodeLens(lens),
   };
   const applyView = (view: QueueView) => {
     setQuery(view["query"] ?? "");
+    setLocation(view["location"] ?? "");
     setMinScore(view["minScore"] ?? "");
     setBoard(view["board"] ?? "");
     setMode(view["mode"] ?? "");
@@ -1411,127 +1636,271 @@ export function QueuePage({
     setFacet(decodeFacet(view["facet"] ?? null));
     const reason = decodeReason(view["reason"] ?? null);
     setReasonFacet(reason);
-    if (reason !== null) setReviewOpen(true);
+    setLensPref(
+      reason !== null || view["facet"] === "review" ? "review" : decodeLens(view["lens"] ?? null),
+    );
     setSort(parseSortState(view["sort"] ?? null) ?? { key: "rank", direction: "asc" });
   };
 
-  /*
-   * The apply lane is off the page entirely — the `review` facet asks for that lane alone. The
-   * band's readout then describes the review lane, because describing a hidden list is describing
-   * nothing.
-   */
-  const laneOnly = facet === "review" || reasonFacet !== null;
-
-  /*
-   * The lane's copy, GENERATED from the lane. Both sentences below used to name two of the nine
-   * reasons by hand and described none of the 149 leads on the measured day, which is what copy
-   * that enumerates a closed catalog eventually does.
-   */
-  const reviewSentence = reviewLaneSentence(data?.review ?? []);
-  const reviewNote = (() => {
-    const breakdown = reviewBreakdown(data?.review ?? []);
-    const lead = "Held for a look, not blindly appliable";
-    return `${breakdown === "" ? `${lead}.` : `${lead} — ${breakdown}.`} Click to show only this lane.`;
-  })();
-
-  // The empty grid must name the lever that emptied it. With a facet on, the two default
-  // sentences point at the text box and the score floor — neither of which is what is filtering.
-  const emptyHint =
-    facet === null
-      ? "Clear the text box or lower the minimum score."
-      : `Clear the text box, lower the minimum score, or turn off the ${FACET_LABELS[facet]} filter.`;
-
-  /* What the reader turned on, in words, so "Show all" is obviously the way back out. */
+  /* What the reader turned on, in words, so "Reset filters" is obviously the way back out. Each
+     entry is one lever; the count behind "More filters" is how many of them it holds. */
+  const moreActive = [
+    board !== "",
+    minScore.trim() !== "",
+    hideThin !== "",
+    hideUnverifiable !== "",
+    hideSimilar !== "",
+  ].filter(Boolean).length;
   const activeFilters = [
-    facet === null
-      ? null
-      : facet === "review"
-        ? "the review lane only"
-        : `${FACET_LABELS[facet]} only`,
-    reasonFacet === null ? null : `${REVIEW_REASON_LABELS[reasonFacet]} only`,
+    query.trim() === "" ? null : `“${query.trim()}”`,
+    location.trim() === "" ? null : `places matching “${location.trim()}”`,
+    mode === "" ? null : mode === NO_MODE ? "no work arrangement stated" : mode,
+    board === "" ? null : `${board} postings`,
+    minScore.trim() === "" ? null : `ranking score of at least ${minScore.trim()}`,
+    hideThin === "" ? null : "very short descriptions hidden",
+    hideUnverifiable === "" ? null : "postings that can’t be verified hidden",
+    hideSimilar === "" ? null : "similar roles collapsed",
+    facet === null ? null : FACET_LABELS[facet],
+    reasonFacet === null ? null : REVIEW_REASON_LABELS[reasonFacet],
   ].filter((entry): entry is string => entry !== null);
+  const resetFilters = () => {
+    setQuery("");
+    setLocation("");
+    setMode("");
+    setBoard("");
+    setMinScore("");
+    setHideThin("");
+    setHideUnverifiable("");
+    setHideSimilar("");
+    setFacet(null);
+    setReasonFacet(null);
+    if (runFilter !== null) setRouteParams({ run: null });
+  };
+
+  // The empty list must name the lever that emptied it.
+  const emptyHint =
+    activeFilters.length === 0
+      ? "There is nothing in this list yet."
+      : "Reset the filters above, or loosen one of them.";
+
+  const lensLabel = LENSES.find((entry) => entry.key === lens)?.label ?? "Jobs";
+  const laneTotal =
+    lens === "explore"
+      ? data?.rows.length ?? 0
+      : lens === "review"
+        ? data?.review.length ?? 0
+        : (data?.rows.length ?? 0) + (data?.review.length ?? 0);
+
+  /* Jobs due or new across BOTH lists, after the filters — the figures the summary prints. */
+  const bothFiltered = useMemo(() => [...filtered, ...filteredReview], [filtered, filteredReview]);
+  const newTotal = useMemo(
+    () => bothFiltered.filter((row) => newIds.has(row.posting_id)).length,
+    [bothFiltered, newIds],
+  );
+  const followUpsDue = useMemo(
+    () => bothFiltered.filter((row) => isFollowUpDue(row.follow_up)).length,
+    [bothFiltered],
+  );
+
+  /* ------------------------------------------------------------------------------- the session */
+
+  const startSession = useCallback(() => {
+    const first = navList[0];
+    if (first === undefined) return;
+    if (sessionRef.current === null) setSession({ batch: null, count: 0 });
+    setSessionEnd(null);
+    setRecordedPanel(null);
+    setActiveId(first.posting_id);
+    openAndFocus(first.posting_id);
+  }, [navList, setSession, openAndFocus]);
+
+  const endSession = useCallback(() => {
+    setSession(null);
+    setSessionEnd(null);
+  }, [setSession]);
+
+  /* What "keep going" means at the end of a LIST: the other list, when it has anything in it. */
+  const otherList =
+    lens === "explore" && visibleReview.length > 0
+      ? { label: `Look at jobs that need review (${visibleReview.length.toLocaleString()})`, lens: "review" as const, first: visibleReview[0] }
+      : lens === "review" && visible.length > 0
+        ? { label: `Back to jobs to explore (${visible.length.toLocaleString()})`, lens: "explore" as const, first: visible[0] }
+        : null;
+
+  /* The neighbours IN THE VISIBLE ORDER, for the workspace's previous and next buttons. */
+  const navIndex = selected === null ? -1 : navList.findIndex((row) => row.posting_id === selected);
+  const previousRow = navIndex > 0 ? navList[navIndex - 1] : undefined;
+  const nextRow = navIndex !== -1 ? navList[navIndex + 1] : undefined;
+  const goTo = useCallback(
+    (row: QueueRow) => {
+      setActiveId(row.posting_id);
+      openLead(row.posting_id);
+    },
+    [openLead],
+  );
 
   if (loadError !== null) {
     /*
-     * `role="alert"`, and a second line that says what to DO. This state renders as the whole page
-     * and the first line is whatever the transport said — `404 from /api/queue` on its own is a
-     * status code, not an error a reader can act on.
+     * `role="alert"`, and a line that says what to DO, with the way to do it on the page: this
+     * state renders as the whole page, and a status code on its own is not an error a reader can
+     * act on. The technical text is kept, under the plain sentence, for whoever has to report it.
      */
     return (
-      <div role="alert" className="rounded-md border border-fg-2 bg-surface p-4">
-        <p className="text-sm text-fg">{loadError}</p>
+      <div role="alert" className="max-w-2xl rounded-md bg-surface-2 p-5">
+        <h2 className="text-base text-fg">The jobs could not be loaded.</h2>
         <p className="mt-1 text-sm text-fg-2">
-          The page reads the store the CLI maintains. Reload once, and if it persists re-open the
-          URL <code className="text-fg-3">boardwatch web</code> printed — that URL carries the
-          session token.
+          The page reads the store the command line maintains. Trying again usually works; if it
+          keeps failing, re-open the URL <code className="font-mono text-fg-3">boardwatch web</code>{" "}
+          printed — that URL carries the session token.
         </p>
+        <p className="mt-2 text-xs text-fg-3">{loadError}</p>
+        <button
+          type="button"
+          onClick={() => {
+            setLoadError(null);
+            setTokenNonce((current) => current + 1);
+          }}
+          className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-4 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
+        >
+          <Icon name="refresh" />
+          Try again
+        </button>
       </div>
     );
   }
 
   if (data === null) {
+    /* The layout of the page, empty: the summary, the lists and the workspace hold their places so
+       nothing jumps when the jobs arrive, and the sentence says what is happening. */
     return (
-      <p role="status" className="p-4 text-sm text-fg-2">
-        Loading the queue…
-      </p>
+      <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-5" aria-busy="true">
+        <p role="status" className="text-sm text-fg-2">
+          Loading your jobs…
+        </p>
+        <span className="skeleton h-24 w-full" />
+        <span className="skeleton h-11 w-2/3" />
+        <div className="grid gap-4 lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)]">
+          <div className="flex flex-col gap-2">
+            {[0, 1, 2, 3, 4, 5].map((index) => (
+              <span key={index} className="skeleton h-24 w-full" />
+            ))}
+          </div>
+          <span className="skeleton hidden h-96 w-full lg:block" />
+        </div>
+      </div>
     );
   }
 
+  const showExplore = lens === "explore" || lens === "all";
+  const showReview = lens === "review" || lens === "all";
+  const bothEmpty = data.rows.length === 0 && data.review.length === 0;
+
+  const apply = (row: QueueRow) => {
+    act(row, "applied");
+  };
+
+  const table = (kind: "explore" | "review") => {
+    const rows = kind === "explore" ? visible : visibleReview;
+    return (
+      <QueueTable
+        label={kind === "explore" ? "Jobs to explore" : "Needs review"}
+        rows={rows}
+        /* The bulk selection is the apply list's alone: a review job is held for a look, so
+           "skip the whole block" is not what that list is for. */
+        {...(kind === "explore" ? { selection, onSelectCompany: selectCompany } : {})}
+        similarOf={(row) => (kind === "explore" ? similarApply : similarReview).get(row.posting_id)}
+        emptyHint={emptyHint}
+        selectedId={selected}
+        activeId={activeId}
+        onActivate={setActiveId}
+        collapsing={collapsing}
+        onOpenApply={openApply}
+        onSelect={(row) => {
+          // Re-clicking the open row must not rewrite the hash: the detail effect is keyed on
+          // `selected`, and a no-op write that still produced a new value would re-fire it and
+          // drop the workspace back to its loading state.
+          if (row.posting_id === selected) return;
+          openLead(row.posting_id);
+        }}
+        onApplied={apply}
+        onSkip={(row) => {
+          act(row, "skipped");
+        }}
+        onReport={(row) => {
+          act(row, "reported");
+        }}
+        onFollowUp={focusFollowUp}
+      />
+    );
+  };
+
+  const closeWorkspace = () => {
+    /* Escape, the back button and the ✕ all land here, and all have to leave the cursor somewhere
+       a keyboard reader can carry on from — see `focusRow`. */
+    const opener = selected;
+    setRecordedPanel(null);
+    openLead(null);
+    if (opener !== null) focusRow(opener);
+  };
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Grouped, and carrying its own `gap-4` so the spacing is unchanged, only so that the band,
-          the toolbar and the refresh line take ONE `inert` while the sheet covers them. */}
-      <div className="flex flex-col gap-4" inert={sheetOpen}>
-        <StatusBand
-          counts={bandCounts}
-          newSince={newSinceCount}
-          /*
-           * What is VISIBLE ON THE PAGE, which is both lanes whenever both are drawn. Counting the
-           * apply lane alone printed "Showing 0 of 0" above 149 listed review leads on the day the
-           * apply lane emptied — the one sentence that answers "did my filter match anything"
-           * contradicting the list directly under it. `laneOnly` is the case where the apply queue
-           * is genuinely off the page, so its zero belongs in neither figure.
-           */
-          reviewNote={reviewNote}
-          showing={laneOnly ? visibleReview.length : visible.length + visibleReview.length}
-          total={laneOnly ? data.review.length : data.rows.length + data.review.length}
-          activeFacet={facet}
-          onToggleFacet={toggleFacet}
+    <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-5">
+      {/* Grouped so the summary, the lists' controls and the refresh line take ONE `inert` while
+          the narrow sheet covers them. */}
+      <div className="flex flex-col gap-5" inert={sheetOpen}>
+        <QueueSummary
+          newCount={newTotal}
+          newActive={facet === "new"}
+          onToggleNew={() => {
+            toggleFacet("new");
+          }}
+          recorded={recordedState}
+          onRetryRecorded={retryApplied}
+          followUpsDue={followUpsDue}
+          followUpsActive={facet === "follow_up_due"}
+          onToggleFollowUps={() => {
+            toggleFacet("follow_up_due");
+          }}
+          quietApplications={
+            applied.kind === "ready" ? (applied.data.counts.quiet ?? 0) : null
+          }
+          quietHref="#/applied"
+          onStart={startSession}
+          startLabel={session === null ? "Start applying" : "Continue applying"}
+          canStart={navList.length > 0}
+          scoped={
+            activeFilters.length - (facet === null ? 0 : 1) - (reasonFacet === null ? 0 : 1) > 0
+          }
         />
-        {/* Under the band, because it filters the same lists the band's cells do — and rendered
-            only when there is a lane to filter, so a page with no review leads has no dead row. */}
-        {data.review.length === 0 ? null : (
-          <div
-            role="group"
-            aria-label="Filter by review reason"
-            className="flex flex-wrap items-center gap-2"
-          >
-            <span className="label-micro text-fg-3">reason</span>
-            {reasonCounts.map(({ reason, count }) => (
-              <ReasonChip
-                key={reason}
-                label={REVIEW_REASON_LABELS[reason]}
-                count={count}
-                active={reasonFacet === reason}
-                onToggle={() => {
-                  toggleReason(reason);
-                }}
-              />
-            ))}
-          </div>
+
+        {session === null ? null : (
+          <SessionBar
+            count={session.count}
+            batch={session.batch}
+            onSetBatch={(batch) => {
+              setSession({ ...session, batch });
+            }}
+            onEnd={endSession}
+          />
         )}
+
+        <LensTabs lens={lens} onLens={setLens} counts={lensCounts} />
 
         <QueueToolbar
           query={query}
           onQuery={setQuery}
-          minScore={minScore}
-          onMinScore={setMinScore}
-          board={board}
-          onBoard={setBoard}
-          boards={boardCounts}
+          location={location}
+          onLocation={setLocation}
           mode={mode}
           onMode={setMode}
           modes={modeCounts}
+          sort={sort}
+          onSort={setSort}
+          board={board}
+          onBoard={setBoard}
+          boards={boardCounts}
+          minScore={minScore}
+          onMinScore={setMinScore}
           hideThin={hideThin !== ""}
           onHideThin={(on) => {
             setHideThin(on ? "1" : "");
@@ -1553,268 +1922,259 @@ export function QueuePage({
               }}
             />
           }
+          moreActive={moreActive}
+          activeFilters={activeFilters}
+          onReset={resetFilters}
           selectedCount={markedRows.length}
           onSkipSelected={skipSelected}
           onClearSelection={clearSelection}
         />
 
-        {/* The active facet stated in words next to a plain clear, so it is obvious a filter is on
-            and how to drop it — the pressed band cell shows which, this shows that. */}
-        {/* The run filter reads as its own sentence rather than joining `activeFilters`: it comes
+        {/* The run filter reads as its own sentence rather than joining the filter list: it comes
             from the URL, not from a control on this page, so the reader needs to be told it is on
             at all before being told how to drop it. */}
         {runFilter === null ? null : (
-          <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span>Showing run {runFilter.toLocaleString()}&rsquo;s leads only.</span>
+          <p className="flex flex-wrap items-center gap-x-3 text-sm text-fg-2">
+            <span>Showing run {runFilter.toLocaleString()}&rsquo;s jobs only.</span>
             <button
               type="button"
               onClick={() => {
                 setRouteParams({ run: null });
               }}
-              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+              className="inline-flex min-h-11 items-center rounded-sm px-2 text-sm font-medium text-accent underline underline-offset-4 hover:text-fg"
             >
               Show all runs
             </button>
           </p>
         )}
 
-        {activeFilters.length === 0 ? null : (
-          <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span>Showing {activeFilters.join(", ")}.</span>
-            <button
-              type="button"
-              onClick={() => {
-                setFacet(null);
-                setReasonFacet(null);
-              }}
-              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
-            >
-              Show all
-            </button>
-          </p>
+        {/* Under the controls, because it filters the lists they describe — and only where there
+            is a review list to filter. A reason is a lever on the Needs review list. */}
+        {data.review.length === 0 || !showReview ? null : (
+          <div
+            role="group"
+            aria-label="Filter by review reason"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <span className="label-micro text-fg-2">Why held</span>
+            {reasonCounts.map(({ reason, count }) => (
+              <ReasonChip
+                key={reason}
+                label={REVIEW_REASON_LABELS[reason]}
+                count={count}
+                active={reasonFacet === reason}
+                onToggle={() => {
+                  toggleReason(reason);
+                }}
+              />
+            ))}
+          </div>
         )}
 
         {newCount > 0 && stashed !== null ? (
-          <p className="flex items-center gap-3 text-sm text-fg-2">
-            <span className="tabular-nums">{newCount} new</span>
+          <p role="status" className="flex flex-wrap items-center gap-x-3 text-sm text-fg-2">
+            <span className="tabular-nums">{newCount} newly delivered</span>
             <button
               type="button"
               onClick={() => {
                 adopt(stashed);
               }}
-              className="min-h-11 rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-sm px-2 text-sm font-medium text-accent underline underline-offset-4 hover:text-fg"
             >
-              refresh
+              <Icon name="refresh" />
+              Add them to the list
             </button>
             <span className="text-fg-3">Nothing moves until you ask it to.</span>
           </p>
         ) : null}
+
+        {/* The one sentence that answers "did my filter match anything", scoped to the list it is
+            about and announced when it changes (SC 4.1.3). */}
+        <p role="status" className="text-sm text-fg-2 tabular-nums">
+          Showing {navList.length.toLocaleString()} of {laneTotal.toLocaleString()} in {lensLabel}
+        </p>
       </div>
 
-      <div
-        className={
-          selected === null
-            ? ""
-            : "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,30rem)] lg:items-start"
-        }
-      >
-        {/* The triage grid, and the row `a`/`s` writes with it, behind the sheet at the narrow
-            tier. */}
+      {sessionEnd === null ? null : (
+        <SessionDone
+          kind={sessionEnd}
+          count={session?.count ?? 0}
+          keepGoingLabel={
+            sessionEnd === "batch"
+              ? navList.length > 0
+                ? "Keep going"
+                : (otherList?.label ?? null)
+              : (otherList?.label ?? null)
+          }
+          onKeepGoing={() => {
+            if (sessionEnd === "batch" && navList.length > 0) {
+              if (session !== null) setSession({ ...session, batch: null });
+              startSession();
+              return;
+            }
+            if (otherList === null) return;
+            if (session !== null) setSession({ ...session, batch: null });
+            setLens(otherList.lens);
+            setSessionEnd(null);
+            if (otherList.first !== undefined) {
+              setActiveId(otherList.first.posting_id);
+              openAndFocus(otherList.first.posting_id);
+            }
+          }}
+          onFinish={endSession}
+        />
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)] lg:items-start">
+        {/* The job lists, and the keys that write with them, behind the sheet at the narrow tier. */}
         <div className="min-w-0" inert={sheetOpen}>
-          {/*
-            * BOTH lanes, because `rows` is now the apply lane alone. With every delivered lead in
-            * review this said "the queue is empty … this is not a filter result" directly above a
-            * populated review section — and both halves were false: leads WERE delivered, and the
-            * reason they are not above is the lane split.
-            */}
-          {/* The `review` facet hides the apply queue entirely — it is a request to see that lane
-              alone. Its own empty/populated states below are unaffected. */}
-          {laneOnly ? null : data.rows.length === 0 && data.review.length === 0 ? (
-            <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
-              The queue is empty. A run has to deliver a tailored lead before anything appears
+          {bothEmpty ? (
+            <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+              There are no jobs yet. A run has to deliver a prepared job before anything appears
               here — this is not a filter result.
             </p>
-          ) : data.rows.length === 0 ? (
-            <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
-              Nothing is blindly appliable right now. Every delivered lead is in the review
-              section below — that is a lane split, not an empty run.
-            </p>
           ) : (
-            <QueueTable
-              onBoard={toggleBoard}
-              label="Queue"
-              rows={visible}
-              rankOf={rankOf}
-              sort={sort}
-              onSort={onSort}
-              /* The APPLY lane alone. The review lane below is deliberately left single-row: its
-                 leads are held for a look, so "skip the whole block" is not what it is for. */
-              selection={selection}
-              similarOf={(row) => similarApply.get(row.posting_id)}
-              onApplyOpened={noteApplyOpened}
-              onSelectCompany={selectCompany}
-              emptyHint={emptyHint}
-              selectedId={selected}
-              activeId={activeId}
-              onActivate={setActiveId}
-              collapsing={collapsing}
-              onOpenApply={openApply}
-              onSelect={(row) => {
-                // Re-clicking the open row must not rewrite the hash: the detail effect is keyed
-                // on `selected`, and a no-op write that still produced a new value would re-fire
-                // it and drop the pane back to its loading state.
-                if (row.posting_id === selected) return;
-                openLead(row.posting_id);
-              }}
-              onApplied={(row) => {
-                act(row, "applied");
-              }}
-              onSkip={(row) => {
-                act(row, "skipped");
-              }}
-              onReport={(row) => {
-                act(row, "reported");
-              }}
-              onFollowUp={focusFollowUp}
-            />
-          )}
-
-          {data.review.length === 0 ? null : (
-            /*
-             * The lane is contained SEPARATELY from the apply queue above it, and that asymmetry
-             * is the point: `ReviewReasonBadge` renders a field only these rows carry, which is
-             * precisely the shape that blanked this page once. A failure here must not cost the
-             * reader the list they can actually act on. The whole `<section>` is inside, header
-             * included, so `aria-controls="review-list"` can never be left pointing at an element
-             * the fallback replaced. `mt-12` moved out to the wrapper so the card inherits it.
-             */
-            <div className={laneOnly ? undefined : "mt-12"}>
-              <ErrorBoundary
-                title="The review lane could not be drawn."
-                hint="The queue above is unaffected and still works. These leads are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
-                action="Draw the review lane again"
-                resetKeys={[data]}
-              >
-                <section aria-labelledby="review-heading">
-                  {/* No top rule when the review lane stands alone — the `review` facet or a
-                      reason facet: a rule at the top of the content has nothing to divide it
-                      from. */}
-                  <header
-                    className={`flex flex-wrap items-baseline gap-x-4 gap-y-2 ${laneOnly ? "" : "border-t border-divider pt-8"}`}
-                  >
+            <>
+              {showExplore ? (
+                data.rows.length === 0 ? (
+                  <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                    No jobs to explore right now.
+                    {data.review.length === 0
+                      ? ""
+                      : " Every delivered job is in Needs review — that is how the list was split, not an empty run."}
+                  </p>
+                ) : (
+                  <section aria-labelledby="explore-heading">
                     <h2
-                      id="review-heading"
-                      className="font-display text-base tracking-[0.12em] text-fg uppercase"
+                      id="explore-heading"
+                      className={lens === "all" ? "mb-2 text-base text-fg" : "sr-only"}
                     >
-                      Review
+                      Jobs to explore
                     </h2>
-                    <span className="text-sm text-fg-2 tabular-nums">
-                      {visibleReview.length.toLocaleString()}
-                      {visibleReview.length === data.review.length
-                        ? ""
-                        : ` of ${data.review.length.toLocaleString()}`}
-                    </span>
-                    <button
-                      type="button"
-                      aria-expanded={reviewOpen}
-                      aria-controls="review-list"
-                      onClick={() => {
-                        setReviewOpen(!reviewOpen);
-                      }}
-                      className="min-h-11 rounded-sm px-2 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:bg-surface hover:text-fg"
-                    >
-                      {reviewOpen ? "hide" : "show"}
-                    </button>
-                    {/*
-                      * Says what the lane IS, not what is wrong with it. These leads were not
-                      * rejected — the gate declined to vouch for them, which is a different claim,
-                      * and calling them "off target" here would assert the decision it declined to
-                      * make. The folder path is named because the two must stay legible as the same
-                      * split; if they ever disagree, the folder tree wins.
-                      */}
-                    <p className="w-full text-sm text-fg-2">
-                      Open these before applying. {reviewSentence} Same split as the{" "}
-                      <code className="text-fg-3">_review</code> folder.
-                    </p>
-                  </header>
+                    {table("explore")}
+                  </section>
+                )
+              ) : null}
 
-                  {/*
-                    * The container stays MOUNTED and is emptied instead of being unmounted, so
-                    * `aria-controls="review-list"` resolves in the collapsed state — which is the
-                    * default, and therefore the state a screen reader meets first. Unmounting it left
-                    * a dangling IDREF that AT drops silently. The ROWS are still not rendered while
-                    * collapsed, so nothing is paid for the leads themselves.
-                    */}
-                  <div id="review-list" className={reviewOpen ? "mt-4" : undefined}>
-                    {!reviewOpen ? null : visibleReview.length === 0 ? (
-                        <p className="rounded-md border border-divider bg-surface p-6 text-sm text-fg-2">
-                          No review lead matches the current filter. There are{" "}
-                          {data.review.length.toLocaleString()} in the lane.
+              {showReview ? (
+                data.review.length === 0 ? (
+                  lens === "review" ? (
+                    <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                      Nothing needs review right now.
+                    </p>
+                  ) : null
+                ) : (
+                  /*
+                   * Contained SEPARATELY from the apply list: the review reasons are exactly the
+                   * shape that blanked this page once, and a failure here must not cost the reader
+                   * the list they can act on.
+                   */
+                  <div className={lens === "all" ? "mt-8" : undefined}>
+                    <ErrorBoundary
+                      title="The review list could not be drawn."
+                      hint="The other list is unaffected and still works. These jobs are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
+                      action="Draw the review list again"
+                      resetKeys={[data]}
+                    >
+                      <section aria-labelledby="review-heading">
+                        <h2
+                          id="review-heading"
+                          className={lens === "all" ? "mb-1 text-base text-fg" : "sr-only"}
+                        >
+                          Needs review
+                        </h2>
+                        <p className="mb-2 max-w-[72ch] text-sm text-fg-2">
+                          {reviewLaneSentence(data.review)} Same split as the{" "}
+                          <code className="font-mono text-fg-3">_review</code> folder.
                         </p>
-                    ) : (
-                        <QueueTable
-                          onBoard={toggleBoard}
-                          label="Review"
-                          rows={visibleReview}
-                          rankOf={reviewRankOf}
-                          similarOf={(row) => similarReview.get(row.posting_id)}
-                          onApplyOpened={noteApplyOpened}
-                          sort={reviewSort}
-                          onSort={onReviewSort}
-                          selectedId={selected}
-                          activeId={activeId}
-                          onActivate={setActiveId}
-                          collapsing={collapsing}
-                          onOpenApply={openApply}
-                          onSelect={(row) => {
-                            if (row.posting_id === selected) return;
-                            openLead(row.posting_id);
-                          }}
-                          onApplied={(row) => {
-                            act(row, "applied");
-                          }}
-                          onSkip={(row) => {
-                            act(row, "skipped");
-                          }}
-                          onReport={(row) => {
-                            act(row, "reported");
-                          }}
-                          onFollowUp={focusFollowUp}
-                      />
-                    )}
+                        {visibleReview.length === 0 ? (
+                          <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                            No job in this list matches. There are{" "}
+                            {data.review.length.toLocaleString()} in it.
+                          </p>
+                        ) : (
+                          table("review")
+                        )}
+                      </section>
+                    </ErrorBoundary>
                   </div>
-                </section>
-              </ErrorBoundary>
-            </div>
+                )
+              ) : null}
+            </>
           )}
         </div>
 
-        {selected === null ? null : (
+        {selected === null ? (
+          /* Wide screens keep the workspace's place, so the page does not rearrange itself when a
+             job is opened — and the empty workspace says where to start. */
+          <aside
+            aria-label="Job workspace"
+            className="hidden rounded-lg bg-surface p-8 text-center shadow-card lg:sticky lg:top-0 lg:roomy:top-header lg:flex lg:min-h-80 lg:flex-col lg:items-center lg:justify-center lg:gap-3"
+          >
+            <h2 className="text-lg text-fg">
+              {navList.length === 0 ? "No job to open" : "Pick a job to start"}
+            </h2>
+            <p className="max-w-[44ch] text-sm text-fg-2">
+              {navList.length === 0
+                ? emptyHint
+                : "Open any job to see what to check, the résumé prepared for it, and your application answers — all in one place beside the list."}
+            </p>
+            {navList.length === 0 ? null : (
+              <button
+                type="button"
+                onClick={startSession}
+                className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
+              >
+                Start with the first job
+                <Icon name="arrowRight" />
+              </button>
+            )}
+          </aside>
+        ) : recordedPanel !== null && recordedPanel.row.posting_id === selected ? (
+          <div
+            id={PANE_ID}
+            tabIndex={-1}
+            role={sideBySide ? undefined : "dialog"}
+            aria-modal={sideBySide ? undefined : true}
+            aria-label="Application recorded"
+            className="fixed inset-0 z-40 overflow-y-auto bg-surface lg:sticky lg:inset-auto lg:top-header lg:z-auto lg:rounded-lg lg:shadow-card"
+          >
+            <RecordedPanel
+              company={recordedPanel.row.company}
+              title={recordedPanel.row.title}
+              hasNext={recordedPanel.nextId !== null}
+              pending={recordedPanel.pending}
+              onContinue={() => {
+                const next = recordedPanel.nextId;
+                setRecordedPanel(null);
+                if (next === null) {
+                  closeWorkspace();
+                  return;
+                }
+                setActiveId(next);
+                openAndFocus(next);
+              }}
+              onUndo={recordedPanel.undo}
+              onBack={closeWorkspace}
+            />
+          </div>
+        ) : (
           /*
-           * The pane reads more of the API surface than anything else on the page, so it is the
-           * likeliest thing to meet a field the server stopped sending — and it is the easiest to
-           * lose safely, because the queue beside it is the part being worked through.
+           * The workspace reads more of the API surface than anything else on the page, so it is
+           * the likeliest thing to meet a field the server stopped sending — and it is the easiest
+           * to lose safely, because the list beside it is the part being worked through.
            *
-           * The recovery action is CLOSE, not redraw, and that is not a style choice: below `lg`
-           * this pane is a sheet, and `sheetOpen` is derived from `selected`, so a failed pane
-           * that stays selected holds `inert` on the list behind it. Redrawing would hand back a
-           * card with a frozen queue behind it. Clearing `selected` releases the `inert` AND moves
-           * `resetKeys`, so the boundary is reset by the same click.
+           * The recovery action is CLOSE, not redraw: below `lg` this is a sheet, and `sheetOpen` is
+           * derived from `selected`, so a failed workspace that stays selected holds `inert` on the
+           * list behind it. Clearing `selected` releases the `inert` AND moves `resetKeys`.
            */
           <ErrorBoundary
-            title="This lead could not be drawn."
-            hint="The queue beside it is unaffected — close this one and pick another. The lead's own résumé and notes are on disk in its queue folder either way."
-            action="Close this lead"
+            title="This job could not be drawn."
+            hint="The list beside it is unaffected — close this one and pick another. The job's own résumé and notes are on disk in its queue folder either way."
+            action="Close this job"
             onAction={() => {
-              /*
-               * Where the cursor lands, for the same reason the mark-applied path does it: this
-               * click destroys the button that has focus — the boundary unmounts with the pane —
-               * and focus would fall to `<body>`, stranding a keyboard reader at the top of the
-               * document. Back to the row that opened the pane, which is reachable again the
-               * moment `selected` is null and the sheet's `inert` lifts. `DetailPane`'s own
-               * restore cannot cover this: at the narrow tier it already fired against an inert
-               * row, and at `lg` it never registers one.
-               */
+              /* This click destroys the button that has focus — the boundary unmounts with the
+                 workspace — and focus would fall to `<body>`. Back to the row that opened it. */
               const opener = selected;
               openLead(null);
               focusRow(opener);
@@ -1827,13 +2187,7 @@ export function QueuePage({
               loading={detailLoading}
               error={shownError}
               answers={answers}
-              onClose={() => {
-                /* Escape and the ✕ both land here, and both have to leave the cursor somewhere a
-                   keyboard reader can carry on from — see `focusRow`. */
-                const opener = selected;
-                openLead(null);
-                focusRow(opener);
-              }}
+              onClose={closeWorkspace}
               onApplied={() => {
                 const row = shownDetail?.row;
                 if (row) act(row, "applied");
@@ -1858,6 +2212,36 @@ export function QueuePage({
                 const row = shownDetail?.row;
                 if (row) noteApplyOpened(row);
               }}
+              {...(shownDetail === null
+                ? {}
+                : {
+                    related: relatedPostings(
+                      shownDetail.row,
+                      sortedApply.some((row) => row.posting_id === shownDetail.row.posting_id)
+                        ? sortedApply
+                        : sortedReview,
+                    ),
+                    onOpenRelated: goTo,
+                  })}
+              {...(navIndex === -1
+                ? {}
+                : {
+                    position: `${String(navIndex + 1)} of ${navList.length.toLocaleString()}`,
+                    ...(previousRow === undefined
+                      ? {}
+                      : {
+                          onPrevious: () => {
+                            goTo(previousRow);
+                          },
+                        }),
+                    ...(nextRow === undefined
+                      ? {}
+                      : {
+                          onNext: () => {
+                            goTo(nextRow);
+                          },
+                        }),
+                  })}
               {...(shownDetail === null ||
               !visible.some((row) => row.posting_id === shownDetail.row.posting_id)
                 ? {}
@@ -1872,8 +2256,29 @@ export function QueuePage({
         )}
       </div>
 
-      {/* Only while the lead is still on the page: one decided some other way meanwhile, or
-          drained by a refresh, has nothing left to ask about. */}
+      {/*
+        * The pipeline's own counts, one fold down. They are how the run decided — useful when
+        * something looks wrong, and not what this page is for — so they sit under the work rather
+        * than above it. Every cell is still a filter, and still labelled with what it counts.
+        */}
+      <details className="group rounded-md bg-surface shadow-card" inert={sheetOpen}>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 rounded-md px-4 text-sm font-medium text-fg-2 hover:text-fg [&::-webkit-details-marker]:hidden">
+          Pipeline counts
+          <Icon name="chevronDown" className="transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="px-1 pb-2">
+          <StatusBand
+            counts={bandCounts}
+            newSince={newTotal}
+            reviewNote={`${reviewLaneSentence(data.review)} Click to show only this list.`}
+            activeFacet={facet === null && lens === "review" ? "review" : facet}
+            onToggleFacet={toggleFacet}
+          />
+        </div>
+      </details>
+
+      {/* Only while the job is still on the page: one decided some other way meanwhile, or drained
+          by a refresh, has nothing left to ask about. */}
       {returnPrompt === null ||
       removed.has(returnPrompt.posting_id) ||
       ![...data.rows, ...data.review].some((row) => row.posting_id === returnPrompt.posting_id) ? null : (
@@ -1885,7 +2290,7 @@ export function QueuePage({
           onDismiss={() => {
             const postingId = returnPrompt.posting_id;
             setReturnPrompt(null);
-            // Below `lg` the open lead is a sheet over an inert list, where a row cannot take
+            // Below `lg` the open job is a sheet over an inert list, where a row cannot take
             // focus; the sheet itself is where the reader was.
             if (sheetOpen) document.getElementById(PANE_ID)?.focus();
             else focusRow(postingId);

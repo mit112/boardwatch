@@ -16,6 +16,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -37,9 +38,19 @@ import { App } from "../App";
 const COLLAPSE_MS = 200;
 
 function dataRows(): HTMLElement[] {
-  return within(screen.getByRole("grid", { name: "Queue" }))
+  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
     .getAllByRole("row")
     .filter((element) => element.hasAttribute("data-row-id"));
+}
+
+/** A row by its title. The writes are keys on the focused ROW — `a`, `s`, `r` — and the buttons for
+ *  them live in the workspace, so a row is what a keystroke is aimed at. */
+function rowOf(title: string): HTMLElement {
+  const row = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+    .getByText(title)
+    .closest('[role="row"]');
+  if (row === null) throw new Error(`no row for ${title}`);
+  return row as HTMLElement;
 }
 
 function titles(): string[] {
@@ -72,7 +83,7 @@ describe("QueuePage write flows", () => {
     vi.mocked(markSkipped).mockResolvedValue({ outcome: "skipped" });
     vi.mocked(unskip).mockResolvedValue({ outcome: "unskipped" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Skip: Backend Engineer at Globex" }));
+    fireEvent.keyDown(rowOf("Backend Engineer"), { key: "s" });
 
     // The write resolves and the row collapses out of the list.
     await act(async () => {
@@ -96,11 +107,7 @@ describe("QueuePage write flows", () => {
     vi.mocked(report).mockResolvedValue({ outcome: "reported" });
     vi.mocked(unreport).mockResolvedValue({ outcome: "unreported" });
 
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Report as wrongly eligible: Backend Engineer at Globex",
-      }),
-    );
+    fireEvent.keyDown(rowOf("Backend Engineer"), { key: "r" });
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(COLLAPSE_MS);
@@ -129,9 +136,7 @@ describe("QueuePage write flows", () => {
     pending.catch(() => undefined); // no unhandled rejection before the component consumes it
     vi.mocked(markApplied).mockReturnValue(pending);
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Mark applied: Backend Engineer at Globex" }),
-    );
+    fireEvent.keyDown(rowOf("Backend Engineer"), { key: "a" });
 
     // Optimistic removal first: the row is gone while the write is still in flight.
     await act(async () => {
@@ -147,6 +152,11 @@ describe("QueuePage write flows", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(titles()).toEqual(["Backend Engineer", "Analyst"]);
-    expect(screen.getByText("409 from /api/applied")).toBeTruthy();
+    // In plain words, and it says what state things are in: nothing saved, the job is back.
+    expect(
+      screen.getByText(/Could not record the application for Globex — nothing was saved/),
+    ).toBeTruthy();
+    // And no success was announced for a write that never landed.
+    expect(screen.queryByText(/Application recorded/)).toBeNull();
   });
 });

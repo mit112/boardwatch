@@ -1,14 +1,17 @@
 import { isSafeHttpUrl } from "../lib/format";
+import { Icon } from "./Icon";
 
 /*
  * Apply URLs come from third-party boards. Only `http:` and `https:` become a link, and it opens
  * with `rel="noopener noreferrer"`. Anything else — a `javascript:` URL above all — renders as
  * inert text, so the owner can still see what the board supplied without it being clickable.
  *
- * This is the ONE place that decision is made. The row and the detail pane both route through it.
+ * This is the ONE place that decision is made.
+ *
+ * "Open application" opens the EMPLOYER'S page and nothing else. It never records anything — a
+ * link that was opened is not an application that was sent, and the app asks "did you apply?" only
+ * when the reader comes back (`ApplyReturnPrompt`) and records only on their yes.
  */
-const BUTTON =
-  "inline-flex items-center rounded-sm border px-3 transition-colors duration-[120ms] ease-snap";
 
 /**
  * The focused row's `o` key. It routes through the same `isSafeHttpUrl` test as the link below, so
@@ -23,24 +26,18 @@ export function openApplyUrl(url: string | null): boolean {
 
 export function ApplyLink({
   url,
-  compact = false,
-  emphasis = false,
-  label,
   onOpen,
+  primary = true,
 }: {
   url: string | null;
-  compact?: boolean;
   /** Told when the link is followed, by a click or a middle-click, so the page can ask on return
    *  whether the reader applied. The browser still does the opening. */
   onOpen?: () => void;
-  /** The row's leading control, so it is not one of three identical grey pills. */
-  emphasis?: boolean;
-  /** Names the lead in the accessible name; a list of 347 links all called "Apply" is unusable. */
-  label?: string;
+  /** The filled forest button — the one primary action of the workspace. */
+  primary?: boolean;
 }) {
-  // In a row the control is one tab stop among four unless it opts out — see `QueueTable`. The
-  // focused row's `o` key opens the same URL, so nothing becomes mouse-only.
-  const size = compact ? "min-h-8 text-xs" : "min-h-11 text-sm";
+  const base =
+    "inline-flex min-h-11 items-center gap-2 rounded-sm px-4 text-sm font-semibold transition-colors duration-150 ease-in-out";
 
   if (isSafeHttpUrl(url) && url !== null) {
     return (
@@ -48,9 +45,7 @@ export function ApplyLink({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        {...(compact ? { tabIndex: -1 } : {})}
-        {...(label ? { "aria-label": `Open apply link: ${label}` } : {})}
-        {...(compact ? { title: "Open the board's apply page. Key: o" } : {})}
+        title="Opens the employer’s page in a new tab. Nothing is recorded until you say you applied."
         {...(onOpen === undefined
           ? {}
           : {
@@ -59,25 +54,28 @@ export function ApplyLink({
                 if (event.button === 1) onOpen();
               },
             })}
-        className={`${BUTTON} ${size} ${
-          emphasis
-            ? "border-fg-2 text-fg hover:border-fg hover:bg-surface-2"
-            : "border-control text-fg-2 hover:border-fg-2 hover:text-fg"
+        className={`${base} ${
+          primary
+            ? "bg-primary text-on-primary hover:bg-primary-strong"
+            : "bg-surface-2 text-fg hover:bg-surface-3"
         }`}
       >
-        {compact ? "Apply" : "Open apply link"}
+        Open application
+        <Icon name="external" />
+        <span className="sr-only">(opens in a new tab)</span>
       </a>
     );
   }
 
   const explanation =
     url === null
-      ? "The board supplied no apply URL."
-      : `Not an http(s) URL, so it is not rendered as a link: ${url}`;
+      ? "The job board supplied no application link."
+      : `Not an http(s) address, so it is not offered as a link: ${url}`;
 
   return (
-    <span className={`${BUTTON} ${size} border-divider text-fg-3`} title={explanation}>
-      {compact ? "no link" : explanation}
+    <span className={`${base} bg-surface-2 font-normal text-fg-3`} title={explanation}>
+      No application link
+      <span className="sr-only">{`. ${explanation}`}</span>
     </span>
   );
 }

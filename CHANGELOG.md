@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The web viewer is organised around applying.** Jobs to explore, Needs review and All jobs replace the pipeline's sixteen counters; a short summary shows what is new,
+  how many applications you recorded today and in the past 7 days, and what needs attention. Each row carries one note about what to check. A job workspace gathers
+  what to check, the résumé, your application answers and a follow-up date; an optional apply session works down the list. Status shows four separate readings
+  (requirements, independent review, posting availability, résumé) and never combines them; an unknown requirement reads "Check", not "Missing". A recorded application
+  counts only after the store has confirmed it. The theme follows the system with a light/dark toggle, and the header no longer covers focused controls at narrow widths.
 - **`--help`, `boardwatch guide` and a run's apply-lane alert no longer carry this repository's
   internal references (2026-09-28, T269).** Help text for `run`, `top`, `profile edit`,
   `eligibility`, `companies`, `identities`, `ledger reopen`, `profile-bundle` and `resume project`
@@ -54,6 +59,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The Applied page no longer takes about 106 seconds to load.** The lookup scanned every posting; it now starts from the applications and returns the same rows in
+  about 0.07 seconds. The viewer must be restarted to pick this up.
+- **The Runs page no longer shows "404" for a run with no funnel file** (a manual re-render); it shows the newest run that has one and says why.
 - A résumé template that still carries the starter's placeholder text is refused with every
   leftover phrase named at once, instead of one phrase per run (T268).
 - `config show` now prints `llm.base_url` and `lane_new_companies_per_run_overrides`, describes

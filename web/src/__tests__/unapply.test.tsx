@@ -17,6 +17,7 @@ import { queueResponse, queueRow } from "../test/rows";
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
   getQueue: vi.fn(),
+  getApplied: vi.fn(),
   getDetail: vi.fn(),
   getAnswers: vi.fn(),
   getRuns: vi.fn(),
@@ -37,7 +38,7 @@ import { App } from "../App";
 const COLLAPSE_MS = 200;
 
 function dataRows(): HTMLElement[] {
-  return within(screen.getByRole("grid", { name: "Queue" }))
+  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
     .getAllByRole("row")
     .filter((element) => element.hasAttribute("data-row-id"));
 }
@@ -63,9 +64,11 @@ async function applyFirstRow() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Mark applied: Backend Engineer at Globex" }),
-  );
+  const row = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+    .getByText("Backend Engineer")
+    .closest('[role="row"]');
+  if (row === null) throw new Error("no row for the first job");
+  fireEvent.keyDown(row, { key: "a" });
   await act(async () => {
     await vi.advanceTimersByTimeAsync(COLLAPSE_MS);
   });
@@ -88,12 +91,13 @@ describe("mark-applied undo", () => {
     expect(titles()).toEqual(["Backend Engineer", "Analyst"]);
   });
 
-  it("says the undo withdraws the application, not that the record stays", async () => {
+  it("says what happened, in the past tense, with an Undo beside it", async () => {
     await applyFirstRow();
-    const toast = screen.getByText(/^Marked applied: Globex — Backend Engineer/);
-    expect(toast.textContent ?? "").toMatch(/Undo withdraws it and puts the row back/);
-    // The old copy is now a false statement about what the button does.
-    expect(toast.textContent ?? "").not.toMatch(/stays until it is withdrawn/);
+    // Past tense, and the company: it says what actually happened, once the server said so.
+    const toast = screen.getByText("Application recorded for Globex.");
+    expect(toast).toBeTruthy();
+    // And the control it offers is the undo, by name.
+    expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
   });
 
   it("leaves the row out and shows an error toast when unapply fails", async () => {

@@ -11,11 +11,14 @@ function ToastItem({
   onDismiss,
   onHold,
   onRelease,
+  onActed,
 }: {
   toast: Toast;
   onDismiss: (id: number) => void;
   onHold: (id: number) => void;
   onRelease: (id: number) => void;
+  /** Told when a button that is about to unmount was used, so focus can be put somewhere real. */
+  onActed: () => void;
 }) {
   const [shown, setShown] = useState(false);
   useEffect(() => {
@@ -74,6 +77,7 @@ function ToastItem({
             type="button"
             className="min-h-11 rounded-sm border border-fg-2 px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:bg-surface"
             onClick={() => {
+              onActed();
               toast.undo?.();
               onDismiss(toast.id);
             }}
@@ -85,6 +89,7 @@ function ToastItem({
           type="button"
           className="min-h-11 min-w-11 rounded-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg"
           onClick={() => {
+            onActed();
             onDismiss(toast.id);
           }}
           aria-label="Dismiss"
@@ -107,6 +112,21 @@ export function Toaster({
   onHold: (id: number) => void;
   onRelease: (id: number) => void;
 }) {
+  /*
+   * Using a toast's own button unmounts the button that had focus, and the browser drops focus on
+   * `<body>` — a keyboard reader is back at the top of the document (SC 2.4.3). After the toast is
+   * gone, if focus really did fall to the body, it goes to the page's main region (the skip link's
+   * target), without scrolling. Focus that has moved somewhere meaningful is left alone.
+   */
+  const acted = useRef(false);
+  useEffect(() => {
+    if (!acted.current) return;
+    acted.current = false;
+    const active = document.activeElement;
+    if (active === null || active === document.body) {
+      document.getElementById("view")?.focus({ preventScroll: true });
+    }
+  }, [toasts]);
   return (
     <div
       className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 p-4"
@@ -127,6 +147,9 @@ export function Toaster({
             onDismiss={onDismiss}
             onHold={onHold}
             onRelease={onRelease}
+            onActed={() => {
+              acted.current = true;
+            }}
           />
         </div>
       ))}

@@ -20,8 +20,6 @@ function renderBand() {
     <StatusBand
       counts={COUNTS}
       newSince={0}
-      showing={2}
-      total={2}
       reviewNote="Held for a look, not blindly appliable."
       activeFacet={null}
       onToggleFacet={() => undefined}
@@ -52,18 +50,16 @@ afterEach(() => {
 });
 
 describe("the status band below 40rem", () => {
-  it("keeps in queue, eligible, review and the readout out, and folds the rest", () => {
+  it("keeps in queue, eligible, review and new out, and folds the rest", () => {
     const { container } = renderBand();
 
-    // The three that answer "is there work here", plus the one sentence that answers "did my
-    // filter match anything".
+    // The three that answer "is there work here".
     expect(screen.getByText("in queue")).toBeTruthy();
     expect(screen.getByRole("button", { name: /^eligible /i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /^review /i })).toBeTruthy();
     // The fourth, added with the facet: "what arrived since I last looked" is the same question
     // the three above answer, for the leads that are the reason the page is opened.
     expect(screen.getByRole("button", { name: /^new since last visit /i })).toBeTruthy();
-    expect(screen.getByRole("status").textContent).toContain("Showing 2 of 2");
 
     const details = container.querySelector("details");
     expect(details).not.toBeNull();

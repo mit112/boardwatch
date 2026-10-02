@@ -11,10 +11,9 @@ import type { QueueRow, ReviewReason } from "../api/types";
  *
  * `Record<ReviewReason, string>` and not a partial map: a member added server-side and mirrored in
  * `api/types.ts` is a compile error here rather than a lead that quietly vanishes from the
- * breakdown. The labels are copied VERBATIM from `ReviewReasonBadge`'s own map so the sentence and
- * the chip on the row read as one vocabulary; `reviewSummary.test.tsx` compares the two through
- * the badge's render, because that map is not exported and the badge belongs to another change.
- * This file is the single source — the badge can be pointed at it whenever it is next touched.
+ * breakdown. These are the short LABELS — the filter chips and the lane summary; the plain-language
+ * sentences a row and the workspace print live in `lib/jobStatus.REASON_PLAIN`, and
+ * `reviewSummary.test.tsx` holds both catalogs to the same fifteen members.
  */
 export const REVIEW_REASON_LABELS: Record<ReviewReason, string> = {
   eligibility_unconfirmed: "eligibility unconfirmed",

@@ -2,51 +2,8 @@ import { useCallback, useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import type { QueueRow } from "../api/types";
-import type { SortKey, SortState } from "../lib/sort";
-import {
-  GRID_TEMPLATE,
-  MIDDLE_UP,
-  QueueRowItem,
-  SCORE_UP,
-  SELECT_GRID_TEMPLATE,
-  WIDE_ONLY,
-} from "./QueueRowItem";
-
-function SortButton({
-  label,
-  sortKey,
-  sort,
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  sort: SortState;
-  onSort: (key: SortKey) => void;
-}) {
-  const active = sort.key === sortKey;
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onSort(sortKey);
-      }}
-      title={`Sort by ${label}`}
-      className={`inline-flex min-h-11 min-w-11 items-center gap-1 rounded-sm px-1 label-micro transition-colors duration-[120ms] ease-snap ${
-        active ? "text-fg" : "text-fg-3 hover:text-fg-2"
-      }`}
-    >
-      {label}
-      {/*
-        * The glyph is always drawn, dimmed when the column is not the one sorting. It used to be
-        * `opacity-0`, which meant an unsorted header carried NO signal that it could be sorted at
-        * all — the affordance existed only for the column you had already found.
-        */}
-      <span aria-hidden="true" className={active ? "" : "opacity-50"}>
-        {active ? (sort.direction === "asc" ? "↑" : "↓") : "↕"}
-      </span>
-    </button>
-  );
-}
+import type { SimilarGroup } from "../lib/similar";
+import { QueueRowItem } from "./QueueRowItem";
 
 /**
  * Multi-select, when the caller offers it. A table handed no `Selection` renders no checkbox
@@ -98,24 +55,15 @@ function SelectAll({ rows, selection }: { rows: QueueRow[]; selection: Selection
   );
 }
 
-function ariaSort(sort: SortState, ...keys: SortKey[]): "ascending" | "descending" | "none" {
-  // VARIADIC because one columnheader can carry more than one sort control: title and company
-  // share a cell. Keyed on `title` alone, sorting by company left EVERY header reading
-  // `aria-sort="none"` while the list was in fact sorted — a screen reader was told the table
-  // was unsorted by the same markup that had just re-ordered it.
-  if (!keys.includes(sort.key)) return "none";
-  return sort.direction === "asc" ? "ascending" : "descending";
-}
-
 /*
  * A `role="grid"` whose focusable unit is the ROW, which the ARIA practices allow for a collection
  * the reader works down rather than cell by cell — and which this list needs, because the previous
  * markup had two defects that compound.
  *
- * SEMANTICS. `role="row"` and eight `role="columnheader"` were emitted with no `role="grid"` or
- * `role="rowgroup"` above them and no row or cell role on any of the 347 data rows. An orphaned
- * columnheader is dropped by assistive tech, so every `aria-sort` this component set was announced
- * to nothing and the table read as an undifferentiated wall of buttons.
+ * SEMANTICS. Rows and cells carry their ARIA roles under a real `role="grid"` and `role="rowgroup"`;
+ * an orphaned row or columnheader is dropped by assistive tech and the list reads as an
+ * undifferentiated wall of buttons. Sorting is a single labelled control above the list (it was a
+ * column of header buttons, which a one-column list has no room for).
  *
  * TAB STOPS. Four focusable controls per row measured **1,399 tab stops** on one queue page.
  * Nothing below the list — the review lane, the detail pane — was reachable by keyboard in any
@@ -123,12 +71,12 @@ function ariaSort(sort: SortState, ...keys: SortKey[]): "ascending" | "descendin
  * per-row controls opt out with `tabIndex={-1}`. Every one of them keeps a single-key equivalent
  * on the focused row, so this removes tab stops WITHOUT removing keyboard access to anything:
  *
- *   ↓ / j   next row          Enter   open the detail pane
- *   ↑ / k   previous row      o       open the apply link
- *   Home    first row         a       mark applied
+ *   ↓ / j   next row          Enter   open the job in the workspace
+ *   ↑ / k   previous row      o       open the application page
+ *   Home    first row         a       record that you applied
  *   End     last row          s       skip
  *   x       select the row    shift+x extend the selection from the anchor
- *   r       report the lead   f       focus the pane's follow-up date input
+ *   r       report the job    f       focus the workspace's follow-up date input
  *
  * The keys are handled HERE, on the grid, not on `window`: `a` and `s` write, and a global
  * listener would fire them while the reader was typing a company name into the filter box.
@@ -136,9 +84,6 @@ function ariaSort(sort: SortState, ...keys: SortKey[]): "ascending" | "descendin
 export function QueueTable({
   label,
   rows,
-  rankOf,
-  sort,
-  onSort,
   selectedId,
   activeId,
   onActivate,
@@ -148,19 +93,14 @@ export function QueueTable({
   onApplied,
   onSkip,
   onReport,
-  onBoard,
   onFollowUp,
   selection,
   similarOf,
-  onApplyOpened,
   onSelectCompany,
-  emptyHint = "Clear the text box or lower the minimum score.",
+  emptyHint = "Clear the search or loosen a filter.",
 }: {
   label: string;
   rows: QueueRow[];
-  rankOf: (row: QueueRow) => number;
-  sort: SortState;
-  onSort: (key: SortKey) => void;
   selectedId: number | null;
   activeId: number | null;
   onActivate: (postingId: number) => void;
@@ -170,15 +110,12 @@ export function QueueTable({
   onApplied: (row: QueueRow) => void;
   onSkip: (row: QueueRow) => void;
   onReport: (row: QueueRow) => void;
-  onBoard?: (provider: string) => void;
   /** `f`: move the cursor INTO the pane's date input. Never sets a date by itself — see below. */
   onFollowUp: (row: QueueRow) => void;
   /** Omitted on a table with no multi-select: no checkbox column, no `x`. */
   selection?: Selection;
-  /** The row's similar-role group size, or undefined when it has no similar lead in this list. */
-  similarOf?: (row: QueueRow) => number | undefined;
-  /** An apply link on a row was followed by a click. `o` reports through `onOpenApply`. */
-  onApplyOpened?: (row: QueueRow) => void;
+  /** What the row's group of similar postings holds, or undefined when it has none in this list. */
+  similarOf?: (row: QueueRow) => SimilarGroup | undefined;
   /** `c`: add every listed lead at this row's company to the selection. Needs `selection`. */
   onSelectCompany?: (row: QueueRow) => void;
   /* Names the levers that would bring rows back. A verdict facet is a lever the two default
@@ -331,103 +268,30 @@ export function QueueTable({
     <div
       role="grid"
       aria-label={label}
-      aria-rowcount={rows.length + 1}
+      aria-rowcount={rows.length + (selection === undefined ? 0 : 1)}
       onKeyDown={onKeyDown}
-      className="@container rounded-md bg-surface shadow-[0_1px_0_0_var(--color-divider)_inset,0_16px_40px_-24px_rgb(0_0_0/0.9)]"
+      className="@container overflow-hidden rounded-md bg-surface shadow-card"
     >
-      {/*
-        * Sticky, below the app header. Past roughly row twelve the score, verdict and coverage
-        * columns were three unlabelled numbers; on a 347-row list that is most of the list.
-        * The background is opaque so rows do not bleed through it.
-        *
-        * The stickiness lives on the ROWGROUP, not on the row inside it. A sticky element is
-        * clipped by its own parent's box, and a rowgroup wrapping only the header row is exactly
-        * as tall as that row — so the header unpinned and scrolled away the moment the first data
-        * row passed it, which is the failure this was added to fix.
-        */}
-      <div role="rowgroup" className="sticky top-header z-10">
-        <div
-          role="row"
-          className={`grid ${selection === undefined ? GRID_TEMPLATE : SELECT_GRID_TEMPLATE} items-center gap-3 rounded-t-md border-b border-divider bg-surface px-4`}
-        >
-          {selection === undefined ? null : <SelectAll rows={rows} selection={selection} />}
-          <span role="columnheader" aria-sort={ariaSort(sort, "rank")} className={WIDE_ONLY}>
-            <SortButton label="#" sortKey="rank" sort={sort} onSort={onSort} />
-          </span>
-          <span
-            role="columnheader"
-            aria-sort={ariaSort(sort, "title", "company", "provider")}
-            className="flex items-center gap-2"
-          >
-            <SortButton label="title" sortKey="title" sort={sort} onSort={onSort} />
-            <span aria-hidden="true" className="text-divider">
-              |
+      {/* Only where a bulk selection exists. The one header this list has: "select all" over the
+          rows it is currently showing, never the whole lane behind the filter. */}
+      {selection === undefined ? null : (
+        <div role="rowgroup">
+          <div role="row" className="flex items-center gap-3 border-b border-divider px-4 py-1.5">
+            <SelectAll rows={rows} selection={selection} />
+            <span role="columnheader" className="text-[0.8125rem] text-fg-3">
+              Select all {rows.length.toLocaleString()} shown
             </span>
-            <SortButton label="company" sortKey="company" sort={sort} onSort={onSort} />
-            <span aria-hidden="true" className="text-divider">
-              |
-            </span>
-            {/* The ATS lives in THIS columnheader because it is rendered in this column, beside
-                the company it belongs to — a sort control over a cell the reader is not looking
-                at is the hidden affordance the data-table card refuses. */}
-            <SortButton label="ats" sortKey="provider" sort={sort} onSort={onSort} />
-          </span>
-          <span role="columnheader" aria-sort={ariaSort(sort, "location")} className={MIDDLE_UP}>
-            <SortButton label="location · remote" sortKey="location" sort={sort} onSort={onSort} />
-          </span>
-          <span
-            role="columnheader"
-            aria-sort={ariaSort(sort, "age")}
-            className={`${WIDE_ONLY} justify-self-end`}
-          >
-            <SortButton label="age" sortKey="age" sort={sort} onSort={onSort} />
-          </span>
-          <span
-            role="columnheader"
-            aria-sort={ariaSort(sort, "score")}
-            className={`${SCORE_UP} justify-self-end`}
-          >
-            <SortButton label="score" sortKey="score" sort={sort} onSort={onSort} />
-          </span>
-          <span role="columnheader" className="px-1 label-micro text-fg-3">
-            verdict
-          </span>
-          {/* Two controls in ONE columnheader, exactly as title/company/ats share theirs: the
-              follow-up chip is rendered in this cell, beside the flags, so its sort control
-              belongs on the header above it rather than on a column the reader is not looking
-              at. `ariaSort` is variadic for this case. */}
-          <span
-            role="columnheader"
-            aria-sort={ariaSort(sort, "coverage", "follow_up")}
-            /* Not `WIDE_ONLY`: that is `block`, and `block` and `flex` at equal specificity
-               would be decided by stylesheet order rather than by this file. */
-            className="hidden items-center gap-2 @min-[78rem]:flex"
-          >
-            <SortButton label="coverage · flags" sortKey="coverage" sort={sort} onSort={onSort} />
-            <span aria-hidden="true" className="text-divider">
-              |
-            </span>
-            <SortButton label="follow-up" sortKey="follow_up" sort={sort} onSort={onSort} />
-          </span>
-          <span
-            role="columnheader"
-            className={`${MIDDLE_UP} px-1 text-right label-micro text-fg-3`}
-          >
-            actions
-          </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {rows.length === 0 ? (
         // Still a row and a cell: a bare `<p>` is not a permitted child of `role="grid"`, and an
         // empty state that falls out of the accessibility tree is the one a reader most needs.
         <div role="rowgroup">
           <div role="row">
-            <p
-              role="gridcell"
-              className="mx-auto max-w-[68ch] px-4 py-10 text-center text-sm text-fg-2"
-            >
-              No lead matches this filter. {emptyHint}
+            <p role="gridcell" className="mx-auto max-w-[68ch] px-4 py-10 text-center text-sm text-fg-2">
+              No job matches. {emptyHint}
             </p>
           </div>
         </div>
@@ -437,7 +301,6 @@ export function QueueTable({
             <QueueRowItem
               key={row.posting_id}
               row={row}
-              rank={rankOf(row)}
               selected={selectedId === row.posting_id}
               active={stopId === row.posting_id}
               collapsing={collapsing.has(row.posting_id)}
@@ -454,24 +317,7 @@ export function QueueTable({
                 onActivate(row.posting_id);
                 onSelect(row);
               }}
-              onApplied={() => {
-                onApplied(row);
-              }}
-              onSkip={() => {
-                onSkip(row);
-              }}
-              {...(onBoard === undefined ? {} : { onBoard })}
-              onReport={() => {
-                onReport(row);
-              }}
               similar={similarOf?.(row)}
-              {...(onApplyOpened === undefined
-                ? {}
-                : {
-                    onApplyOpened: () => {
-                      onApplyOpened(row);
-                    },
-                  })}
             />
           ))}
         </div>

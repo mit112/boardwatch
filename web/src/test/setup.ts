@@ -35,4 +35,7 @@ window.matchMedia = stubMediaQueryList;
 afterEach(() => {
   cleanup();
   window.sessionStorage.clear();
+  // The same isolation for the two per-viewer conveniences kept in `localStorage` — the answers
+  // panel's open state and the saved views — which would otherwise leak between tests of a file.
+  window.localStorage.clear();
 });
