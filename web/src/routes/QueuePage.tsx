@@ -901,10 +901,16 @@ export function QueuePage({
   const [sessionEnd, setSessionEnd] = useState<SessionEnd | null>(null);
   /* The workspace's own acknowledgement after "Record application" when NO session is running:
      the job has left the list, so the workspace says what just happened and what comes next. */
-  const [recordedPanel, setRecordedPanel] = useState<{ row: QueueRow; nextId: number | null } | null>(
-    null,
-  );
+  const [recordedPanel, setRecordedPanel] = useState<{
+    row: QueueRow;
+    nextId: number | null;
+    /** True until the server has confirmed the write; the panel says "recording", not "recorded". */
+    pending: boolean;
+    undo: () => void;
+  } | null>(null);
   const recordLock = useRef(0);
+  const wantsPaneFocus = useRef(false);
+  const [focusRequests, setFocusRequests] = useState(0);
 
   const bandCounts: QueueCounts = useMemo(() => {
     let appliedDelta = 0;
@@ -1086,13 +1092,26 @@ export function QueuePage({
    *  never reach "Record application" of a job nobody has read yet. */
   const openAndFocus = useCallback(
     (postingId: number) => {
+      wantsPaneFocus.current = true;
       openLead(postingId);
-      window.setTimeout(() => {
-        document.getElementById(PANE_ID)?.focus();
-      }, 0);
+      // Guarantees a render, and so a run of the effect below, even when nothing else changes.
+      setFocusRequests((count) => count + 1);
     },
     [openLead],
   );
+  /*
+   * A timer cannot do this: when the pane is swapped (the recorded panel is dismissed and the
+   * workspace comes back) it fires first, focuses the panel that is about to be replaced, and
+   * leaves focus on `<body>` (SC 2.4.3). So the request is a flag, honoured by the first render
+   * after it that has the pane on screen.
+   */
+  useEffect(() => {
+    if (!wantsPaneFocus.current) return;
+    const pane = document.getElementById(PANE_ID);
+    if (pane === null) return;
+    wantsPaneFocus.current = false;
+    pane.focus();
+  }, [focusRequests, selected, recordedPanel]);
 
   const act = useCallback(
     (row: QueueRow, kind: Removal) => {
@@ -1130,6 +1149,42 @@ export function QueuePage({
        * after the page had said it was back. Whoever runs second honours this.
        */
       let reverted = false;
+
+      /*
+       * Taking the application back. The toast's Undo and the recorded panel's Undo are this one
+       * function, so a second press of either — the toast outlives the panel — finds the work done
+       * and changes nothing: no second session decrement, no pull back to the job.
+       */
+      let withdrawn = false;
+      const withdraw = () => {
+        void unapply(row.posting_id)
+          .then(() => {
+            if (withdrawn) return;
+            withdrawn = true;
+            restore(row.posting_id);
+            setConfirmed((current) => {
+              const next = new Map(current);
+              next.delete(row.posting_id);
+              return next;
+            });
+            const now = sessionRef.current;
+            if (now !== null) setSession({ ...now, count: Math.max(0, now.count - 1) });
+            setRecordedPanel((panel) => (panel?.row.posting_id === row.posting_id ? null : panel));
+            setSessionEnd(null);
+            // Put the reader back on the job they just took back — but only when the workspace
+            // had moved on from it (this also gives focus back when the panel's own Undo button
+            // unmounts). An undo from the list's own key leaves the reader where they are:
+            // stealing focus from whatever they are doing now would be worse than the row quietly
+            // coming back.
+            if (advance || showPanel) openAndFocus(row.posting_id);
+          })
+          .catch((caught: unknown) => {
+            push({
+              message: errorMessage(caught, "Could not withdraw that application."),
+              tone: "error",
+            });
+          });
+      };
 
       // Optimistic: the row collapses to zero height, then leaves the list.
       setCollapsing((current) => new Set(current).add(row.posting_id));
@@ -1170,7 +1225,8 @@ export function QueuePage({
             openAndFocus(forward.posting_id);
           }
         } else if (showPanel) {
-          setRecordedPanel({ row, nextId: forward?.posting_id ?? null });
+          // `pending`: the panel must not say "recorded" until the write has been answered.
+          setRecordedPanel({ row, nextId: forward?.posting_id ?? null, pending: true, undo: withdraw });
         } else {
           openLead(null);
         }
@@ -1240,35 +1296,12 @@ export function QueuePage({
              * showing a job the store still counts as applied.
              */
             message: `Application recorded for ${row.company}.`,
-            undo: () => {
-              void unapply(row.posting_id)
-                .then(() => {
-                  restore(row.posting_id);
-                  setConfirmed((current) => {
-                    const next = new Map(current);
-                    next.delete(row.posting_id);
-                    return next;
-                  });
-                  const now = sessionRef.current;
-                  if (now !== null) setSession({ ...now, count: Math.max(0, now.count - 1) });
-                  setRecordedPanel((panel) =>
-                    panel?.row.posting_id === row.posting_id ? null : panel,
-                  );
-                  setSessionEnd(null);
-                  // Put the reader back on the job they just took back — but only when the
-                  // workspace had moved on from it. An undo from the list's own key leaves the
-                  // reader where they are: stealing focus from whatever they are doing now would
-                  // be worse than the row quietly coming back.
-                  if (advance || showPanel) openAndFocus(row.posting_id);
-                })
-                .catch((caught: unknown) => {
-                  push({
-                    message: errorMessage(caught, "Could not withdraw that application."),
-                    tone: "error",
-                  });
-                });
-            },
+            undo: withdraw,
           });
+          // The panel may now say what happened: the store has answered.
+          setRecordedPanel((panel) =>
+            panel?.row.posting_id === row.posting_id ? { ...panel, pending: false } : panel,
+          );
         })
         .catch((caught: unknown) => {
           reverted = true;
@@ -1827,6 +1860,9 @@ export function QueuePage({
           onStart={startSession}
           startLabel={session === null ? "Start applying" : "Continue applying"}
           canStart={navList.length > 0}
+          scoped={
+            activeFilters.length - (facet === null ? 0 : 1) - (reasonFacet === null ? 0 : 1) > 0
+          }
         />
 
         {session === null ? null : (
@@ -1928,7 +1964,7 @@ export function QueuePage({
         )}
 
         {newCount > 0 && stashed !== null ? (
-          <p className="flex flex-wrap items-center gap-x-3 text-sm text-fg-2">
+          <p role="status" className="flex flex-wrap items-center gap-x-3 text-sm text-fg-2">
             <span className="tabular-nums">{newCount} newly delivered</span>
             <button
               type="button"
@@ -2067,10 +2103,13 @@ export function QueuePage({
             aria-label="Job workspace"
             className="hidden rounded-lg bg-surface p-8 text-center shadow-card lg:sticky lg:top-header lg:flex lg:min-h-80 lg:flex-col lg:items-center lg:justify-center lg:gap-3"
           >
-            <h2 className="text-lg text-fg">Pick a job to start</h2>
+            <h2 className="text-lg text-fg">
+              {navList.length === 0 ? "No job to open" : "Pick a job to start"}
+            </h2>
             <p className="max-w-[44ch] text-sm text-fg-2">
-              Open any job to see what to check, the résumé prepared for it, and your application
-              answers — all in one place beside the list.
+              {navList.length === 0
+                ? emptyHint
+                : "Open any job to see what to check, the résumé prepared for it, and your application answers — all in one place beside the list."}
             </p>
             {navList.length === 0 ? null : (
               <button
@@ -2096,6 +2135,7 @@ export function QueuePage({
               company={recordedPanel.row.company}
               title={recordedPanel.row.title}
               hasNext={recordedPanel.nextId !== null}
+              pending={recordedPanel.pending}
               onContinue={() => {
                 const next = recordedPanel.nextId;
                 setRecordedPanel(null);
@@ -2106,25 +2146,7 @@ export function QueuePage({
                 setActiveId(next);
                 openAndFocus(next);
               }}
-              onUndo={() => {
-                const row = recordedPanel.row;
-                void unapply(row.posting_id)
-                  .then(() => {
-                    restore(row.posting_id);
-                    setConfirmed((current) => {
-                      const next = new Map(current);
-                      next.delete(row.posting_id);
-                      return next;
-                    });
-                    setRecordedPanel(null);
-                  })
-                  .catch((caught: unknown) => {
-                    push({
-                      message: errorMessage(caught, "Could not withdraw that application."),
-                      tone: "error",
-                    });
-                  });
-              }}
+              onUndo={recordedPanel.undo}
               onBack={closeWorkspace}
             />
           </div>

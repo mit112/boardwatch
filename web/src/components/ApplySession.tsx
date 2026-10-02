@@ -90,6 +90,7 @@ export function RecordedPanel({
   company,
   title,
   hasNext,
+  pending,
   onContinue,
   onUndo,
   onBack,
@@ -97,6 +98,8 @@ export function RecordedPanel({
   company: string;
   title: string;
   hasNext: boolean;
+  /** The write has not been answered yet. Nothing here may claim it landed until it has. */
+  pending: boolean;
   onContinue: () => void;
   onUndo: () => void;
   onBack: () => void;
@@ -105,15 +108,31 @@ export function RecordedPanel({
   useEffect(() => {
     primary.current?.focus();
   }, []);
+  /* Escape leaves the panel like the workspace it replaces; below `lg` it is a modal dialog. */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onBack();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onBack]);
   return (
     <div role="status" className="flex flex-col gap-4 px-6 py-8">
       <span className="inline-flex size-10 items-center justify-center rounded-full bg-surface-2 text-ok">
         <Icon name="check" size={22} />
       </span>
       <div>
-        <h2 className="text-xl text-fg">Application recorded for {company}.</h2>
+        <h2 className="text-xl text-fg">
+          {pending
+            ? `Recording your application for ${company}…`
+            : `Application recorded for ${company}.`}
+        </h2>
         <p className="mt-1 max-w-[56ch] text-sm text-fg-2">
-          {title} is off your list. If that was a mistake, undo it and the job comes straight back.
+          {pending
+            ? `Waiting for the store to confirm. If it does not go through, ${title} comes back to your list.`
+            : `${title} is off your list. If that was a mistake, undo it and the job comes straight back.`}
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -123,7 +142,12 @@ export function RecordedPanel({
             <Icon name="arrowRight" />
           </button>
         ) : null}
-        <button type="button" onClick={onUndo} className={`${QUIET_BUTTON} bg-surface-2`}>
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={pending}
+          className={`${QUIET_BUTTON} bg-surface-2 disabled:text-fg-3`}
+        >
           Undo
         </button>
         <button

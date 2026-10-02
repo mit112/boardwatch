@@ -99,7 +99,7 @@ export function App() {
       >
         Skip to content
       </button>
-      <header inert={sheet} className="sticky top-0 z-30 border-b border-divider bg-bg">
+      <header inert={sheet} className="z-30 border-b border-divider bg-bg roomy:sticky roomy:top-0">
         <div className="mx-auto flex max-w-[160rem] flex-wrap items-center gap-6 px-6 py-3">
           {/* A real `h1`, not a styled span: it is the only document-level heading either route
               has, and without it a screen reader's heading list starts at `h2` under nothing.

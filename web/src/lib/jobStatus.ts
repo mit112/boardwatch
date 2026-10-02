@@ -381,6 +381,22 @@ export function whatToCheck(detail: QueueDetail): CheckItem[] {
     });
   }
 
+  /* The rules' own reading was "unsure" but no listed requirement carries it. The list row says so
+     (`rowNote`), so the pane must not say "nothing flagged" over the same job. */
+  if (
+    row.verdict === "uncertain" &&
+    !reviewsDiffer(row) &&
+    classified.unmet.length === 0 &&
+    classified.unconfirmed.length === 0
+  ) {
+    items.push({
+      key: "rules-unsure",
+      tone: "warn",
+      headline: requirementsMark("uncertain").label,
+      body: "The rules could not settle every requirement, and no single requirement is listed for it. Read the description before applying.",
+    });
+  }
+
   if (reviewsDiffer(row)) {
     items.push({
       key: "differ",

@@ -303,6 +303,86 @@ describe("recording from the workspace without a session", () => {
     expect(visibleTitles()).toEqual(["Alpha Engineer", "Mike Engineer"]);
   });
 
+  it("does not say the application is recorded until the server has answered", async () => {
+    let answer: (value: Awaited<ReturnType<typeof markApplied>>) => void = () => undefined;
+    vi.mocked(markApplied).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    await mount(threeJobs());
+    fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Record application" }));
+    await settle(COLLAPSE_MS);
+
+    // Still waiting: the panel says so, claims nothing, and Undo has nothing to take back yet.
+    screen.getByRole("heading", { name: /Recording your application for Zeta Co/ });
+    expect(screen.queryByRole("heading", { name: /Application recorded/ })).toBeNull();
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Undo" }).disabled).toBe(true);
+    expect(vi.mocked(unapply)).not.toHaveBeenCalled();
+
+    await act(async () => {
+      answer({ outcome: "created", job_id: 1 });
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    screen.getByRole("heading", { name: "Application recorded for Zeta Co." });
+    expect(screen.getAllByRole<HTMLButtonElement>("button", { name: "Undo" })[0]?.disabled).toBe(false);
+  });
+
+  it("never shows the recorded heading when the write fails", async () => {
+    vi.mocked(markApplied).mockRejectedValue(new Error("down"));
+    await mount(threeJobs());
+    fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Record application" }));
+    await settle(COLLAPSE_MS);
+
+    expect(screen.queryByRole("heading", { name: /Application recorded/ })).toBeNull();
+    expect(visibleTitles()).toContain("Zeta Engineer");
+    expect(counts().today).toBe(2);
+  });
+
+  it("keeps focus in the workspace after the panel's Undo, and a second Undo changes nothing", async () => {
+    await mount(threeJobs());
+    fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Record application" }));
+    await settle(COLLAPSE_MS);
+
+    const buttons = screen.getAllByRole("button", { name: "Undo" });
+    const panelUndo = buttons[0] as HTMLElement;
+    const toastUndo = buttons[buttons.length - 1] as HTMLElement;
+    fireEvent.click(panelUndo);
+    await settle();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.getElementById("lead-detail")?.contains(document.activeElement)).toBe(true);
+
+    // The toast's Undo outlives the panel. Pressing it now finds the work done: it must not pull
+    // the reader back to the job from wherever they have gone since.
+    const search = screen.getByLabelText("Search");
+    search.focus();
+    fireEvent.click(toastUndo);
+    await settle();
+    expect(document.activeElement).toBe(search);
+    expect(openTitle()).toBe("Zeta Engineer");
+    expect(visibleTitles().filter((title) => title === "Zeta Engineer")).toHaveLength(1);
+  });
+
+  it("leaves the recorded panel on Escape", async () => {
+    await mount(threeJobs());
+    fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Record application" }));
+    await settle(COLLAPSE_MS);
+    screen.getByRole("heading", { name: "Application recorded for Zeta Co." });
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await settle();
+    expect(screen.queryByRole("heading", { name: /Application recorded/ })).toBeNull();
+    expect(openTitle()).toBeNull();
+  });
+
   it("brings the job straight back when the recorded panel's Undo is used", async () => {
     await mount(threeJobs());
     fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
@@ -316,6 +396,23 @@ describe("recording from the workspace without a session", () => {
     expect(vi.mocked(unapply)).toHaveBeenCalledTimes(1);
     expect(openTitle()).toBe("Zeta Engineer");
     expect(visibleTitles()).toContain("Zeta Engineer");
+  });
+});
+
+describe("the summary strip under a search", () => {
+  it("says it is counting only this search, so an empty search is not read as nothing needing attention", async () => {
+    await mount(threeJobs());
+    expect(summary()).toContain("Nothing right now.");
+    expect(summary()).not.toContain("in this search");
+
+    fireEvent.change(screen.getByLabelText("Search"), { target: { value: "no such job anywhere" } });
+    await settle();
+
+    expect(summary()).toContain("Needs attention in this search");
+    expect(summary()).toContain("Nothing in this search.");
+    expect(summary()).not.toContain("Nothing right now.");
+    // The workspace does not invite opening a job when none is listed.
+    screen.getByRole("heading", { name: "No job to open", hidden: true });
   });
 });
 

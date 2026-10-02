@@ -123,15 +123,15 @@ function StageCard({
         ) : (
           <ul className="mt-2 divide-y divide-divider">
             {stage.drops.map((drop) => (
-              <li key={drop.reason} className="flex items-baseline gap-3 py-1">
+              <li key={drop.reason} className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 py-1">
                 <span className="w-24 shrink-0 text-right text-sm text-fg tabular-nums">
                   {drop.count.toLocaleString()}
                 </span>
-                <span className="text-sm text-fg-2">{drop.reason}</span>
+                <span className="min-w-0 text-sm break-words text-fg-2">{drop.reason}</span>
                 {drop.note === "" ? null : (
                   // Shown whole: a drop note is one clause, and hiding half of it would cost more
                   // than it saves. Its backticks are still backticks.
-                  <span className="text-xs text-fg-3">
+                  <span className="min-w-0 text-xs break-words text-fg-3">
                     {withCode(drop.note, `${drop.reason}:note`)}
                   </span>
                 )}

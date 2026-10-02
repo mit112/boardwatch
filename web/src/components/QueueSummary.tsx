@@ -49,6 +49,7 @@ export function QueueSummary({
   onStart,
   startLabel,
   canStart,
+  scoped,
 }: {
   newCount: number;
   newActive: boolean;
@@ -64,6 +65,9 @@ export function QueueSummary({
   onStart: () => void;
   startLabel: string;
   canStart: boolean;
+  /** A search, place or other filter narrows what the "New" and "Needs attention" figures count.
+   *  They then say so: a filter that matches nothing must not read as "nothing needs attention". */
+  scoped: boolean;
 }) {
   const attention: ReactNode[] = [];
   if (followUpsDue > 0) {
@@ -95,7 +99,7 @@ export function QueueSummary({
       className="grid gap-x-8 gap-y-4 rounded-md bg-surface p-4 shadow-card sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"
     >
       <Stat>
-        <span className="label-micro text-fg-2">New</span>
+        <span className="label-micro text-fg-2">{scoped ? "New in this search" : "New"}</span>
         <button
           type="button"
           aria-pressed={newActive}
@@ -149,9 +153,11 @@ export function QueueSummary({
       </Stat>
 
       <Stat>
-        <span className="label-micro text-fg-2">Needs attention</span>
+        <span className="label-micro text-fg-2">
+          {scoped ? "Needs attention in this search" : "Needs attention"}
+        </span>
         {attention.length === 0 ? (
-          <p className="flex min-h-11 items-center text-sm text-fg-2">Nothing right now.</p>
+          <p className="flex min-h-11 items-center text-sm text-fg-2">{scoped ? "Nothing in this search." : "Nothing right now."}</p>
         ) : (
           <div className="flex flex-col">{attention}</div>
         )}

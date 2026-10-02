@@ -9,6 +9,13 @@
 @source not "./__tests__";
 
 /*
+ * The header only sticks where there is room for it. Wrapped to two rows it is 137-185px tall, which
+ * at 200% zoom (640x450) or on a phone is a quarter to a third of the screen, and a focused control
+ * could sit entirely beneath it (SC 2.4.11). Below this size it scrolls away with the page.
+ */
+@custom-variant roomy (@media (min-width: 40rem) and (min-height: 34rem));
+
+/*
  * Design tokens. Every colour, radius, shadow and easing curve in the application resolves here;
  * nothing downstream hard-codes a hex value, a pixel radius or a cubic-bezier.
  *
@@ -189,8 +196,9 @@
   }
 
   /*
-   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky and the detail workspace has a
-   * sticky action bar, so a control scrolled into view must stop clear of both. This reserves the
+   * WCAG 2.2 SC 2.4.11 Focus Not Obscured. The app header is sticky (only at the `roomy` size,
+   * where it is one row, well under 7.5rem) and the detail workspace has a sticky action bar, so a
+   * control scrolled into view must stop clear of both. This reserves the
    * height of the header above and the action bar below for the browser's own scroll-into-view,
    * so a component that adds a control later cannot forget it.
    */

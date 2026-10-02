@@ -187,7 +187,12 @@ function WhatToCheck({
     <Section title="What to check">
       {items.length === 0 ? (
         <p className="flex items-start gap-2 text-sm text-fg-2">
-          <Icon name="check" className="mt-0.5 text-ok" />
+          {/* A tick only when something was checked and cleared; "nothing was checked" is a dash. */}
+          {detail.row.verdict === "eligible" && eligibilitySeen > 0 ? (
+            <Icon name="check" className="mt-0.5 text-ok" />
+          ) : (
+            <Icon name="dash" className="mt-0.5 text-fg-3" />
+          )}
           <span>{nothingFlaggedSentence(detail.row, eligibilitySeen)}</span>
         </p>
       ) : (

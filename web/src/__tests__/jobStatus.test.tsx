@@ -115,6 +115,14 @@ describe("what to check", () => {
     expect(items.some((item) => item.key.startsWith("unmet:"))).toBe(false);
   });
 
+  it("does not leave an unsure rules verdict as 'nothing flagged' when no requirement carries it", () => {
+    // The list row says "Some requirements aren't confirmed" for this job; the pane must too.
+    const row = queueRow({ verdict: "uncertain", review_reason: null, judge_verdict: null });
+    expect(rowNote(row)?.label).toBe("Some requirements aren’t confirmed");
+    const items = whatToCheck(detail([requirement({ disposition: "met", covered: true })], row));
+    expect(items.map((item) => item.key)).toContain("rules-unsure");
+  });
+
   it("lists a confirmed-unmet requirement as a blocker, before anything softer", () => {
     const unmet = requirement({ requirement: "10+ years", disposition: "unmet" });
     const unknown = requirement({ requirement: "A degree", disposition: "unknown" });
