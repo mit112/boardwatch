@@ -910,6 +910,9 @@ export function QueuePage({
   } | null>(null);
   const recordLock = useRef(0);
   const wantsPaneFocus = useRef(false);
+  /* The panel as the last render left it, for the Undo that outlives it: once the panel is gone
+     the reader has moved on, and an Undo from the toast must not drag them back. */
+  const recordedPanelRef = useRef<typeof recordedPanel>(null);
   const [focusRequests, setFocusRequests] = useState(0);
 
   const bandCounts: QueueCounts = useMemo(() => {
@@ -1106,6 +1109,9 @@ export function QueuePage({
    * after it that has the pane on screen.
    */
   useEffect(() => {
+    recordedPanelRef.current = recordedPanel;
+  });
+  useEffect(() => {
     if (!wantsPaneFocus.current) return;
     const pane = document.getElementById(PANE_ID);
     if (pane === null) return;
@@ -1176,7 +1182,9 @@ export function QueuePage({
             // unmounts). An undo from the list's own key leaves the reader where they are:
             // stealing focus from whatever they are doing now would be worse than the row quietly
             // coming back.
-            if (advance || showPanel) openAndFocus(row.posting_id);
+            if (advance || (showPanel && recordedPanelRef.current?.row.posting_id === row.posting_id)) {
+              openAndFocus(row.posting_id);
+            }
           })
           .catch((caught: unknown) => {
             push({

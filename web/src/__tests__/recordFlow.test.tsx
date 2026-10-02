@@ -369,6 +369,25 @@ describe("recording from the workspace without a session", () => {
     expect(visibleTitles().filter((title) => title === "Zeta Engineer")).toHaveLength(1);
   });
 
+  it("does not reopen the job when the toast's Undo is used after the reader left the panel", async () => {
+    await mount(threeJobs());
+    fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "Record application" }));
+    await settle(COLLAPSE_MS);
+    const toastUndo = screen.getAllByRole("button", { name: "Undo" }).at(-1) as HTMLElement;
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    await settle();
+    expect(openTitle()).toBeNull();
+
+    fireEvent.click(toastUndo);
+    await settle();
+    // The job is back on the list, and the reader was left where they were.
+    expect(visibleTitles()).toContain("Zeta Engineer");
+    expect(openTitle()).toBeNull();
+  });
+
   it("leaves the recorded panel on Escape", async () => {
     await mount(threeJobs());
     fireEvent.click(within(rowOf("Zeta Engineer")).getAllByRole("button")[0] as HTMLElement);

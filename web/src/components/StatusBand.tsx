@@ -333,7 +333,7 @@ export function StatusBand({
   return (
     <section
       aria-label="Queue status"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md bg-surface shadow-card"
+      className="flex flex-wrap items-stretch rounded-md bg-surface shadow-card"
     >
       {inQueue}
       {eligible}
@@ -347,7 +347,7 @@ export function StatusBand({
           <summary className="flex min-h-11 cursor-pointer items-center px-6 label-micro text-fg-3">
             more
           </summary>
-          <div className="flex flex-wrap items-stretch divide-x divide-divider">
+          <div className="flex flex-wrap items-stretch">
             {uncertain}
             {judge}
             {rest}

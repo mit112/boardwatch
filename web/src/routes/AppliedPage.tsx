@@ -324,7 +324,7 @@ function CountsBand({
   ];
   return (
     <section aria-label="Applied history status" className="flex flex-col">
-      <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
+      <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
         {cells.map(([label, value, note]) => (
           <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-3">
             <dt className="label-micro text-fg-3">{label}</dt>

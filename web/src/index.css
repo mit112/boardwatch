@@ -9,11 +9,12 @@
 @source not "./__tests__";
 
 /*
- * The header only sticks where there is room for it. Wrapped to two rows it is 137-185px tall, which
+ * The header only sticks where there is room for it. Wrapped to two rows (below 42rem) it is
+ * 137-185px tall, which
  * at 200% zoom (640x450) or on a phone is a quarter to a third of the screen, and a focused control
  * could sit entirely beneath it (SC 2.4.11). Below this size it scrolls away with the page.
  */
-@custom-variant roomy (@media (min-width: 40rem) and (min-height: 34rem));
+@custom-variant roomy (@media (min-width: 42rem) and (min-height: 34rem));
 
 /*
  * Design tokens. Every colour, radius, shadow and easing curve in the application resolves here;

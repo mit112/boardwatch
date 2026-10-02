@@ -188,7 +188,7 @@ function GateBand({ funnel }: { funnel: RunFunnel }) {
   ];
   return (
     <section aria-label="Final eligibility gate" className="flex flex-col">
-      <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
+      <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
         {cells.map(([label, value, emphasis]) => (
           <div key={label} className="flex min-w-32 flex-col gap-1 px-4 py-3">
             <dt className="label-micro text-fg-3">{label}</dt>
@@ -228,7 +228,7 @@ function CoverageBand({ funnel }: { funnel: RunFunnel }) {
   return (
     <section
       aria-label="Résumé coverage"
-      className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface"
+      className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface"
     >
       {cells.map(([label, value]) => (
         <div key={label} className="flex min-w-32 flex-col gap-1 px-4 py-3">
@@ -586,7 +586,7 @@ export function RunsPage() {
 
         {selected === null ? null : (
           <section aria-label="Run summary">
-            <dl className="flex flex-wrap items-stretch divide-x divide-divider rounded-md border border-divider bg-surface">
+            <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
               {(
                 [
                   // Only on a run nothing has closed. A finished run's status is already in the

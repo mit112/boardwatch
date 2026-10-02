@@ -120,8 +120,10 @@ export function RecordedPanel({
   }, [onBack]);
   return (
     <div role="status" className="flex flex-col gap-4 px-6 py-8">
-      <span className="inline-flex size-10 items-center justify-center rounded-full bg-surface-2 text-ok">
-        <Icon name="check" size={22} />
+      <span
+        className={`inline-flex size-10 items-center justify-center rounded-full bg-surface-2 ${pending ? "text-fg-3" : "text-ok"}`}
+      >
+        <Icon name={pending ? "dash" : "check"} size={22} />
       </span>
       <div>
         <h2 className="text-xl text-fg">
