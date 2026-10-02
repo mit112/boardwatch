@@ -357,6 +357,8 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
   if (method === "GET" && path === "/api/applied") return appliedResponse();
   if (method === "GET" && path === "/api/answers") return ANSWERS;
+  // Dev serves no built bundle and its code is whatever Vite just reloaded: never stale.
+  if (method === "GET" && path === "/api/version") return { bundle: null, code_changed: false };
   if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 

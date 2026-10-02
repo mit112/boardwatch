@@ -36,6 +36,7 @@ import type {
   RunFunnel,
   RunsResponse,
   SkipResponse,
+  VersionResponse,
 } from "./types";
 
 function resolveFixtureMode(): boolean {
@@ -191,6 +192,8 @@ export const revealFolder = (postingId: number): Promise<RevealResponse> =>
 
 export const getApplied = (): Promise<AppliedHistoryResponse> =>
   request<AppliedHistoryResponse>("/api/applied");
+
+export const getVersion = (): Promise<VersionResponse> => request<VersionResponse>("/api/version");
 
 export const getRejected = (): Promise<RejectedResponse> =>
   request<RejectedResponse>("/api/rejected");

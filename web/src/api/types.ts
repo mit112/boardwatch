@@ -474,6 +474,14 @@ export interface ApplicationNoteResponse {
   event_id: number;
 }
 
+/** `GET /api/version`: what the page needs to say the viewer is stale. */
+export interface VersionResponse {
+  /** The bundle entry script on DISK, e.g. `index-BR0ghf3X.js`, or null with no bundle. */
+  bundle: string | null;
+  /** The package's Python changed on disk since this viewer process started. */
+  code_changed: boolean;
+}
+
 /**
  * One lead the rules rejected — `GET /api/rejected`. The queue only COUNTS these (its `ineligible`
  * cell); this is the list behind that number, so a false reject can be found. The rejection itself

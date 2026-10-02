@@ -22,13 +22,15 @@ refused AND that a path inside the root serves those exact bytes.
 from __future__ import annotations
 
 import http.client
+import http.server
 import json
 import os
 import re
+import socket
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -2123,6 +2125,180 @@ def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine
     served = call(live, "/api/applied", bearer=live.token)
     assert served.status == 200
     assert len(served.json()["rows"]) == 1
+
+
+# ------------------------------------------------------------------------------ viewer staleness
+
+
+def test_the_code_fingerprint_moves_when_a_source_file_changes_and_only_then(
+    tmp_path: Path,
+) -> None:
+    """Size and mtime of every `.py` under the package: a merge under an editable install rewrites
+    files, and that is the change a running viewer cannot otherwise see in itself."""
+    package = tmp_path / "pkg"
+    (package / "sub").mkdir(parents=True)
+    module = package / "sub" / "mod.py"
+    module.write_text("x = 1\n")
+    (package / "notes.txt").write_text("not python")
+    before = server_mod.code_fingerprint(package)
+    assert server_mod.code_fingerprint(package) == before
+
+    (package / "notes.txt").write_text("still not python, now longer")
+    assert server_mod.code_fingerprint(package) == before
+
+    stat = module.stat()
+    os.utime(module, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    touched = server_mod.code_fingerprint(package)
+    assert touched != before
+
+    (package / "new.py").write_text("")
+    assert server_mod.code_fingerprint(package) != touched
+
+
+def test_the_version_route_names_the_bundle_on_disk_and_reports_a_code_change(
+    live: Live, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page compares `bundle` with the script it loaded, and `code_changed` says the Python on
+    disk is no longer the Python this process imported."""
+    index = (server_mod.static_root() / "index.html").read_text(encoding="utf-8")
+    response = call(live, "/api/version", bearer=live.token)
+    assert response.status == 200
+    payload = response.json()
+    assert payload["code_changed"] is False
+    assert f'src="/assets/{payload["bundle"]}"' in index
+
+    monkeypatch.setattr(server_mod, "code_fingerprint", lambda package=None: "moved")
+    assert call(live, "/api/version", bearer=live.token).json()["code_changed"] is True
+    assert call(live, "/api/version", bearer=None).status == 401
+
+
+def test_a_held_port_is_recognised_as_this_owners_viewer_of_this_store_and_nothing_else_is(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """`boardwatch web` on a port its own viewer holds reuses it instead of failing to bind. The
+    probe says yes only for a listener that PROVES it holds the token and serves the same store,
+    and never sends the token itself."""
+    host, port = live.authority.split(":")
+    assert server_mod.viewer_answers(host, int(port), live.token, ctx) is True
+    assert server_mod.viewer_answers(host, int(port), "not-the-token", ctx) is False
+    elsewhere = replace(ctx, queue_root=ctx.queue_root / "elsewhere")
+    assert server_mod.viewer_answers(host, int(port), live.token, elsewhere) is False
+
+
+def test_the_probe_never_sends_the_token_and_survives_a_listener_that_is_not_http(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """Loopback is reachable from every local account, so whatever holds the port may not be the
+    owner's. A raw listener records what the probe sends — no token in it — and answers with a
+    non-HTTP greeting, which must read as "not a viewer" rather than escape as an exception."""
+    received: list[bytes] = []
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+
+    def serve() -> None:
+        client, _ = listener.accept()
+        with client:
+            received.append(client.recv(65536))
+            client.sendall(b"SSH-2.0-OpenSSH_9.9\r\n")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
+    finally:
+        thread.join(timeout=5)
+        listener.close()
+    assert received, "the probe sent nothing, so the token check below is vacuous"
+    assert live.token.encode() not in received[0]
+    assert b"Authorization" not in received[0]
+
+    # Nothing listening at all: the port just released.
+    assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
+
+
+
+def _hostile_listener(reply: bytes, *, endless: bool = False) -> tuple[int, Callable[[], None]]:
+    """A raw listener on a free port that answers one connection with `reply` — and, `endless`,
+    keeps streaming after it until the client goes away. Returns the port and a stopper."""
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+
+    def serve() -> None:
+        try:
+            client, _ = listener.accept()
+        except OSError:
+            return
+        with client:
+            client.recv(65536)
+            try:
+                client.sendall(reply)
+                while endless:
+                    client.sendall(b"x" * 65536)
+            except OSError:
+                return
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+
+    def stop() -> None:
+        listener.close()
+        thread.join(timeout=5)
+
+    return int(listener.getsockname()[1]), stop
+
+
+@pytest.mark.parametrize(
+    ("reply", "endless"),
+    [
+        # A chunk size the client would accept as negative reads to EOF: refused unread.
+        (
+            b"HTTP/1.1 200 OK\r\nServer: boardwatch\r\nTransfer-Encoding: chunked\r\n\r\n-1\r\n",
+            True,
+        ),
+        # A non-ASCII proof, which `compare_digest` would raise on.
+        (
+            b'HTTP/1.1 200 OK\r\nContent-Length: 20\r\nConnection: close\r\n\r\n{"proof": "\xc3\xa9"} ',
+            False,
+        ),
+        # Deeply nested, unterminated JSON inside the 4 KiB cap: whatever the decoder raises, a no.
+        (
+            b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n" + b"[" * 4000,
+            False,
+        ),
+    ],
+)
+def test_a_hostile_listener_reads_as_not_a_viewer_promptly_and_without_raising(
+    live: Live, engine: Engine, ctx: ApiContext, reply: bytes, endless: bool
+) -> None:
+    port, stop = _hostile_listener(reply, endless=endless)
+    started = time.monotonic()
+    try:
+        assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
+    finally:
+        stop()
+    assert time.monotonic() - started < 5
+
+
+def test_the_proof_names_the_database_file_as_the_store_opener_does(ctx: ApiContext) -> None:
+    """A literal `~` is not expanded where the store is opened, so `~/data` and `$HOME/data` are
+    two stores — and must be two proofs."""
+    literal = replace(ctx, settings=ctx.settings.model_copy(update={"data_dir": Path("~/data")}))
+    expanded = replace(
+        ctx, settings=ctx.settings.model_copy(update={"data_dir": Path.home() / "data"})
+    )
+    assert server_mod.viewer_proof("t", "a" * 32, "127.0.0.1:1", literal) != server_mod.viewer_proof(
+        "t", "a" * 32, "127.0.0.1:1", expanded
+    )
+
+def test_the_hello_route_needs_a_well_formed_nonce_and_no_token(live: Live, engine: Engine) -> None:
+    good = call(live, f"/api/hello?nonce={'a' * 32}", bearer=None)
+    assert good.status == 200
+    assert len(good.json()["proof"]) == 64
+    assert call(live, "/api/hello?nonce=xyz", bearer=None).status == 400
+    assert call(live, "/api/hello", bearer=None).status == 400
 
 
 # --------------------------------------------------------------------- application lifecycle

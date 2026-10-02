@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { FIXTURE_MODE } from "./api/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { StaleViewerBanner } from "./components/StaleViewerBanner";
 import { Toaster } from "./components/Toaster";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useToasts } from "./hooks/useToasts";
@@ -128,6 +129,12 @@ export function App() {
           ) : null}
         </div>
       </header>
+
+      {/* Under the header and inert with it while the sheet is up: it is page-level advice, and
+          covered by the sheet like everything else the reader cannot reach there. */}
+      <div inert={sheet}>
+        <StaleViewerBanner />
+      </div>
 
       {/*
         * 160rem, not the 110rem this used to be. 110rem is 1760px, so on the 27-inch display this

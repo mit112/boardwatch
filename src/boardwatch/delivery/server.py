@@ -46,6 +46,9 @@ read-only, and nothing should advertise that it can.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import http.client
 import json
 import mimetypes
 import os
@@ -59,7 +62,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, TypeVar, cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from sqlalchemy import Connection, Engine
 from sqlalchemy.exc import OperationalError
@@ -98,6 +101,7 @@ from boardwatch.store.applications import (
     set_application_status,
 )
 from boardwatch.store.db import (
+    DB_FILENAME,
     WalUnsafeFilesystemError,
     get_engine,
     get_readonly_engine,
@@ -211,6 +215,16 @@ _APPLICATION = re.compile(r"^/api/applications/(\d+)/(events|status|note)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
+#: A probe's challenge: 16 random bytes as hex, and nothing else.
+_NONCE = re.compile(r"[0-9a-f]{32}")
+#: A probe's expected answer: a SHA-256 HMAC as lowercase hex, and nothing else.
+_PROOF = re.compile(r"[0-9a-f]{64}")
+#: Cap on the probe's reply, in bytes. The real one is ~80; a listener that is not a viewer gets
+#: this much read and no more.
+_HELLO_MAX_BYTES = 4096
+#: The bundle's entry script as the index document on disk names it — Vite's content-hashed name,
+#: so it changes exactly when the built page does.
+_ENTRY_SCRIPT = re.compile(r'<script[^>]*\bsrc="/assets/([A-Za-z0-9._-]+\.js)"')
 
 
 class NonLoopbackBindError(RuntimeError):
@@ -313,6 +327,9 @@ class ServerDeps:
     ctx: ApiContext
     token: str
     authority: str
+    #: `code_fingerprint()` when this process started: the Python it imported then is the Python
+    #: it serves until it exits, whatever the checkout on disk has since become (D-360).
+    code_fingerprint: str
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -331,7 +348,12 @@ class ReviewServer(ThreadingHTTPServer):
         super().__init__(address, ReviewHandler)
         # AFTER binding, because port 0 means "any free port" and the Host check has to compare
         # against the port that was actually chosen.
-        self.deps = ServerDeps(ctx=ctx, token=token, authority=f"{host}:{self.server_address[1]}")
+        self.deps = ServerDeps(
+            ctx=ctx,
+            token=token,
+            authority=f"{host}:{self.server_address[1]}",
+            code_fingerprint=code_fingerprint(),
+        )
 
     @property
     def url(self) -> str:
@@ -388,6 +410,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if not path.startswith("/api/"):
             self._static(method, path)
             return
+        if method == "GET" and path == "/api/hello":
+            # The one unauthenticated API route, and it carries no data: it proves to a CLI that
+            # this listener holds the owner's token and serves the store it asked for, without the
+            # CLI ever sending the token (see `viewer_answers`).
+            self._hello()
+            return
         if not self._authorised(deps.token):
             self._error(HTTPStatus.UNAUTHORIZED, "a bearer token is required")
             return
@@ -418,6 +446,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
             # precise explanation the owner needs to read.
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
 
+    def _hello(self) -> None:
+        nonces = parse_qs(urlsplit(self.path).query).get("nonce", [])
+        nonce = nonces[0] if len(nonces) == 1 else ""
+        if not _NONCE.fullmatch(nonce):
+            self._error(HTTPStatus.BAD_REQUEST, "expected ?nonce=<32 hex>")
+            return
+        deps = self._deps
+        self._json(
+            HTTPStatus.OK,
+            {"proof": viewer_proof(deps.token, nonce, deps.authority, deps.ctx)},
+        )
+
     def _authorised(self, token: str) -> bool:
         """`Authorization: Bearer <token>`, and nothing else. A token in the query string is not
         looked for and therefore cannot be accepted.
@@ -446,6 +486,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 # Read-only through `_read`, exactly like `/api/queue`: a per-request read-only
                 # connection, 503 on a busy store, and no write path on this route at all.
                 self._json(HTTPStatus.OK, self._read(applied_payload))
+                return
+            if path == "/api/version":
+                # What the page needs to tell its reader the viewer is stale: the bundle on disk
+                # (the page compares it with the one it loaded) and whether the package's Python
+                # has changed under this process since it started.
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "bundle": bundle_entry(),
+                        "code_changed": code_fingerprint() != deps.code_fingerprint,
+                    },
+                )
                 return
             if path == "/api/rejected":
                 # A read through `_read`, like the queue it is the other half of.
@@ -1211,6 +1263,89 @@ def prime_queue(ctx: ApiContext) -> None:
             engine.dispose()
 
 
+def code_fingerprint(package: Path | None = None) -> str:
+    """A digest of every `.py` file under the installed package — path, size and mtime.
+
+    It moves when a merge, a pull or a branch switch rewrites the source under an editable install,
+    which is the skew a running viewer cannot otherwise see in itself: it keeps serving the Python
+    it imported at startup while the bundle it serves is read from disk per request. An installed
+    wheel never changes under the process, so there it never moves.
+    """
+    root = Path(str(files("boardwatch"))) if package is None else package
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        try:
+            stat = path.stat()
+        except OSError:
+            # A file deleted mid-walk is itself a change; leaving it out of the digest records it.
+            continue
+        digest.update(f"{path.relative_to(root)}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
+def bundle_entry() -> str | None:
+    """The entry script the index document on disk names, or None when there is no bundle."""
+    try:
+        document = (static_root() / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    found = _ENTRY_SCRIPT.search(document)
+    return None if found is None else found.group(1)
+
+
+def viewer_proof(token: str, nonce: str, authority: str, ctx: ApiContext) -> str:
+    """HMAC over a probe's nonce, the listener's OWN bound authority and the store it serves.
+
+    The authority is the one the server bound, never one a request named, so a listener on another
+    port cannot relay a real viewer's answer as its own. The store and both roots are in it so a
+    viewer of a different store does not pass as the one asked for: reusing it would write the
+    reader's decisions into the wrong store.
+    """
+    message = "\0".join(
+        (
+            "boardwatch-viewer",
+            nonce,
+            authority,
+            # The database file exactly as `get_readonly_engine` opens it — not a path re-derived
+            # from the setting, which can differ (a literal `~` is not expanded there).
+            str((Path(ctx.settings.data_dir) / DB_FILENAME).resolve()),
+            str(ctx.out_root),
+            str(ctx.queue_root),
+        )
+    )
+    return hmac.new(token.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def viewer_answers(host: str, port: int, token: str, ctx: ApiContext) -> bool:
+    """Whether `host:port` is held by this owner's viewer of THIS store — proved, not claimed.
+
+    The probe never sends the token. Loopback is reachable from every local account, so whatever
+    holds the port may not be the owner's, and a token sent to it would be a token given away. The
+    listener instead answers a fresh nonce with `viewer_proof`, which only a holder of the token
+    serving the same store at that authority can produce. Anything else — another program, a
+    viewer of another store, an older viewer with no `/api/hello`, a non-HTTP greeting — is no.
+    """
+    nonce = secrets.token_hex(16)
+    connection = http.client.HTTPConnection(host, port, timeout=2)
+    try:
+        connection.request("GET", f"/api/hello?nonce={nonce}", headers={"Host": f"{host}:{port}"})
+        response = connection.getresponse()
+        # The real viewer answers with a Content-Length and never chunks. A chunked reply is
+        # refused BEFORE any body is read: a chunk size the client accepts as negative reads to
+        # EOF, which a hostile listener can make endless. Otherwise the read is capped in bytes.
+        if response.status != HTTPStatus.OK or response.chunked:
+            return False
+        proof = json.loads(response.read(_HELLO_MAX_BYTES)).get("proof")
+    except (OSError, http.client.HTTPException, ValueError, AttributeError, RecursionError):
+        return False
+    finally:
+        connection.close()
+    # Shape-checked before the comparison: `compare_digest` raises on a non-ASCII str.
+    if not isinstance(proof, str) or not _PROOF.fullmatch(proof):
+        return False
+    return hmac.compare_digest(proof, viewer_proof(token, nonce, f"{host}:{port}", ctx))
+
+
 def build_server(*, ctx: ApiContext, token: str, host: str, port: int) -> ReviewServer:
     """Bind the review server, or refuse. Raises `NonLoopbackBindError` for a non-loopback host."""
     if not static_root().is_dir():
@@ -1232,7 +1367,11 @@ __all__ = [
     "ReviewServer",
     "ServerDeps",
     "build_server",
+    "bundle_entry",
+    "code_fingerprint",
     "load_or_create_token",
     "prime_queue",
     "static_root",
+    "viewer_answers",
+    "viewer_proof",
 ]
