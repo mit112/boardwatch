@@ -256,6 +256,8 @@ export function QueueRowItem({
   onBoard,
   marked,
   onMark,
+  similar,
+  onApplyOpened,
 }: {
   row: QueueRow;
   rank: number;
@@ -273,6 +275,9 @@ export function QueueRowItem({
   /** Picked out for a BULK action. `undefined` on a table with no selection column at all. */
   marked?: boolean;
   onMark?: () => void;
+  /** How many leads in this list share the row's company and title, when two or more do. */
+  similar?: number | undefined;
+  onApplyOpened?: () => void;
 }) {
   /*
    * `location` is the PRIMARY location and `locations` is the whole list, so the cell reads
@@ -374,6 +379,14 @@ export function QueueRowItem({
                     />
                   </span>
                 )}
+                {similar === undefined ? null : (
+                  <span className="shrink-0">
+                    <Badge
+                      label={`×${String(similar)} similar`}
+                      reason={`${String(similar)} leads in this list share this company and title, differing only by place or formatting. "Collapse similar roles" above shows one of them.`}
+                    />
+                  </span>
+                )}
               </span>
             </button>
             {/* Everything the tier above this row's own has as a column. Each item hides at the
@@ -461,7 +474,13 @@ export function QueueRowItem({
               * the row's emphasis and the two marking actions sit behind a rule — the misclick
               * this prevents is the expensive one.
               */}
-            <ApplyLink url={row.apply_url} compact emphasis label={named} />
+            <ApplyLink
+              url={row.apply_url}
+              compact
+              emphasis
+              label={named}
+              {...(onApplyOpened === undefined ? {} : { onOpen: onApplyOpened })}
+            />
             <span className="flex items-center gap-1.5 border-l border-divider pl-2">
               <RowAction
                 label="Applied"

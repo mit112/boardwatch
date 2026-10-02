@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Faster triage in the web viewer's queue.** Coming back to the tab after opening a lead's apply
+  page (with `o` or a click on its apply link) asks "Did you apply?"; `a` marks it applied, Esc
+  dismisses. Leads at one company under one title that differ only by city or formatting carry a
+  "×N similar" badge, and "Collapse similar roles" shows one per group. `c` on a row, or "Select all
+  N at <company>" in the detail pane, selects every listed lead at that company for one bulk skip.
+  The detail pane adds one-click follow-up dates (in 3 days, 1 week, 2 weeks) and a "Show in
+  description" jump from each evidence quote to the highlighted words in the job description.
+  "Save view" keeps the current filters, facet and sort under a name in this browser.
 - **A Rejected tab in the web viewer** lists the delivered leads the eligibility rules rejected,
   which the queue only counted as `ineligible`. Leads the final gate called eligible come first and
   can be shown alone. "Why" shows each rule's reading with the failing one first and the span it

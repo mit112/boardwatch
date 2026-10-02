@@ -3,6 +3,8 @@
  * lead set alone contains twelve same-company-same-title duplicate groups covering 28 rows.
  */
 
+import type { ReactNode } from "react";
+
 /** Named so the `/` shortcut can reach it without threading a ref through two components. */
 export const FILTER_INPUT_ID = "queue-filter";
 
@@ -82,6 +84,9 @@ export function QueueToolbar({
   onHideThin,
   hideUnverifiable,
   onHideUnverifiable,
+  hideSimilar,
+  onHideSimilar,
+  views,
   selectedCount,
   onSkipSelected,
   onClearSelection,
@@ -100,6 +105,10 @@ export function QueueToolbar({
   onHideThin: (on: boolean) => void;
   hideUnverifiable: boolean;
   onHideUnverifiable: (on: boolean) => void;
+  hideSimilar: boolean;
+  onHideSimilar: (on: boolean) => void;
+  /** The saved-views control, at the end of the checkbox row. */
+  views?: ReactNode;
   selectedCount: number;
   onSkipSelected: () => void;
   onClearSelection: () => void;
@@ -194,6 +203,20 @@ export function QueueToolbar({
           />
           Hide unverifiable
         </label>
+        <label
+          className="flex min-h-11 items-center gap-2"
+          title="Show one lead per company and title — the best-placed one — and fold the rest of the group under it. Its row says how many it stands for."
+        >
+          <input
+            type="checkbox"
+            checked={hideSimilar}
+            onChange={(event) => {
+              onHideSimilar(event.target.checked);
+            }}
+          />
+          Collapse similar roles
+        </label>
+        {views === undefined ? null : <div className="ml-auto">{views}</div>}
       </div>
 
       {selectedCount === 0 ? null : (
@@ -240,6 +263,9 @@ export function QueueToolbar({
         </span>
         <span>
           <Key>x</Key> select
+        </span>
+        <span>
+          <Key>c</Key> select company
         </span>
         <span>
           <Key>r</Key> report
