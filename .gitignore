@@ -28,3 +28,9 @@ web/node_modules/
 *.db
 *.db-shm
 *.db-wal
+
+# Impeccable's per-machine files: the design-panel sidecar (a JSON data file, which the
+# generalization gate refuses to ship without a pinned SHIPPED_DATA entry), the live-mode config
+# and its runtime state (absolute paths, session journals). DESIGN.md and PRODUCT.md are the
+# shared record; these regenerate with `/impeccable document` and `/impeccable live`.
+.impeccable/
