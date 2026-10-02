@@ -22,6 +22,8 @@ import type {
   Answers,
   AppliedHistoryResponse,
   AppliedResponse,
+  DisputeResponse,
+  RejectedResponse,
   BatchSkipResponse,
   FollowUpResponse,
   QueueDetail,
@@ -162,6 +164,16 @@ export const getApplied = (): Promise<AppliedHistoryResponse> =>
   request<AppliedHistoryResponse>("/api/applied");
 
 export const getVersion = (): Promise<VersionResponse> => request<VersionResponse>("/api/version");
+
+export const getRejected = (): Promise<RejectedResponse> =>
+  request<RejectedResponse>("/api/rejected");
+
+/** Record — or withdraw — the owner's disagreement with a lead's rejection. Moves nothing. */
+export const disputeRejection = (postingId: number): Promise<DisputeResponse> =>
+  request<DisputeResponse>(`/api/queue/${String(postingId)}/disputed`, "POST");
+
+export const undisputeRejection = (postingId: number): Promise<DisputeResponse> =>
+  request<DisputeResponse>(`/api/queue/${String(postingId)}/undispute`, "POST");
 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
 

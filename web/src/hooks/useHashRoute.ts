@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Three routes. Hash-based, so the loopback server needs no SPA fallback and no dependency is
- * added for what is a switch between three pages. */
-export type Route = "queue" | "runs" | "applied";
+/** Four routes. Hash-based, so the loopback server needs no SPA fallback and no dependency is
+ * added for what is a switch between four pages. */
+export type Route = "queue" | "runs" | "applied" | "rejected";
 
 /**
  * The queue's ADDRESSABLE state, carried as a query string on the hash:
@@ -35,7 +35,14 @@ function parse(): { route: Route; params: RouteParams } {
   const path = separator === -1 ? raw : raw.slice(0, separator);
   const query = new URLSearchParams(separator === -1 ? "" : raw.slice(separator + 1));
   return {
-    route: path === "/runs" ? "runs" : path === "/applied" ? "applied" : "queue",
+    route:
+      path === "/runs"
+        ? "runs"
+        : path === "/applied"
+          ? "applied"
+          : path === "/rejected"
+            ? "rejected"
+            : "queue",
     params: { run: readId(query, "run"), lead: readId(query, "lead") },
   };
 }

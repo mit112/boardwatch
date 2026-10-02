@@ -648,7 +648,7 @@ function requirementsFor(postingId: number, covered: number, missing: number): R
       requirement: coveredTerms[index % coveredTerms.length]!,
       covered: true,
       rule: index === 0 ? "degree_level" : null,
-      disposition: index === 0 ? "eligible" : null,
+      disposition: index === 0 ? "met" : null,
       profile_field: index === 0 ? "education.highest_degree" : null,
       quote:
         index === 0
@@ -662,7 +662,9 @@ function requirementsFor(postingId: number, covered: number, missing: number): R
       requirement: missingTerms[index % missingTerms.length]!,
       covered: false,
       rule: index === 0 ? "work_authorization" : null,
-      disposition: index === 0 ? (postingId % 3 === 0 ? "ineligible" : "abstain") : null,
+      // The server's vocabulary (`met` / `unmet` / `unknown`), so the Rejected page's "Why" orders
+      // and labels fixture evidence the way it does real evidence.
+      disposition: index === 0 ? (postingId % 3 === 0 ? "unmet" : "unknown") : null,
       profile_field: index === 0 ? "work_auth.needs_sponsorship" : null,
       quote:
         index === 0

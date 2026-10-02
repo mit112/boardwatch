@@ -8,6 +8,7 @@ import { useHashRoute } from "./hooks/useHashRoute";
 import { useToasts } from "./hooks/useToasts";
 import { AppliedPage } from "./routes/AppliedPage";
 import { QueuePage } from "./routes/QueuePage";
+import { RejectedPage } from "./routes/RejectedPage";
 import { RunsPage } from "./routes/RunsPage";
 
 function NavTab({
@@ -105,6 +106,15 @@ export function App() {
                 setRoute("applied");
               }}
             />
+            {/* Last: what the rules turned away, read to catch a wrong rejection. The queue only
+                counts these; this is the list behind its `ineligible` cell. */}
+            <NavTab
+              label="Rejected"
+              active={route === "rejected"}
+              onClick={() => {
+                setRoute("rejected");
+              }}
+            />
           </nav>
           {/* Dev-only by construction: `FIXTURE_MODE` is always false in a production build, so
               the `import.meta.env.DEV` literal folds this badge — and its mention of the fixture
@@ -152,6 +162,8 @@ export function App() {
             <QueuePage push={push} onSheet={setSheet} />
           ) : route === "applied" ? (
             <AppliedPage push={push} />
+          ) : route === "rejected" ? (
+            <RejectedPage push={push} />
           ) : (
             <RunsPage />
           )}

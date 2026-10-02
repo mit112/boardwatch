@@ -26,9 +26,13 @@ export function ApplyLink({
   compact = false,
   emphasis = false,
   label,
+  onOpen,
 }: {
   url: string | null;
   compact?: boolean;
+  /** Told when the link is followed, by a click or a middle-click, so the page can ask on return
+   *  whether the reader applied. The browser still does the opening. */
+  onOpen?: () => void;
   /** The row's leading control, so it is not one of three identical grey pills. */
   emphasis?: boolean;
   /** Names the lead in the accessible name; a list of 347 links all called "Apply" is unusable. */
@@ -47,6 +51,14 @@ export function ApplyLink({
         {...(compact ? { tabIndex: -1 } : {})}
         {...(label ? { "aria-label": `Open apply link: ${label}` } : {})}
         {...(compact ? { title: "Open the board's apply page. Key: o" } : {})}
+        {...(onOpen === undefined
+          ? {}
+          : {
+              onClick: onOpen,
+              onAuxClick: (event: React.MouseEvent) => {
+                if (event.button === 1) onOpen();
+              },
+            })}
         className={`${BUTTON} ${size} ${
           emphasis
             ? "border-fg-2 text-fg hover:border-fg hover:bg-surface-2"
