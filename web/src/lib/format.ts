@@ -135,14 +135,17 @@ export function isFollowUpDue(followUp: string | null | undefined): boolean {
 const FOLLOW_UP_MAX_DAYS = 366;
 
 export function followUpWindow(): { min: string; max: string } {
-  const bound = (days: number): string => {
-    const when = new Date();
-    when.setDate(when.getDate() + days);
-    const month = String(when.getMonth() + 1).padStart(2, "0");
-    const day = String(when.getDate()).padStart(2, "0");
-    return `${String(when.getFullYear())}-${month}-${day}`;
-  };
-  return { min: bound(-FOLLOW_UP_MAX_DAYS), max: bound(FOLLOW_UP_MAX_DAYS) };
+  return { min: isoDaysFromToday(-FOLLOW_UP_MAX_DAYS), max: isoDaysFromToday(FOLLOW_UP_MAX_DAYS) };
+}
+
+/** `YYYY-MM-DD`, `days` from today on the browser's calendar — local parts, for `todayIso`'s
+ *  reason. `setDate` carries month and year ends. */
+export function isoDaysFromToday(days: number): string {
+  const when = new Date();
+  when.setDate(when.getDate() + days);
+  const month = String(when.getMonth() + 1).padStart(2, "0");
+  const day = String(when.getDate()).padStart(2, "0");
+  return `${String(when.getFullYear())}-${month}-${day}`;
 }
 
 /**

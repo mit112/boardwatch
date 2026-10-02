@@ -151,6 +151,9 @@ export function QueueTable({
   onBoard,
   onFollowUp,
   selection,
+  similarOf,
+  onApplyOpened,
+  onSelectCompany,
   emptyHint = "Clear the text box or lower the minimum score.",
 }: {
   label: string;
@@ -172,6 +175,12 @@ export function QueueTable({
   onFollowUp: (row: QueueRow) => void;
   /** Omitted on a table with no multi-select: no checkbox column, no `x`. */
   selection?: Selection;
+  /** The row's similar-role group size, or undefined when it has no similar lead in this list. */
+  similarOf?: (row: QueueRow) => number | undefined;
+  /** An apply link on a row was followed by a click. `o` reports through `onOpenApply`. */
+  onApplyOpened?: (row: QueueRow) => void;
+  /** `c`: add every listed lead at this row's company to the selection. Needs `selection`. */
+  onSelectCompany?: (row: QueueRow) => void;
   /* Names the levers that would bring rows back. A verdict facet is a lever the two default
      sentences do not mention, so the empty state must say so or it points at the wrong control. */
   emptyHint?: string;
@@ -294,6 +303,12 @@ export function QueueTable({
           event.preventDefault();
           if (event.repeat) return;
           return onReport(row);
+        // SELECTION, like `x`: it writes nothing, so a mis-press costs a Clear, not an undo.
+        case "c":
+          if (selection === undefined || onSelectCompany === undefined) return;
+          event.preventDefault();
+          if (event.repeat) return;
+          return onSelectCompany(row);
         default:
           return;
       }
@@ -308,6 +323,7 @@ export function QueueTable({
       onReport,
       onFollowUp,
       selection,
+      onSelectCompany,
     ],
   );
 
@@ -448,6 +464,14 @@ export function QueueTable({
               onReport={() => {
                 onReport(row);
               }}
+              similar={similarOf?.(row)}
+              {...(onApplyOpened === undefined
+                ? {}
+                : {
+                    onApplyOpened: () => {
+                      onApplyOpened(row);
+                    },
+                  })}
             />
           ))}
         </div>
