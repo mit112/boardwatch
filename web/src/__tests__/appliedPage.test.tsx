@@ -789,4 +789,85 @@ describe("the application lifecycle", () => {
     expect(screen.queryByText(/^no reply/)).toBeNull();
     expect(screen.queryByText("responses")).toBeNull();
   });
+
+  it("undoes to the status the server says it replaced, not the page's stale copy", async () => {
+    // The page last saw `applied`; the CLI has since moved it to `interviewing`.
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "rejected",
+      from_status: "interviewing",
+    });
+
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "rejected" } },
+    );
+    await settle();
+
+    expect(screen.getByText("Acme Corp — Backend Engineer: interviewing → rejected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(vi.mocked(setApplicationStatus)).toHaveBeenLastCalledWith(
+      row.application_id,
+      "interviewing",
+    );
+  });
+
+  it("keeps text typed while a save was in flight", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    let land: (value: { outcome: "noted"; event_id: number }) => void = () => undefined;
+    vi.mocked(addApplicationNote).mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+
+    const box = screen.getByRole<HTMLTextAreaElement>("textbox", { name: /^Add a note/ });
+    fireEvent.change(box, { target: { value: "called" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    fireEvent.change(box, { target: { value: "called, then emailed" } });
+    land({ outcome: "noted", event_id: 9 });
+    await settle();
+
+    expect(vi.mocked(addApplicationNote)).toHaveBeenCalledWith(row.application_id, "called");
+    expect(box.value).toBe("called, then emailed");
+  });
+
+  it("re-reads an open history when the row's activity moves", async () => {
+    const row = appliedRow({
+      company: "Acme Corp",
+      title: "Backend Engineer",
+      last_activity_at: "2026-09-10T15:30:00+00:00",
+    });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "interviewing",
+      from_status: "applied",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(1);
+
+    // The refetch after the move carries the ledger's new newest event.
+    vi.mocked(getApplied).mockResolvedValue(
+      appliedResponse([
+        { ...row, status: "interviewing", last_activity_at: "2026-10-01T12:00:00+00:00" },
+      ]),
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "interviewing" } },
+    );
+    await settle();
+
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(2);
+  });
 });

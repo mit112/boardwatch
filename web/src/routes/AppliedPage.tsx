@@ -702,13 +702,16 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
           if (result.outcome === "unchanged") {
             push({ message: `${named} was already ${next}.` });
           } else {
-            const undoable = (SETTABLE_STATUSES as readonly string[]).includes(previous);
+            /* The status the write REPLACED, as the server read it inside the transaction — not
+               the one this page last fetched, which another tab or the CLI may have moved. */
+            const replaced = result.from_status ?? previous;
+            const undoable = (SETTABLE_STATUSES as readonly string[]).includes(replaced);
             push({
-              message: `${named}: ${previous} → ${next}`,
+              message: `${named}: ${replaced} → ${next}`,
               ...(undoable
                 ? {
                     undo: () => {
-                      void setApplicationStatus(row.application_id, previous)
+                      void setApplicationStatus(row.application_id, replaced)
                         .then(() => load())
                         .catch((caught: unknown) => {
                           push({
@@ -964,6 +967,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                       <td colSpan={9}>
                         <ApplicationHistory
                           applicationId={row.application_id}
+                          revision={row.last_activity_at ?? null}
                           named={named}
                           onNoted={() => {
                             void load();

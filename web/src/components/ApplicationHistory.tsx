@@ -32,11 +32,15 @@ function describe(event: ApplicationEvent): string {
 
 export function ApplicationHistory({
   applicationId,
+  revision,
   named,
   onNoted,
   onError,
 }: {
   applicationId: number;
+  /** Changes whenever the row's ledger has grown — the page passes `last_activity_at` — so a
+   *  status moved while the panel is open shows up in it without reopening. */
+  revision: string | null;
   /** "Company — Title", for the accessible names of the list and the note box. */
   named: string;
   /** Called after a note lands, so the page can refetch the row's activity and the band. */
@@ -68,7 +72,7 @@ export function ApplicationHistory({
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, revision]);
 
   const save = () => {
     const note = draft.trim();
@@ -81,8 +85,9 @@ export function ApplicationHistory({
     setSaving(true);
     void addApplicationNote(applicationId, note)
       .then(() => {
-        // Cleared only once the store holds it: a failed write keeps what the reader typed.
-        setDraft("");
+        // Cleared only once the store holds it, and only if the box still says what was sent: the
+        // box stays editable during the save, and text added meanwhile was never written.
+        setDraft((current) => (current.trim() === note ? "" : current));
         onNoted();
         return load();
       })

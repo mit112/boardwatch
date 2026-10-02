@@ -331,7 +331,14 @@ function route(method: string, path: string, body: unknown): unknown {
     const current = statusByJob.get(jobId);
     if (current === undefined) throw new FixtureError(404, "no such application");
     const sent = (body ?? {}) as { status?: unknown; note?: unknown };
+    // The server's own note rules: text or absent, at most 2,000 characters once trimmed.
+    if (sent.note != null && typeof sent.note !== "string") {
+      throw new FixtureError(400, "a note must be text");
+    }
     const note = typeof sent.note === "string" && sent.note.trim() !== "" ? sent.note.trim() : null;
+    if (note !== null && note.length > 2000) {
+      throw new FixtureError(400, "a note is at most 2000 characters");
+    }
     if (method === "GET" && appMatch[2] === "events") return { events: eventsByJob.get(jobId) ?? [] };
     if (method === "POST" && appMatch[2] === "note") {
       if (note === null) throw new FixtureError(400, 'expected {"note": "<text>"}');
