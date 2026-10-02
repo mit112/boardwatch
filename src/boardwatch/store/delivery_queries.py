@@ -72,7 +72,7 @@ from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.role_gate import RoleVerdict, taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
-from boardwatch.store.applications import APPLIED_STATUSES, applied_job_ids
+from boardwatch.store.applications import APPLIED_STATUSES, STATE_EVENTS, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import (
@@ -294,6 +294,10 @@ class AppliedRow:
     #: its job's latest attempt, its status still reads as submitted, and a delivered
     #: `posting_id` exists to key the route on.
     can_unmark: bool
+    #: The newest `application_events.occurred_at` of ANY type, notes included: a note such as
+    #: "emailed the recruiter" is the owner acting on the application, which is what "has this
+    #: gone quiet" asks about. `None` only on a row with no event.
+    last_activity_at: datetime | None = None
 
 
 #: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
@@ -1464,6 +1468,7 @@ def _applied_row(
     delivered: bool,
     source: str | None,
     can_unmark: bool,
+    last_activity_at: datetime | None,
 ) -> AppliedRow:
     """One application, with the posting that identifies it.
 
@@ -1498,6 +1503,7 @@ def _applied_row(
             else None
         ),
         can_unmark=can_unmark,
+        last_activity_at=last_activity_at,
     )
 
 
@@ -1594,18 +1600,38 @@ def _mark_sources(conn: Connection) -> dict[int, str]:
     `applications` carries no source column; the event log does, and the LAST event for an
     application is the one that put it in the state it is in ("web", "import", "user"). The
     highest `id` wins because `mark_job_applied` appends nothing on a re-POST — the event that set
-    the state is still the last one written.
+    the state is still the last one written. Only the STATE events are read: a note changes no
+    state, so the note's source would misreport where the state came from.
 
-    The whole log, unfiltered and unbound, for the reason `applied_job_ids` gives about
+    The whole log, unbound, for the reason `applied_job_ids` gives about
     `applications` itself: it holds a handful of rows per job the owner acted on and cannot
     outgrow the shortlist it is read beside. No `.in_()`, per this module's rule.
     """
     rows = conn.execute(
-        select(application_events.c.application_id, application_events.c.source).order_by(
-            application_events.c.application_id, application_events.c.id
-        )
+        select(
+            application_events.c.application_id,
+            application_events.c.source,
+            application_events.c.event_type,
+        ).order_by(application_events.c.application_id, application_events.c.id)
     ).all()
-    return {int(row.application_id): str(row.source) for row in rows}
+    # Filtered here rather than in SQL: this module binds no value lists (`.in_()`), by rule.
+    return {
+        int(row.application_id): str(row.source)
+        for row in rows
+        if row.event_type in STATE_EVENTS
+    }
+
+
+def _last_activity(conn: Connection) -> dict[int, datetime]:
+    """Each application's newest event time, of any type. The whole log, for `_mark_sources`'
+    reason."""
+    rows = conn.execute(
+        select(
+            application_events.c.application_id,
+            func.max(application_events.c.occurred_at).label("at"),
+        ).group_by(application_events.c.application_id)
+    ).all()
+    return {int(row.application_id): row.at for row in rows}
 
 
 def applied_rows(conn: Connection) -> list[AppliedRow]:
@@ -1636,6 +1662,7 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
     applied_against = _applied_versions(conn)
     fallback = _applied_postings(conn)
     sources = _mark_sources(conn)
+    activity = _last_activity(conn)
     # The attempt `mark_job_unapplied` would reach for each job: `get_applications` orders by
     # `attempt_no` and takes the last, so this is that same row named here rather than re-derived
     # from the delivery order, which is not the same ordering.
@@ -1665,6 +1692,7 @@ def applied_rows(conn: Connection) -> list[AppliedRow]:
                 posting if posting is not None else fallback.get(job_id),
                 delivered=posting is not None,
                 source=sources.get(int(row.id)),
+                last_activity_at=activity.get(int(row.id)),
                 can_unmark=(
                     posting is not None
                     and str(row.status) in APPLIED_STATUSES

@@ -66,7 +66,7 @@ import threading
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, get_args
@@ -101,6 +101,8 @@ from boardwatch.store.applications import (
     AppliedTwin,
     applied_identical_jds,
     applied_job_ids,
+    get_application,
+    get_application_events,
 )
 from boardwatch.store.delivery_queries import (
     STATUS_CLOSED,
@@ -146,6 +148,21 @@ TERM_CACHE_MAX = 5_000
 #: The application-status catalog, read off the `ApplicationStatus` alias rather than restated, so
 #: the band's cells and the column's CHECK constraint can never name different sets.
 APPLICATION_STATUSES: tuple[str, ...] = get_args(ApplicationStatus)
+
+#: The statuses the applied page may move an application to. `interested` is left out: it means a
+#: lead was tracked before anything was sent, and the page lists applications that were.
+SETTABLE_STATUSES: tuple[str, ...] = ("applied", "interviewing", "offer", "rejected", "withdrawn")
+
+#: The statuses that are an employer's answer. `withdrawn` is the owner's own move, so it is not.
+RESPONSE_STATUSES: tuple[str, ...] = ("interviewing", "offer", "rejected")
+
+#: An application still at `applied` with nothing logged for this many days has gone quiet. Three
+#: weeks, because most employers that answer at all do so inside that window, and a shorter one
+#: would flag applications that are merely waiting.
+QUIET_AFTER_DAYS = 21
+
+#: Cap on one ledger note, in characters. A note is a line about a call or an email, not a document.
+NOTE_MAX_CHARS = 2_000
 
 #: Last resort for the owner's name, used only in the PDF's download filename. Never a person's
 #: name: a hardcoded one would be wrong for every user but one (CLAUDE.md, multi-tenancy).
@@ -1012,13 +1029,17 @@ def applied_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # `job_id` because that is what the key holds. An applied lead keeps its follow-up — the store
     # was always right about that, and until now no surface said so.
     follow_ups = followup_job_dates(conn)
+    # One clock read for the whole page, so a row and the band can never disagree about "quiet".
+    now = utcnow()
     return {
-        "rows": [_applied_json(row, ctx, follow_ups.get(row.job_id)) for row in rows],
-        "counts": _applied_counts(rows, follow_ups),
+        "rows": [_applied_json(row, ctx, follow_ups.get(row.job_id), now) for row in rows],
+        "counts": _applied_counts(rows, follow_ups, now),
     }
 
 
-def _applied_json(row: AppliedRow, ctx: ApiContext, follow_up: str | None) -> dict[str, Any]:
+def _applied_json(
+    row: AppliedRow, ctx: ApiContext, follow_up: str | None, now: datetime
+) -> dict[str, Any]:
     """One application as the frontend's `AppliedRow` interface.
 
     `pdf_available` is `_pdf_path` — the same three checks `resolve_pdf` makes — so the page's
@@ -1055,10 +1076,25 @@ def _applied_json(row: AppliedRow, ctx: ApiContext, follow_up: str | None) -> di
         # the same one, because the store holds one. Passed in rather than read per row: one scan
         # per request, like the queue's.
         "follow_up": follow_up,
+        "last_activity_at": _iso_utc(row.last_activity_at),
+        "quiet": _is_quiet(row, now),
     }
 
 
-def _applied_counts(rows: Sequence[AppliedRow], follow_ups: dict[int, str]) -> dict[str, Any]:
+def _is_quiet(row: AppliedRow, now: datetime) -> bool:
+    """Still `applied`, and nothing logged on it for `QUIET_AFTER_DAYS`.
+
+    Exactly `applied`, not every submitted status: an `interviewing` application is waiting on a
+    process that has already answered, and `rejected` or `offer` are answers.
+    """
+    if row.status != "applied" or row.last_activity_at is None:
+        return False
+    return row.last_activity_at <= now - timedelta(days=QUIET_AFTER_DAYS)
+
+
+def _applied_counts(
+    rows: Sequence[AppliedRow], follow_ups: dict[int, str], now: datetime
+) -> dict[str, Any]:
     """The applied page's band: the total, the whole status catalog, and applied-and-since-closed.
 
     `by_status` carries every member of the closed catalog every time, zeros included, so a 0 is a
@@ -1102,6 +1138,32 @@ def _applied_counts(rows: Sequence[AppliedRow], follow_ups: dict[int, str]) -> d
                 and on <= today
             }
         ),
+        "quiet": sum(1 for row in rows if _is_quiet(row, now)),
+        # The response rate's two halves, sent separately so the page prints "3 of 40" and never a
+        # bare percentage over a denominator the reader cannot see.
+        "submitted": sum(1 for row in rows if row.status in APPLIED_STATUSES),
+        "responded": sum(1 for row in rows if row.status in RESPONSE_STATUSES),
+    }
+
+
+def application_events_payload(conn: Connection, application_id: int) -> dict[str, Any] | None:
+    """`GET /api/applications/<id>/events`: one application's ledger, oldest first, or None when
+    there is no such application."""
+    if get_application(conn, application_id) is None:
+        return None
+    return {
+        "events": [
+            {
+                "id": int(event.id),
+                "event_type": str(event.event_type),
+                "from_status": event.from_status,
+                "to_status": event.to_status,
+                "occurred_at": _iso_utc(event.occurred_at),
+                "source": str(event.source),
+                "note": event.note,
+            }
+            for event in get_application_events(conn, application_id)
+        ]
     }
 
 
@@ -1308,7 +1370,11 @@ def funnel_payload(ctx: ApiContext, run_id: int) -> dict[str, Any] | None:
 
 __all__ = [
     "FALLBACK_OWNER_NAME",
+    "NOTE_MAX_CHARS",
+    "QUIET_AFTER_DAYS",
+    "RESPONSE_STATUSES",
     "RUNS_LIMIT",
+    "SETTABLE_STATUSES",
     "TAXONOMY_KIND",
     "TERM_CACHE_MAX",
     "ApiContext",
@@ -1318,6 +1384,7 @@ __all__ = [
     "PdfIssue",
     "Runner",
     "answers_payload",
+    "application_events_payload",
     "detail_payload",
     "funnel_payload",
     "lead_folder",

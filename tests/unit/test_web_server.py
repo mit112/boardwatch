@@ -41,6 +41,7 @@ import pytest
 from sqlalchemy import Connection, Engine, event, func, insert, select, text, update
 from sqlalchemy.exc import OperationalError
 
+from boardwatch.core.clock import utcnow
 from boardwatch.core.host_class import classify_host
 from boardwatch.core.settings import load_settings
 from boardwatch.delivery import DRAIN_DIRS
@@ -2299,6 +2300,287 @@ def test_the_hello_route_needs_a_well_formed_nonce_and_no_token(live: Live, engi
     assert call(live, "/api/hello?nonce=xyz", bearer=None).status == 400
     assert call(live, "/api/hello", bearer=None).status == 400
 
+
+# --------------------------------------------------------------------- application lifecycle
+
+
+def _application_id(engine: Engine, job_id: int) -> int:
+    with engine.connect() as conn:
+        return int(
+            conn.execute(
+                select(applications.c.id).where(applications.c.job_id == job_id)
+            ).scalar_one()
+        )
+
+
+def _events(engine: Engine) -> list[tuple[str, str | None, str | None, str]]:
+    with engine.connect() as conn:
+        rows = conn.execute(
+            select(
+                application_events.c.event_type,
+                application_events.c.to_status,
+                application_events.c.note,
+                application_events.c.source,
+            ).order_by(application_events.c.id)
+        ).all()
+    return [(row.event_type, row.to_status, row.note, row.source) for row in rows]
+
+
+def test_a_status_move_appends_one_event_and_a_repeat_appends_none(
+    live: Live, engine: Engine
+) -> None:
+    """`POST /api/applications/<id>/status` is `track status` reached from the page: the same
+    writer, the same `status_change` event, with the note on it. The repeat is the browser
+    re-POSTing, which is not an event."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    application_id = _application_id(engine, job_id)
+
+    moved = call(
+        live,
+        f"/api/applications/{application_id}/status",
+        method="POST",
+        bearer=live.token,
+        body={"status": "interviewing", "note": "  recruiter screen  "},
+    )
+    assert moved.status == 200, moved.body[:200]
+    assert moved.json() == {
+        "outcome": "transitioned",
+        "status": "interviewing",
+        "from_status": "applied",
+    }
+    assert _events(engine) == [
+        ("created", "applied", None, "web"),
+        ("status_change", "interviewing", "recruiter screen", "web"),
+    ]
+
+    again = call(
+        live,
+        f"/api/applications/{application_id}/status",
+        method="POST",
+        bearer=live.token,
+        body={"status": "interviewing"},
+    )
+    assert again.status == 200
+    assert again.json()["outcome"] == "unchanged"
+    assert len(_events(engine)) == 2
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    assert payload["rows"][0]["status"] == "interviewing"
+    assert payload["counts"]["submitted"] == 1
+    assert payload["counts"]["responded"] == 1
+
+
+def test_a_note_sent_with_a_move_to_the_held_status_is_refused_not_dropped(
+    live: Live, engine: Engine
+) -> None:
+    """Answering 200 `unchanged` here would tell the page its note was saved. 409, and nothing
+    written; the note route is where a note on its own goes."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    application_id = _application_id(engine, job_id)
+
+    refused = call(
+        live,
+        f"/api/applications/{application_id}/status",
+        method="POST",
+        bearer=live.token,
+        body={"status": "applied", "note": "chased by email"},
+    )
+    assert refused.status == 409
+    assert len(_events(engine)) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"status": "interested"},
+        {"status": "hired"},
+        {"status": 3},
+        {},
+        {"status": "rejected", "note": 7},
+        {"status": "rejected", "note": "x" * 2_001},
+    ],
+)
+def test_a_status_body_outside_the_contract_is_refused_and_writes_nothing(
+    live: Live, engine: Engine, body: dict[str, Any]
+) -> None:
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    application_id = _application_id(engine, job_id)
+
+    refused = call(
+        live,
+        f"/api/applications/{application_id}/status",
+        method="POST",
+        bearer=live.token,
+        body=body,
+    )
+    assert refused.status == 400
+    assert len(_events(engine)) == 1
+    # The paired acceptance, so a route that refused everything could not pass the test.
+    accepted = call(
+        live,
+        f"/api/applications/{application_id}/status",
+        method="POST",
+        bearer=live.token,
+        body={"status": "rejected", "note": "x" * 2_000},
+    )
+    assert accepted.status == 200
+
+
+def test_an_unknown_application_is_404_on_every_application_route(
+    live: Live, engine: Engine
+) -> None:
+    for path, method, body in (
+        ("/api/applications/999/status", "POST", {"status": "rejected"}),
+        ("/api/applications/999/note", "POST", {"note": "hello"}),
+        ("/api/applications/999/events", "GET", None),
+    ):
+        response = call(live, path, method=method, bearer=live.token, body=body)
+        assert response.status == 404, path
+        # Mounted and refusing, not absent: an absent route also answers 404, with this text.
+        assert b"is not a route" not in response.body, path
+        assert call(live, path, method=method, bearer=None, body=body).status == 401
+    assert _events(engine) == []
+
+
+def test_withdrawing_through_the_status_route_returns_the_lead_and_reapplying_removes_it(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The queue follows the status whichever route moves it: the list, read off the store, AND
+    the lead's folder, which only `_reconcile` moves — so the folder is what pins that it runs."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 1, "no folder, so the moves below are unfalsifiable"
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    application_id = _application_id(engine, job_id)
+    assert call(live, "/api/queue", bearer=live.token).json()["rows"] == []
+    assert _queue_folders(ctx.queue_root / "_applied") == standing
+
+    path = f"/api/applications/{application_id}/status"
+    call(live, path, method="POST", bearer=live.token, body={"status": "withdrawn"})
+    queue = call(live, "/api/queue", bearer=live.token).json()["rows"]
+    assert [row["posting_id"] for row in queue] == [posting_id]
+    assert _queue_folders(ctx.queue_root) == standing
+
+    call(live, path, method="POST", bearer=live.token, body={"status": "applied"})
+    assert call(live, "/api/queue", bearer=live.token).json()["rows"] == []
+    assert _queue_folders(ctx.queue_root / "_applied") == standing
+
+
+def test_a_note_is_logged_without_moving_the_status_or_the_rows_source(
+    live: Live, engine: Engine
+) -> None:
+    """A note is not a state event, so the row's `source` — where its CURRENT state came from —
+    stays `import` after a note written from the web."""
+    with engine.begin() as conn:
+        job_id = _undelivered(conn, "two")
+        create_application(conn, job_id=job_id, status="applied", source="import")
+    application_id = _application_id(engine, job_id)
+
+    noted = call(
+        live,
+        f"/api/applications/{application_id}/note",
+        method="POST",
+        bearer=live.token,
+        body={"note": "emailed the recruiter"},
+    )
+    assert noted.status == 200, noted.body[:200]
+    assert noted.json()["outcome"] == "noted"
+
+    row = call(live, "/api/applied", bearer=live.token).json()["rows"][0]
+    assert row["status"] == "applied"
+    assert row["source"] == "import"
+
+    for blank in ({"note": "   "}, {}, {"note": None}):
+        refused = call(
+            live,
+            f"/api/applications/{application_id}/note",
+            method="POST",
+            bearer=live.token,
+            body=blank,
+        )
+        assert refused.status == 400
+    assert [event[0] for event in _events(engine)] == ["created", "note"]
+
+
+def test_the_events_route_lists_the_ledger_oldest_first(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, "one")
+    call(live, f"/api/queue/{posting_id}/applied", method="POST", bearer=live.token)
+    application_id = _application_id(engine, job_id)
+    base = f"/api/applications/{application_id}"
+    call(live, f"{base}/note", method="POST", bearer=live.token, body={"note": "sent"})
+    call(live, f"{base}/status", method="POST", bearer=live.token, body={"status": "rejected"})
+
+    events = call(live, f"{base}/events", bearer=live.token).json()["events"]
+    assert [
+        (event["event_type"], event["from_status"], event["to_status"], event["note"])
+        for event in events
+    ] == [
+        ("created", None, "applied", None),
+        ("note", None, None, "sent"),
+        ("status_change", "applied", "rejected", None),
+    ]
+    assert all(event["occurred_at"].endswith("+00:00") for event in events)
+    assert {event["source"] for event in events} == {"web"}
+
+
+def test_an_application_with_nothing_logged_for_three_weeks_reads_as_quiet(
+    live: Live, engine: Engine
+) -> None:
+    """Quiet is `applied` AND no event of any type for 21 days. Each other row breaks exactly one
+    half: too recent, an interview under way, and — the one that pins "any type" — an old
+    application the owner has since written a note on."""
+    now = utcnow()
+    with engine.begin() as conn:
+        old = _undelivered(conn, "old")
+        recent = _undelivered(conn, "recent")
+        interviewing = _undelivered(conn, "interviewing")
+        noted = _undelivered(conn, "noted")
+        create_application(
+            conn, job_id=old, status="applied", occurred_at=now - timedelta(days=22)
+        )
+        create_application(
+            conn, job_id=recent, status="applied", occurred_at=now - timedelta(days=20)
+        )
+        interviewing_id = create_application(
+            conn, job_id=interviewing, status="applied", occurred_at=now - timedelta(days=40)
+        )
+        conn.execute(
+            update(applications)
+            .where(applications.c.id == interviewing_id)
+            .values(status="interviewing")
+        )
+        create_application(
+            conn, job_id=noted, status="applied", occurred_at=now - timedelta(days=30)
+        )
+    call(
+        live,
+        f"/api/applications/{_application_id(engine, noted)}/note",
+        method="POST",
+        bearer=live.token,
+        body={"note": "phone screen booked"},
+    )
+
+    payload = call(live, "/api/applied", bearer=live.token).json()
+    quiet = {row["company"]: row["quiet"] for row in payload["rows"]}
+    assert quiet == {
+        "Acme old": True,
+        "Acme recent": False,
+        "Acme interviewing": False,
+        "Acme noted": False,
+    }
+    assert payload["counts"]["quiet"] == 1
+    old_row = next(row for row in payload["rows"] if row["company"] == "Acme old")
+    assert old_row["last_activity_at"].endswith("+00:00")
 
 # --------------------------------------------------------------------------- the rejected list
 

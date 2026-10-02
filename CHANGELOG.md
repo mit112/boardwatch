@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
   (`queue.disputed.<job_id>`, kept for the next precision audit) and changes no verdict, lane or
   folder; a disputed job is protected from regrouping like a skipped or reported one. New routes:
   `GET /api/rejected`, `POST /api/queue/<id>/disputed` and `/undispute`.
+- **The web viewer's Applied page tracks what happens after you apply.** Each application has a
+  status select (applied, interviewing, offer, rejected, withdrawn) that writes through the same
+  writer as `boardwatch track status`, with an undo. A History button opens the application's
+  ledger (every status it has held, with notes) and a box to add a note. A "no reply" badge and
+  band filter mark applications still at `applied` with nothing logged for three weeks, and a
+  "responses" cell counts how many submitted applications an employer has answered ("3 of 40").
+  New routes: `POST /api/applications/<id>/status`, `POST /api/applications/<id>/note`,
+  `GET /api/applications/<id>/events`.
 - **The web viewer says when it is stale.** A banner under the header appears when the checkout's
   Python has changed since `boardwatch web` started (restart it) or when a newer page is on disk
   than the tab loaded (with a Reload button). New route: `GET /api/version`.

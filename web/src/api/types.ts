@@ -413,6 +413,11 @@ export interface AppliedRow {
    * job carries the same date, and setting it from any of their rows moves all of them.
    */
   follow_up: string | null;
+  /** The newest ledger event of any type, notes included. Optional: an older server omits it. */
+  last_activity_at?: string | null;
+  /** Still `applied` with nothing logged for three weeks. The SERVER decides, so the row and the
+   *  band's `quiet` count can never disagree. */
+  quiet?: boolean;
 }
 
 /**
@@ -431,6 +436,42 @@ export interface AppliedCounts {
   /** Applications whose pinned date has arrived, counted once per JOB however many attempts it
    *  holds, and gated on the submitted statuses exactly as `posting_closed` is. */
   follow_up_due: number;
+  /** Rows whose `quiet` is true. Optional, like every field added after the first release. */
+  quiet?: number;
+  /** The response rate's denominator: attempts in a submitted status. */
+  submitted?: number;
+  /** Its numerator: attempts an employer answered — interviewing, offer or rejected. */
+  responded?: number;
+}
+
+/** One `application_events` row. `event_type` is `created`, `status_change` or `note`, rendered
+ *  verbatim for the reason `AppliedRow.status` is a plain string. */
+export interface ApplicationEvent {
+  id: number;
+  event_type: string;
+  from_status: string | null;
+  to_status: string | null;
+  occurred_at: string | null;
+  source: string;
+  note: string | null;
+}
+
+/** `GET /api/applications/<id>/events`, oldest first. */
+export interface ApplicationEventsResponse {
+  events: ApplicationEvent[];
+}
+
+/** `POST /api/applications/<id>/status`. `unchanged` means nothing was written. */
+export interface ApplicationStatusResponse {
+  outcome: "transitioned" | "unchanged";
+  status: string;
+  from_status: string | null;
+}
+
+/** `POST /api/applications/<id>/note`. */
+export interface ApplicationNoteResponse {
+  outcome: "noted";
+  event_id: number;
 }
 
 /** `GET /api/version`: what the page needs to say the viewer is stale. */
