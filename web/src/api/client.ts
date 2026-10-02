@@ -20,6 +20,9 @@
 import { authHeaders, forgetToken } from "./token";
 import type {
   Answers,
+  ApplicationEventsResponse,
+  ApplicationNoteResponse,
+  ApplicationStatusResponse,
   AppliedHistoryResponse,
   AppliedResponse,
   DisputeResponse,
@@ -155,6 +158,33 @@ export const setJobFollowUp = (jobId: number, date: string): Promise<FollowUpRes
 
 export const clearJobFollowUp = (jobId: number): Promise<FollowUpResponse> =>
   request<FollowUpResponse>(`/api/applied/${String(jobId)}/unfollowup`, "POST");
+
+/*
+ * One APPLICATION's lifecycle, keyed on `application_id` — the applied page's row key, and a
+ * different id space from the posting ids above and the job ids of the follow-up pair, which is
+ * why the server mounts these under their own `/api/applications/` prefix.
+ */
+export const setApplicationStatus = (
+  applicationId: number,
+  status: string,
+  note?: string,
+): Promise<ApplicationStatusResponse> =>
+  request<ApplicationStatusResponse>(
+    `/api/applications/${String(applicationId)}/status`,
+    "POST",
+    note === undefined ? { status } : { status, note },
+  );
+
+export const addApplicationNote = (
+  applicationId: number,
+  note: string,
+): Promise<ApplicationNoteResponse> =>
+  request<ApplicationNoteResponse>(`/api/applications/${String(applicationId)}/note`, "POST", {
+    note,
+  });
+
+export const getApplicationEvents = (applicationId: number): Promise<ApplicationEventsResponse> =>
+  request<ApplicationEventsResponse>(`/api/applications/${String(applicationId)}/events`);
 
 export const revealFolder = (postingId: number): Promise<RevealResponse> =>
   request<RevealResponse>(`/api/queue/${String(postingId)}/reveal`, "POST");

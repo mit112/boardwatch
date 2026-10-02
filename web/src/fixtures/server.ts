@@ -11,6 +11,7 @@
  *     handler looks like on the wire.
  */
 import type {
+  ApplicationEvent,
   AppliedHistoryResponse,
   RejectedResponse,
   AppliedRow,
@@ -29,6 +30,36 @@ const ALL_ROWS = [...QUEUE_ROWS, ...LATE_ROWS].sort(byRank);
 
 const bootedAt = Date.now();
 const appliedJobIds = new Set<number>();
+/*
+ * Every job this session has marked applied, with its CURRENT status and its ledger. Kept apart
+ * from `appliedJobIds`, which is "the queue hides this lead": a withdrawn application stays on the
+ * applied page, exactly as the real `applied_rows` keeps it, while its lead goes back to the queue.
+ */
+const statusByJob = new Map<number, string>();
+const eventsByJob = new Map<number, ApplicationEvent[]>();
+let nextEventId = 1;
+
+function logEvent(jobId: number, event: Omit<ApplicationEvent, "id" | "occurred_at" | "source">) {
+  const ledger = eventsByJob.get(jobId) ?? [];
+  ledger.push({ ...event, id: nextEventId++, occurred_at: new Date().toISOString(), source: "web" });
+  eventsByJob.set(jobId, ledger);
+}
+
+/** The statuses that read as submitted, as the server's `APPLIED_STATUSES` holds them. */
+const SUBMITTED = new Set(["applied", "interviewing", "offer", "rejected"]);
+
+function moveStatus(jobId: number, to: string, note: string | null): void {
+  const from = statusByJob.get(jobId) ?? null;
+  statusByJob.set(jobId, to);
+  if (SUBMITTED.has(to)) appliedJobIds.add(jobId);
+  else appliedJobIds.delete(jobId);
+  logEvent(
+    jobId,
+    from === null
+      ? { event_type: "created", from_status: null, to_status: to, note }
+      : { event_type: "status_change", from_status: from, to_status: to, note },
+  );
+}
 const skippedPostingIds = new Set<number>();
 const reportedPostingIds = new Set<number>();
 const disputedJobIds = new Set<number>();
@@ -198,7 +229,7 @@ function counts(rows: QueueRow[]): QueueCounts {
  * to hang off and is exercised in `web/src/__tests__/appliedPage.test.tsx` instead.
  */
 function appliedResponse(): AppliedHistoryResponse {
-  const rows: AppliedRow[] = [...appliedJobIds]
+  const rows: AppliedRow[] = [...statusByJob.keys()]
     .map((jobId) => ALL_ROWS.find((candidate) => candidate.job_id === jobId))
     .filter((row): row is QueueRow => row !== undefined)
     .map((row) => ({
@@ -209,7 +240,7 @@ function appliedResponse(): AppliedHistoryResponse {
       title: row.title,
       location: row.location,
       apply_url: row.apply_url,
-      status: "applied",
+      status: statusByJob.get(row.job_id) ?? "applied",
       submitted_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
       posting_status: row.status,
@@ -220,32 +251,49 @@ function appliedResponse(): AppliedHistoryResponse {
       // One attempt per job is all this fixture models, and it reads as applied, so it IS the
       // attempt the unapply route acts on. The earlier-attempt row — the one with no control —
       // has no fixture lead to hang off and is exercised in `appliedPage.test.tsx`.
-      can_unmark: true,
+      can_unmark: SUBMITTED.has(statusByJob.get(row.job_id) ?? ""),
       // From the SAME map the queue fixture serves, so `npm run dev` shows the two surfaces
       // agreeing about one lead: pin a date in the queue, mark it applied, and the date is here.
       follow_up: followUpByPosting.get(row.posting_id) ?? null,
+      last_activity_at: eventsByJob.get(row.job_id)?.at(-1)?.occurred_at ?? null,
+      // Nothing made this session is three weeks old, so the quiet badge is demonstrated in
+      // `appliedPage.test.tsx` rather than here.
+      quiet: false,
     }));
+  const byStatus: Record<string, number> = {
+    interested: 0,
+    applied: 0,
+    interviewing: 0,
+    offer: 0,
+    rejected: 0,
+    withdrawn: 0,
+  };
+  for (const row of rows) byStatus[row.status] = (byStatus[row.status] ?? 0) + 1;
   return {
     rows,
     counts: {
       total: rows.length,
       // The whole catalog every time, zeros included, exactly as the server sends it.
-      by_status: {
-        interested: 0,
-        applied: rows.length,
-        interviewing: 0,
-        offer: 0,
-        rejected: 0,
-        withdrawn: 0,
-      },
-      posting_closed: rows.filter((row) => row.posting_status === "closed").length,
+      by_status: byStatus,
+      posting_closed: rows.filter(
+        (row) => SUBMITTED.has(row.status) && row.posting_status === "closed",
+      ).length,
       // Per JOB, exactly as the server counts it — one attempt per job here, so the set is the
       // shape rather than the arithmetic — and `<=` today, so an overdue date is counted.
       follow_up_due: new Set(
         rows
-          .filter((row) => row.follow_up != null && row.follow_up <= isoDaysFromToday(0))
+          .filter(
+            (row) =>
+              SUBMITTED.has(row.status) &&
+              row.follow_up != null &&
+              row.follow_up <= isoDaysFromToday(0),
+          )
           .map((row) => row.job_id),
       ).size,
+      quiet: 0,
+      submitted: rows.filter((row) => SUBMITTED.has(row.status)).length,
+      responded: rows.filter((row) => ["interviewing", "offer", "rejected"].includes(row.status))
+        .length,
     },
   };
 }
@@ -312,6 +360,43 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
 
+  // The fixture's `application_id` IS the job id (one attempt per job), so the two maps above
+  // answer for it directly.
+  const appMatch = /^\/api\/applications\/(\d+)\/(events|status|note)$/.exec(path);
+  if (appMatch) {
+    const jobId = Number(appMatch[1]);
+    const current = statusByJob.get(jobId);
+    if (current === undefined) throw new FixtureError(404, "no such application");
+    const sent = (body ?? {}) as { status?: unknown; note?: unknown };
+    // The server's own note rules: text or absent, at most 2,000 characters once trimmed.
+    if (sent.note != null && typeof sent.note !== "string") {
+      throw new FixtureError(400, "a note must be text");
+    }
+    const note = typeof sent.note === "string" && sent.note.trim() !== "" ? sent.note.trim() : null;
+    // Code points, as Python's `len()` counts them — not UTF-16 units.
+    if (note !== null && [...note].length > 2000) {
+      throw new FixtureError(400, "a note is at most 2000 characters");
+    }
+    if (method === "GET" && appMatch[2] === "events") return { events: eventsByJob.get(jobId) ?? [] };
+    if (method === "POST" && appMatch[2] === "note") {
+      if (note === null) throw new FixtureError(400, 'expected {"note": "<text>"}');
+      logEvent(jobId, { event_type: "note", from_status: null, to_status: null, note });
+      return { outcome: "noted", event_id: nextEventId - 1 };
+    }
+    if (method === "POST" && appMatch[2] === "status") {
+      const to = sent.status;
+      if (typeof to !== "string" || !["applied", ...SUBMITTED, "withdrawn"].includes(to)) {
+        throw new FixtureError(400, "expected a status");
+      }
+      if (to === current) {
+        if (note !== null) throw new FixtureError(409, `the application is already ${to}`);
+        return { outcome: "unchanged", status: to, from_status: current };
+      }
+      moveStatus(jobId, to, note);
+      return { outcome: "transitioned", status: to, from_status: current };
+    }
+  }
+
   const runMatch = /^\/api\/runs\/(\d+)$/.exec(path);
   if (method === "GET" && runMatch) {
     const funnel = FUNNELS[Number(runMatch[1])];
@@ -341,13 +426,14 @@ function route(method: string, path: string, body: unknown): unknown {
     }
     if (action === "applied") {
       const already = appliedJobIds.has(row.job_id);
-      appliedJobIds.add(row.job_id);
+      if (!already) moveStatus(row.job_id, "applied", null);
       return { outcome: already ? "unchanged" : "created", job_id: row.job_id };
     }
     if (action === "unapplied") {
       // The applied toast's undo. Mirrors `mark_job_unapplied`: the record is withdrawn, so the
       // lead comes back into the pool rather than merely reappearing in this session's list.
-      const known = appliedJobIds.delete(row.job_id);
+      const known = appliedJobIds.has(row.job_id);
+      if (known) moveStatus(row.job_id, "withdrawn", null);
       return { outcome: known ? "transitioned" : "unchanged", job_id: row.job_id };
     }
     if (action === "skipped") {

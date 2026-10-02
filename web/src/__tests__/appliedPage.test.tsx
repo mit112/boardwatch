@@ -24,6 +24,9 @@ vi.mock("../api/client", () => ({
   getRuns: vi.fn(),
   getFunnel: vi.fn(),
   getApplied: vi.fn(),
+  setApplicationStatus: vi.fn(),
+  addApplicationNote: vi.fn(),
+  getApplicationEvents: vi.fn(),
   markApplied: vi.fn(),
   markSkipped: vi.fn(),
   unskip: vi.fn(),
@@ -38,10 +41,13 @@ vi.mock("../api/client", () => ({
 
 // Imported AFTER the mock factory, which vitest hoists above both.
 import {
+  addApplicationNote,
   clearJobFollowUp,
+  getApplicationEvents,
   getApplied,
   getQueue,
   markApplied,
+  setApplicationStatus,
   setJobFollowUp,
   unapply,
 } from "../api/client";
@@ -572,5 +578,344 @@ describe("the empty state", () => {
     // reader at the queue for a list that is not in fact empty.
     expect(screen.getByText(/No application matches that search/)).toBeTruthy();
     expect(screen.queryByText(/Nothing applied yet/)).toBeNull();
+  });
+});
+
+describe("the application lifecycle", () => {
+  async function settle(): Promise<void> {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+  }
+
+  it("moves a status through the application route and undoes it with a real write", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "interviewing",
+      from_status: "applied",
+    });
+
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "interviewing" } },
+    );
+    await settle();
+
+    // Keyed on the APPLICATION, the row's own key — not the posting or the job.
+    expect(vi.mocked(setApplicationStatus)).toHaveBeenCalledWith(row.application_id, "interviewing");
+    expect(screen.getByText("Acme Corp — Backend Engineer: applied → interviewing")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(vi.mocked(setApplicationStatus)).toHaveBeenLastCalledWith(row.application_id, "applied");
+  });
+
+  it("puts the select back and says so when the write fails", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setApplicationStatus).mockRejectedValue(new Error("the store is busy; try again"));
+    const select = screen.getByRole<HTMLSelectElement>("combobox", {
+      name: "Status of Acme Corp — Backend Engineer",
+    });
+
+    fireEvent.change(select, { target: { value: "rejected" } });
+    await settle();
+
+    expect(select.value).toBe("applied");
+    expect(screen.getByText("the store is busy; try again")).toBeTruthy();
+  });
+
+  it("offers no undo back to a status the route cannot set", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer", status: "interested" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "applied",
+      from_status: "interested",
+    });
+    const select = screen.getByRole<HTMLSelectElement>("combobox", {
+      name: "Status of Acme Corp — Backend Engineer",
+    });
+    // The held status is shown as itself, not replaced by the first settable one.
+    expect(select.value).toBe("interested");
+
+    fireEvent.change(select, { target: { value: "applied" } });
+    await settle();
+
+    expect(screen.getByText("Acme Corp — Backend Engineer: interested → applied")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("words a quiet application with its days and filters to it from the band", async () => {
+    vi.setSystemTime(new Date("2026-10-01T12:00:00Z"));
+    await renderApplied(
+      appliedResponse([
+        appliedRow({
+          company: "Acme Corp",
+          quiet: true,
+          last_activity_at: "2026-09-06T12:00:00+00:00",
+        }),
+        appliedRow({ company: "Globex", quiet: false }),
+      ]),
+    );
+
+    expect(screen.getByText("no reply · 25 d")).toBeTruthy();
+    expect(screen.getAllByText(/^no reply ·/)).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^no reply 1/ }));
+    expect(dataRows()).toHaveLength(1);
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^no reply 1/ }));
+    expect(dataRows()).toHaveLength(2);
+  });
+
+  it("states the response rate as a count over its denominator", async () => {
+    await renderApplied(
+      appliedResponse([
+        appliedRow({ status: "interviewing" }),
+        appliedRow({ status: "rejected" }),
+        appliedRow({ status: "applied" }),
+        appliedRow({ status: "withdrawn" }),
+      ]),
+    );
+    // Withdrawn is the owner's move, so it is in neither half.
+    expect(bandValue("responses")).toBe("2 of 3");
+  });
+
+  it("opens the ledger, adds a note, and reloads both the ledger and the page", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({
+      events: [
+        {
+          id: 1,
+          event_type: "created",
+          from_status: null,
+          to_status: "applied",
+          occurred_at: "2026-09-10T15:30:00+00:00",
+          source: "web",
+          note: null,
+        },
+        {
+          id: 2,
+          event_type: "status_change",
+          from_status: "applied",
+          to_status: "interviewing",
+          occurred_at: "2026-09-20T15:30:00+00:00",
+          source: "user",
+          note: "recruiter screen",
+        },
+      ],
+    });
+    vi.mocked(addApplicationNote).mockResolvedValue({ outcome: "noted", event_id: 3 });
+
+    const toggle = screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    await settle();
+
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledWith(row.application_id);
+    const ledger = screen.getByRole("list", { name: "History of Acme Corp — Backend Engineer" });
+    expect(within(ledger).getByText("recorded as applied")).toBeTruthy();
+    expect(within(ledger).getByText("applied → interviewing")).toBeTruthy();
+    expect(within(ledger).getByText("recruiter screen")).toBeTruthy();
+
+    const loadsBefore = vi.mocked(getApplied).mock.calls.length;
+    fireEvent.change(screen.getByRole("textbox", { name: /^Add a note/ }), {
+      target: { value: "  sent a thank-you  " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await settle();
+
+    expect(vi.mocked(addApplicationNote)).toHaveBeenCalledWith(
+      row.application_id,
+      "sent a thank-you",
+    );
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(getApplied).mock.calls.length).toBeGreaterThan(loadsBefore);
+    expect(screen.getByRole<HTMLTextAreaElement>("textbox", { name: /^Add a note/ }).value).toBe(
+      "",
+    );
+  });
+
+  it("explains an empty save beside the box instead of disabling the button", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+
+    const save = screen.getByRole<HTMLButtonElement>("button", { name: "Save note" });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await settle();
+
+    expect(vi.mocked(addApplicationNote)).not.toHaveBeenCalled();
+    const box = screen.getByRole("textbox", { name: "Add a note to Acme Corp — Backend Engineer" });
+    expect(box.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText(/^Write the note first/)).toBeTruthy();
+  });
+
+  it("keeps a note the server refused, so nothing typed is lost", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    vi.mocked(addApplicationNote).mockRejectedValue(new Error("the store is busy; try again"));
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+
+    const box = screen.getByRole<HTMLTextAreaElement>("textbox", { name: /^Add a note/ });
+    fireEvent.change(box, { target: { value: "called" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    await settle();
+
+    expect(box.value).toBe("called");
+    expect(screen.getByText("the store is busy; try again")).toBeTruthy();
+  });
+
+  it("draws no quiet badge, no no-reply cell and no responses cell for an older server", async () => {
+    const response = appliedResponse([
+      withoutFields(appliedRow({ company: "Acme Corp" }), ["quiet", "last_activity_at"]),
+    ]);
+    await renderApplied({
+      rows: response.rows,
+      counts: withoutFields(response.counts, ["quiet", "submitted", "responded"]),
+    });
+
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    expect(screen.queryByText(/^no reply/)).toBeNull();
+    expect(screen.queryByText("responses")).toBeNull();
+  });
+
+  it("undoes to the status the server says it replaced, not the page's stale copy", async () => {
+    // The page last saw `applied`; the CLI has since moved it to `interviewing`.
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "rejected",
+      from_status: "interviewing",
+    });
+
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "rejected" } },
+    );
+    await settle();
+
+    expect(screen.getByText("Acme Corp — Backend Engineer: interviewing → rejected")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(vi.mocked(setApplicationStatus)).toHaveBeenLastCalledWith(
+      row.application_id,
+      "interviewing",
+    );
+  });
+
+  it("keeps text typed while a save was in flight", async () => {
+    const row = appliedRow({ company: "Acme Corp", title: "Backend Engineer" });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    let land: (value: { outcome: "noted"; event_id: number }) => void = () => undefined;
+    vi.mocked(addApplicationNote).mockReturnValue(
+      new Promise((resolve) => {
+        land = resolve;
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+
+    const box = screen.getByRole<HTMLTextAreaElement>("textbox", { name: /^Add a note/ });
+    fireEvent.change(box, { target: { value: "called" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save note" }));
+    fireEvent.change(box, { target: { value: "called, then emailed" } });
+    land({ outcome: "noted", event_id: 9 });
+    await settle();
+
+    expect(vi.mocked(addApplicationNote)).toHaveBeenCalledWith(row.application_id, "called");
+    expect(box.value).toBe("called, then emailed");
+  });
+
+  it("re-reads an open history when the row's activity moves", async () => {
+    const row = appliedRow({
+      company: "Acme Corp",
+      title: "Backend Engineer",
+      last_activity_at: "2026-09-10T15:30:00+00:00",
+    });
+    await renderApplied(appliedResponse([row]));
+    vi.mocked(getApplicationEvents).mockResolvedValue({ events: [] });
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "interviewing",
+      from_status: "applied",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    await settle();
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(1);
+
+    // The refetch after the move carries the ledger's new newest event.
+    vi.mocked(getApplied).mockResolvedValue(
+      appliedResponse([
+        { ...row, status: "interviewing", last_activity_at: "2026-10-01T12:00:00+00:00" },
+      ]),
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "interviewing" } },
+    );
+    await settle();
+
+    expect(vi.mocked(getApplicationEvents)).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets only the newest ledger read land when an older one answers late", async () => {
+    const row = appliedRow({
+      company: "Acme Corp",
+      title: "Backend Engineer",
+      last_activity_at: "2026-09-10T15:30:00+00:00",
+    });
+    await renderApplied(appliedResponse([row]));
+    const event = (id: number, to: string) => ({
+      id,
+      event_type: "status_change",
+      from_status: "applied",
+      to_status: to,
+      occurred_at: "2026-09-20T15:30:00+00:00",
+      source: "web",
+      note: null,
+    });
+    let answerFirst: (value: { events: ReturnType<typeof event>[] }) => void = () => undefined;
+    vi.mocked(getApplicationEvents)
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          answerFirst = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({ events: [event(2, "interviewing")] });
+    vi.mocked(setApplicationStatus).mockResolvedValue({
+      outcome: "transitioned",
+      status: "interviewing",
+      from_status: "applied",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "History of Acme Corp — Backend Engineer" }));
+    vi.mocked(getApplied).mockResolvedValue(
+      appliedResponse([
+        { ...row, status: "interviewing", last_activity_at: "2026-10-01T12:00:00+00:00" },
+      ]),
+    );
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "Status of Acme Corp — Backend Engineer" }),
+      { target: { value: "interviewing" } },
+    );
+    await settle();
+    // The opening read answers LAST, with the ledger as it stood before the move.
+    answerFirst({ events: [] });
+    await settle();
+
+    const ledger = screen.getByRole("list", { name: "History of Acme Corp — Backend Engineer" });
+    expect(within(ledger).getByText("applied → interviewing")).toBeTruthy();
   });
 });
