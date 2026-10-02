@@ -27,6 +27,35 @@
 
 ## Current standing
 
+### 2026-10-02 — **THE WEB VIEWER IS REDESIGNED AROUND APPLYING — branch `viewer-workspace`, NOT merged, NOT pushed** (D-617). Delivery-side code only: no eligibility, ranking, résumé, discovery, config or live-store change; the pipeline never calls the changed read.
+
+**Verify first:** `git log --oneline main..viewer-workspace` in `~/dev/projectY/bw-viewer` (a worktree; it has its own `.venv`, and `web/node_modules`
+is a symlink to the primary's, excluded via the worktree's `info/exclude`). Nothing is pushed. The primary and the viewer on 8799 were not touched; the only
+traffic to the live store was read-only (`mode=ro` reads and GETs).
+
+**Done on the branch:** the Applied read was 101–108 s because SQLite scanned all 687k postings (no `sqlite_stat1`); it now drives from the applications,
+rows identical, 0.06–0.07 s warm (in-process, live store, read-only — not measured over HTTP). The Runs "404" was run 529, a manual re-render with no funnel
+artifact; the page falls back to the newest run that has one. The queue is task-first (Jobs to explore / Needs review / All jobs, a short summary instead of
+sixteen counters, one honest note per row); status is four independent readings and unknown is "Check", never "Missing"; a workspace per job (what to check, the
+résumé, answers, follow-up); an optional apply session; progress counted from the Applied ledger only after the server confirms (a failed write never counts).
+The bundle is rebuilt and its manifest committed. Web: 344 vitest tests, `tsc` and `eslint` clean; detector 0 findings on 28 files; a fixture-data browser pass
+(320–1440 px, 200 % zoom emulated, both themes) in two rounds. Gate: `make check` exit 0 on the branch (12,895 pytest + 344 vitest passed; the first run was red on a home path in this file and was re-run in full).
+
+**Next, in order (all owner calls):**
+1. Review, then merge `viewer-workspace` when you choose. Merging changes the code the daily run's editable venv imports; the pipeline does not call
+   `applied_rows`, but time it away from the 04:00 run and read day 6 as usual.
+2. **The viewer on :8799 still runs the old Python and bundle.** `/api/applied` stays slow (~106 s) until it is restarted on the merged code (stop it, then
+   `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null > ~/Library/Logs/boardwatch-web.log 2>&1 &)`, never `--port 0`). The client now
+   times out at 12 s and offers a retry, so a stale viewer degrades rather than blanks.
+3. Rulings wanted: (a) key `a` records the focused row, including the one the cursor moved to after `s` skipped the previous job (Undo toast, 7 s) — keep or
+   require the workspace to be open; (b) "this week" = the past 7 days, not Monday–Sunday; (c) offer Impeccable `init` so PRODUCT.md captures this surface.
+4. Suggested usability comparison (not yet observed): time from opening Jobs to a recorded application, and the share of opened jobs that reach a record,
+   old viewer vs this one, on the same fixture or isolated store with the same person; plus whether someone can say why a job is flagged.
+
+**Not verified, so not claimed:** applications made, motivation or retention; any screen reader; real zoom; Safari, Firefox, touch; a slow device; long titles and
+a missing location (fixtures have neither). Open cosmetic: a 69 px band above the empty pane at ≥1024 px wide and <544 px tall; one stat cell wraps alone at 1280;
+the empty Applied table prints literal backticks (pre-existing).
+
 ### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
 
 **Verify first:** `git log --oneline -3 origin/main` (this correction on top of #539). The primary is on `main` at #539 or later,
