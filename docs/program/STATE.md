@@ -39,7 +39,7 @@ artifact; the page falls back to the newest run that has one. The queue is task-
 sixteen counters, one honest note per row); status is four independent readings and unknown is "Check", never "Missing"; a workspace per job (what to check, the
 résumé, answers, follow-up); an optional apply session; progress counted from the Applied ledger only after the server confirms (a failed write never counts).
 The bundle is rebuilt and its manifest committed. Web: 349 vitest tests, `tsc` and `eslint` clean; detector 0 findings on 28 files; a fixture-data browser pass
-(320–1440 px, 200 % zoom emulated, both themes) in two rounds. Gate: GATE_PENDING2
+(320–1440 px, 200 % zoom emulated, both themes) in two rounds. Gate: `make check` exit 0 on the branch (12,895 pytest + 349 vitest passed; earlier runs were red on a home path in this file and on an untracked script ruff still lints, and were re-run in full).
 
 **Next, in order (all owner calls):**
 1. Review, then merge `viewer-workspace` when you choose. Merging changes the code the daily run's editable venv imports; the pipeline does not call

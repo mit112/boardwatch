@@ -16769,7 +16769,7 @@ the live store, so the plan still depends on the query's shape, not on statistic
 | bundle | rebuilt with node 20.20.2; manifest 96 inputs; `test_web_bundle_freshness` 3 passed |
 | diff review (`diff-reviewer`) | 0 blockers, 1 MAJOR and 2 MINOR, all fixed |
 | browser pass, fixtures only | 2 rounds; 0 console errors; 0 px horizontal overflow on Jobs, Applied, Filtered out and Runs at 320, 375, 640x450, 768, 1280, 1440 after the fixes; contrast 0 failures in a runtime scan of both themes; 24 px targets pass; focus ring on every tabbed control |
-| `make check` | GATE_PENDING2 |
+| `make check` | exit 0: generalization OK, indexes current, ruff and mypy --strict clean (375 files), vitest 349 / 41 files, pytest 12,895 passed / 4 xfailed in 168 s; earlier runs were RED at generalization (a home path in STATE.md) and at ruff (an untracked skill script), fixed and re-run in full |
 
 **Not observed:** applications made, motivation, retention, time-to-apply. **Not verified:** screen readers, real zoom, Safari,
 Firefox, touch, forced colours, a slow device, long titles, a missing location. Before/after screenshots (fixture data, kept
