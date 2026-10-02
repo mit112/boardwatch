@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The web viewer's Applied page tracks what happens after you apply.** Each application has a
+  status select (applied, interviewing, offer, rejected, withdrawn) that writes through the same
+  writer as `boardwatch track status`, with an undo. A History button opens the application's
+  ledger (every status it has held, with notes) and a box to add a note. A "no reply" badge and
+  band filter mark applications still at `applied` with nothing logged for three weeks, and a
+  "responses" cell counts how many submitted applications an employer has answered ("3 of 40").
+  New routes: `POST /api/applications/<id>/status`, `POST /api/applications/<id>/note`,
+  `GET /api/applications/<id>/events`.
+
 ### Changed
 
 - **`--help`, `boardwatch guide` and a run's apply-lane alert no longer carry this repository's

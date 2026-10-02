@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   clearJobFollowUp,
   getApplied,
   markApplied,
   openPdf,
+  setApplicationStatus,
   setJobFollowUp,
   unapply,
 } from "../api/client";
 import type { AppliedCounts, AppliedRow } from "../api/types";
+import { ApplicationHistory } from "../components/ApplicationHistory";
 import { Badge } from "../components/Badge";
 import { FollowUpBadge } from "../components/FollowUpBadge";
 import type { ToastRequest } from "../hooks/useToasts";
@@ -31,12 +33,20 @@ import type { AppliedSortKey, AppliedSortState } from "../lib/sort";
  * tree. What it has to answer, with the page open during a recruiter call, is four things at once:
  * what was applied to, when, whether the requisition is still up, and which résumé went out.
  *
- * Everything on it is a read except two, and neither touches `applications` beyond the writer it
- * already had: the unmark is the queue's EXISTING inverse route (`unapply` ->
- * `mark_job_unapplied`), and the follow-up writes `app_state` through a route keyed on the JOB.
- * That second one exists because 58 of 61 applications here were IMPORTED and carry no posting the
- * queue delivered, so the queue's posting-keyed routes could not reach the rows this page is for.
+ * Its writes: the unmark is the queue's EXISTING inverse route (`unapply` -> `mark_job_unapplied`);
+ * the follow-up writes `app_state` through a route keyed on the JOB, because most applications here
+ * were IMPORTED and carry no posting the queue delivered; and the status select and the history's
+ * note box write the APPLICATION, through `set_application_status` and the ledger — the same writer
+ * `boardwatch track status` uses, so the page and the CLI record one lifecycle.
  */
+
+/** The statuses the select offers, in lifecycle order. Must match the server's
+ *  `SETTABLE_STATUSES`; the server refuses anything else, so a drift fails loudly. */
+const SETTABLE_STATUSES = ["applied", "interviewing", "offer", "rejected", "withdrawn"] as const;
+
+/** The band's two filters. One at a time: "follow-up due" and "no reply" answer different
+ *  questions, and AND-ing them would empty the list for a reason no cell names. */
+type AppliedFacet = "due" | "quiet";
 
 /** The date every row is read by. `submitted_at` is when the application was MADE; `created_at`
  *  only stands in where the first is absent, which is an attempt that never reached `applied`. */
@@ -160,18 +170,119 @@ function PostingStanding({ row }: { row: AppliedRow }) {
   return <span className="text-sm text-fg-2">open</span>;
 }
 
+/** Whole days since an ISO timestamp, on this machine's clock. */
+function daysSince(iso: string | null | undefined): number | null {
+  if (iso == null) return null;
+  const at = Date.parse(iso);
+  if (Number.isNaN(at)) return null;
+  return Math.floor((Date.now() - at) / 86_400_000);
+}
+
+/**
+ * The status, as a select that moves it. The server decides what is quiet (`row.quiet`); this
+ * only words it, with the days counted from the last thing logged.
+ *
+ * A status outside the settable set (an attempt still at `interested`) is shown as itself, as a
+ * disabled option, so the control never claims a value the row does not hold.
+ */
+function StatusCell({
+  row,
+  busy,
+  onChange,
+}: {
+  row: AppliedRow;
+  busy: boolean;
+  onChange: (row: AppliedRow, next: string) => void;
+}) {
+  const named = `${text(row.company)} — ${text(row.title)}`;
+  const known = (SETTABLE_STATUSES as readonly string[]).includes(row.status);
+  const quietDays = row.quiet === true ? daysSince(row.last_activity_at) : null;
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <select
+        value={row.status}
+        disabled={busy}
+        aria-busy={busy}
+        aria-label={`Status of ${named}`}
+        onChange={(event) => {
+          onChange(row, event.target.value);
+        }}
+        className="min-h-11 rounded-sm border border-control bg-surface px-2 text-sm text-fg"
+      >
+        {known ? null : (
+          <option value={row.status} disabled>
+            {row.status}
+          </option>
+        )}
+        {SETTABLE_STATUSES.map((status) => (
+          <option key={status} value={status}>
+            {status}
+          </option>
+        ))}
+      </select>
+      {row.quiet === true ? (
+        <Badge
+          label={quietDays == null ? "no reply" : `no reply · ${String(quietDays)} d`}
+          reason="Still applied, and nothing logged on it for three weeks or more. A note or a status change clears it."
+        />
+      ) : null}
+    </span>
+  );
+}
+
+/** One filter cell on the band: a real `<button>` with `aria-pressed`, in the app's active idiom
+ *  (fill, inset accent bar, brighter text — never colour alone, SC 1.4.1). The accessible name
+ *  starts with the visible label and value, so Label in Name holds (SC 2.5.3). */
+function FacetCell({
+  label,
+  value,
+  pressed,
+  title,
+  onToggle,
+}: {
+  label: string;
+  value: number;
+  pressed: boolean;
+  title: string;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
+      <dt className={`label-micro ${pressed ? "text-fg-2" : "text-fg-3"}`}>{label}</dt>
+      <dd>
+        <button
+          type="button"
+          aria-pressed={pressed}
+          aria-label={`${label} ${value.toLocaleString()} — ${
+            pressed ? "showing only these, activate to clear" : "show only these"
+          }`}
+          title={title}
+          onClick={onToggle}
+          className={`inline-flex min-h-11 w-full cursor-pointer items-center rounded-sm px-1 font-display text-lg tabular-nums transition-colors duration-[120ms] ease-snap ${
+            pressed
+              ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+              : "text-fg-2 hover:bg-surface-2"
+          }`}
+        >
+          {value.toLocaleString()}
+        </button>
+      </dd>
+    </div>
+  );
+}
+
 /** The counts band. Every member of the server's status catalog, zeros included, so a 0 here is a
  *  measurement rather than a bucket the reader has to guess was absent. */
 function CountsBand({
   counts,
   showing,
-  dueOnly,
-  onToggleDue,
+  facet,
+  onToggle,
 }: {
   counts: AppliedCounts;
   showing: number;
-  dueOnly: boolean;
-  onToggleDue: () => void;
+  facet: AppliedFacet | null;
+  onToggle: (facet: AppliedFacet) => void;
 }) {
   /* `?? {}` and `?? 0`: a server older than a field omits it, and the band must draw the cells it
      CAN fill rather than blanking the page over the one it cannot. */
@@ -190,6 +301,17 @@ function CountsBand({
         undefined,
       ],
     ),
+    /* "3 of 40", never a bare percentage: the rate over a denominator the reader cannot see is
+       the figure most easily over-read. Drawn only when the server sent both halves. */
+    ...(counts.responded == null || counts.submitted == null
+      ? []
+      : [
+          [
+            "responses",
+            `${counts.responded.toLocaleString()} of ${counts.submitted.toLocaleString()}`,
+            "Submitted applications an employer has answered — interviewing, offer or rejected — out of every attempt still reading as submitted.",
+          ] as [string, string, string | undefined],
+        ]),
   ];
   return (
     <section aria-label="Applied history status" className="flex flex-col">
@@ -220,29 +342,26 @@ function CountsBand({
           * — not a zero, which would claim a measurement, and not a crash.
           */}
         {counts.follow_up_due == null ? null : (
-          <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
-            <dt className={`label-micro ${dueOnly ? "text-fg-2" : "text-fg-3"}`}>
-              follow-up due
-            </dt>
-            <dd>
-              <button
-                type="button"
-                aria-pressed={dueOnly}
-                aria-label={`follow-up due ${counts.follow_up_due.toLocaleString()} — ${
-                  dueOnly ? "showing only these, activate to clear" : "show only these"
-                }`}
-                title="Applications whose pinned follow-up date has arrived — today or earlier, on this machine's calendar. Counted once per job, however many attempts it holds. Click to show only these."
-                onClick={onToggleDue}
-                className={`inline-flex min-h-11 w-full cursor-pointer items-center rounded-sm px-1 font-display text-lg tabular-nums transition-colors duration-[120ms] ease-snap ${
-                  dueOnly
-                    ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
-                    : "text-fg-2 hover:bg-surface-2"
-                }`}
-              >
-                {counts.follow_up_due.toLocaleString()}
-              </button>
-            </dd>
-          </div>
+          <FacetCell
+            label="follow-up due"
+            value={counts.follow_up_due}
+            pressed={facet === "due"}
+            title="Applications whose pinned follow-up date has arrived — today or earlier, on this machine's calendar. Counted once per job, however many attempts it holds. Click to show only these."
+            onToggle={() => {
+              onToggle("due");
+            }}
+          />
+        )}
+        {counts.quiet == null ? null : (
+          <FacetCell
+            label="no reply"
+            value={counts.quiet}
+            pressed={facet === "quiet"}
+            title="Still applied, with nothing logged — no status change, no note — for three weeks or more. Click to show only these."
+            onToggle={() => {
+              onToggle("quiet");
+            }}
+          />
         )}
         {/* The only cell that answers "did my search match anything", so it is announced: a count
             that changes silently is a change a screen-reader reader never learns about (SC 4.1.3). */}
@@ -364,9 +483,11 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
   /* The applications a write is in flight for. Drives the button's disabled + `aria-busy` state,
      so a click has visible feedback before the round trip returns (Nielsen #1). */
   const [busy, setBusy] = useState<ReadonlySet<number>>(new Set());
-  /* The band's one facet. Not stored in the URL or `sessionStorage`: the queue's facets are, and
-     this page has no deep-link contract to keep — one piece of state, cleared by a reload. */
-  const [dueOnly, setDueOnly] = useState(false);
+  /* The band's facet. Not stored in the URL or `sessionStorage`: the queue's facets are, and this
+     page has no deep-link contract to keep — one piece of state, cleared by a reload. */
+  const [facet, setFacet] = useState<AppliedFacet | null>(null);
+  /* The applications whose history panel is open. */
+  const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
 
   const load = useCallback(
     () =>
@@ -552,6 +673,90 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
     [push, load, mark],
   );
 
+  /*
+   * Move one application's status. Optimistic on the row, so the select does not snap back while
+   * the round trip runs; the refetch after settles the row AND the band, whose counts are the
+   * server's. The undo writes the previous status back through the same route — a real write, as
+   * every undo on this page is — and is offered only when that status is one the route accepts.
+   */
+  const onStatus = useCallback(
+    (row: AppliedRow, next: string) => {
+      const previous = row.status;
+      if (next === previous) return;
+      const named = `${text(row.company)} — ${text(row.title)}`;
+      const patch = (status: string) => {
+        setRows((current) =>
+          current === null
+            ? current
+            : current.map((candidate) =>
+                candidate.application_id === row.application_id
+                  ? { ...candidate, status }
+                  : candidate,
+              ),
+        );
+      };
+      patch(next);
+      mark(row.application_id, true);
+      void setApplicationStatus(row.application_id, next)
+        .then((result) => {
+          if (result.outcome === "unchanged") {
+            push({ message: `${named} was already ${next}.` });
+          } else {
+            const undoable = (SETTABLE_STATUSES as readonly string[]).includes(previous);
+            push({
+              message: `${named}: ${previous} → ${next}`,
+              ...(undoable
+                ? {
+                    undo: () => {
+                      void setApplicationStatus(row.application_id, previous)
+                        .then(() => load())
+                        .catch((caught: unknown) => {
+                          push({
+                            message:
+                              caught instanceof Error
+                                ? caught.message
+                                : "Could not put that status back.",
+                            tone: "error",
+                          });
+                        });
+                    },
+                  }
+                : {}),
+            });
+          }
+          return load();
+        })
+        .catch((caught: unknown) => {
+          patch(previous);
+          push({
+            message:
+              caught instanceof Error ? caught.message : "Could not change that status.",
+            tone: "error",
+          });
+        })
+        .finally(() => {
+          mark(row.application_id, false);
+        });
+    },
+    [load, mark, push],
+  );
+
+  const toggleHistory = useCallback((applicationId: number) => {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(applicationId)) next.delete(applicationId);
+      else next.add(applicationId);
+      return next;
+    });
+  }, []);
+
+  const onHistoryError = useCallback(
+    (message: string) => {
+      push({ message, tone: "error" });
+    },
+    [push],
+  );
+
   const visible = useMemo(() => {
     const needle = query.trim();
     const matched = (rows ?? []).filter(
@@ -560,10 +765,11 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
         // `isFollowUpDue` is `<= today` on the BROWSER's calendar, which is the server's own: the
         // viewer only ever talks to loopback. It guards `== null`, so a row from a server that
         // omits the field is simply not due rather than a throw.
-        (!dueOnly || isFollowUpDue(row.follow_up)),
+        (facet !== "due" || isFollowUpDue(row.follow_up)) &&
+        (facet !== "quiet" || row.quiet === true),
     );
     return sortAppliedRows(matched, sort);
-  }, [rows, query, sort, dueOnly]);
+  }, [rows, query, sort, facet]);
 
   if (error !== null) {
     // Announced, not merely printed: this replaces the whole page with no other signal.
@@ -586,9 +792,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       <CountsBand
         counts={counts}
         showing={visible.length}
-        dueOnly={dueOnly}
-        onToggleDue={() => {
-          setDueOnly((current) => !current);
+        facet={facet}
+        onToggle={(next) => {
+          setFacet((current) => (current === next ? null : next));
         }}
       />
 
@@ -657,87 +863,117 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
               const pdfPath = pathFromFileUri(row.pdf_uri ?? null);
               const postingId = row.posting_id ?? null;
               const inFlight = busy.has(row.application_id);
+              const named = `${text(row.company)} — ${text(row.title)}`;
+              const historyOpen = open.has(row.application_id);
+              const historyId = `history-${String(row.application_id)}`;
               return (
-                <tr key={row.application_id} className="hover:bg-surface-2">
-                  <td className="px-3 py-1.5 text-right whitespace-nowrap text-fg tabular-nums">
-                    {appliedLabel(row)}
-                  </td>
-                  <td className="px-3 py-1.5 text-fg">{text(row.company)}</td>
-                  <td className="px-3 py-1.5 text-fg-2">
-                    <TitleCell row={row} />
-                  </td>
-                  <td className="px-3 py-1.5 text-fg-3">{text(row.location)}</td>
-                  <td className="px-3 py-1.5">
-                    {/* Verbatim off the wire and never indexed into a map, so a status this
-                        bundle has never heard of reads as itself instead of throwing. */}
-                    <Badge label={text(row.status)} />
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <PostingStanding row={row} />
-                  </td>
-                  <td className="px-3 py-1.5 text-fg-3">{text(row.source)}</td>
-                  <td className="px-3 py-1.5">
-                    <FollowUpCell row={row} onCommit={writeFollowUp} onClear={onClearFollowUp} />
-                  </td>
-                  <td className="px-3 py-1.5">
-                    <span className="flex flex-wrap items-center justify-end gap-2">
-                      {/* Offered exactly when `GET /api/pdf/<posting_id>` would serve it: the
-                          server probes the canonical artifact, and there is no posting id to ask
-                          with on a row the queue never delivered. */}
-                      {row.pdf_available === true && postingId != null ? (
-                        <RowAction
-                          label="Open PDF"
-                          title={
-                            pdfPath == null
-                              ? "Opens inline, in a new tab."
-                              : `Opens inline, in a new tab · ${pdfPath}`
-                          }
-                          busy={false}
+                <Fragment key={row.application_id}>
+                  <tr className="hover:bg-surface-2">
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap text-fg tabular-nums">
+                      {appliedLabel(row)}
+                    </td>
+                    <td className="px-3 py-1.5 text-fg">{text(row.company)}</td>
+                    <td className="px-3 py-1.5 text-fg-2">
+                      <TitleCell row={row} />
+                    </td>
+                    <td className="px-3 py-1.5 text-fg-3">{text(row.location)}</td>
+                    <td className="px-3 py-1.5">
+                      <StatusCell row={row} busy={inFlight} onChange={onStatus} />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <PostingStanding row={row} />
+                    </td>
+                    <td className="px-3 py-1.5 text-fg-3">{text(row.source)}</td>
+                    <td className="px-3 py-1.5">
+                      <FollowUpCell row={row} onCommit={writeFollowUp} onClear={onClearFollowUp} />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <span className="flex flex-wrap items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          aria-expanded={historyOpen}
+                          aria-controls={historyId}
+                          aria-label={`History of ${named}`}
+                          title="The application's ledger — every status it has held, and its notes — and a box to add a note."
                           onClick={() => {
-                            void openPdf(postingId).catch((caught: unknown) => {
-                              push({
-                                message:
-                                  caught instanceof Error
-                                    ? caught.message
-                                    : "Could not open the PDF.",
-                                tone: "error",
+                            toggleHistory(row.application_id);
+                          }}
+                          className="inline-flex min-h-11 items-center rounded-sm border border-control px-3 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:border-fg-2 hover:text-fg"
+                        >
+                          History
+                        </button>
+                        {/* Offered exactly when `GET /api/pdf/<posting_id>` would serve it: the
+                            server probes the canonical artifact, and there is no posting id to ask
+                            with on a row the queue never delivered. */}
+                        {row.pdf_available === true && postingId != null ? (
+                          <RowAction
+                            label="Open PDF"
+                            title={
+                              pdfPath == null
+                                ? "Opens inline, in a new tab."
+                                : `Opens inline, in a new tab · ${pdfPath}`
+                            }
+                            busy={false}
+                            onClick={() => {
+                              void openPdf(postingId).catch((caught: unknown) => {
+                                push({
+                                  message:
+                                    caught instanceof Error
+                                      ? caught.message
+                                      : "Could not open the PDF.",
+                                  tone: "error",
+                                });
                               });
-                            });
+                            }}
+                          />
+                        ) : null}
+                        {postingId == null ? (
+                          /* No posting id, so neither control has one to act on. Said in words
+                             rather than left as two missing buttons the reader cannot account for. */
+                          <span className="text-xs text-fg-3">
+                            never delivered — no résumé, no unmark
+                          </span>
+                        ) : row.can_unmark === true ? (
+                          <RowAction
+                            label="Unmark applied"
+                            title="Withdraws the application record and returns the lead to the queue. Undoable from the toast."
+                            busy={inFlight}
+                            onClick={() => {
+                              onUnmark(row);
+                            }}
+                          />
+                        ) : (
+                          /* The write is per JOB — it withdraws the job's LATEST attempt — so on any
+                             other attempt the control would act on a row the reader did not click.
+                             The server's own answer decides (`can_unmark`), and `=== true` withholds
+                             it for a server that never learned to send the field. The RULE is stated
+                             rather than which half of it this row failed: the page cannot tell an
+                             earlier attempt from a latest one that no longer reads as submitted, and
+                             guessing between them would put words on the row the payload cannot
+                             support. */
+                          <span className="text-xs text-fg-3">
+                            no unmark — only a job&apos;s latest attempt, still reading as submitted,
+                            can be withdrawn
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                  </tr>
+                  {historyOpen ? (
+                    <tr id={historyId} className="bg-surface-2">
+                      <td colSpan={9}>
+                        <ApplicationHistory
+                          applicationId={row.application_id}
+                          named={named}
+                          onNoted={() => {
+                            void load();
                           }}
+                          onError={onHistoryError}
                         />
-                      ) : null}
-                      {postingId == null ? (
-                        /* No posting id, so neither control has one to act on. Said in words
-                           rather than left as two missing buttons the reader cannot account for. */
-                        <span className="text-xs text-fg-3">
-                          never delivered — no résumé, no unmark
-                        </span>
-                      ) : row.can_unmark === true ? (
-                        <RowAction
-                          label="Unmark applied"
-                          title="Withdraws the application record and returns the lead to the queue. Undoable from the toast."
-                          busy={inFlight}
-                          onClick={() => {
-                            onUnmark(row);
-                          }}
-                        />
-                      ) : (
-                        /* The write is per JOB — it withdraws the job's LATEST attempt — so on any
-                           other attempt the control would act on a row the reader did not click.
-                           The server's own answer decides (`can_unmark`), and `=== true` withholds
-                           it for a server that never learned to send the field. The RULE is stated
-                           rather than which half of it this row failed: the page cannot tell an
-                           earlier attempt from a latest one that no longer reads as submitted, and
-                           guessing between them would put words on the row the payload cannot
-                           support. */
-                        <span className="text-xs text-fg-3">
-                          no unmark — only a job&apos;s latest attempt, still reading as submitted,
-                          can be withdrawn
-                        </span>
-                      )}
-                    </span>
-                  </td>
-                </tr>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               );
             })}
             {visible.length > 0 ? null : (
@@ -751,7 +987,9 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                     ? "Nothing applied yet — mark a lead applied from the queue, or `boardwatch track add <posting_id>`."
                     : query.trim() !== ""
                       ? "No application matches that search. Clear the text box to see them all."
-                      : "No application's follow-up date has arrived. Take the follow-up due cell again to see them all."}
+                      : facet === "quiet"
+                        ? "No application has gone three weeks without a reply. Take the no reply cell again to see them all."
+                        : "No application's follow-up date has arrived. Take the follow-up due cell again to see them all."}
                 </td>
               </tr>
             )}

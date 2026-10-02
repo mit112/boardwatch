@@ -197,6 +197,11 @@ export function appliedResponse(rows: AppliedRow[]): AppliedHistoryResponse {
           )
           .map((row) => row.job_id),
       ).size,
+      // The server decides `quiet` per row; the band counts the rows it decided.
+      quiet: rows.filter((row) => row.quiet === true).length,
+      submitted: rows.filter((row) => APPLIED_STATUSES.includes(row.status)).length,
+      responded: rows.filter((row) => ["interviewing", "offer", "rejected"].includes(row.status))
+        .length,
     },
   };
 }

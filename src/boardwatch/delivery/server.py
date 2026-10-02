@@ -67,10 +67,13 @@ from sqlalchemy.exc import OperationalError
 from boardwatch.core.clock import utcnow
 from boardwatch.delivery.answers import AnswersError
 from boardwatch.delivery.api import (
+    NOTE_MAX_CHARS,
+    SETTABLE_STATUSES,
     ApiContext,
     PdfFile,
     PdfIssue,
     answers_payload,
+    application_events_payload,
     applied_payload,
     detail_payload,
     funnel_payload,
@@ -83,11 +86,15 @@ from boardwatch.delivery.api import (
 from boardwatch.delivery.queue import reconcile_queue, refresh_queue
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.store.applications import (
+    ApplicationStatus,
     MarkOutcome,
     MarkResult,
+    add_application_note,
+    get_application,
     get_applications,
     mark_job_applied,
     mark_job_unapplied,
+    set_application_status,
 )
 from boardwatch.store.db import (
     WalUnsafeFilesystemError,
@@ -190,6 +197,13 @@ _QUEUE_ACTION = re.compile(
 #: start (`queue.followup.<job_id>`). Only these two actions are mounted here — a page that is
 #: otherwise read-only gains no lane, verdict or applied-state write.
 _APPLIED_ACTION = re.compile(r"^/api/applied/(\d+)/(followup|unfollowup)$")
+#: One APPLICATION, keyed on `applications.id` — a different id space from both the posting ids of
+#: `_QUEUE_ACTION` and the job ids of `_APPLIED_ACTION`, which is why it has its own prefix: an id
+#: read in the wrong space would write to somebody else's application.
+#: `_note_field`'s "already answered with a 400", distinct from None, which means "no note".
+_INVALID = object()
+
+_APPLICATION = re.compile(r"^/api/applications/(\d+)/(events|status|note)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
@@ -435,6 +449,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if path == "/api/runs":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: runs_payload(conn)))
                 return
+            if (app := _APPLICATION.match(path)) is not None and app.group(2) == "events":
+                self._application_events(int(app.group(1)))
+                return
             if (run := _RUN.match(path)) is not None:
                 payload = funnel_payload(deps.ctx, int(run.group(1)))
                 if payload is None:
@@ -447,6 +464,16 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         if method == "POST" and (action := _QUEUE_ACTION.match(path)) is not None:
             self._action(int(action.group(1)), action.group(2))
+            return
+        if (
+            method == "POST"
+            and (app := _APPLICATION.match(path)) is not None
+            and app.group(2) != "events"
+        ):
+            if app.group(2) == "status":
+                self._application_status(int(app.group(1)))
+            else:
+                self._application_note(int(app.group(1)))
             return
         if method == "POST" and (applied := _APPLIED_ACTION.match(path)) is not None:
             self._applied_followup(
@@ -768,6 +795,154 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, "no application on that job")
             return
         self._followup_json(on)
+
+    def _application_events(self, application_id: int) -> None:
+        payload = self._read(
+            lambda conn, _ctx: {"events": application_events_payload(conn, application_id)}
+        )["events"]
+        if payload is None:
+            self._error(HTTPStatus.NOT_FOUND, "no such application")
+            return
+        self._json(HTTPStatus.OK, payload)
+
+    def _application_status(self, application_id: int) -> None:
+        """Move one application through its lifecycle: `{"status": ..., "note": ...}`.
+
+        The writer is `set_application_status`, the one `track status` uses, so the web and the
+        CLI append the same `status_change` event. A move to the status the application already
+        holds writes NOTHING and answers `unchanged`: a re-POST is not an event. A note sent with
+        such a move is refused (409) rather than dropped, because the page would otherwise report
+        a note as saved that never was — notes on their own go to `/note`. Both are decided inside
+        the one write transaction, so a move that races this one cannot slip between the check and
+        the write.
+
+        `_reconcile` follows a real move, because the queue folder follows the status: a latest
+        attempt moved to `withdrawn` puts its lead back in the queue, and one moved back out of it
+        takes the lead away again.
+        """
+        body = self._json_object()
+        if body is None:
+            return
+        status = body.get("status")
+        if not isinstance(status, str) or status not in SETTABLE_STATUSES:
+            self._error(
+                HTTPStatus.BAD_REQUEST,
+                f"expected a status, one of: {', '.join(SETTABLE_STATUSES)}",
+            )
+            return
+        note = self._note_field(body, required=False)
+        if note is _INVALID:
+            return
+        to_status = cast("ApplicationStatus", status)
+        text_note = cast("str | None", note)
+
+        def work(conn: Connection) -> tuple[str, str | None]:
+            current = get_application(conn, application_id)
+            if current is None:
+                return "missing", None
+            if current.status == to_status:
+                return ("conflict" if text_note is not None else "unchanged"), str(current.status)
+            set_application_status(
+                conn,
+                application_id=application_id,
+                to_status=to_status,
+                source="web",
+                note=text_note,
+            )
+            return "transitioned", str(current.status)
+
+        result = self._write(work)
+        if result is None:
+            return
+        outcome, from_status = result
+        if outcome == "missing":
+            self._error(HTTPStatus.NOT_FOUND, "no such application")
+            return
+        if outcome == "conflict":
+            self._error(
+                HTTPStatus.CONFLICT, f"the application is already {status}; add the note on its own"
+            )
+            return
+        if outcome == "transitioned":
+            self._reconcile()
+        self._json(
+            HTTPStatus.OK,
+            {"outcome": outcome, "status": status, "from_status": from_status},
+        )
+
+    def _application_note(self, application_id: int) -> None:
+        """Append `{"note": ...}` to one application's ledger. The status is not touched."""
+        body = self._json_object()
+        if body is None:
+            return
+        note = self._note_field(body, required=True)
+        if note is _INVALID:
+            return
+        text_note = cast("str", note)
+
+        # The event id, or 0 for "no such application": `_write` already uses None for "answered".
+        def work(conn: Connection) -> int:
+            if get_application(conn, application_id) is None:
+                return 0
+            return add_application_note(
+                conn, application_id=application_id, note=text_note, source="web"
+            )
+
+        event_id = self._write(work)
+        if event_id is None:
+            return
+        if event_id == 0:
+            self._error(HTTPStatus.NOT_FOUND, "no such application")
+            return
+        self._json(HTTPStatus.OK, {"outcome": "noted", "event_id": event_id})
+
+    def _note_field(self, body: dict[str, Any], *, required: bool) -> object:
+        """The body's `note`, stripped, or None when it is absent and not required — or `_INVALID`
+        once this has already answered with a 400.
+
+        A blank note is absent, not an empty event: the ledger only records what was written."""
+        raw = body.get("note")
+        if raw is None or (isinstance(raw, str) and not raw.strip()):
+            if required:
+                self._error(HTTPStatus.BAD_REQUEST, 'expected {"note": "<text>"}')
+                return _INVALID
+            return None
+        if not isinstance(raw, str):
+            self._error(HTTPStatus.BAD_REQUEST, "a note must be text")
+            return _INVALID
+        note = raw.strip()
+        if len(note) > NOTE_MAX_CHARS:
+            self._error(
+                HTTPStatus.BAD_REQUEST, f"a note is at most {NOTE_MAX_CHARS} characters"
+            )
+            return _INVALID
+        return note
+
+    def _json_object(self) -> dict[str, Any] | None:
+        """The request body as a JSON object, or None once this has already answered with a 4xx.
+
+        The same bounds `_batch_ids` and `_followup_date` hold: a declared length is never trusted
+        past `MAX_BODY_BYTES`, and an oversized body is not drained (HTTP/1.1 would read it as the
+        next request line), so the connection is closed instead.
+        """
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "Content-Length is not a number")
+            return None
+        if length < 0 or length > MAX_BODY_BYTES:
+            self.close_connection = True
+            self._error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "the body is too large")
+            return None
+        try:
+            parsed = json.loads(self.rfile.read(length) or b"null")
+        except ValueError:
+            self._error(HTTPStatus.BAD_REQUEST, "the body is not JSON")
+            return None
+        if not isinstance(parsed, dict):
+            self._error(HTTPStatus.BAD_REQUEST, "expected a JSON object")
+            return None
+        return cast("dict[str, Any]", parsed)
 
     def _followup_json(self, on: date | None) -> None:
         """The one response shape both follow-up routes answer with.

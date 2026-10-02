@@ -35,6 +35,12 @@ ApplicationStatus = Literal[
 # `withdrawn` falling outside the set is what makes `track status <id> withdrawn` the drain.
 APPLIED_STATUSES = ("applied", "interviewing", "offer", "rejected")
 
+# The event types that move an application's STATE. A `note` event records something the owner
+# wrote down and changes nothing, so a reader asking "what put this application where it is"
+# (`delivery_queries._mark_sources`) must skip it.
+STATE_EVENTS = ("created", "status_change")
+NOTE_EVENT = "note"
+
 
 def append_application_event(
     conn: Connection,
@@ -250,6 +256,19 @@ def set_application_status(
         conn, application_id=application_id, event_type="status_change",
         from_status=current.status, to_status=to_status, source=source, note=note,
         occurred_at=occurred,
+    )
+
+
+def add_application_note(
+    conn: Connection, *, application_id: int, note: str, source: str
+) -> int:
+    """Append a free-text note to an application's ledger without touching its status.
+
+    Its own event type rather than a `status_change` from a status to itself: the ledger is read
+    as a list of transitions, and a self-transition would claim a move that never happened.
+    """
+    return append_application_event(
+        conn, application_id=application_id, event_type=NOTE_EVENT, source=source, note=note
     )
 
 
