@@ -33815,7 +33815,9 @@ themes) found a Runs overflow at 375/320, focus hidden under the sticky header, 
 and ragged stat-strip dividers; fixed in one batch and confirmed in one round (two items were partial and were fixed after it
 without a further browser round: the 640–671 px header band and the toast Undo's focus pull — covered by tests, not re-seen in a browser).
 The Impeccable detector found nothing on 28 changed files (a deliberately bad control file was flagged, so the zero is real).
-Gate: `make check` exit 0 on the branch (run detached, exit code read from its sentinel: generalization OK, indexes current, ruff and mypy --strict clean over 375 files, vitest 344 passed, pytest 12,895 passed and 4 xfailed in 176 s, coverage 95.28 %). The first run was RED at the generalization step (a home path I wrote into STATE.md) and was fixed and re-run in full. The gated tree differs from the committed one only by this sentence.
+Gate: GATE_PENDING2
+
+**After the review and the browser rounds, a `/verify` pass** drove the real built bundle on the real Python server over a synthetic isolated store (never the live store or :8799). It observed the record, pending-then-recorded, panel Undo (server status `withdrawn`, focus on the workspace), a refused write (row kept, counts unchanged), a double click (one row), the `javascript:` apply URL (no link, `o` opens nothing), the Runs fallback (404 for run 2, then run 1) and 0 px overflow at 375, 640x450 and 1280. It found two defects, fixed on the branch with tests that fail against the old behaviour: the Runs page threw on a funnel file missing `errors`/`sources`/`lanes`/`coverage` (the server passes stored files through unchanged; it now skips such a file while choosing a run, or says it cannot be drawn), and focus fell to `<body>` after a toast's Undo or Dismiss (it now lands on the main region). The sticky empty pane's 69 px band and the literal backticks in the empty Applied table were fixed too. A 300k-posting synthetic store did NOT reproduce the slow plan with the old code (0.04 s), so the 106 s figure rests on the live-store profile, not on this store.
 
 **Not verified.** Any screen reader; real browser zoom (640x450 is an emulation); Safari, Firefox, touch, forced colours,
 reduced motion; a slow device; long titles and a missing location (the fixtures have neither); the Filtered out, Applied and
@@ -33823,9 +33825,8 @@ Answers controls beyond appearance, overflow, contrast and target size. Nothing 
 is claimed: none was observed.
 
 **Open.** `a` after `s` records the NEXT row (focus moved to it, Undo available) — kept, owner's call. The Undo toast lasts 7 s
-(the Applied page has "Undo this record"). A sticky empty pane leaves a 69 px band at ≥1024 px wide and <544 px tall. One stat
-cell still wraps alone at 1280. The empty Applied table prints literal backticks around `boardwatch track add`
-(pre-existing, pinned by a test). **The live viewer on :8799 still runs the old Python and the old bundle**, so `/api/applied`
+(the Applied page has "Undo this record"). One stat
+cell still wraps alone at 1280. **The live viewer on :8799 still runs the old Python and the old bundle**, so `/api/applied`
 stays slow until the owner restarts it; the client now times out and recovers rather than blank. Merging this branch changes the
 editable venv's code for the 04:00 run: the pipeline does not call `applied_rows`, but the owner decides when to merge.
 

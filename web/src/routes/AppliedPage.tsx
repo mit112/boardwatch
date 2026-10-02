@@ -1046,7 +1046,15 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
                       with no text in it and rows on the wire, the facet is the only thing left
                       that can have emptied the list. */}
                   {rows.length === 0
-                    ? "Nothing applied yet — mark a lead applied from the queue, or `boardwatch track add <posting_id>`."
+                    ? (
+                      <>
+                        Nothing applied yet — mark a lead applied from the queue, or run{" "}
+                        <code className="font-mono text-[0.8125rem]">
+                          boardwatch track add &lt;posting_id&gt;
+                        </code>
+                        .
+                      </>
+                    )
                     : query.trim() !== ""
                       ? "No application matches that search. Clear the text box to see them all."
                       : facet === "quiet"

@@ -564,11 +564,12 @@ describe("the empty state", () => {
   it("names both ways to record an application when nothing has been applied to", async () => {
     await renderApplied(appliedResponse([]));
 
-    expect(
-      screen.getByText(
-        "Nothing applied yet — mark a lead applied from the queue, or `boardwatch track add <posting_id>`.",
-      ),
-    ).toBeTruthy();
+    const cell = screen.getByText(/Nothing applied yet/);
+    // The command is shown as a command, not wrapped in literal backticks.
+    expect(cell.textContent).toBe(
+      "Nothing applied yet — mark a lead applied from the queue, or run boardwatch track add <posting_id>.",
+    );
+    expect(within(cell).getByText("boardwatch track add <posting_id>").tagName).toBe("CODE");
   });
 
   it("points at the search box, not at the queue, when a filter hid every row", async () => {

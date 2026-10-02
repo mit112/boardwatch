@@ -195,6 +195,42 @@ describe("a run that has no stored funnel", () => {
     await screen.findByText(/^funnel · artifact/);
   });
 
+  it("skips a funnel file it cannot draw, instead of throwing, and says which run it skipped", async () => {
+    // A file from an older writer, or a cut-off one: it comes back 200 but lacks `errors`,
+    // `sources`, `lanes` and `coverage`. The server passes stored files through unchanged.
+    const thin = { run_id: 529, stages: [], reconciles: true } as unknown as RunFunnel;
+    vi.mocked(getRuns).mockResolvedValue({
+      runs: [runSummary({ id: 529 }), runSummary({ id: 528 })],
+    });
+    vi.mocked(getFunnel).mockImplementation((id: number) =>
+      Promise.resolve(id === 529 ? thin : runFunnel({ run_id: id })),
+    );
+    render(<RunsPage />);
+
+    await screen.findByText(/^funnel · artifact/);
+    screen.getByText(/Showing run 528 — the newest run with a stored funnel\. Run 529 is listed but has none\./);
+    expect(screen.queryByText(/could not be drawn/)).toBeNull();
+  });
+
+  it("explains a picked run whose funnel file is incomplete, and offers the way out", async () => {
+    const thin = { run_id: 529, stages: [] } as unknown as RunFunnel;
+    vi.mocked(getRuns).mockResolvedValue({
+      runs: [runSummary({ id: 529 }), runSummary({ id: 528 })],
+    });
+    vi.mocked(getFunnel).mockImplementation((id: number) =>
+      Promise.resolve(id === 529 ? thin : runFunnel({ run_id: id })),
+    );
+    render(<RunsPage />);
+    await screen.findByText(/^funnel · artifact/);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "run" }), { target: { value: "529" } });
+    const notice = await screen.findByRole("alert");
+    expect(within(notice).getByText("The funnel for run 529 can't be drawn.")).toBeTruthy();
+    expect(notice.textContent).toMatch(/missing parts this page needs/);
+    expect(notice.textContent).not.toMatch(/404|TypeError|undefined/);
+    expect(within(notice).getByRole("button", { name: "Show the newest run that has one" })).toBeTruthy();
+  });
+
   it("offers a retry, in words, when the request itself failed", async () => {
     vi.mocked(getRuns).mockResolvedValue({ runs: [runSummary({ id: 7 })] });
     vi.mocked(getFunnel).mockRejectedValueOnce(failing(7)).mockResolvedValue(runFunnel({ run_id: 7 }));

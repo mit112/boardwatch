@@ -38,8 +38,8 @@ rows identical, 0.06–0.07 s warm (in-process, live store, read-only — not me
 artifact; the page falls back to the newest run that has one. The queue is task-first (Jobs to explore / Needs review / All jobs, a short summary instead of
 sixteen counters, one honest note per row); status is four independent readings and unknown is "Check", never "Missing"; a workspace per job (what to check, the
 résumé, answers, follow-up); an optional apply session; progress counted from the Applied ledger only after the server confirms (a failed write never counts).
-The bundle is rebuilt and its manifest committed. Web: 344 vitest tests, `tsc` and `eslint` clean; detector 0 findings on 28 files; a fixture-data browser pass
-(320–1440 px, 200 % zoom emulated, both themes) in two rounds. Gate: `make check` exit 0 on the branch (12,895 pytest + 344 vitest passed; the first run was red on a home path in this file and was re-run in full).
+The bundle is rebuilt and its manifest committed. Web: 349 vitest tests, `tsc` and `eslint` clean; detector 0 findings on 28 files; a fixture-data browser pass
+(320–1440 px, 200 % zoom emulated, both themes) in two rounds. Gate: GATE_PENDING2
 
 **Next, in order (all owner calls):**
 1. Review, then merge `viewer-workspace` when you choose. Merging changes the code the daily run's editable venv imports; the pipeline does not call
@@ -53,8 +53,7 @@ The bundle is rebuilt and its manifest committed. Web: 344 vitest tests, `tsc` a
    old viewer vs this one, on the same fixture or isolated store with the same person; plus whether someone can say why a job is flagged.
 
 **Not verified, so not claimed:** applications made, motivation or retention; any screen reader; real zoom; Safari, Firefox, touch; a slow device; long titles and
-a missing location (fixtures have neither). Open cosmetic: a 69 px band above the empty pane at ≥1024 px wide and <544 px tall; one stat cell wraps alone at 1280;
-the empty Applied table prints literal backticks (pre-existing).
+a missing location (fixtures have neither). Open cosmetic: one stat cell wraps alone at 1280. A `/verify` pass on the real viewer (isolated synthetic store, real bundle) found two defects the branch then fixed: the Runs page threw on a funnel file missing fields, and focus fell to `<body>` after a toast button was used; the sticky-pane band and the literal backticks in the empty Applied table were fixed with them.
 
 ### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
 

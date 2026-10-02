@@ -2109,7 +2109,7 @@ export function QueuePage({
              job is opened — and the empty workspace says where to start. */
           <aside
             aria-label="Job workspace"
-            className="hidden rounded-lg bg-surface p-8 text-center shadow-card lg:sticky lg:top-header lg:flex lg:min-h-80 lg:flex-col lg:items-center lg:justify-center lg:gap-3"
+            className="hidden rounded-lg bg-surface p-8 text-center shadow-card lg:sticky lg:top-0 lg:roomy:top-header lg:flex lg:min-h-80 lg:flex-col lg:items-center lg:justify-center lg:gap-3"
           >
             <h2 className="text-lg text-fg">
               {navList.length === 0 ? "No job to open" : "Pick a job to start"}

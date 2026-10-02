@@ -16763,13 +16763,13 @@ the live store, so the plan still depends on the query's shape, not on statistic
 | check | result |
 |---|---|
 | `tsc --noEmit`, `eslint . --max-warnings=0` | clean |
-| vitest | 344 passed, 40 files |
+| vitest | 349 passed, 41 files |
 | mutation checks that each failed the wrong behaviour | no record lock; no revert flag; counting before confirmation; unknown read as unmet; Runs fallback and bound; panel claiming "recorded" while pending; no Undo guard; no confirm flip; no Escape; unsure rules verdict as clear; search not scoped in the summary; toast Undo pulling focus back |
 | Impeccable detector | 0 findings on 28 files; null control (a deliberately bad HTML file) flagged |
-| bundle | rebuilt with node 20.20.2; manifest 95 inputs; `test_web_bundle_freshness` 3 passed |
+| bundle | rebuilt with node 20.20.2; manifest 96 inputs; `test_web_bundle_freshness` 3 passed |
 | diff review (`diff-reviewer`) | 0 blockers, 1 MAJOR and 2 MINOR, all fixed |
 | browser pass, fixtures only | 2 rounds; 0 console errors; 0 px horizontal overflow on Jobs, Applied, Filtered out and Runs at 320, 375, 640x450, 768, 1280, 1440 after the fixes; contrast 0 failures in a runtime scan of both themes; 24 px targets pass; focus ring on every tabbed control |
-| `make check` | exit 0: generalization OK, indexes current, ruff and mypy --strict clean (375 files), vitest 344, pytest 12,895 passed / 4 xfailed in 176 s, coverage 95.28 %; the first run was RED at generalization (a home path in STATE.md), fixed and re-run in full |
+| `make check` | GATE_PENDING2 |
 
 **Not observed:** applications made, motivation, retention, time-to-apply. **Not verified:** screen readers, real zoom, Safari,
 Firefox, touch, forced colours, a slow device, long titles, a missing location. Before/after screenshots (fixture data, kept

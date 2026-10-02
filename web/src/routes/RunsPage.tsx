@@ -466,6 +466,27 @@ function isNotFound(caught: unknown): boolean {
   return typeof caught === "object" && caught !== null && "status" in caught && caught.status === 404;
 }
 
+/**
+ * Whether a funnel record has every part the page reads. The server passes the stored file through
+ * unchanged, so a file from an older writer or a cut-off one is a real input, and a missing array
+ * would otherwise throw inside the render. `null` is allowed where the type allows it: that is an
+ * artifact older than a measurement saying so, not a hole.
+ */
+function isDrawable(funnel: unknown): funnel is RunFunnel {
+  if (typeof funnel !== "object" || funnel === null) return false;
+  const record = funnel as Record<string, unknown>;
+  const coverage = record["coverage"];
+  return (
+    Array.isArray(record["stages"]) &&
+    Array.isArray(record["errors"]) &&
+    Array.isArray(record["sources"]) &&
+    Array.isArray(record["lanes"]) &&
+    typeof coverage === "object" &&
+    coverage !== null &&
+    Array.isArray((coverage as Record<string, unknown>)["top_missing"])
+  );
+}
+
 /** How many older runs the page will try before it stops looking for one that has a funnel. A
  *  bound, so a store where none has one costs a handful of fast 404s and not a walk of the table. */
 const FALLBACK_LOOKBACK = 12;
@@ -475,6 +496,9 @@ type FunnelState =
   | { kind: "ready"; funnel: RunFunnel }
   /** The run is listed but no funnel record is stored for it. NOT a failure of the request. */
   | { kind: "absent" }
+  /** A funnel file came back but lacks parts the page reads (an older writer, or a truncated
+   *  file). Drawing it would throw; it is told apart from "absent" so the words are right. */
+  | { kind: "unusable" }
   | { kind: "failed" };
 
 export function RunsPage() {
@@ -515,9 +539,25 @@ export function RunsPage() {
   useEffect(() => {
     if (runId === null) return;
     let live = true;
+    /* This run has no funnel the page can draw — none stored, or one it cannot read. While the
+       page is still choosing the run, hand over to the next older one; otherwise say which. */
+    const passOver = (kind: "absent" | "unusable") => {
+      const list = runs ?? [];
+      const index = list.findIndex((run) => run.id === runId);
+      const next = list[index + 1];
+      if (choosing && next !== undefined && index + 1 < FALLBACK_LOOKBACK) {
+        setSkipped((current) => current ?? runId);
+        setState({ kind: "loading" });
+        setRunId(next.id);
+        return;
+      }
+      setState({ kind });
+    };
     void getFunnel(runId)
       .then((funnel) => {
-        if (live) setState({ kind: "ready", funnel });
+        if (!live) return;
+        if (isDrawable(funnel)) setState({ kind: "ready", funnel });
+        else passOver("unusable");
       })
       .catch((caught: unknown) => {
         if (!live) return;
@@ -525,16 +565,7 @@ export function RunsPage() {
           setState({ kind: "failed" });
           return;
         }
-        const list = runs ?? [];
-        const index = list.findIndex((run) => run.id === runId);
-        const next = list[index + 1];
-        if (choosing && next !== undefined && index + 1 < FALLBACK_LOOKBACK) {
-          setSkipped((current) => current ?? runId);
-          setState({ kind: "loading" });
-          setRunId(next.id);
-          return;
-        }
-        setState({ kind: "absent" });
+        passOver("absent");
       });
     return () => {
       live = false;
@@ -657,6 +688,21 @@ export function RunsPage() {
         <RunsNotice
           title={`No funnel is stored for run ${String(runId)}.`}
           body="The run is listed above, but the funnel breakdown for it is not on disk, so it cannot be shown. Nothing about your jobs depends on it."
+          actions={[
+            { label: "Show the newest run that has one", onClick: showNewestWithFunnel },
+            {
+              label: "Try again",
+              onClick: () => {
+                setState({ kind: "loading" });
+                setAttempt((current) => current + 1);
+              },
+            },
+          ]}
+        />
+      ) : state.kind === "unusable" ? (
+        <RunsNotice
+          title={`The funnel for run ${String(runId)} can't be drawn.`}
+          body="Its file is missing parts this page needs — it may have been written by an older version, or cut off — so it cannot be shown. Nothing about your jobs depends on it."
           actions={[
             { label: "Show the newest run that has one", onClick: showNewestWithFunnel },
             {

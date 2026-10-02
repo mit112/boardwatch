@@ -700,7 +700,7 @@ export function DetailPane({
        * control scrolled into view stops clear of it (`scroll-margin-bottom` in `index.css`).
        * `lg:top-header` and `lg:z-auto` stop it at the sticky app header without outranking it.
        */
-      className={`fixed inset-0 z-40 flex flex-col bg-surface transition-[opacity,translate] duration-[180ms] ease-out lg:sticky lg:inset-auto lg:top-header lg:z-auto lg:h-[calc(100vh-var(--spacing-header))] lg:rounded-lg lg:shadow-card ${
+      className={`fixed inset-0 z-40 flex flex-col bg-surface transition-[opacity,translate] duration-[180ms] ease-out lg:sticky lg:inset-auto lg:top-0 lg:roomy:top-header lg:z-auto lg:h-screen lg:roomy:h-[calc(100vh-var(--spacing-header))] lg:rounded-lg lg:shadow-card ${
         shown ? "translate-x-0 opacity-100" : "translate-x-2 opacity-0"
       }`}
     >
