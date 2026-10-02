@@ -2124,6 +2124,89 @@ def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine
     assert len(served.json()["rows"]) == 1
 
 
+# --------------------------------------------------------------------------- the rejected list
+
+
+def _rejected_store(engine: Engine) -> dict[str, int]:
+    """Four delivered leads under the one blocking identity: one cleared, two rejected — one of
+    which the final gate calls eligible — and one rejected AND closed, which drains to `_closed`.
+    The verdicts are asserted, so the list below cannot pass on a premise the engine stopped
+    holding."""
+    with engine.begin() as conn:
+        _profile(conn, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+        ids = {
+            key: _deliver(conn, key, body=body, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)[0]
+            # `contested` is delivered BEFORE `barred`, so the newest-first default would list it
+            # second: only the gate-first sort can put it on top.
+            for key, body in (
+                ("clear", JD_ELIGIBLE),
+                ("contested", JD_INELIGIBLE),
+                ("barred", JD_INELIGIBLE),
+                ("gone", JD_INELIGIBLE),
+            )
+        }
+        for key in ("barred", "contested", "gone"):
+            assert (
+                _judge(conn, ids[key], JD_INELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+                == "ineligible"
+            )
+        _gate(
+            conn, ids["contested"], JD_INELIGIBLE, "eligible",
+            facts=BLOCKING_FACTS, policy=BLOCKING_POLICY,
+        )
+        conn.execute(
+            update(postings).where(postings.c.id == ids["gone"]).values(status="closed")
+        )
+    return ids
+
+
+def test_the_rejected_list_is_the_queues_ineligible_count_with_gate_disagreements_first(
+    live: Live, engine: Engine
+) -> None:
+    """`GET /api/rejected` lists exactly the leads the queue only counts as `ineligible` — not
+    the cleared one, and not the closed one, which closed outranks — and puts the one the final
+    gate called eligible first, because rules and gate disagreeing is the likeliest false reject."""
+    ids = _rejected_store(engine)
+
+    payload = call(live, "/api/rejected", bearer=live.token).json()
+    listed = [row["posting_id"] for row in payload["rows"]]
+    assert sorted(listed) == sorted([ids["barred"], ids["contested"]])
+    assert listed[0] == ids["contested"]
+    assert payload["rows"][0]["judge_verdict"] == "eligible"
+    assert payload["counts"] == {"total": 2, "gate_eligible": 1, "disputed": 0}
+
+    queue = call(live, "/api/queue", bearer=live.token).json()["counts"]
+    assert queue["ineligible"] == payload["counts"]["total"]
+    assert call(live, "/api/rejected", bearer=None).status == 401
+
+
+def test_a_dispute_is_recorded_without_moving_the_lead_and_can_be_withdrawn(
+    live: Live, engine: Engine
+) -> None:
+    """A dispute changes no verdict and no lane: the lead stays on the rejected list and in the
+    queue's `ineligible` count. Its flag and count are what change."""
+    ids = _rejected_store(engine)
+
+    disputed = call(
+        live, f"/api/queue/{ids['barred']}/disputed", method="POST", bearer=live.token
+    )
+    assert disputed.json() == {"outcome": "disputed"}
+    payload = call(live, "/api/rejected", bearer=live.token).json()
+    flags = {row["posting_id"]: row["disputed"] for row in payload["rows"]}
+    assert flags == {ids["barred"]: True, ids["contested"]: False}
+    assert payload["counts"]["disputed"] == 1
+    assert call(live, "/api/queue", bearer=live.token).json()["counts"]["ineligible"] == 2
+
+    undone = call(
+        live, f"/api/queue/{ids['barred']}/undispute", method="POST", bearer=live.token
+    )
+    assert undone.json() == {"outcome": "undisputed"}
+    assert call(live, "/api/rejected", bearer=live.token).json()["counts"]["disputed"] == 0
+    assert (
+        call(live, "/api/queue/999999/disputed", method="POST", bearer=live.token).status == 404
+    )
+
+
 # -------------------------------------------------------------------------------------- counts
 
 

@@ -433,6 +433,41 @@ export interface AppliedCounts {
   follow_up_due: number;
 }
 
+/**
+ * One lead the rules rejected — `GET /api/rejected`. The queue only COUNTS these (its `ineligible`
+ * cell); this is the list behind that number, so a false reject can be found. The rejection itself
+ * is read from the lead's detail (`GET /api/queue/<id>`), whose requirement rows quote the span.
+ */
+export interface RejectedRow {
+  posting_id: number;
+  job_id: number;
+  title: string;
+  company: string;
+  provider?: string | null;
+  location: string | null;
+  remote_policy: string | null;
+  posted_days: number | null;
+  first_seen: string | null;
+  apply_url: string | null;
+  delivered_run_id: number | null;
+  /** The final gate's reading. `eligible` here, beside the rules' `ineligible`, is the
+   *  disagreement that most often marks a false reject. */
+  judge_verdict?: Verdict | null;
+  pdf_available: boolean;
+  /** The owner has disputed this rejection. It changes no verdict and no lane. */
+  disputed: boolean;
+}
+
+export interface RejectedResponse {
+  rows: RejectedRow[];
+  counts: { total: number; gate_eligible: number; disputed: number };
+}
+
+/** `POST /api/queue/<id>/disputed` and its inverse. */
+export interface DisputeResponse {
+  outcome: "disputed" | "undisputed";
+}
+
 /** `GET /api/applied`. Named for the history, not for the mark: `AppliedResponse` above is the
  *  POST route's answer and the two are different shapes. */
 export interface AppliedHistoryResponse {

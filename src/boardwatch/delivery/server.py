@@ -76,6 +76,7 @@ from boardwatch.delivery.api import (
     funnel_payload,
     local_today,
     queue_payload,
+    rejected_payload,
     resolve_pdf,
     reveal,
     runs_payload,
@@ -99,9 +100,11 @@ from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.queue_state import (
     clear_job_followup,
+    mark_job_disputed,
     mark_job_reported,
     mark_job_skipped,
     set_job_followup,
+    unmark_job_disputed,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -182,7 +185,8 @@ _QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
 _QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip)$")
 _QUEUE_ACTION = re.compile(
     r"^/api/queue/(\d+)/"
-    r"(applied|unapplied|skipped|unskip|reported|unreport|followup|unfollowup|reveal)$"
+    r"(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup"
+    r"|reveal)$"
 )
 #: The applied history's follow-up write, keyed on a JOB rather than a posting. Disjoint from
 #: every `_QUEUE*` route above by prefix: an imported application has no posting the queue
@@ -429,6 +433,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 # connection, 503 on a busy store, and no write path on this route at all.
                 self._json(HTTPStatus.OK, self._read(applied_payload))
                 return
+            if path == "/api/rejected":
+                # A read through `_read`, like the queue it is the other half of.
+                self._json(HTTPStatus.OK, self._read(rejected_payload))
+                return
             if path == "/api/answers":
                 self._answers()
                 return
@@ -546,6 +554,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         if action in ("followup", "unfollowup"):
             self._followup(posting_id, clearing=action == "unfollowup")
+            return
+        if action in ("disputed", "undispute"):
+            self._dispute(posting_id, dispute=action == "disputed")
             return
         result = self._write(
             lambda conn: (
@@ -700,6 +711,32 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "reported" if report else "unreported"})
+
+    def _dispute(self, posting_id: int, *, dispute: bool) -> None:
+        """Record — or withdraw — the owner's disagreement with a lead's rejection.
+
+        Keyed on the canonical `job_id`, like report. No `_reconcile`, like follow-up: a dispute
+        changes no verdict and no lane, so the lead's folder stays in `_ineligible`. It is a record
+        for the next precision audit, not a release.
+        """
+
+        def work(conn: Connection) -> MarkResult:
+            job_id = job_id_for_posting(conn, posting_id)
+            if job_id is None:
+                return MarkResult(MarkOutcome.NO_POSTING)
+            if dispute:
+                mark_job_disputed(conn, job_id=job_id, at=utcnow())
+            else:
+                unmark_job_disputed(conn, job_id=job_id)
+            return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id)
+
+        result = self._write(work)
+        if result is None:
+            return
+        if result.outcome is MarkOutcome.NO_POSTING:
+            self._error(HTTPStatus.NOT_FOUND, "no such posting")
+            return
+        self._json(HTTPStatus.OK, {"outcome": "disputed" if dispute else "undisputed"})
 
     def _followup(self, posting_id: int, *, clearing: bool) -> None:
         """Pin a follow-up date to a lead, or drop the one it has.
