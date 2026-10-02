@@ -22,6 +22,7 @@ refused AND that a path inside the root serves those exact bytes.
 from __future__ import annotations
 
 import http.client
+import http.server
 import json
 import os
 import re
@@ -2122,6 +2123,72 @@ def test_the_applied_history_is_read_only_and_needs_the_token(live: Live, engine
     served = call(live, "/api/applied", bearer=live.token)
     assert served.status == 200
     assert len(served.json()["rows"]) == 1
+
+
+# ------------------------------------------------------------------------------ viewer staleness
+
+
+def test_the_code_fingerprint_moves_when_a_source_file_changes_and_only_then(
+    tmp_path: Path,
+) -> None:
+    """Size and mtime of every `.py` under the package: a merge under an editable install rewrites
+    files, and that is the change a running viewer cannot otherwise see in itself."""
+    package = tmp_path / "pkg"
+    (package / "sub").mkdir(parents=True)
+    module = package / "sub" / "mod.py"
+    module.write_text("x = 1\n")
+    (package / "notes.txt").write_text("not python")
+    before = server_mod.code_fingerprint(package)
+    assert server_mod.code_fingerprint(package) == before
+
+    (package / "notes.txt").write_text("still not python, now longer")
+    assert server_mod.code_fingerprint(package) == before
+
+    stat = module.stat()
+    os.utime(module, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000_000))
+    touched = server_mod.code_fingerprint(package)
+    assert touched != before
+
+    (package / "new.py").write_text("")
+    assert server_mod.code_fingerprint(package) != touched
+
+
+def test_the_version_route_names_the_bundle_on_disk_and_reports_a_code_change(
+    live: Live, engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page compares `bundle` with the script it loaded, and `code_changed` says the Python on
+    disk is no longer the Python this process imported."""
+    index = (server_mod.static_root() / "index.html").read_text(encoding="utf-8")
+    response = call(live, "/api/version", bearer=live.token)
+    assert response.status == 200
+    payload = response.json()
+    assert payload["code_changed"] is False
+    assert f'src="/assets/{payload["bundle"]}"' in index
+
+    monkeypatch.setattr(server_mod, "code_fingerprint", lambda package=None: "moved")
+    assert call(live, "/api/version", bearer=live.token).json()["code_changed"] is True
+    assert call(live, "/api/version", bearer=None).status == 401
+
+
+def test_a_held_port_is_recognised_as_this_owners_viewer_and_nothing_else_is(
+    live: Live, engine: Engine
+) -> None:
+    """`boardwatch web` on a port its own viewer holds reuses it instead of failing to bind. The
+    probe must say yes for that viewer and no for a wrong token or anything else on a port."""
+    host, port = live.authority.split(":")
+    assert server_mod.viewer_answers(host, int(port), live.token) is True
+    assert server_mod.viewer_answers(host, int(port), "not-the-token") is False
+
+    other = http.server.HTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
+    thread = threading.Thread(target=other.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert server_mod.viewer_answers("127.0.0.1", other.server_address[1], live.token) is False
+    finally:
+        other.shutdown()
+        other.server_close()
+    # Nothing listening at all: the port `other` just released.
+    assert server_mod.viewer_answers("127.0.0.1", other.server_address[1], live.token) is False
 
 
 # -------------------------------------------------------------------------------------- counts

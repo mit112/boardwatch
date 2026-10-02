@@ -46,6 +46,8 @@ read-only, and nothing should advertise that it can.
 
 from __future__ import annotations
 
+import hashlib
+import http.client
 import json
 import mimetypes
 import os
@@ -193,6 +195,9 @@ _APPLIED_ACTION = re.compile(r"^/api/applied/(\d+)/(followup|unfollowup)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
+#: The bundle's entry script as the index document on disk names it — Vite's content-hashed name,
+#: so it changes exactly when the built page does.
+_ENTRY_SCRIPT = re.compile(r'<script[^>]*\bsrc="/assets/([A-Za-z0-9._-]+\.js)"')
 
 
 class NonLoopbackBindError(RuntimeError):
@@ -295,6 +300,9 @@ class ServerDeps:
     ctx: ApiContext
     token: str
     authority: str
+    #: `code_fingerprint()` when this process started: the Python it imported then is the Python
+    #: it serves until it exits, whatever the checkout on disk has since become (D-360).
+    code_fingerprint: str
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -313,7 +321,12 @@ class ReviewServer(ThreadingHTTPServer):
         super().__init__(address, ReviewHandler)
         # AFTER binding, because port 0 means "any free port" and the Host check has to compare
         # against the port that was actually chosen.
-        self.deps = ServerDeps(ctx=ctx, token=token, authority=f"{host}:{self.server_address[1]}")
+        self.deps = ServerDeps(
+            ctx=ctx,
+            token=token,
+            authority=f"{host}:{self.server_address[1]}",
+            code_fingerprint=code_fingerprint(),
+        )
 
     @property
     def url(self) -> str:
@@ -428,6 +441,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 # Read-only through `_read`, exactly like `/api/queue`: a per-request read-only
                 # connection, 503 on a busy store, and no write path on this route at all.
                 self._json(HTTPStatus.OK, self._read(applied_payload))
+                return
+            if path == "/api/version":
+                # What the page needs to tell its reader the viewer is stale: the bundle on disk
+                # (the page compares it with the one it loaded) and whether the package's Python
+                # has changed under this process since it started.
+                self._json(
+                    HTTPStatus.OK,
+                    {
+                        "bundle": bundle_entry(),
+                        "code_changed": code_fingerprint() != deps.code_fingerprint,
+                    },
+                )
                 return
             if path == "/api/answers":
                 self._answers()
@@ -999,6 +1024,62 @@ def prime_queue(ctx: ApiContext) -> None:
             engine.dispose()
 
 
+def code_fingerprint(package: Path | None = None) -> str:
+    """A digest of every `.py` file under the installed package — path, size and mtime.
+
+    It moves when a merge, a pull or a branch switch rewrites the source under an editable install,
+    which is the skew a running viewer cannot otherwise see in itself: it keeps serving the Python
+    it imported at startup while the bundle it serves is read from disk per request. An installed
+    wheel never changes under the process, so there it never moves.
+    """
+    root = Path(str(files("boardwatch"))) if package is None else package
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        try:
+            stat = path.stat()
+        except OSError:
+            # A file deleted mid-walk is itself a change; leaving it out of the digest records it.
+            continue
+        digest.update(f"{path.relative_to(root)}\0{stat.st_size}\0{stat.st_mtime_ns}\n".encode())
+    return digest.hexdigest()
+
+
+def bundle_entry() -> str | None:
+    """The entry script the index document on disk names, or None when there is no bundle."""
+    try:
+        document = (static_root() / "index.html").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    found = _ENTRY_SCRIPT.search(document)
+    return None if found is None else found.group(1)
+
+
+def viewer_answers(host: str, port: int, token: str) -> bool:
+    """Whether a boardwatch viewer that accepts `token` is already listening on `host:port`.
+
+    The answer that turns "could not bind" into "it is already running": the `Server` header names
+    this application, and the token is accepted (anything but 401). A 404 counts — a viewer older
+    than `/api/version` still authenticated the request, so it is this owner's viewer.
+    """
+    connection = http.client.HTTPConnection(host, port, timeout=2)
+    try:
+        connection.request(
+            "GET",
+            "/api/version",
+            headers={"Host": f"{host}:{port}", "Authorization": f"Bearer {token}"},
+        )
+        response = connection.getresponse()
+        response.read()
+    except OSError:
+        return False
+    finally:
+        connection.close()
+    return (response.getheader("Server") or "").startswith("boardwatch") and response.status in (
+        HTTPStatus.OK,
+        HTTPStatus.NOT_FOUND,
+    )
+
+
 def build_server(*, ctx: ApiContext, token: str, host: str, port: int) -> ReviewServer:
     """Bind the review server, or refuse. Raises `NonLoopbackBindError` for a non-loopback host."""
     if not static_root().is_dir():
@@ -1020,7 +1101,10 @@ __all__ = [
     "ReviewServer",
     "ServerDeps",
     "build_server",
+    "bundle_entry",
+    "code_fingerprint",
     "load_or_create_token",
     "prime_queue",
     "static_root",
+    "viewer_answers",
 ]

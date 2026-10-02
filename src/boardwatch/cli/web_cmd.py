@@ -15,6 +15,7 @@ address.
 
 from __future__ import annotations
 
+import errno
 import sys
 import webbrowser
 from pathlib import Path
@@ -32,6 +33,7 @@ from boardwatch.delivery.server import (
     build_server,
     load_or_create_token,
     prime_queue,
+    viewer_answers,
 )
 from boardwatch.store.db import WalUnsafeFilesystemError, get_readonly_engine
 
@@ -78,6 +80,16 @@ def web(
         console.print(str(exc), markup=False)
         raise typer.Exit(code=2) from exc
     except OSError as exc:
+        # The port is held — and if what holds it is this owner's own viewer, that is the page
+        # they asked for: hand them its URL rather than an error. A second viewer on another port
+        # would serve the same store twice.
+        if exc.errno == errno.EADDRINUSE and viewer_answers(host, port, token):
+            url = f"http://{host}:{port}/#{token}"
+            console.print("boardwatch review is already running — open this URL:", markup=False)
+            console.print(url, markup=False, soft_wrap=True)
+            if open_browser:
+                webbrowser.open(url)
+            return
         console.print(f"could not bind {host}:{port}: {exc.strerror}", markup=False)
         raise typer.Exit(code=1) from exc
 

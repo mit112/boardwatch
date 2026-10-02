@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **The web viewer says when it is stale.** A banner under the header appears when the checkout's
+  Python has changed since `boardwatch web` started (restart it) or when a newer page is on disk
+  than the tab loaded (with a Reload button). New route: `GET /api/version`.
+- **`boardwatch web` reuses a viewer that is already running.** Started on a port its own viewer
+  holds (the default 8799, say), it prints that viewer's URL, opens it unless `--no-open`, and
+  exits 0, instead of failing to bind or starting a second viewer on another port.
+
 ### Changed
 
 - **`--help`, `boardwatch guide` and a run's apply-lane alert no longer carry this repository's

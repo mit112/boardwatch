@@ -433,6 +433,14 @@ export interface AppliedCounts {
   follow_up_due: number;
 }
 
+/** `GET /api/version`: what the page needs to say the viewer is stale. */
+export interface VersionResponse {
+  /** The bundle entry script on DISK, e.g. `index-BR0ghf3X.js`, or null with no bundle. */
+  bundle: string | null;
+  /** The package's Python changed on disk since this viewer process started. */
+  code_changed: boolean;
+}
+
 /** `GET /api/applied`. Named for the history, not for the mark: `AppliedResponse` above is the
  *  POST route's answer and the two are different shapes. */
 export interface AppliedHistoryResponse {
