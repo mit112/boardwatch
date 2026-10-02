@@ -47,6 +47,7 @@ read-only, and nothing should advertise that it can.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import http.client
 import json
 import mimetypes
@@ -61,7 +62,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, TypeVar, cast
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from sqlalchemy import Connection, Engine
 from sqlalchemy.exc import OperationalError
@@ -195,6 +196,11 @@ _APPLIED_ACTION = re.compile(r"^/api/applied/(\d+)/(followup|unfollowup)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
+#: A probe's challenge: 16 random bytes as hex, and nothing else.
+_NONCE = re.compile(r"[0-9a-f]{32}")
+#: Cap on the probe's reply, in bytes. The real one is ~80; a listener that is not a viewer gets
+#: this much read and no more.
+_HELLO_MAX_BYTES = 4096
 #: The bundle's entry script as the index document on disk names it — Vite's content-hashed name,
 #: so it changes exactly when the built page does.
 _ENTRY_SCRIPT = re.compile(r'<script[^>]*\bsrc="/assets/([A-Za-z0-9._-]+\.js)"')
@@ -383,6 +389,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if not path.startswith("/api/"):
             self._static(method, path)
             return
+        if method == "GET" and path == "/api/hello":
+            # The one unauthenticated API route, and it carries no data: it proves to a CLI that
+            # this listener holds the owner's token and serves the store it asked for, without the
+            # CLI ever sending the token (see `viewer_answers`).
+            self._hello()
+            return
         if not self._authorised(deps.token):
             self._error(HTTPStatus.UNAUTHORIZED, "a bearer token is required")
             return
@@ -412,6 +424,18 @@ class ReviewHandler(BaseHTTPRequestHandler):
             # connection, and the browser then shows a network error for a condition that has a
             # precise explanation the owner needs to read.
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+
+    def _hello(self) -> None:
+        nonces = parse_qs(urlsplit(self.path).query).get("nonce", [])
+        nonce = nonces[0] if len(nonces) == 1 else ""
+        if not _NONCE.fullmatch(nonce):
+            self._error(HTTPStatus.BAD_REQUEST, "expected ?nonce=<32 hex>")
+            return
+        deps = self._deps
+        self._json(
+            HTTPStatus.OK,
+            {"proof": viewer_proof(deps.token, nonce, deps.authority, deps.ctx)},
+        )
 
     def _authorised(self, token: str) -> bool:
         """`Authorization: Bearer <token>`, and nothing else. A token in the query string is not
@@ -1054,30 +1078,51 @@ def bundle_entry() -> str | None:
     return None if found is None else found.group(1)
 
 
-def viewer_answers(host: str, port: int, token: str) -> bool:
-    """Whether a boardwatch viewer that accepts `token` is already listening on `host:port`.
+def viewer_proof(token: str, nonce: str, authority: str, ctx: ApiContext) -> str:
+    """HMAC over a probe's nonce, the listener's OWN bound authority and the store it serves.
 
-    The answer that turns "could not bind" into "it is already running": the `Server` header names
-    this application, and the token is accepted (anything but 401). A 404 counts — a viewer older
-    than `/api/version` still authenticated the request, so it is this owner's viewer.
+    The authority is the one the server bound, never one a request named, so a listener on another
+    port cannot relay a real viewer's answer as its own. The store and both roots are in it so a
+    viewer of a different store does not pass as the one asked for: reusing it would write the
+    reader's decisions into the wrong store.
     """
+    message = "\0".join(
+        (
+            "boardwatch-viewer",
+            nonce,
+            authority,
+            str(Path(ctx.settings.data_dir).expanduser().resolve()),
+            str(ctx.out_root),
+            str(ctx.queue_root),
+        )
+    )
+    return hmac.new(token.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def viewer_answers(host: str, port: int, token: str, ctx: ApiContext) -> bool:
+    """Whether `host:port` is held by this owner's viewer of THIS store — proved, not claimed.
+
+    The probe never sends the token. Loopback is reachable from every local account, so whatever
+    holds the port may not be the owner's, and a token sent to it would be a token given away. The
+    listener instead answers a fresh nonce with `viewer_proof`, which only a holder of the token
+    serving the same store at that authority can produce. Anything else — another program, a
+    viewer of another store, an older viewer with no `/api/hello`, a non-HTTP greeting — is no.
+    """
+    nonce = secrets.token_hex(16)
     connection = http.client.HTTPConnection(host, port, timeout=2)
     try:
-        connection.request(
-            "GET",
-            "/api/version",
-            headers={"Host": f"{host}:{port}", "Authorization": f"Bearer {token}"},
-        )
+        connection.request("GET", f"/api/hello?nonce={nonce}", headers={"Host": f"{host}:{port}"})
         response = connection.getresponse()
-        response.read()
-    except OSError:
+        body = response.read(_HELLO_MAX_BYTES)
+        if response.status != HTTPStatus.OK:
+            return False
+        proof = json.loads(body).get("proof")
+    except (OSError, http.client.HTTPException, ValueError, AttributeError):
         return False
     finally:
         connection.close()
-    return (response.getheader("Server") or "").startswith("boardwatch") and response.status in (
-        HTTPStatus.OK,
-        HTTPStatus.NOT_FOUND,
-    )
+    expected = viewer_proof(token, nonce, f"{host}:{port}", ctx)
+    return isinstance(proof, str) and hmac.compare_digest(proof, expected)
 
 
 def build_server(*, ctx: ApiContext, token: str, host: str, port: int) -> ReviewServer:
@@ -1107,4 +1152,5 @@ __all__ = [
     "prime_queue",
     "static_root",
     "viewer_answers",
+    "viewer_proof",
 ]

@@ -26,6 +26,7 @@ import http.server
 import json
 import os
 import re
+import socket
 import sqlite3
 import threading
 import time
@@ -2170,26 +2171,58 @@ def test_the_version_route_names_the_bundle_on_disk_and_reports_a_code_change(
     assert call(live, "/api/version", bearer=None).status == 401
 
 
-def test_a_held_port_is_recognised_as_this_owners_viewer_and_nothing_else_is(
-    live: Live, engine: Engine
+def test_a_held_port_is_recognised_as_this_owners_viewer_of_this_store_and_nothing_else_is(
+    live: Live, engine: Engine, ctx: ApiContext
 ) -> None:
     """`boardwatch web` on a port its own viewer holds reuses it instead of failing to bind. The
-    probe must say yes for that viewer and no for a wrong token or anything else on a port."""
+    probe says yes only for a listener that PROVES it holds the token and serves the same store,
+    and never sends the token itself."""
     host, port = live.authority.split(":")
-    assert server_mod.viewer_answers(host, int(port), live.token) is True
-    assert server_mod.viewer_answers(host, int(port), "not-the-token") is False
+    assert server_mod.viewer_answers(host, int(port), live.token, ctx) is True
+    assert server_mod.viewer_answers(host, int(port), "not-the-token", ctx) is False
+    elsewhere = replace(ctx, queue_root=ctx.queue_root / "elsewhere")
+    assert server_mod.viewer_answers(host, int(port), live.token, elsewhere) is False
 
-    other = http.server.HTTPServer(("127.0.0.1", 0), http.server.SimpleHTTPRequestHandler)
-    thread = threading.Thread(target=other.serve_forever, daemon=True)
+
+def test_the_probe_never_sends_the_token_and_survives_a_listener_that_is_not_http(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """Loopback is reachable from every local account, so whatever holds the port may not be the
+    owner's. A raw listener records what the probe sends — no token in it — and answers with a
+    non-HTTP greeting, which must read as "not a viewer" rather than escape as an exception."""
+    received: list[bytes] = []
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+
+    def serve() -> None:
+        client, _ = listener.accept()
+        with client:
+            received.append(client.recv(65536))
+            client.sendall(b"SSH-2.0-OpenSSH_9.9\r\n")
+
+    thread = threading.Thread(target=serve, daemon=True)
     thread.start()
     try:
-        assert server_mod.viewer_answers("127.0.0.1", other.server_address[1], live.token) is False
+        assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
     finally:
-        other.shutdown()
-        other.server_close()
-    # Nothing listening at all: the port `other` just released.
-    assert server_mod.viewer_answers("127.0.0.1", other.server_address[1], live.token) is False
+        thread.join(timeout=5)
+        listener.close()
+    assert received, "the probe sent nothing, so the token check below is vacuous"
+    assert live.token.encode() not in received[0]
+    assert b"Authorization" not in received[0]
 
+    # Nothing listening at all: the port just released.
+    assert server_mod.viewer_answers("127.0.0.1", port, live.token, ctx) is False
+
+
+def test_the_hello_route_needs_a_well_formed_nonce_and_no_token(live: Live, engine: Engine) -> None:
+    good = call(live, f"/api/hello?nonce={'a' * 32}", bearer=None)
+    assert good.status == 200
+    assert len(good.json()["proof"]) == 64
+    assert call(live, "/api/hello?nonce=xyz", bearer=None).status == 400
+    assert call(live, "/api/hello", bearer=None).status == 400
 
 # -------------------------------------------------------------------------------------- counts
 

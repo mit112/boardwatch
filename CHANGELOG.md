@@ -11,9 +11,12 @@ All notable changes to this project are documented here. The format follows
 - **The web viewer says when it is stale.** A banner under the header appears when the checkout's
   Python has changed since `boardwatch web` started (restart it) or when a newer page is on disk
   than the tab loaded (with a Reload button). New route: `GET /api/version`.
-- **`boardwatch web` reuses a viewer that is already running.** Started on a port its own viewer
-  holds (the default 8799, say), it prints that viewer's URL, opens it unless `--no-open`, and
-  exits 0, instead of failing to bind or starting a second viewer on another port.
+- **`boardwatch web` reuses a viewer that is already running.** Started on a port held by its own
+  viewer of the same store (the default 8799, say), it prints that viewer's URL, opens it unless
+  `--no-open`, and exits 0, instead of failing to bind. The listener must prove it holds the
+  token and serves the same data dir and roots (`GET /api/hello`, an HMAC over a fresh nonce and
+  its own address); the token itself is never sent, and anything else holding the port is
+  refused as before.
 
 ### Changed
 
