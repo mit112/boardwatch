@@ -118,6 +118,7 @@ from boardwatch.store.delivery_queries import (
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 from boardwatch.store.queue_state import (
+    disputed_job_ids,
     followup_job_dates,
     reported_job_ids,
     skipped_job_ids,
@@ -295,7 +296,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
     # tree asks, so the two cannot disagree about which leads it names.
     lane_copy = lane_copy_posting_ids(conn)
-    open_rows = [row for row in every if not row.closed and row.verdict != "ineligible"]
+    open_rows = [row for row in every if not row.closed and not _rejected(row)]
     kept = [row for row in open_rows if row.posting_id not in lane_copy]
     drained = len(every) - len(open_rows) - len(closed_rows)
     facts = _live_facts(conn, ctx, kept)
@@ -354,6 +355,59 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # A capability flag, not a preference: the button is hidden where the platform has no
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
+    }
+
+
+def _rejected(row: QueueRow) -> bool:
+    """Drained to `_ineligible`: the rules' verdict is `ineligible` and the posting is not closed.
+
+    ONE predicate for both readers — `queue_payload`'s `ineligible` count and `rejected_payload`'s
+    list — so the band's figure and the page it links to can never name different leads. Closed
+    outranks it, as `_wanted_location` ranks the drains on disk.
+    """
+    return not row.closed and row.verdict == "ineligible"
+
+
+def rejected_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/rejected`: every delivered lead the rules rejected, which the queue only counts.
+
+    A READ of the `_ineligible` drain, so a reader can spot a false reject — the rejection itself
+    is on each lead's detail (`GET /api/queue/<id>`, whose requirement rows quote the span). The
+    same exclusions as the queue (applied, skipped, reported), from the same reader, so this list
+    and the queue's `ineligible` cell are one set.
+
+    Leads the final gate judged `eligible` come first: the rules and the gate disagreeing is the
+    strongest sign a rejection is wrong. Otherwise `delivered_unapplied`'s newest-first order.
+    """
+    excluded = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    disputed = disputed_job_ids(conn)
+    rows = [row for row in delivered_unapplied(conn, skipped=excluded) if _rejected(row)]
+    rows.sort(key=lambda row: row.judge_verdict != "eligible")
+    return {
+        "rows": [
+            {
+                "posting_id": row.posting_id,
+                "job_id": row.job_id,
+                "title": row.title,
+                "company": row.company,
+                "provider": row.provider,
+                "location": row.location,
+                "remote_policy": row.remote_policy,
+                "posted_days": row.posted_days,
+                "first_seen": _iso_utc(row.first_seen),
+                "apply_url": row.apply_url,
+                "delivered_run_id": row.delivered_run_id,
+                "judge_verdict": row.judge_verdict,
+                "pdf_available": _pdf_path(row.pdf_uri, ctx.out_root) is not None,
+                "disputed": row.job_id in disputed,
+            }
+            for row in rows
+        ],
+        "counts": {
+            "total": len(rows),
+            "gate_eligible": sum(1 for row in rows if row.judge_verdict == "eligible"),
+            "disputed": sum(1 for row in rows if row.job_id in disputed),
+        },
     }
 
 
@@ -1335,6 +1389,7 @@ __all__ = [
     "funnel_payload",
     "lead_folder",
     "queue_payload",
+    "rejected_payload",
     "resolve_owner_name",
     "resolve_pdf",
     "reveal",

@@ -20,7 +20,12 @@ from boardwatch.core.ledger import is_live
 from boardwatch.core.regroup import JobMerge
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queue_state import followup_job_dates, reported_job_ids, skipped_job_ids
+from boardwatch.store.queue_state import (
+    disputed_job_ids,
+    followup_job_dates,
+    reported_job_ids,
+    skipped_job_ids,
+)
 from boardwatch.store.tables import applications, artifacts, job_grouping_events, postings
 
 
@@ -60,11 +65,11 @@ def protected_job_ids(conn: Connection) -> frozenset[int]:
 def queue_action_job_ids(conn: Connection) -> frozenset[int]:
     """Jobs a regrouping may not move a posting off: those carrying a review-queue action.
 
-    A skip, a report and a follow-up (`store/queue_state.py`) are all keyed on `job_id` and every
-    reader resolves through the CURRENT job id, so a merge that moved the posting would leave the
-    key naming a job nothing anchors — and no later sync could recover the intent, because the
-    owner's statement is the key itself and nothing else records it. These are the only job-keyed
-    `app_state` families; the digest and notify cursors are not.
+    A skip, a report, a dispute and a follow-up (`store/queue_state.py`) are all keyed on `job_id`
+    and every reader resolves through the CURRENT job id, so a merge that moved the posting would
+    leave the key naming a job nothing anchors — and no later sync could recover the intent,
+    because the owner's statement is the key itself and nothing else records it. These are the
+    only job-keyed `app_state` families; the digest and notify cursors are not.
 
     Refusing rather than transferring is the conservative half on purpose: combining two members'
     exclusions, or resolving two follow-up dates, is a merge policy nobody has specified. A
@@ -73,6 +78,7 @@ def queue_action_job_ids(conn: Connection) -> frozenset[int]:
     return frozenset(
         skipped_job_ids(conn).keys()
         | reported_job_ids(conn).keys()
+        | disputed_job_ids(conn).keys()
         | followup_job_dates(conn).keys()
     )
 

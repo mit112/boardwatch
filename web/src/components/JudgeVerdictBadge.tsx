@@ -41,7 +41,7 @@ const WORDS: Record<Verdict, { label: string; reason: string }> = {
   ineligible: {
     label: "gate ineligible",
     reason:
-      "The final gate read the job description independently and found the lead ineligible, quoting a span from the frozen description. The rules engine did not agree, or this lead would not be listed here at all.",
+      "The final gate read the job description independently and found the lead ineligible, quoting a span from the frozen description.",
   },
 };
 

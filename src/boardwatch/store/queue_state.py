@@ -8,7 +8,8 @@ below the skip ones.
 
 A **follow-up** is the third key here and the one that excludes NOTHING: it is a date pinned to a
 lead, so it changes no lane and no state. It shares this file only because it shares the
-mechanism. See the follow-up functions at the bottom.
+mechanism. See the follow-up functions at the bottom. A **dispute** is the fourth, and excludes
+nothing either: the owner's disagreement with an `ineligible` verdict, kept for the audit.
 
 Skip deliberately does NOT live in `applications`. Two independent reasons, and either one
 alone would be enough:
@@ -28,7 +29,7 @@ or closed. Skip and applied are independent dimensions and a job may be both; no
 **Regrouping does not carry these keys — it refuses instead.** Every reader resolves a job action
 through the posting's CURRENT job id, so a merge would strand the key on a job nothing anchors,
 and nothing else records the owner's intent to recover it from. `store/regroup.py`'s
-`queue_action_job_ids` therefore adds any job carrying one of the three keys to the set a
+`queue_action_job_ids` therefore adds any job carrying one of these keys to the set a
 regrouping may not move a posting off, exactly as a job carrying an application already is.
 Combining two members' exclusions, or resolving two follow-up dates, is a merge policy nobody has
 specified; a refused group keeps a statement that is unambiguously the owner's.
@@ -134,6 +135,48 @@ def reported_job_ids(conn: Connection) -> dict[int, str]:
             continue
         reported[int(suffix)] = "" if row.value is None else str(row.value)
     return reported
+
+
+# --------------------------------------------------------------------------------------- dispute
+#
+# The mirror image of a report: a report says "this was called eligible and looks wrong", a dispute
+# says "this was called INELIGIBLE and looks wrong". Like a follow-up it excludes nothing — the
+# rules' verdict stands and the lead stays drained to `_ineligible` — so it is a record of the
+# owner's disagreement for whoever audits precision next, not a queue action.
+# `queue.disputed.<job_id>` -> the ISO-8601 instant it was disputed. The reader mirrors
+# `reported_job_ids` for the reason that one gives.
+
+DISPUTE_KEY_PREFIX = "queue.disputed."
+
+
+def _dispute_key(job_id: int) -> str:
+    return f"{DISPUTE_KEY_PREFIX}{job_id}"
+
+
+def mark_job_disputed(conn: Connection, *, job_id: int, at: datetime) -> None:
+    """Record that the owner disputes a job's rejection. Idempotent: a repeat re-stamps `at`."""
+    set_state(conn, _dispute_key(job_id), at.isoformat())
+
+
+def unmark_job_disputed(conn: Connection, *, job_id: int) -> None:
+    """Withdraw a dispute. A job that was never disputed is a no-op, not an error."""
+    conn.execute(delete(app_state).where(app_state.c.key == _dispute_key(job_id)))
+
+
+def disputed_job_ids(conn: Connection) -> dict[int, str]:
+    """job_id -> the ISO-8601 instant it was disputed, for every disputed job. ONE statement."""
+    rows = conn.execute(
+        select(app_state.c.key, app_state.c.value).where(
+            app_state.c.key.like(f"{DISPUTE_KEY_PREFIX}%")
+        )
+    ).all()
+    disputed: dict[int, str] = {}
+    for row in rows:
+        suffix = str(row.key)[len(DISPUTE_KEY_PREFIX) :]
+        if not suffix.isdecimal():
+            continue
+        disputed[int(suffix)] = "" if row.value is None else str(row.value)
+    return disputed
 
 
 # ------------------------------------------------------------------------------------- follow-up
