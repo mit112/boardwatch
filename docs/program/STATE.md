@@ -27,6 +27,33 @@
 
 ## Current standing
 
+### 2026-10-01b — **THE WEB VIEWER GAINS THE APPLICATION LIFECYCLE, TRIAGE ACCELERATORS, A REJECTED TAB, AND A STALE/REUSE CHECK** (#535–#538, D-616). Delivery-side code only: no eligibility, ranking, config or live-store change; the 2026-10-01 block's items below are unchanged.
+
+**Verify first:** `git log --oneline -6 origin/main` (this record on top of #538, #535, #537, #536). The primary checkout was NOT
+pulled: it carries the owner's uncommitted `STATE.md`/`STANDING-FACTS.md` edits (the enterprise-seat note, 15:55) — commit or stash
+them before any pull. Two viewers were running at close: pid 7471 (port 51347) and pid 33710 (port 8799), both on the old code.
+
+**Done:** #535 Applied page — status select through `set_application_status` with undo, a History panel over `application_events`
+with notes (new `note` event type; `_mark_sources` reads state events only), a server-decided "no reply" flag (still `applied`, no
+event for 21 days), "responses N of M"; and the Applied table's header no longer covers its first row. #536 queue — "Did you
+apply?" when the TAB returns after opening an apply page, "×N similar" + "Collapse similar roles", `c` / pane button to select a
+company, follow-up presets, "Show in description" for evidence quotes, saved views (localStorage). #537 Rejected tab — `GET
+/api/rejected` (one `_rejected` predicate shared with the queue's `ineligible` cell), gate-eligible first, "Why", apply anyway,
+dispute flag `queue.disputed.<job_id>` (moves nothing; joins `queue_action_job_ids`). #538 — `GET /api/version` + a stale banner
+(restart / Reload), and `boardwatch web` on a port held by this store's own viewer prints its URL (proved by `GET /api/hello`, an
+HMAC over a nonce and the server's own address and store; the token is never sent). Each reviewed by GPT-6.1 Sol (review +
+verification; #538 a third scoped round), every blocker fixed, `make check` exit 0 on each merged state.
+
+**Next, in order:**
+1. **Owner, when convenient (not during a run):** commit/stash the two dirty docs, `git pull` the primary, stop BOTH old viewers,
+   start ONE on the default port: `(PYTHONUNBUFFERED=1 nohup .venv/bin/boardwatch web --no-open </dev/null >
+   ~/Library/Logs/boardwatch-web.log 2>&1 &)` — no `--port 0`, so the URL (and saved views) survive restarts. The pull also
+   moves the 04:00 driver's code (editable venv); the delivery-path changes are the shared `_rejected` predicate (equivalent) and
+   the regroup set (empty until a dispute exists).
+2. The 2026-10-01 block's items (day 6 read, then the post-day-14 list), unchanged.
+3. Filed for after day 14: T278 (port hand-off after a probe), T279 (always-on viewer; needs T133), T280 (the below-the-cap view, an
+   owner call).
+
 ### 2026-10-01 — **DAY 5 IS RUN 528, THE 04:00 TICK, AND IT MEETS EVERY BAR; THE FASTEST RUN OF THE 14 SO FAR (3 h 26 m); A SECOND OUT-ROOT PDF (SALLY BEAUTY) JOINS UBER; BOTH RE-RENDERED AS MANUAL RUN 529 ON THE OWNER'S WORD, THE VIEWER SERVES 707/707** (D-615). No code, profile, rule or config change; live-store writes only (manual run 529).
 
 **Verify first:** `git log --oneline -3 origin/main` (this record on top of #530); the primary on `main`; no run active; the tick
