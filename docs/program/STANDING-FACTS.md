@@ -4828,6 +4828,58 @@ captures 9/9 and 35/35 released (oraclehcm 1 held); disk 47 GiB free.
    run 529 as day 6's "previous ok run"**: read the board-deadline comparison against run 528 by hand.
 3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272.
 
+## Settled session blocks moved out of STATE on 2026-10-03 (verbatim)
+
+### 2026-10-02b — **DAY 6 IS RUN 530, THE 04:00 TICK AND THE FIRST ON THE REDESIGNED VIEWER'S CODE, AND IT MEETS EVERY BAR** (D-618). No code, profile, rule, config or live-store change; reads only.
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #542); the primary on `main`, still carrying the
+owner's uncommitted enterprise-seat note in `STATE.md`/`STANDING-FACTS.md` (stash by ref around any pull); no run active; the
+tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`). Read the store at
+`/Volumes/mit/boardwatch/boardwatch.db` (D-613).
+
+**Done:** run **530** (04:00 tick) `ok`, 09:00:05 → 13:00:24 UTC, 2,807 boards; run 526's phantom row was reaped to `failed` at its
+start. **Day 6:** B1 44 · B2 36/36 · B3 one page · B4 0 on 36 · B5–B7 ok · B8 36 · gate 46 judged, 0 failed open. `stage_durations`
+vs run 528 (by hand; `day_row.py` named render run 529): scan 6,620 vs 6,161 s, eligibility 1,105 vs 972, tailor 5,991 vs 4,606
+(36 vs 32 PDFs), gate 64 vs 59. Board-deadline hits 6 → 7, partial 83 → 85. Boards `unchanged` 1,147 → 162: validators expire at
+24 h and an `unchanged` scan does not refresh them, so runs 24 h apart refetch most boards in full (D-618) — expected, ~7% more
+scan time. No `WalUnsafe`, lock error, traceback or `gate refresh batch` line; no store under the config dir. Daily checks:
+`inventory.py` 657 apply-lane, pdf missing 0; `/api/queue` 657/657; buried-open 187 → 214; held captures 9/9 and 35/35 released
+(oraclehcm 1 held); no `queue.disputed.*` key exists, so delivery is unchanged by #535–#541. **Disk 17 GiB free (was 47):** ~11 GiB
+is the Claude desktop app's VM bundle (created 2026-10-01); the rest is not traced. The store is on the SSD (301 GiB free).
+
+**Next, in order:**
+1. **Read the 2026-10-03 04:00 run as DAY 7** (`python3 .agent/acceptance/day_row.py <id> 7`, `b4_audit.py --run <id>`, after its
+   PID exits; "previous ok run" will be 530). The daily checks above, unchanged; `/api/queue` takes `Authorization: Bearer
+   <web-token>`.
+2. The 2026-10-02 block's two viewer rulings, (a) and (b), still open.
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280 (filed 2026-10-01b).
+
+### 2026-10-02 — **THE WEB VIEWER IS REDESIGNED AROUND APPLYING — MERGED (#541) AND SERVED** (D-617). Delivery-side code only: no eligibility, ranking, résumé, discovery, config or live-store change; the pipeline never calls the changed read.
+
+**Verify first:** `git log --oneline -3 origin/main` (#541 on top of #540). The primary is on `main` at #541 or later, fast-forwarded 2026-10-02 ~00:50 CDT on the owner's word,
+with the owner's UNCOMMITTED `STATE.md`/`STANDING-FACTS.md` edits (the enterprise-seat note) stashed by ref and popped clean. ONE viewer runs, on the merged code, on port **8799**:
+**restarted 00:50 (pid 99952; the 2026-10-01b block's pid 3970 is gone)** — re-read with `lsof -nP -iTCP:8799 -sTCP:LISTEN`. Checked on the live store with read-only GETs:
+`/api/version` bundle `index-m1R365rZ.js`, `code_changed` false; `/api/applied` 268 rows in **0.42 s first, 0.08 s warm over HTTP (was 101–108 s)**; `/api/queue` 685 apply + 382 review
+(first calls 4–17 s while the store warmed, then 0.6 s). A stale `.git/index.lock` (22:26 the day before, no git process, nothing holding it) blocked the first stash and was removed.
+
+**Done:** the Applied read was slow because SQLite scanned all 687k postings (no `sqlite_stat1`); it now drives from the applications, rows identical. The Runs "404" was run 529, a manual
+re-render with no funnel artifact; the page falls back to the newest run that has a usable funnel, and says "can't be drawn" for a file missing parts. The queue is task-first (Jobs to explore /
+Needs review / All jobs, a short summary instead of sixteen counters, one honest note per row); status is four independent readings and unknown is "Check", never "Missing"; a workspace per job;
+an optional apply session; progress counted from the Applied ledger only after the server confirms. Gate: `make check` exit 0 (12,895 pytest + 349 vitest) and CI green on #541 including the
+`web bundle` byte check. Also merged: `PRODUCT.md`, `DESIGN.md`, a `verify` skill (`.claude/skills/verify/`), and the session record (D-617).
+
+**Next, in order:**
+1. **DONE 2026-10-02b (D-618): day 6 is run 530 and meets every bar.** **The 2026-10-02 04:00 run (day 6) is the first on this merged code.** The pipeline never calls `applied_rows`, so read day 6 as usual (the 2026-10-01b block's note still holds: delivered /
+   drained counts against run 528).
+2. Rulings still open: (a) key `a` records the focused row, including the one the cursor moved to after `s` skipped the previous job (Undo toast, 7 s) — keep or require the workspace to be open;
+   (b) "this week" = the past 7 days, not Monday–Sunday.
+3. Suggested usability comparison (not yet observed): time from opening Jobs to a recorded application, and the share of opened jobs that reach a record, old viewer vs this one, on the same
+   store with the same person; plus whether someone can say why a job is flagged.
+
+**Not verified, so not claimed:** applications made, motivation or retention; any screen reader; real zoom; Safari, Firefox, touch; a slow device; long titles and a missing location on real data.
+Open cosmetic: one stat cell wraps alone at 1280; the empty-state "Check: A degree is preferred" reads as noise on jobs the rules cleared (the server does not say a requirement is only preferred,
+so fixing it is a server change and an eligibility-adjacent call).
+
 ## Owner-gated — do NOT start or decide unilaterally
 
 **0-D's REPAIR half is the one LIVE residual from the four settled owner-gated items moved to
