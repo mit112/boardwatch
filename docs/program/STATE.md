@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The thirtieth, **2026-10-02b**, moved the 2026-10-01b and 2026-10-01 blocks WHOLE once day 6 was read. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The thirtieth, **2026-10-02b**, moved the 2026-10-01b and 2026-10-01 blocks WHOLE once day 6 was read. The thirty-first, **2026-10-03**, moved the 2026-10-02b and 2026-10-02 blocks WHOLE once day 7 was read and the two viewer rulings were made. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -27,55 +27,41 @@
 
 ## Current standing
 
-### 2026-10-02b — **DAY 6 IS RUN 530, THE 04:00 TICK AND THE FIRST ON THE REDESIGNED VIEWER'S CODE, AND IT MEETS EVERY BAR** (D-618). No code, profile, rule, config or live-store change; reads only.
+### 2026-10-03 — **DAY 7 IS RUN 531, THE 04:00 TICK, AND IT MEETS EVERY BAR; THREE OUT-ROOT MICROSOFT PDFs RE-RENDERED AS MANUAL RUN 532 ON THE OWNER'S WORD; THE TWO VIEWER RULINGS ARE MADE** (D-619). No code, profile, rule or config change; live-store writes only (manual run 532).
 
-**Verify first:** `git log --oneline -3 origin/main` (this record on top of #542); the primary on `main`, still carrying the
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #543); the primary on `main`, still carrying the
 owner's uncommitted enterprise-seat note in `STATE.md`/`STANDING-FACTS.md` (stash by ref around any pull); no run active; the
-tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`). Read the store at
+tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`; restarted 10:05 CDT, pid 41483). Read the store at
 `/Volumes/mit/boardwatch/boardwatch.db` (D-613).
 
-**Done:** run **530** (04:00 tick) `ok`, 09:00:05 → 13:00:24 UTC, 2,807 boards; run 526's phantom row was reaped to `failed` at its
-start. **Day 6:** B1 44 · B2 36/36 · B3 one page · B4 0 on 36 · B5–B7 ok · B8 36 · gate 46 judged, 0 failed open. `stage_durations`
-vs run 528 (by hand; `day_row.py` named render run 529): scan 6,620 vs 6,161 s, eligibility 1,105 vs 972, tailor 5,991 vs 4,606
-(36 vs 32 PDFs), gate 64 vs 59. Board-deadline hits 6 → 7, partial 83 → 85. Boards `unchanged` 1,147 → 162: validators expire at
-24 h and an `unchanged` scan does not refresh them, so runs 24 h apart refetch most boards in full (D-618) — expected, ~7% more
-scan time. No `WalUnsafe`, lock error, traceback or `gate refresh batch` line; no store under the config dir. Daily checks:
-`inventory.py` 657 apply-lane, pdf missing 0; `/api/queue` 657/657; buried-open 187 → 214; held captures 9/9 and 35/35 released
-(oraclehcm 1 held); no `queue.disputed.*` key exists, so delivery is unchanged by #535–#541. **Disk 17 GiB free (was 47):** ~11 GiB
-is the Claude desktop app's VM bundle (created 2026-10-01); the rest is not traced. The store is on the SSD (301 GiB free).
+**Done:** run **531** (04:00 tick) `ok`, 09:00:06 → 12:31:25 UTC (3 h 31 m), 2,868 boards. **Day 7:** B1 44 · B2 27/27 · B3 one
+page · B4 0 on 27 · B5–B7 ok · B8 27 · gate 47 judged (29 E / 6 I / 12 U), 0 failed open, refresh 4/148, backlog 150 judged
+(107 E) of 6,266. `stage_durations` vs run 530: scan 6,289 vs 6,620 s, eligibility 1,051 vs 1,105, tailor 4,658 vs 5,991 (27 vs
+36 PDFs), gate 97 vs 64. Board-deadline hits 7 → 5, partial 85 → 66, failed 14 → 15 (new: liveramp Workday 403). Boards complete
+1,894 / `unchanged` 893 (530: 2,546 / 162); not traced, no bar reads it (D-618). No `WalUnsafe`, lock error, traceback or
+`gate refresh batch` line; no store under the config dir. Daily checks: `inventory.py` 661 apply-lane, pdf missing 0; buried-open
+214 → 243; held captures 9/9 and 35/35 released (oraclehcm 1 held). Disk 17 GiB free, unchanged; the SSD 300 GiB.
+**`/api/queue` read 658/661:** three Microsoft leads (postings 111071, 111066, 111073; delivered 09-06 to 09-09) had their PDFs
+under `<config_dir>/tailored/`, T276's class. On the owner's word they were re-rendered into the out-root as manual run **532**
+(`render_pending.py`, viewer stopped and restarted): 3/3 rendered, none degraded; `/api/queue` **661/661**, `/api/pdf/<id>` serves
+all three.
+
+**Owner rulings 2026-10-03 (D-619):** (a) key `a` keeps recording the focused job — no change; (b) "this week" stays the past
+7 days — no change; the boot disk's untraced ~19 GiB is **left alone** (report the free number daily, trace nothing, delete nothing).
 
 **Next, in order:**
-1. **Read the 2026-10-03 04:00 run as DAY 7** (`python3 .agent/acceptance/day_row.py <id> 7`, `b4_audit.py --run <id>`, after its
-   PID exits; "previous ok run" will be 530). The daily checks above, unchanged; `/api/queue` takes `Authorization: Bearer
-   <web-token>`.
-2. The 2026-10-02 block's two viewer rulings, (a) and (b), still open.
-3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280 (filed 2026-10-01b).
+1. **Read the 2026-10-04 04:00 run as DAY 8** (`python3 .agent/acceptance/day_row.py <id> 8`, `b4_audit.py --run <id>`, after its
+   PID exits). "Previous ok run" will be 532, a render row; compare against 531 by hand. The daily checks above, unchanged;
+   `/api/queue` takes `Authorization: Bearer <web-token>`. If `/api/queue` again shows a row without a PDF, it is this class:
+   ask the owner, then `render_pending.py` (`.agent/2026-10-03-render/render.sh` is the last copy of the procedure).
+2. Still an owner call, not asked this session: a backup of the store to a disk other than the SSD (2026-09-29b block, item 3).
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280.
+4. The viewer's suggested usability comparison and its "not verified" list stand as written in the 2026-10-02 block (now in
+   `STANDING-FACTS.md`).
 
-### 2026-10-02 — **THE WEB VIEWER IS REDESIGNED AROUND APPLYING — MERGED (#541) AND SERVED** (D-617). Delivery-side code only: no eligibility, ranking, résumé, discovery, config or live-store change; the pipeline never calls the changed read.
+### 2026-10-02b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-03.** Day 6 read as run 530 (D-618); its day-7 read is done (D-619) and the disk question is ruled (leave it).
 
-**Verify first:** `git log --oneline -3 origin/main` (#541 on top of #540). The primary is on `main` at #541 or later, fast-forwarded 2026-10-02 ~00:50 CDT on the owner's word,
-with the owner's UNCOMMITTED `STATE.md`/`STANDING-FACTS.md` edits (the enterprise-seat note) stashed by ref and popped clean. ONE viewer runs, on the merged code, on port **8799**:
-**restarted 00:50 (pid 99952; the 2026-10-01b block's pid 3970 is gone)** — re-read with `lsof -nP -iTCP:8799 -sTCP:LISTEN`. Checked on the live store with read-only GETs:
-`/api/version` bundle `index-m1R365rZ.js`, `code_changed` false; `/api/applied` 268 rows in **0.42 s first, 0.08 s warm over HTTP (was 101–108 s)**; `/api/queue` 685 apply + 382 review
-(first calls 4–17 s while the store warmed, then 0.6 s). A stale `.git/index.lock` (22:26 the day before, no git process, nothing holding it) blocked the first stash and was removed.
-
-**Done:** the Applied read was slow because SQLite scanned all 687k postings (no `sqlite_stat1`); it now drives from the applications, rows identical. The Runs "404" was run 529, a manual
-re-render with no funnel artifact; the page falls back to the newest run that has a usable funnel, and says "can't be drawn" for a file missing parts. The queue is task-first (Jobs to explore /
-Needs review / All jobs, a short summary instead of sixteen counters, one honest note per row); status is four independent readings and unknown is "Check", never "Missing"; a workspace per job;
-an optional apply session; progress counted from the Applied ledger only after the server confirms. Gate: `make check` exit 0 (12,895 pytest + 349 vitest) and CI green on #541 including the
-`web bundle` byte check. Also merged: `PRODUCT.md`, `DESIGN.md`, a `verify` skill (`.claude/skills/verify/`), and the session record (D-617).
-
-**Next, in order:**
-1. **DONE 2026-10-02b (D-618): day 6 is run 530 and meets every bar.** **The 2026-10-02 04:00 run (day 6) is the first on this merged code.** The pipeline never calls `applied_rows`, so read day 6 as usual (the 2026-10-01b block's note still holds: delivered /
-   drained counts against run 528).
-2. Rulings still open: (a) key `a` records the focused row, including the one the cursor moved to after `s` skipped the previous job (Undo toast, 7 s) — keep or require the workspace to be open;
-   (b) "this week" = the past 7 days, not Monday–Sunday.
-3. Suggested usability comparison (not yet observed): time from opening Jobs to a recorded application, and the share of opened jobs that reach a record, old viewer vs this one, on the same
-   store with the same person; plus whether someone can say why a job is flagged.
-
-**Not verified, so not claimed:** applications made, motivation or retention; any screen reader; real zoom; Safari, Firefox, touch; a slow device; long titles and a missing location on real data.
-Open cosmetic: one stat cell wraps alone at 1280; the empty-state "Check: A degree is preferred" reads as noise on jobs the rules cleared (the server does not say a requirement is only preferred,
-so fixing it is a server change and an eligibility-adjacent call).
+### 2026-10-02 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-03.** The web viewer redesigned around applying, merged (#541) and served (D-617); its rulings (a) and (b) are made — both keep what ships (D-619).
 
 ### 2026-10-01b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-02b.** The viewer's lifecycle, triage, Rejected tab and stale/reuse check (#535–#538, D-616); its day-6 check is done (D-618) and T278–T280 are restated above.
 
