@@ -17,7 +17,7 @@
 > nothing.) The twentieth, **2026-09-24d**, moved the 2026-09-24c block WHOLE once its chain, repair and
 > owner calls were all done; the twenty-first, **2026-09-25a**, moved the 2026-09-24e block WHOLE once every step it
 > listed was done; the twenty-second, **2026-09-25b**, moved the 2026-09-25a and 2026-09-24d blocks WHOLE and, with them,
-> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The thirtieth, **2026-10-02b**, moved the 2026-10-01b and 2026-10-01 blocks WHOLE once day 6 was read. The thirty-first, **2026-10-03**, moved the 2026-10-02b and 2026-10-02 blocks WHOLE once day 7 was read and the two viewer rulings were made. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
+> this file's old standing sections (five of their claims had gone stale — D-598). The twenty-third, **2026-09-26**, moved the 2026-09-25b block WHOLE once its day-1 read and opus census were done. The twenty-fourth, **2026-09-26b**, moved the 2026-09-26 block WHOLE once its day-2 read and census close were done. The twenty-fifth, **2026-09-28b**, moved the 2026-09-27b and 2026-09-27 blocks WHOLE once their day-2 read, #510 check, ruling-6 check and held-capture repair were done. The twenty-sixth, **2026-09-28d**, moved the 2026-09-28c block WHOLE once its T268–T270 step was done or ruled. The twenty-seventh, **2026-09-28f**, moved the 2026-09-28e, 2026-09-28b and 2026-09-28 blocks WHOLE once day 3 was read. The twenty-eighth, **2026-09-30**, moved the 2026-09-29 and 2026-09-28f blocks WHOLE once day 4 was read. The twenty-ninth, **2026-10-01**, moved the 2026-09-30 block WHOLE once day 5 was read. The thirtieth, **2026-10-02b**, moved the 2026-10-01b and 2026-10-01 blocks WHOLE once day 6 was read. The thirty-first, **2026-10-03**, moved the 2026-10-02b and 2026-10-02 blocks WHOLE once day 7 was read and the two viewer rulings were made. The thirty-second, **2026-10-04**, moved the 2026-10-03 block WHOLE once day 8 was read and the backup call was ruled. The nineteenth, **2026-09-23b**, moved the 2026-09-23, 2026-09-22f and 2026-09-22c blocks
 > WHOLE once run 471 was read and the pull to `de7ae153` done; the 22e block stays until run 472 is read. **Nothing has
 > been deleted on any pass.** Do not narrate a decision here that `DECISIONS.md` already holds — cite its number
 > instead. **If this file passes ~250 lines again, the
@@ -27,37 +27,43 @@
 
 ## Current standing
 
-### 2026-10-03 — **DAY 7 IS RUN 531, THE 04:00 TICK, AND IT MEETS EVERY BAR; THREE OUT-ROOT MICROSOFT PDFs RE-RENDERED AS MANUAL RUN 532 ON THE OWNER'S WORD; THE TWO VIEWER RULINGS ARE MADE** (D-619). No code, profile, rule or config change; live-store writes only (manual run 532).
+### 2026-10-04 — **DAY 8 IS RUN 533 AND FAILS B8: 13 NET-NEW APPLY LEADS; THE JUDGE ANSWERED NO BATCHES** (D-620). Read-only audit; no code, profile, rule, config or live-store change. The viewer was restarted.
 
-**Verify first:** `git log --oneline -3 origin/main` (this record on top of #543); the primary on `main`, still carrying the
-owner's uncommitted enterprise-seat note in `STATE.md`/`STANDING-FACTS.md` (stash by ref around any pull); no run active; the
-tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`; restarted 10:05 CDT, pid 41483). Read the store at
-`/Volumes/mit/boardwatch/boardwatch.db` (D-613).
+**Verify first:** the primary on `main`, carrying the owner's uncommitted enterprise-seat notes in `STATE.md` and
+`STANDING-FACTS.md`, the untracked pilot doc and `.agents/skills/verify/` (leave all four alone; stash the two tracked notes
+by ref around a pull). No daily run active; tick **enabled**. One viewer on port 8799, restarted this session (pid 50923).
+Store: `/Volumes/mit/boardwatch/boardwatch.db`; always read with `mode=ro`.
 
-**Done:** run **531** (04:00 tick) `ok`, 09:00:06 → 12:31:25 UTC (3 h 31 m), 2,868 boards. **Day 7:** B1 44 · B2 27/27 · B3 one
-page · B4 0 on 27 · B5–B7 ok · B8 27 · gate 47 judged (29 E / 6 I / 12 U), 0 failed open, refresh 4/148, backlog 150 judged
-(107 E) of 6,266. `stage_durations` vs run 530: scan 6,289 vs 6,620 s, eligibility 1,051 vs 1,105, tailor 4,658 vs 5,991 (27 vs
-36 PDFs), gate 97 vs 64. Board-deadline hits 7 → 5, partial 85 → 66, failed 14 → 15 (new: liveramp Workday 403). Boards complete
-1,894 / `unchanged` 893 (530: 2,546 / 162); not traced, no bar reads it (D-618). No `WalUnsafe`, lock error, traceback or
-`gate refresh batch` line; no store under the config dir. Daily checks: `inventory.py` 661 apply-lane, pdf missing 0; buried-open
-214 → 243; held captures 9/9 and 35/35 released (oraclehcm 1 held). Disk 17 GiB free, unchanged; the SSD 300 GiB.
-**`/api/queue` read 658/661:** three Microsoft leads (postings 111071, 111066, 111073; delivered 09-06 to 09-09) had their PDFs
-under `<config_dir>/tailored/`, T276's class. On the owner's word they were re-rendered into the out-root as manual run **532**
-(`render_pending.py`, viewer stopped and restarted): 3/3 rendered, none degraded; `/api/queue` **661/661**, `/api/pdf/<id>` serves
-all three.
+**Read:** run **533**, `ok`, finished 09:00:06 → 11:21:16 UTC (2 h 21 m). B1 **36 net-new** (39 funnel / new folders),
+B2 13/13, B3 all one page, B4 0 unmatched on 13 PDFs (219 bullets; fabrication control fires), B5–B7 pass (0 work-auth abstain
+on 12,682), **B8 13 < 20 — FAIL**. `day_row.py 533 8` exits 1. `status=ok` is not an acceptance pass.
+Gate: **0 judged, 3 failed-open batches**, cached 5, 29 missing answers, 34 readings absent; refresh 0/145. Backlog 23 sent,
+0 judged, 2 failed-open batches, 127 skipped by breaker, 6,130 candidates. Every failed batch says `claude exited 1` with
+empty stderr; the saved evidence does not establish the cause. No new headless call or live-store recovery was attempted.
+**The seven-day passing streak is broken. October 10 cannot be claimed as completion from this record.** Keep the existing
+freeze and after-October-10 holds; a new qualifying streak or an owner-ruled recovery needs explicit recording.
 
-**Owner rulings 2026-10-03 (D-619):** (a) key `a` keeps recording the focused job — no change; (b) "this week" stays the past
-7 days — no change; the boot disk's untraced ~19 GiB is **left alone** (report the free number daily, trace nothing, delete nothing).
+**Compared with daily run 531, not manual render row 532:** scan 4,697 vs 6,289 s, eligibility 835 vs 1,051, tailor 2,241 vs
+4,658 (13 vs 27 PDFs), gate 17 vs 97. The shorter run is not proof of healthy throughput: the judge failed. Boards attempted
+2,931, complete 1,907, unchanged 949, partial 59, failed 16 (531: 2,868 / 1,894 / 893 / 66 / 15). Board-deadline hits 5 → 4;
+null controls reproduce 524:35, 527:9, 528:6, 530:7, 531:5. No `WalUnsafe`, `locked`, `Traceback` or `gate refresh batch`
+after the run-531 summary. No config-dir `boardwatch.db*`. Inventory: 670 open apply-lane folders, 0 missing PDFs, all one
+page; `/api/queue` **670/670** after viewer restart (initially no listener). Buried-open 243 → 236; held captures 9/9 jobapps
+and 35/35 LinkedIn released, oraclehcm 1 held. Boot disk **24 GiB free**; no tracing or deletion.
+
+**Owner ruling:** backup stays as it is — the store and newest backup on the same SSD (D-620). The cross-disk backup call
+is closed; no backup copied or schedule changed.
 
 **Next, in order:**
-1. **Read the 2026-10-04 04:00 run as DAY 8** (`python3 .agent/acceptance/day_row.py <id> 8`, `b4_audit.py --run <id>`, after its
-   PID exits). "Previous ok run" will be 532, a render row; compare against 531 by hand. The daily checks above, unchanged;
-   `/api/queue` takes `Authorization: Bearer <web-token>`. If `/api/queue` again shows a row without a PDF, it is this class:
-   ask the owner, then `render_pending.py` (`.agent/2026-10-03-render/render.sh` is the last copy of the procedure).
-2. Still an owner call, not asked this session: a backup of the store to a disk other than the SSD (2026-09-29b block, item 3).
-3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280.
-4. The viewer's suggested usability comparison and its "not verified" list stand as written in the 2026-10-02 block (now in
-   `STANDING-FACTS.md`).
+1. Resolve the judge's exit-1 failure before trusting gate-derived placements. Its error path saves stderr only; the cause
+   remains unknown. Headless diagnostics spend the owner's only window; any live-store rerun needs the owner's go-ahead.
+   Do not silently turn run 533 into a pass or change the acceptance thresholds.
+2. Read the next daily run with `day_row.py` and B4, and repeat the inventory, queue, buried, held-capture and disk checks.
+   Record its streak position explicitly; day 9 of the old passing sequence is not supported. Compare to daily run 533.
+3. Existing holds remain through the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272, T278–T280. The key `a`,
+   past-seven-days viewer window and leave-the-disk-alone rulings stand (D-619).
+
+### 2026-10-03 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-04.** Day 7 read and PDFs repaired (D-619); its day-8 read is done, failed, and the backup call is ruled (D-620).
 
 ### 2026-10-02b — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-10-03.** Day 6 read as run 530 (D-618); its day-7 read is done (D-619) and the disk question is ruled (leave it).
 
@@ -78,7 +84,7 @@ all three.
 **Next, in order (the 2026-09-29 block's items follow):**
 1. **Day 4 (the 2026-09-30 04:00 run) is also the FIRST run on the SSD store.** **DONE 2026-09-30 (D-614): the 04:00 run (526) was killed by a reboot; the rerun, run 527, is the first clean SSD run.** Read it for that too: the run id is above 525 in the SSD store, the wrapper did not exit 75, the log has no `WalUnsafe`/lock errors, and **`stage_durations` against run 524 are the only measure of any speed change** (unmeasured). If it failed on the store, do NOT delete the rollback copy; reversal is the `config.toml.bak-…` and plist `.bak-…` beside the originals.
 2. Only after a clean read: delete the rollback folder (~21 GB internal). **DONE 2026-09-30 19:27 (D-614): deleted, disk 52 GiB free.** Then re-take the disk-free number — it will step up ~21 GiB.
-3. **Not armed:** the store and its newest full backup are on the same SSD. A backup to a different disk is an owner call; a manual `boardwatch` command with the SSD unmounted is unguarded (it would create an empty store on the boot disk).
+3. **RULED 2026-10-04 (D-620): keep it as it is.** The store and its newest full backup stay on the same SSD; no cross-disk backup armed; a manual `boardwatch` command with the SSD unmounted is unguarded (it would create an empty store on the boot disk).
 
 ### 2026-09-29 — **SETTLED, moved WHOLE to `STANDING-FACTS.md` on 2026-09-30.** T276's five out-root PDFs re-rendered (manual run 525, D-612) and the owner's keep-as-is ruling on item 7 and the gate backlog; its day-4 read is done (D-614).
 

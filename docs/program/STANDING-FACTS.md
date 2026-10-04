@@ -4988,3 +4988,38 @@ reads as green.
 | **boardwatch sees 16.4% of job-apps' eligible yield — RE-DERIVED 2026-08-30, and the METHOD was wrong before** | **45 of 275 (16.4%)**, cohorts 08-23..08-29, on the **379-board fleet**. This replaces "10.1%, owed a check". It decomposes: fleet growth 344->379 gave 10.1 -> **13.8%**; adding an **exact ATS-slug key** alongside name matching gave 13.8 -> **16.4%**. **Name-only matching undercounts, so 7.7% and 10.1% are FLOORS** — boardwatch stores Micron as `Micron TDIT`, so the old method scored a watched company as unwatched; same for HPE/`Hewlett Packard Enterprise`, Cox/`Cox Automotive`, Disney/`Walt Disney Company`, Toyota, VIAVI. **The unreached 230 split: aggregator-only 60.7%, unsupported employer host 21.1%, board-addable just 1.8%** (5 postings in 7 days, 4 of them SmartRecruiters — the class D-370 declined on measured cost), so the cheap remainder is ONE Workday board (Motorola Solutions). **The gap is lanes, not boards.** Script: `.agent/2026-08-30-session/reach_v2.py`. Amazon/TikTok/Apple/ByteDance use none of the 6 ATS, so a slug cannot reach them. Closing it means a new discovery lane — GitHub new-grad lists are 19.1% of yield for ~5 public-repo GETs and are NOT the ToS trap the v2 decision was written about. **Reopens D-008** | **Mit** (reverses a shipped decision) |
 | **Citi sits at 13.1% coverage, permanently** | Workday's `total` censors at 2,000; the facet sum (uncapped, control-verified) says 4,589. Our pager wraps at ~2,000 too, so post-drain Citi holds ~2,214 of 4,589 and nothing reports it | **Mit** (input-side) |
 | **Run 9 (2026-09-06) tick-fired CLEAN on the restored five-lane config (D-487, read D-489); run 10 is the first whose funnel can reconcile a split slate (T60)** | The launchd job invokes the **editable** venv at `boardwatch/.venv/bin/boardwatch`, so whatever branch that tree is parked on IS the unattended run's code and `rules.yaml`. **Park the primary checkout on `main` before ending every session**; a stray branch changes EVERY subsequent run. The tick fired 06:00 CDT until the 09-09 reboot and **04:00 CDT since** — launchd keeps its boot zone, and the plist's hour is 4. Verify a tick by `runs = N` in `launchctl print` and the log mtime, never by the run row alone: a hand run proves the code, only a tick proves the plist | **Mit** (reboot); every session (discipline) |
+
+
+## Settled session block moved out of STATE on 2026-10-04 (verbatim)
+
+### 2026-10-03 — **DAY 7 IS RUN 531, THE 04:00 TICK, AND IT MEETS EVERY BAR; THREE OUT-ROOT MICROSOFT PDFs RE-RENDERED AS MANUAL RUN 532 ON THE OWNER'S WORD; THE TWO VIEWER RULINGS ARE MADE** (D-619). No code, profile, rule or config change; live-store writes only (manual run 532).
+
+**Verify first:** `git log --oneline -3 origin/main` (this record on top of #543); the primary on `main`, still carrying the
+owner's uncommitted enterprise-seat note in `STATE.md`/`STANDING-FACTS.md` (stash by ref around any pull); no run active; the
+tick **enabled**; one viewer on port 8799 (`lsof -nP -iTCP:8799 -sTCP:LISTEN`; restarted 10:05 CDT, pid 41483). Read the store at
+`/Volumes/mit/boardwatch/boardwatch.db` (D-613).
+
+**Done:** run **531** (04:00 tick) `ok`, 09:00:06 → 12:31:25 UTC (3 h 31 m), 2,868 boards. **Day 7:** B1 44 · B2 27/27 · B3 one
+page · B4 0 on 27 · B5–B7 ok · B8 27 · gate 47 judged (29 E / 6 I / 12 U), 0 failed open, refresh 4/148, backlog 150 judged
+(107 E) of 6,266. `stage_durations` vs run 530: scan 6,289 vs 6,620 s, eligibility 1,051 vs 1,105, tailor 4,658 vs 5,991 (27 vs
+36 PDFs), gate 97 vs 64. Board-deadline hits 7 → 5, partial 85 → 66, failed 14 → 15 (new: liveramp Workday 403). Boards complete
+1,894 / `unchanged` 893 (530: 2,546 / 162); not traced, no bar reads it (D-618). No `WalUnsafe`, lock error, traceback or
+`gate refresh batch` line; no store under the config dir. Daily checks: `inventory.py` 661 apply-lane, pdf missing 0; buried-open
+214 → 243; held captures 9/9 and 35/35 released (oraclehcm 1 held). Disk 17 GiB free, unchanged; the SSD 300 GiB.
+**`/api/queue` read 658/661:** three Microsoft leads (postings 111071, 111066, 111073; delivered 09-06 to 09-09) had their PDFs
+under `<config_dir>/tailored/`, T276's class. On the owner's word they were re-rendered into the out-root as manual run **532**
+(`render_pending.py`, viewer stopped and restarted): 3/3 rendered, none degraded; `/api/queue` **661/661**, `/api/pdf/<id>` serves
+all three.
+
+**Owner rulings 2026-10-03 (D-619):** (a) key `a` keeps recording the focused job — no change; (b) "this week" stays the past
+7 days — no change; the boot disk's untraced ~19 GiB is **left alone** (report the free number daily, trace nothing, delete nothing).
+
+**Next, in order:**
+1. **Read the 2026-10-04 04:00 run as DAY 8** (`python3 .agent/acceptance/day_row.py <id> 8`, `b4_audit.py --run <id>`, after its
+   PID exits). "Previous ok run" will be 532, a render row; compare against 531 by hand. The daily checks above, unchanged;
+   `/api/queue` takes `Authorization: Bearer <web-token>`. If `/api/queue` again shows a row without a PDF, it is this class:
+   ask the owner, then `render_pending.py` (`.agent/2026-10-03-render/render.sh` is the last copy of the procedure).
+2. Still an owner call, not asked this session: a backup of the store to a disk other than the SSD (2026-09-29b block, item 3).
+3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280.
+4. The viewer's suggested usability comparison and its "not verified" list stand as written in the 2026-10-02 block (now in
+   `STANDING-FACTS.md`).
