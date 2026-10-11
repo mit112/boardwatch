@@ -481,3 +481,38 @@ def test_the_gate_effort_reaches_the_claude_argv(
     (argv,) = seen
     # Everything but the trailing prompt, so a dropped `""` or a moved flag fails here too.
     assert argv[:-1] == argv_before_prompt
+
+
+def test_codex_switch_misses_claude_cache_and_persists_its_own_provider(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    engine = _store(tmp_path)
+    posting_id, _ = _seed(engine, "codex-switch")
+    response = _stdout([_verdict(str(posting_id))])
+    _returns(monkeypatch, response)
+    _, before = run_gate_stage(engine, _settings(tmp_path), [_Lead(posting_id)], run_id=None)
+    assert before.judged == 1
+    calls: list[str] = []
+
+    def codex(prompt: str, **kwargs: object) -> str:
+        calls.append(prompt)
+        assert kwargs["model"] == "gpt-6.1-sol"
+        return response
+
+    monkeypatch.setattr(gate_judge, "_call_codex", codex)
+    settings = _settings(tmp_path).model_copy(update={
+        "gate": GateTier(enabled=True, model="codex:gpt-6.1-sol", effort="high"),
+    })
+    _, switched = run_gate_stage(engine, settings, [_Lead(posting_id)], run_id=None)
+    assert switched.judged == 1 and switched.cached == 0
+    _, cached = run_gate_stage(engine, settings, [_Lead(posting_id)], run_id=None)
+    assert cached.judged == 0 and cached.cached == 1
+    assert len(calls) == 1
+    with engine.connect() as conn:
+        row = conn.execute(select(tables.eligibility_evaluations).order_by(
+            tables.eligibility_evaluations.c.id.desc()
+        )).first()
+    assert row is not None
+    assert row.provider == "codex-agent"
+    assert row.model == "codex:gpt-6.1-sol"
+    assert row.raw_output_json["effort"] == "high"

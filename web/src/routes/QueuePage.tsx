@@ -54,6 +54,7 @@ import {
   reviewLaneSentence,
 } from "../lib/reviewReasons";
 import { isFollowUpDue } from "../lib/format";
+import { isApplyFirst } from "../lib/jobStatus";
 import { SUBMITTED_STATUSES, countRecorded } from "../lib/progress";
 import { firstOfEachGroup, relatedPostings, similarGroups } from "../lib/similar";
 import { matchesLocation, matchesQuery, parseSortState, sortRows } from "../lib/sort";
@@ -168,6 +169,7 @@ const QUEUE_KEYS = {
   minScore: "boardwatch.queue.minScore",
   board: "boardwatch.queue.board",
   mode: "boardwatch.queue.mode",
+  applyFirst: "boardwatch.queue.applyFirst",
   hideThin: "boardwatch.queue.hideThin",
   hideUnverifiable: "boardwatch.queue.hideUnverifiable",
   hideSimilar: "boardwatch.queue.hideSimilar",
@@ -420,6 +422,12 @@ export function QueuePage({
   const [board, setBoard] = useSessionState(QUEUE_KEYS.board, "", decodeText, encodeText);
   // Work mode is the row's own `remote_policy`; "" is every mode and NO_MODE is "the board states none".
   const [mode, setMode] = useSessionState(QUEUE_KEYS.mode, "", decodeText, encodeText);
+  const [applyFirst, setApplyFirst] = useSessionState(
+    QUEUE_KEYS.applyFirst,
+    "",
+    decodeText,
+    encodeText,
+  );
   const [hideThin, setHideThin] = useSessionState(QUEUE_KEYS.hideThin, "", decodeText, encodeText);
   const [hideUnverifiable, setHideUnverifiable] = useSessionState(
     QUEUE_KEYS.hideUnverifiable,
@@ -821,6 +829,7 @@ export function QueuePage({
       if (!matchesLocation(row, location.trim())) return false;
       if (board !== "" && row.provider !== board) return false;
       if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
+      if (applyFirst !== "" && !isApplyFirst(row)) return false;
       if (hideThin !== "" && row.thin_jd) return false;
       if (hideUnverifiable !== "" && row.status === "unverifiable") return false;
       if (floor !== null && !Number.isNaN(floor) && (row.score === null || row.score < floor)) {
@@ -828,7 +837,7 @@ export function QueuePage({
       }
       return true;
     },
-    [removed, runFilter, query, location, minScore, board, mode, hideThin, hideUnverifiable],
+    [removed, runFilter, query, location, minScore, board, mode, applyFirst, hideThin, hideUnverifiable],
   );
 
   const filtered = useMemo(() => (data?.rows ?? []).filter(passesFilters), [data, passesFilters]);
@@ -1725,6 +1734,7 @@ export function QueuePage({
     minScore,
     board,
     mode,
+    applyFirst,
     hideThin,
     hideUnverifiable,
     hideSimilar,
@@ -1739,6 +1749,7 @@ export function QueuePage({
     setMinScore(view["minScore"] ?? "");
     setBoard(view["board"] ?? "");
     setMode(view["mode"] ?? "");
+    setApplyFirst(view["applyFirst"] ?? "");
     setHideThin(view["hideThin"] ?? "");
     setHideUnverifiable(view["hideUnverifiable"] ?? "");
     setHideSimilar(view["hideSimilar"] ?? "");
@@ -1764,6 +1775,7 @@ export function QueuePage({
     query.trim() === "" ? null : `“${query.trim()}”`,
     location.trim() === "" ? null : `places matching “${location.trim()}”`,
     mode === "" ? null : mode === NO_MODE ? "no work arrangement stated" : mode,
+    applyFirst === "" ? null : "apply first (both checks eligible, résumé ready, no known flags)",
     board === "" ? null : `${board} postings`,
     minScore.trim() === "" ? null : `ranking score of at least ${minScore.trim()}`,
     hideThin === "" ? null : "very short descriptions hidden",
@@ -1776,6 +1788,7 @@ export function QueuePage({
     setQuery("");
     setLocation("");
     setMode("");
+    setApplyFirst("");
     setBoard("");
     setMinScore("");
     setHideThin("");
@@ -2018,6 +2031,10 @@ export function QueuePage({
           mode={mode}
           onMode={setMode}
           modes={modeCounts}
+          applyFirst={applyFirst !== ""}
+          onApplyFirst={(on) => {
+            setApplyFirst(on ? "1" : "");
+          }}
           sort={sort}
           onSort={setSort}
           board={board}

@@ -1,4 +1,5 @@
 import type { QueueDetail, QueueRow, RequirementView, ReviewReason, Verdict } from "../api/types";
+import { isSafeHttpUrl } from "./format";
 
 /*
  * What a job's status MEANS to the person reading it, in the words of what they would do next.
@@ -10,10 +11,10 @@ import type { QueueDetail, QueueRow, RequirementView, ReviewReason, Verdict } fr
  *   availability    whether the posting is still up, and whether anything can know
  *   materials       whether a résumé was built for it
  *
- * NOTHING HERE COMBINES THEM. There is no score, no "confidence", no overall grade: two engines
- * that disagree stay two readings, and a reading that was never taken stays "not assessed". The
- * only thing this module decides is which sentence to print — it never decides a verdict, and it
- * never reads a missing value as a passed check.
+ * Status labels keep these facts separate. There is no score, no "confidence", no overall grade:
+ * two engines that disagree stay two readings, and a missing reading stays "not assessed".
+ * Apply first is a separate work shortlist requiring both affirmative verdicts and no known
+ * warnings. This module never decides a verdict or reads a missing value as a passed check.
  *
  * Every function is a pure function of fields already on the wire. The word for each state lives
  * here and nowhere else, so a row, the detail pane and the status disclosure cannot drift into
@@ -230,6 +231,22 @@ export function rowNote(row: QueueRow): Mark | null {
   if (row.status === "unverifiable") return availabilityMark("unverifiable");
   if (row.pdf_available !== true) return materialsMark(false);
   return null;
+}
+
+/** A work shortlist from current facts: both checks cleared it and nothing known needs attention.
+ *  Affirmative verdicts are required separately; an absent warning alone never clears a job. */
+export function isApplyFirst(row: QueueRow): boolean {
+  return (
+    row.verdict === "eligible" &&
+    row.judge_verdict === "eligible" &&
+    row.status === "open" &&
+    row.review_reason == null &&
+    rowNote(row) === null &&
+    !row.off_target &&
+    !row.thin_jd &&
+    isSafeHttpUrl(row.apply_url) &&
+    (row.applied_identical_jd ?? []).length === 0
+  );
 }
 
 /* ------------------------------------------------------------------------------- requirements */

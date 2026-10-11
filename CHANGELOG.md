@@ -18,6 +18,16 @@ All notable changes to this project are documented here. The format follows
   protected from regrouping like the other queue actions. New routes:
   `POST /api/queue/manual` and `/unmanual` (batch, `{"job_ids": [...]}`), and
   `POST /api/queue/<id>/manual` and `/unmanual`. `GET /api/queue` gains `manual` and `counts.manual`.
+- **Apply first filter in the web viewer.** The visible Eligibility control keeps only jobs
+  both checks call eligible, with an open posting, prepared résumé, usable application link,
+  and no known review, role, seniority, description or already-applied warnings. It composes
+  with existing filters and sort, survives reloads, and is included in saved views.
+
+- **Codex subscription judge for the final eligibility gate.** Set `gate.model` to
+  `codex:<model>` to use an existing ChatGPT login with the same JD-and-facts-only payload,
+  evidence checks and fail-open behavior. Calls run in isolated ephemeral sessions; the
+  model namespace keeps Claude and Codex verdict caches separate. Claude remains the default.
+
 - **Faster triage in the web viewer's queue.** Coming back to the tab after opening a lead's apply
   page (with `o` or a click on its apply link) asks "Did you apply?"; `a` marks it applied, Esc
   dismisses. Leads at one company under one title that differ only by city or formatting carry a

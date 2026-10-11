@@ -81,6 +81,8 @@ class GateTier(BaseModel):
 
     enabled: bool = False
     claude_config_dir: Path | None = None
+    # A Claude alias, or `codex:<model>` for the operator's existing ChatGPT login.
+    # Keep the namespace in the ledger/cache key so providers never share verdicts.
     model: str = "sonnet"
     batch_size: int = Field(default=13, ge=1)
     call_timeout_s: int = Field(default=300, ge=1)

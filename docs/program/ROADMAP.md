@@ -28,8 +28,10 @@ boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14
 
 **Frozen means (D-598 ruling 5):** during the 14 days only a fix for a defect in a lead actually DELIVERED may ship. A change
 to eligibility, the profile or the résumé gate restarts the count; a scan/board fix does not; everything else waits.
-**Day 1 is the 2026-09-27 04:00 run; day 14 is the 2026-10-10 run** if nothing restarts it. Runs 478 and 480 met every bar on the funnel but FAILED B1 and B8 volume read net-new, so the count restarted (D-600). Each day's row goes in
-`METRICS.md` "Acceptance run".
+The historical sequence began with the **2026-09-27 04:00 run** (D-600). Run 533 on October 4 failed B8,
+breaking seven passing days; run 534 on October 5 also failed B8 and judge health (D-620, D-621).
+**Current qualifying streak: 0; no completion date is evidenced.** The bar remains 14 consecutive frozen daily runs;
+existing after-October-10 work holds remain unchanged. Each daily row goes in `METRICS.md` "Acceptance run".
 
 ## Milestones
 

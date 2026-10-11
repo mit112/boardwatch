@@ -1,9 +1,9 @@
 /*
  * The filters above the job list.
  *
- * The three controls a person reaches for first — a search, a place, a work arrangement — are in
- * the first row and always visible. Everything else (the job board, the score floor, the three
- * "hide" switches, saved views) sits behind ONE "More filters" disclosure, which says in its own
+ * Search, place, work arrangement, eligibility and sort are always visible in the first row.
+ * Everything else (the job board, the score floor, the three "hide" switches, saved views) sits
+ * behind ONE "More filters" disclosure, which says in its own
  * label how many of them are on, so a hidden filter can never be silently narrowing the list.
  *
  * When anything is filtering, a single sentence names every active filter and ends in a Reset
@@ -137,6 +137,8 @@ export function QueueToolbar({
   mode,
   onMode,
   modes,
+  applyFirst,
+  onApplyFirst,
   sort,
   onSort,
   board,
@@ -168,6 +170,8 @@ export function QueueToolbar({
   mode: string;
   onMode: (value: string) => void;
   modes: readonly (readonly [string, number])[];
+  applyFirst: boolean;
+  onApplyFirst: (on: boolean) => void;
   sort: SortState;
   onSort: (sort: SortState) => void;
   board: string;
@@ -246,6 +250,19 @@ export function QueueToolbar({
                 {name} ({count.toLocaleString()})
               </option>
             ))}
+          </select>
+        </label>
+        <label className="flex w-56 flex-col gap-1">
+          <span className="label-micro text-fg-2">Eligibility</span>
+          <select
+            value={applyFirst ? "eligible" : ""}
+            onChange={(event) => {
+              onApplyFirst(event.target.value === "eligible");
+            }}
+            className={FIELD}
+          >
+            <option value="">All jobs</option>
+            <option value="eligible">Apply first</option>
           </select>
         </label>
         <label className="flex w-48 flex-col gap-1">

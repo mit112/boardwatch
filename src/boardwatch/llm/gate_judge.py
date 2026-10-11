@@ -3,7 +3,7 @@
 Routes through the EXISTING handshake — `eligibility.gate_handshake.build_gate_request` /
 `apply_gate_verdicts`, which itself calls `eligibility.final_gate.record_gate_verdict` — rather
 than a parallel path. This module's own job is narrow: decide which leads still need judging
-(never re-judge a lead with a current gate row), invoke headless `claude` in batches of
+(never re-judge a lead with a current gate row), invoke the selected subscription CLI in batches of
 `settings.gate.batch_size`, parse its output into `OracleVerdict`s, and fail OPEN at every seam
 (D-074): a missing binary, any other failure to launch the process, a non-zero exit, a timeout,
 unparseable JSON, an envelope that is not an object, an out-of-vocabulary `decision` or
@@ -45,6 +45,7 @@ from boardwatch.eligibility.read import (
     fresh_gate_verdicts,
     newest_gate_verdicts,
 )
+from boardwatch.llm.codex_gate import call_codex as _call_codex
 from boardwatch.store.queries import (
     CurrentVersion,
     current_posting_versions,
@@ -337,7 +338,7 @@ def _judge_batch(
     batch: list[dict[str, object]], judging_policy: str, settings: Settings,
     *, seniority_asked: bool = True,
 ) -> tuple[list[OracleVerdict] | None, str | None, tuple[str, ...]]:
-    """Run one batch through headless claude. `(verdicts, None, ...)` on success,
+    """Run one batch through the selected subscription CLI. `(verdicts, None, ...)` on success,
     `(None, note, ())` on any failure this stage must fail open on — a note describing WHAT
     failed, never a traceback, so the run's soft alert and funnel error line are readable —
     and `(verdicts, note, ...)` when the response answered SOME of the batch: the note names
@@ -347,21 +348,29 @@ def _judge_batch(
     on every fail-open path: a batch that answered nothing contributes nothing to the field
     coverage denominator, or a process outage would read as a parse-quality failure."""
     prompt = _prompt(judging_policy, batch, seniority_asked=seniority_asked)
+    codex = settings.gate.model.startswith("codex:")
+    binary = "codex" if codex else "claude"
     try:
-        stdout = _call_claude(
-            prompt,
-            model=settings.gate.model,
-            claude_config_dir=settings.gate.claude_config_dir,
-            timeout_s=settings.gate.call_timeout_s,
-            effort=settings.gate.effort,
-        )
+        if codex:
+            stdout = _call_codex(
+                prompt, model=settings.gate.model.removeprefix("codex:"),
+                timeout_s=settings.gate.call_timeout_s, effort=settings.gate.effort,
+            )
+        else:
+            stdout = _call_claude(
+                prompt,
+                model=settings.gate.model,
+                claude_config_dir=settings.gate.claude_config_dir,
+                timeout_s=settings.gate.call_timeout_s,
+                effort=settings.gate.effort,
+            )
     except FileNotFoundError:
-        return None, "claude binary not found on PATH", ()
+        return None, f"{binary} binary not found on PATH", ()
     except subprocess.TimeoutExpired:
-        return None, f"claude timed out after {settings.gate.call_timeout_s}s", ()
+        return None, f"{binary} timed out after {settings.gate.call_timeout_s}s", ()
     except subprocess.CalledProcessError as exc:
         stderr = (exc.stderr or "").strip()[:300]
-        return None, f"claude exited {exc.returncode}: {stderr}", ()
+        return None, f"{binary} exited {exc.returncode}: {stderr}", ()
     except OSError as exc:
         # Everything else `subprocess.run` can raise launching a process: EACCES on a binary
         # that is not executable, E2BIG on a batch whose argv exceeds the platform limit,
@@ -369,9 +378,11 @@ def _judge_batch(
         # and keeps its own note; this is the readable fallback, never an escape.
         return (
             None,
-            f"claude could not be launched ({type(exc).__name__}, errno {exc.errno})",
+            f"{binary} could not be launched ({type(exc).__name__}, errno {exc.errno})",
             (),
         )
+    except (ValueError, TypeError, KeyError) as exc:
+        return None, f"unusable {binary} response ({type(exc).__name__}): {exc}", ()
     try:
         verdicts, missing, seniority = _parse_verdicts(
             stdout, [str(item["label"]) for item in batch], seniority_asked=seniority_asked
@@ -587,7 +598,8 @@ def run_gate_stage(
         result = apply_gate_verdicts(
             write_conn, verdicts, versions=versions, facts=facts, policy=policy,
             catalog=catalog, run_id=run_id, shortlist_ranks=shortlist_ranks,
-            provider=GATE_PROVIDER, model=settings.gate.model,
+            provider="codex-agent" if settings.gate.model.startswith("codex:") else GATE_PROVIDER,
+            model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort), target_band=request["target_band"],
         )
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
