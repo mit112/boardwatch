@@ -322,6 +322,12 @@ export interface QueueCounts {
    */
   reported: number;
   /**
+   * Leads the owner moved to "Apply by hand" — live jobs they will apply to themselves, usually
+   * behind an employer account. Listed under `QueueResponse.manual`, NOT in `rows` or `review`.
+   * Optional on the wire: a server older than the field omits it, and the honest render is `0`.
+   */
+  manual?: number;
+  /**
    * Leads in the APPLY lane whose follow-up date has arrived (`<= today`, in the server's local
    * date). Counted over the lane rather than over every stored follow-up because the cell is a
    * FACET: the number on it has to be the number of rows clicking it shows.
@@ -350,6 +356,11 @@ export interface QueueResponse {
    * it, and is the only field that does.
    */
   review: QueueRow[];
+  /**
+   * The "Apply by hand" list: leads the owner moved out of both lanes to apply to themselves.
+   * Optional because a server older than the field omits it; read it as `?? []`.
+   */
+  manual?: QueueRow[];
   counts: QueueCounts;
   /**
    * What this SERVER can do, as distinct from what the data says. Optional because a viewer older
@@ -553,6 +564,8 @@ export type MarkOutcome =
   | "unskipped"
   | "reported"
   | "unreported"
+  | "manual"
+  | "unmanual"
   | "follow_up_set"
   | "follow_up_cleared";
 
@@ -577,6 +590,15 @@ export interface SkipResponse {
  */
 export interface BatchSkipResponse {
   skipped?: number[];
+  failed?: number[];
+}
+
+/**
+ * `POST /api/queue/manual` and `POST /api/queue/unmanual`: the same one-transaction batch as skip,
+ * with `manual` naming the ids the call acted on in BOTH directions, as `skipped` does.
+ */
+export interface BatchManualResponse {
+  manual?: number[];
   failed?: number[];
 }
 

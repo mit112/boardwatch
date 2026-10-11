@@ -36,7 +36,10 @@ function Key({ children }: { children: string }) {
  * "0 selected" state to read.
  *
  * No confirmation dialog, deliberately: skip is cheaply reversible and the toast's Undo is the
- * route back, which is the same bargain the single-row skip already makes.
+ * route back, which is the same bargain the single-row skip already makes. Moving to and from
+ * Apply by hand makes the same bargain. On the Apply by hand list the bar offers only the move
+ * back: skipping from there is one move back and one skip away, and two adjacent writes that both
+ * take the job out of sight are one too many to tell apart at speed.
  *
  * Both accessible names START with the visible label (SC 2.5.3 Label in Name) before naming what
  * the control does to the count.
@@ -44,13 +47,21 @@ function Key({ children }: { children: string }) {
 function BulkBar({
   count,
   onSkip,
+  onManual,
+  onUnmanual,
+  fromManual,
   onClear,
 }: {
   count: number;
   onSkip: () => void;
+  onManual: () => void;
+  onUnmanual: () => void;
+  fromManual: boolean;
   onClear: () => void;
 }) {
   const leads = `${count.toLocaleString()} ${count === 1 ? "job" : "jobs"}`;
+  const button =
+    "min-h-11 rounded-sm bg-surface px-3 text-sm text-fg shadow-card transition-colors duration-150 ease-in-out hover:bg-surface-2";
   return (
     <div
       role="group"
@@ -58,15 +69,38 @@ function BulkBar({
       className="flex flex-wrap items-center gap-3 rounded-sm bg-surface-3 px-3 py-1.5"
     >
       <span className="text-sm text-fg tabular-nums">{count.toLocaleString()} selected</span>
-      <button
-        type="button"
-        onClick={onSkip}
-        aria-label={`Skip ${count.toLocaleString()} selected ${count === 1 ? "job" : "jobs"}`}
-        title="Skip every selected job. One write, undoable from the toast."
-        className="min-h-11 rounded-sm bg-surface px-3 text-sm text-fg shadow-card transition-colors duration-150 ease-in-out hover:bg-surface-2"
-      >
-        Skip {count.toLocaleString()}
-      </button>
+      {fromManual ? (
+        <button
+          type="button"
+          onClick={onUnmanual}
+          aria-label={`Move back ${count.toLocaleString()} selected ${count === 1 ? "job" : "jobs"}`}
+          title="Return every selected job to Jobs to explore or Needs review. One write, undoable from the toast."
+          className={button}
+        >
+          Move back {count.toLocaleString()}
+        </button>
+      ) : (
+        <>
+          <button
+            type="button"
+            onClick={onSkip}
+            aria-label={`Skip ${count.toLocaleString()} selected ${count === 1 ? "job" : "jobs"}`}
+            title="Skip every selected job. One write, undoable from the toast."
+            className={button}
+          >
+            Skip {count.toLocaleString()}
+          </button>
+          <button
+            type="button"
+            onClick={onManual}
+            aria-label={`Move to manual ${count.toLocaleString()} selected ${count === 1 ? "job" : "jobs"}`}
+            title="Move every selected job to Apply by hand, for jobs you will apply to yourself. One write, undoable from the toast."
+            className={button}
+          >
+            Move to manual {count.toLocaleString()}
+          </button>
+        </>
+      )}
       <button
         type="button"
         onClick={onClear}
@@ -122,6 +156,9 @@ export function QueueToolbar({
   onReset,
   selectedCount,
   onSkipSelected,
+  onManualSelected,
+  onUnmanualSelected,
+  bulkFromManual,
   onClearSelection,
 }: {
   query: string;
@@ -153,6 +190,10 @@ export function QueueToolbar({
   onReset: () => void;
   selectedCount: number;
   onSkipSelected: () => void;
+  onManualSelected: () => void;
+  onUnmanualSelected: () => void;
+  /** True on the Apply by hand list, where the bar's only move is back out of it. */
+  bulkFromManual: boolean;
   onClearSelection: () => void;
 }) {
   const known = SORT_CHOICES.some((choice) => encode(choice.sort) === encode(sort));
@@ -329,7 +370,14 @@ export function QueueToolbar({
       )}
 
       {selectedCount === 0 ? null : (
-        <BulkBar count={selectedCount} onSkip={onSkipSelected} onClear={onClearSelection} />
+        <BulkBar
+          count={selectedCount}
+          onSkip={onSkipSelected}
+          onManual={onManualSelected}
+          onUnmanual={onUnmanualSelected}
+          fromManual={bulkFromManual}
+          onClear={onClearSelection}
+        />
       )}
 
       {/*

@@ -714,6 +714,10 @@ def standing_slate_keys(
       deferral with a live end condition and not a hole.
     * **`review` is KEPT** for the plainest reason of all: a lead awaiting the owner's look IS in
       front of the owner. It is what the phrase means.
+    * **`manual` is KEPT** for the same reason: it is the owner's apply-by-hand list, a lead in
+      front of them that they intend to apply to. Both release conditions stay live — applying by
+      hand is an `applied`, and changing their mind is a skip — so a byte-identical twin is only a
+      second copy of a job they already hold.
     * **`lane_copy` is EXCLUDED**, and for the opposite reason to `ineligible`. The lead is not in
       front of the owner — its employer-board twin is, and that twin is a delivered lead holding
       the slot itself. Keeping both would let one job hold two slots and suppress a second,

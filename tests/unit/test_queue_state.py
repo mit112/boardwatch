@@ -24,15 +24,19 @@ from boardwatch.store.applications import create_application, get_application
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queue_state import (
     FOLLOWUP_KEY_PREFIX,
+    MANUAL_KEY_PREFIX,
     REPORT_KEY_PREFIX,
     SKIP_KEY_PREFIX,
     clear_job_followup,
     followup_job_dates,
+    manual_job_ids,
+    mark_job_manual,
     mark_job_reported,
     mark_job_skipped,
     reported_job_ids,
     set_job_followup,
     skipped_job_ids,
+    unmark_job_manual,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -280,6 +284,61 @@ def test_report_and_skip_are_independent_dimensions(engine: Engine) -> None:
         assert skipped_job_ids(conn) == {}
         assert reported_job_ids(conn) == {job_id: NOW.isoformat()}
     _assert_fks_clean(engine)
+
+
+# ---------------------------------------------------------------------------------------- manual
+
+
+def test_a_manual_move_round_trips_with_its_timestamp(engine: Engine) -> None:
+    at = datetime(2026, 10, 10, 21, 0, 0)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        mark_job_manual(conn, job_id=job_id, at=at)
+    with engine.connect() as conn:
+        assert manual_job_ids(conn) == {job_id: at.isoformat()}
+        stored = conn.execute(
+            select(app_state.c.key).where(app_state.c.key == f"{MANUAL_KEY_PREFIX}{job_id}")
+        ).scalar_one()
+    # The literal, not the constant: the key is the contract a consumer outside this repo reads.
+    assert stored == f"queue.manual.{job_id}"
+    _assert_fks_clean(engine)
+
+
+def test_unmanual_removes_only_that_job_and_is_a_noop_when_absent(engine: Engine) -> None:
+    with engine.begin() as conn:
+        kept = _job(conn)
+        dropped = _job(conn)
+        never = _job(conn)
+        mark_job_manual(conn, job_id=kept, at=NOW)
+        mark_job_manual(conn, job_id=dropped, at=NOW)
+    with engine.begin() as conn:
+        unmark_job_manual(conn, job_id=dropped)
+        unmark_job_manual(conn, job_id=never)
+    with engine.connect() as conn:
+        assert manual_job_ids(conn) == {kept: NOW.isoformat()}
+    _assert_fks_clean(engine)
+
+
+def test_manual_skip_and_report_are_independent_dimensions(engine: Engine) -> None:
+    """Manual is NOT a skip under another name: three keys, and un-marking one leaves the rest."""
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+        mark_job_reported(conn, job_id=job_id, at=NOW)
+        mark_job_manual(conn, job_id=job_id, at=NOW)
+    with engine.begin() as conn:
+        unmark_job_skipped(conn, job_id=job_id)
+        unmark_job_reported(conn, job_id=job_id)
+    with engine.connect() as conn:
+        assert skipped_job_ids(conn) == {}
+        assert reported_job_ids(conn) == {}
+        assert manual_job_ids(conn) == {job_id: NOW.isoformat()}
+    with engine.begin() as conn:
+        unmark_job_manual(conn, job_id=job_id)
+        mark_job_skipped(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        assert manual_job_ids(conn) == {}
+        assert skipped_job_ids(conn) == {job_id: NOW.isoformat()}
 
 
 # ------------------------------------------------------------------------------------- follow-up

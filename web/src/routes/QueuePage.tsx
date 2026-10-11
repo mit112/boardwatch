@@ -6,12 +6,14 @@ import {
   getApplied,
   getDetail,
   getQueue,
+  manualMany,
   markApplied,
   markSkipped,
   report,
   setFollowUp,
   skipMany,
   unapply,
+  unmanualMany,
   unreport,
   unskip,
   unskipMany,
@@ -282,7 +284,50 @@ function useSessionState<T>(
   return [value, set];
 }
 
-type Removal = "applied" | "skipped" | "reported";
+/* `moved` is a bulk move to or from Apply by hand: the row leaves THIS list for another one, so it
+   is no owner verdict and moves no band cell — the refetch that follows puts it where it now is. */
+type Removal = "applied" | "skipped" | "reported" | "moved";
+
+/*
+ * The three bulk writes. Each is ONE request for the whole selection and its undo is the inverse,
+ * also one request. Every client call is made inside a closure, never captured at module load, so
+ * a test that mocks the client without the manual pair still loads this page. `wrote` and `refused` are normalised here because the two batch routes name
+ * their acted-on key after the action (`skipped`, `manual`), and `?? []` because a server older
+ * than a field must degrade to "nothing here" rather than throw (D-360).
+ */
+type BulkAction = "skip" | "manual" | "unmanual";
+type BulkResult = { wrote: number[]; refused: number[] };
+const BULK: Record<
+  BulkAction,
+  {
+    write: (jobIds: number[]) => Promise<BulkResult>;
+    inverse: (jobIds: number[]) => Promise<unknown>;
+    done: string;
+    undoFailed: string;
+  }
+> = {
+  skip: {
+    write: (jobIds) =>
+      skipMany(jobIds).then((r) => ({ wrote: r.skipped ?? [], refused: r.failed ?? [] })),
+    inverse: (jobIds) => unskipMany(jobIds),
+    done: "Skipped",
+    undoFailed: "Could not un-skip those leads.",
+  },
+  manual: {
+    write: (jobIds) =>
+      manualMany(jobIds).then((r) => ({ wrote: r.manual ?? [], refused: r.failed ?? [] })),
+    inverse: (jobIds) => unmanualMany(jobIds),
+    done: "Moved to Apply by hand:",
+    undoFailed: "Could not move those jobs back.",
+  },
+  unmanual: {
+    write: (jobIds) =>
+      unmanualMany(jobIds).then((r) => ({ wrote: r.manual ?? [], refused: r.failed ?? [] })),
+    inverse: (jobIds) => manualMany(jobIds),
+    done: "Moved back to your lists:",
+    undoFailed: "Could not move those jobs to Apply by hand again.",
+  },
+};
 
 function errorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error ? caught.message : fallback;
@@ -459,7 +504,9 @@ export function QueuePage({
   const leadKnown =
     data !== null &&
     selected !== null &&
-    [...data.rows, ...data.review].some((row) => row.posting_id === selected);
+    [...data.rows, ...data.review, ...(data.manual ?? [])].some(
+      (row) => row.posting_id === selected,
+    );
 
   const lens: Lens =
     lensPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0 ? "review" : "explore");
@@ -497,12 +544,20 @@ export function QueuePage({
      * below and paints a load-failure card that blames the transport and tells the reader to
      * re-open a URL, neither of which is true or would help.
      */
-    const normalised: QueueResponse = { ...response, review: response.review ?? [] };
+    // `manual` is newer still, and normalised here for the same reason.
+    const normalised: QueueResponse = {
+      ...response,
+      review: response.review ?? [],
+      manual: response.manual ?? [],
+    };
     setData(normalised);
     // BOTH lanes. A lead that moves between them on a re-evaluation is not new, and counting it
     // as new would put a permanent "N new" nag on the page that refreshing never clears.
+    // And Apply by hand: a job moved back out of it is not new either.
     knownIds.current = new Set(
-      [...normalised.rows, ...normalised.review].map((row) => row.posting_id),
+      [...normalised.rows, ...normalised.review, ...(normalised.manual ?? [])].map(
+        (row) => row.posting_id,
+      ),
     );
     if (!newIdsComputed.current) {
       newIdsComputed.current = true;
@@ -580,7 +635,11 @@ export function QueuePage({
           // `?? []` as above, and it matters more here: this `.catch` swallows deliberately, so
           // the same throw would kill the poll silently and "N new" would never appear again for
           // the life of the process.
-          const fresh = [...response.rows, ...(response.review ?? [])].filter(
+          const fresh = [
+            ...response.rows,
+            ...(response.review ?? []),
+            ...(response.manual ?? []),
+          ].filter(
             (row) => !knownIds.current.has(row.posting_id),
           );
           if (fresh.length > 0) {
@@ -808,6 +867,23 @@ export function QueuePage({
     return sortRows(base, sort, reviewRankOf);
   }, [filteredReview, facet, reasonFacet, newIds, sort, reviewRankOf]);
   const similarReview = useMemo(() => similarGroups(sortedReview), [sortedReview]);
+
+  /*
+   * Apply by hand: the jobs the owner moved out of both lanes to apply to themselves. The same
+   * filters and verdict facet as the apply lane, in the server's order, and never folded — the
+   * owner chose every one of these, so hiding one behind a "similar" fold would hide a decision.
+   */
+  const filteredManual = useMemo(
+    () => (data?.manual ?? []).filter(passesFilters),
+    [data, passesFilters],
+  );
+  const visibleManual = useMemo(() => {
+    const base =
+      facet === null
+        ? filteredManual
+        : filteredManual.filter((row) => matchesFacet(row, facet, newIds));
+    return sortRows(base, sort, () => 0);
+  }, [filteredManual, facet, newIds, sort]);
   const visibleReview = useMemo(
     () => (hideSimilar === "" ? sortedReview : firstOfEachGroup(sortedReview)),
     [sortedReview, hideSimilar],
@@ -821,8 +897,14 @@ export function QueuePage({
    */
   const navList = useMemo<QueueRow[]>(
     () =>
-      lens === "explore" ? visible : lens === "review" ? visibleReview : [...visible, ...visibleReview],
-    [lens, visible, visibleReview],
+      lens === "explore"
+        ? visible
+        : lens === "review"
+          ? visibleReview
+          : lens === "manual"
+            ? visibleManual
+            : [...visible, ...visibleReview],
+    [lens, visible, visibleReview, visibleManual],
   );
 
   /*
@@ -835,6 +917,7 @@ export function QueuePage({
     explore: filtered.length,
     review: filteredReview.length,
     all: filtered.length + filteredReview.length,
+    manual: filteredManual.length,
   };
 
   /*
@@ -922,7 +1005,7 @@ export function QueuePage({
     for (const kind of removed.values()) {
       if (kind === "applied") appliedDelta += 1;
       else if (kind === "skipped") skippedDelta += 1;
-      else reportedDelta += 1;
+      else if (kind === "reported") reportedDelta += 1;
     }
     return {
       // Recomputed against the active filter.
@@ -962,6 +1045,7 @@ export function QueuePage({
       applied_ever: (data?.counts.applied_ever ?? 0) + appliedDelta,
       skipped: (data?.counts.skipped ?? 0) + skippedDelta,
       reported: (data?.counts.reported ?? 0) + reportedDelta,
+      manual: data?.counts.manual ?? 0,
       // Run-scoped facts, not filter-scoped: they come from the server unchanged.
       delivered_last_run: data?.counts.delivered_last_run ?? 0,
       last_run_finished: data?.counts.last_run_finished ?? null,
@@ -1338,9 +1422,11 @@ export function QueuePage({
    * rows the reader can see, rather than a count that includes leads behind a filter they have
    * since turned on.
    */
+  /* The list the selection lives in: Apply by hand has its own, every other list the apply lane's. */
+  const selectable = lens === "manual" ? visibleManual : visible;
   const markedRows = useMemo(
-    () => visible.filter((row) => marked.has(row.posting_id)),
-    [visible, marked],
+    () => selectable.filter((row) => marked.has(row.posting_id)),
+    [selectable, marked],
   );
 
   const selection: Selection = useMemo(
@@ -1390,7 +1476,9 @@ export function QueuePage({
   );
 
   /*
-   * Bulk skip: ONE write for the whole selection and ONE for its undo.
+   * Bulk skip, and the bulk move to or from Apply by hand: ONE write for the whole selection and
+   * ONE for its undo. One function for all three, parametrised by `BULK`, so the optimistic
+   * collapse, the refused-id restore and the focus hand-off cannot drift apart between them.
    *
    * The optimistic shape is `act`'s, applied to a block — collapse, then remove after the
    * animation — so a bulk skip looks like N single skips that happened at once rather than a new
@@ -1400,7 +1488,23 @@ export function QueuePage({
    * The call is keyed on `job_id` because skip state is, server-side. `byJob` is how a `failed`
    * id from the response gets back to the row that has to be restored.
    */
-  const skipSelected = useCallback(() => {
+  /*
+   * A skip leaves every list, so removing the rows is the whole story. A MOVE does not: the rows
+   * land in another list, and which lane an un-manualled job returns to is the server's call
+   * (`lane_decision`), so the page re-reads the queue once the write has landed AND the collapse
+   * has run — after the collapse, or the timer would hide the rows again in the list they moved to.
+   */
+  const refetch = useCallback(() => {
+    void getQueue()
+      .then(adopt)
+      .catch(() => {
+        /* The write landed; a failed re-read leaves the rows hidden until the next refresh. */
+      });
+  }, [adopt]);
+
+  const moveSelected = useCallback((action: BulkAction) => {
+    const spec = BULK[action];
+    const moving = action !== "skip";
     if (markedRows.length === 0) return;
     const postingIds = markedRows.map((row) => row.posting_id);
     const jobIds = markedRows.map((row) => row.job_id);
@@ -1413,12 +1517,12 @@ export function QueuePage({
      * by keyboard is back at the top of the document. The first surviving row below the block,
      * else the last surviving row, else the filter box.
      */
-    const surviving = visible.filter((row) => !leaving.has(row.posting_id));
+    const surviving = selectable.filter((row) => !leaving.has(row.posting_id));
     const lastLeaving = Math.max(
-      ...postingIds.map((id) => visible.findIndex((row) => row.posting_id === id)),
+      ...postingIds.map((id) => selectable.findIndex((row) => row.posting_id === id)),
     );
     const successor =
-      visible.slice(lastLeaving + 1).find((row) => !leaving.has(row.posting_id)) ??
+      selectable.slice(lastLeaving + 1).find((row) => !leaving.has(row.posting_id)) ??
       surviving[surviving.length - 1];
 
     clearSelection();
@@ -1434,10 +1538,14 @@ export function QueuePage({
      * removal below marks only what is still in it. Reading `postingIds` here instead would let a
      * fast `failed` restore be immediately re-removed by this very callback.
      */
+    let collapsed: () => void = () => undefined;
+    const collapsedDone = new Promise<void>((resolve) => {
+      collapsed = resolve;
+    });
     window.setTimeout(() => {
       setRemoved((current) => {
         const next = new Map(current);
-        for (const id of leaving) next.set(id, "skipped");
+        for (const id of leaving) next.set(id, moving ? "moved" : "skipped");
         return next;
       });
       setCollapsing((current) => {
@@ -1445,6 +1553,7 @@ export function QueuePage({
         for (const id of postingIds) next.delete(id);
         return next;
       });
+      collapsed();
       if (successor === undefined) {
         setActiveId(null);
         document.getElementById(FILTER_INPUT_ID)?.focus();
@@ -1457,15 +1566,9 @@ export function QueuePage({
     }, COLLAPSE_MS);
     if (selected !== null && leaving.has(selected)) openLead(null);
 
-    void skipMany(jobIds)
-      .then((result) => {
-        /*
-         * `?? []` on both, not `[]` on neither: the viewer serves this bundle from disk and
-         * answers from the Python it imported at start-up, so a server that has the route but
-         * omits a field must degrade to "nothing here" rather than throw (D-360).
-         */
-        const wrote = result.skipped ?? [];
-        const refused = result.failed ?? [];
+    void spec
+      .write(jobIds)
+      .then(({ wrote, refused }) => {
         // Only the server knows which ids it actually wrote, and the optimistic removal covered
         // the whole selection — so anything it refused comes straight back into the list.
         for (const jobId of refused) {
@@ -1476,19 +1579,25 @@ export function QueuePage({
         }
         const message =
           refused.length === 0
-            ? `Skipped ${String(wrote.length)}`
-            : `Skipped ${String(wrote.length)}, ${String(refused.length)} failed`;
+            ? `${spec.done} ${String(wrote.length)}`
+            : `${spec.done} ${String(wrote.length)}, ${String(refused.length)} failed`;
         if (wrote.length === 0) {
           push({ message, tone: "error" });
           return;
         }
+        if (moving) void collapsedDone.then(refetch);
         push({
           message,
           // The undo covers the ids the server WROTE and no others: offering to un-skip an id it
           // refused would report a reversal of something that never happened.
           undo: () => {
-            void unskipMany(wrote)
+            void spec
+              .inverse(wrote)
               .then(() => {
+                if (moving) {
+                  refetch();
+                  return;
+                }
                 for (const jobId of wrote) {
                   const postingId = byJob.get(jobId);
                   if (postingId !== undefined) restore(postingId);
@@ -1496,7 +1605,7 @@ export function QueuePage({
               })
               .catch((caught: unknown) => {
                 push({
-                  message: errorMessage(caught, "Could not un-skip those leads."),
+                  message: errorMessage(caught, spec.undoFailed),
                   tone: "error",
                 });
               });
@@ -1511,7 +1620,7 @@ export function QueuePage({
           tone: "error",
         });
       });
-  }, [markedRows, visible, clearSelection, selected, openLead, push, restore]);
+  }, [markedRows, selectable, clearSelection, selected, openLead, push, restore, refetch]);
 
   /*
    * The one shortcut that is safe on `window`: it only moves focus. Everything that WRITES is
@@ -1553,14 +1662,14 @@ export function QueuePage({
    */
   const boardCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of [...(data?.rows ?? []), ...(data?.review ?? [])]) {
+    for (const row of [...(data?.rows ?? []), ...(data?.review ?? []), ...(data?.manual ?? [])]) {
       if (row.provider != null) counts.set(row.provider, (counts.get(row.provider) ?? 0) + 1);
     }
     return [...counts].sort(([a], [b]) => a.localeCompare(b));
   }, [data]);
   const modeCounts = useMemo(() => {
     const counts = new Map<string, number>();
-    for (const row of [...(data?.rows ?? []), ...(data?.review ?? [])]) {
+    for (const row of [...(data?.rows ?? []), ...(data?.review ?? []), ...(data?.manual ?? [])]) {
       const key = row.remote_policy ?? NO_MODE;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -1689,7 +1798,9 @@ export function QueuePage({
       ? data?.rows.length ?? 0
       : lens === "review"
         ? data?.review.length ?? 0
-        : (data?.rows.length ?? 0) + (data?.review.length ?? 0);
+        : lens === "manual"
+          ? data?.manual?.length ?? 0
+          : (data?.rows.length ?? 0) + (data?.review.length ?? 0);
 
   /* Jobs due or new across BOTH lists, after the filters — the figures the summary prints. */
   const bothFiltered = useMemo(() => [...filtered, ...filteredReview], [filtered, filteredReview]);
@@ -1793,22 +1904,35 @@ export function QueuePage({
 
   const showExplore = lens === "explore" || lens === "all";
   const showReview = lens === "review" || lens === "all";
-  const bothEmpty = data.rows.length === 0 && data.review.length === 0;
+  const showManual = lens === "manual";
+  const manualRows = data.manual ?? [];
+  const bothEmpty =
+    data.rows.length === 0 && data.review.length === 0 && manualRows.length === 0;
 
   const apply = (row: QueueRow) => {
     act(row, "applied");
   };
 
-  const table = (kind: "explore" | "review") => {
-    const rows = kind === "explore" ? visible : visibleReview;
+  const table = (kind: "explore" | "review" | "manual") => {
+    const rows = kind === "explore" ? visible : kind === "review" ? visibleReview : visibleManual;
     return (
       <QueueTable
-        label={kind === "explore" ? "Jobs to explore" : "Needs review"}
+        label={
+          kind === "explore" ? "Jobs to explore" : kind === "review" ? "Needs review" : "Apply by hand"
+        }
         rows={rows}
-        /* The bulk selection is the apply list's alone: a review job is held for a look, so
-           "skip the whole block" is not what that list is for. */
+        /* The bulk selection is the apply list's — and Apply by hand's, so a block can be moved
+           back in one write. A review job is held for a look, so "skip the whole block" is not
+           what that list is for. */
         {...(kind === "explore" ? { selection, onSelectCompany: selectCompany } : {})}
-        similarOf={(row) => (kind === "explore" ? similarApply : similarReview).get(row.posting_id)}
+        {...(kind === "manual" ? { selection } : {})}
+        similarOf={(row) =>
+          kind === "explore"
+            ? similarApply.get(row.posting_id)
+            : kind === "review"
+              ? similarReview.get(row.posting_id)
+              : undefined
+        }
         emptyHint={emptyHint}
         selectedId={selected}
         activeId={activeId}
@@ -1926,7 +2050,16 @@ export function QueuePage({
           activeFilters={activeFilters}
           onReset={resetFilters}
           selectedCount={markedRows.length}
-          onSkipSelected={skipSelected}
+          onSkipSelected={() => {
+            moveSelected("skip");
+          }}
+          onManualSelected={() => {
+            moveSelected("manual");
+          }}
+          onUnmanualSelected={() => {
+            moveSelected("unmanual");
+          }}
+          bulkFromManual={lens === "manual"}
           onClearSelection={clearSelection}
         />
 
@@ -2098,6 +2231,29 @@ export function QueuePage({
                       </section>
                     </ErrorBoundary>
                   </div>
+                )
+              ) : null}
+
+              {showManual ? (
+                manualRows.length === 0 ? (
+                  <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                    Nothing is set aside to apply by hand. Select jobs in Jobs to explore and
+                    choose Move to manual.
+                  </p>
+                ) : (
+                  <section aria-labelledby="manual-heading">
+                    <h2 id="manual-heading" className="sr-only">
+                      Apply by hand
+                    </h2>
+                    {visibleManual.length === 0 ? (
+                      <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                        No job in this list matches. There are{" "}
+                        {manualRows.length.toLocaleString()} in it.
+                      </p>
+                    ) : (
+                      table("manual")
+                    )}
+                  </section>
                 )
               ) : null}
             </>
@@ -2281,7 +2437,9 @@ export function QueuePage({
           by a refresh, has nothing left to ask about. */}
       {returnPrompt === null ||
       removed.has(returnPrompt.posting_id) ||
-      ![...data.rows, ...data.review].some((row) => row.posting_id === returnPrompt.posting_id) ? null : (
+      ![...data.rows, ...data.review, ...(data.manual ?? [])].some(
+        (row) => row.posting_id === returnPrompt.posting_id,
+      ) ? null : (
         <ApplyReturnPrompt
           row={returnPrompt}
           onApplied={() => {

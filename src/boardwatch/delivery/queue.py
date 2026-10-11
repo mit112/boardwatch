@@ -93,7 +93,7 @@ from boardwatch.store.delivery_queries import (
     review_job_ids,
 )
 from boardwatch.store.queries import canonical_job_ids
-from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
+from boardwatch.store.queue_state import manual_job_ids, reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts
 
@@ -106,6 +106,9 @@ LOCK_FILE = ".queue.lock"
 APPLIED_DIR = "_applied"
 SKIPPED_DIR = "_skipped"
 REPORTED_DIR = "_reported"
+#: The owner's apply-by-hand list (`queue.manual.<job_id>`). Registered in
+#: ``delivery.names.DRAIN_DIRS``.
+MANUAL_DIR = "_manual"
 INELIGIBLE_DIR = "_ineligible"
 #: D-498 rule (a)'s standing-queue drain. Registered in ``delivery.names.DRAIN_DIRS``.
 LANE_COPY_DIR = "_lane_copy"
@@ -238,6 +241,7 @@ class ReconcileReport:
     to_applied: int = 0
     to_skipped: int = 0
     to_reported: int = 0
+    to_manual: int = 0
     to_ineligible: int = 0
     to_review: int = 0
     to_closed: int = 0
@@ -257,6 +261,7 @@ class ReconcileReport:
             self.to_applied
             + self.to_skipped
             + self.to_reported
+            + self.to_manual
             + self.to_ineligible
             + self.to_review
             + self.to_closed
@@ -351,11 +356,13 @@ def refresh_queue(
 
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
-    """Every lead the queue holds a folder for: delivered, unapplied, not skipped or reported,
-    not `ineligible`, and not a lane copy. `_sync_locked` files exactly these, and T113's gate
-    refresh re-judges from exactly these, so the population is defined once — why each exclusion
-    is there is `_sync_locked`'s comment."""
-    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    """Every lead the queue holds a folder for: delivered, unapplied, not skipped, reported or
+    moved to manual, not `ineligible`, and not a lane copy. `_sync_locked` files exactly these,
+    and T113's gate refresh re-judges from exactly these, so the population is defined once — why
+    each exclusion is there is `_sync_locked`'s comment."""
+    withheld = (
+        set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
+    )
     lane_copy = lane_copy_posting_ids(conn)
     return [
         row
@@ -487,6 +494,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # a test asserting `created == 0` passes against the broken version and pins nothing.
     # A LANE COPY is excluded for the same reason and had the same bug (T189): `refresh_queue`'s
     # reconcile filed it under `_lane_copy/` and this pass moved it straight back out, every run.
+    # A MANUAL lead is withheld for the same reason, or `_manual/` would be emptied every run.
     rows = standing_queue_rows(conn)
     # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
     # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
@@ -1175,6 +1183,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     applied = applied_job_ids(conn)
     skipped = skipped_job_ids(conn)
     reported = reported_job_ids(conn)
+    manual = manual_job_ids(conn)
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
@@ -1205,6 +1214,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         APPLIED_DIR: 0,
         SKIPPED_DIR: 0,
         REPORTED_DIR: 0,
+        MANUAL_DIR: 0,
         INELIGIBLE_DIR: 0,
         REVIEW_DIR: 0,
         CLOSED_DIR: 0,
@@ -1218,6 +1228,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
             applied=applied,
             skipped=skipped,
             reported=reported,
+            manual=manual,
             closed=closed,
             ineligible=ineligible,
             review=review,
@@ -1259,6 +1270,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         to_applied=counts[APPLIED_DIR],
         to_skipped=counts[SKIPPED_DIR],
         to_reported=counts[REPORTED_DIR],
+        to_manual=counts[MANUAL_DIR],
         to_ineligible=counts[INELIGIBLE_DIR],
         to_review=counts[REVIEW_DIR],
         to_closed=counts[CLOSED_DIR],
@@ -1288,6 +1300,7 @@ def _wanted_location(
     applied: dict[int, str],
     skipped: dict[int, str],
     reported: dict[int, str],
+    manual: dict[int, str],
     closed: set[int],
     ineligible: dict[int, str],
     review: set[int],
@@ -1326,6 +1339,13 @@ def _wanted_location(
     them because a closed posting cannot be applied to whatever the gate decided: filing it under
     `_ineligible` would claim a verdict the gate never reached, and filing it under `_review`
     would ask the owner to read a job that no longer exists.
+
+    `manual` is the one owner statement that ranks BELOW `closed`. It is an INTENT ("I will apply
+    to this by hand"), not a fact about what the owner did, and a closed requisition cannot be
+    applied to by hand either. It self-heals: a posting that reopens is filed back under `_manual`,
+    because the `queue.manual.<job_id>` key survives whichever folder holds the copy. It ranks
+    ABOVE the derived verdicts like every other owner statement: the owner read the lead and chose
+    to apply, so a rule tightening later must not pull it into `_ineligible` behind their back.
     """
     if entry.job_id in applied:
         return APPLIED_DIR
@@ -1335,6 +1355,8 @@ def _wanted_location(
         return REPORTED_DIR
     if entry.job_id in closed:
         return CLOSED_DIR
+    if entry.job_id in manual:
+        return MANUAL_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
     # By the folder's POSTING, as `lane_copy_posting_ids` is keyed: a board posting sharing its
@@ -1671,6 +1693,7 @@ __all__ = [
     "LOCK_FILE",
     "RECLAIM_WINDOW_SECONDS",
     "REPORTED_DIR",
+    "MANUAL_DIR",
     "SKIPPED_DIR",
     "URL_FILE",
     "WEBLOC_FILE",

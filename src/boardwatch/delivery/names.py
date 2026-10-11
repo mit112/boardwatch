@@ -38,6 +38,7 @@ DESTINATION_BYTE_CAP = 240
 #: names whose drained destination it had promised to refuse.
 DRAIN_DIRS: tuple[str, ...] = (
     "_applied", "_skipped", "_ineligible", "_review", "_closed", "_reported", "_lane_copy",
+    "_manual",
 )
 
 PDF_SUFFIX = ".pdf"

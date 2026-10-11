@@ -120,6 +120,7 @@ from boardwatch.store.queries import CurrentVersion, current_posting_versions, g
 from boardwatch.store.queue_state import (
     disputed_job_ids,
     followup_job_dates,
+    manual_job_ids,
     reported_job_ids,
     skipped_job_ids,
 )
@@ -254,7 +255,8 @@ def _iso_utc(dt: datetime | None) -> str | None:
 
 def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     """`GET /api/queue`: every delivered, unapplied, unskipped, unreported, non-ineligible lead,
-    ranked now, split into the APPLY lane (`rows`) and the REVIEW lane (`review`).
+    ranked now, split into the APPLY lane (`rows`) and the REVIEW lane (`review`), with the
+    owner's apply-by-hand leads in their own list (`manual`, the `_manual` folder).
 
     The split is `delivery.review_gate.lane`, the same single definition the folder tree uses
     (D-332), so `rows` holds exactly what `~/boardwatch-queue`'s top level holds and `review`
@@ -292,14 +294,20 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # module's whole design is arranged against. `row.closed` is `status == "closed"` and never
     # `!= "open"`, so an `unverifiable` posting stays listed as the live work it is.
     closed_rows = [row for row in every if row.closed]
+    # The owner's apply-by-hand list: its own list, like `review`, and not work for Jobs to explore.
+    # Below `closed` and above `ineligible`, as `_wanted_location` ranks `_manual`, so this list and
+    # that folder name the same leads — a manual lead the rules later reject stays listed here.
+    manual = manual_job_ids(conn)
+    manual_rows = [row for row in every if not row.closed and row.job_id in manual]
+    rest = [row for row in every if not row.closed and row.job_id not in manual]
     # A lane copy is held in `_lane_copy` on disk (T189b), so it is not work on the page either.
     # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
     # tree asks, so the two cannot disagree about which leads it names.
     lane_copy = lane_copy_posting_ids(conn)
-    open_rows = [row for row in every if not row.closed and not _rejected(row)]
+    open_rows = [row for row in rest if not _rejected(row)]
     kept = [row for row in open_rows if row.posting_id not in lane_copy]
-    drained = len(every) - len(open_rows) - len(closed_rows)
-    facts = _live_facts(conn, ctx, kept)
+    drained = len(rest) - len(open_rows)
+    facts = _live_facts(conn, ctx, [*kept, *manual_rows])
 
     def rank_key(row: QueueRow) -> tuple[bool, float]:
         return (facts[row.posting_id].score is None, -(facts[row.posting_id].score or 0.0))
@@ -317,6 +325,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     lanes = {r.posting_id: lane_decision(r).lane for r in kept}
     apply_rows = sorted((r for r in kept if lanes[r.posting_id] == ""), key=rank_key)
     review_rows = sorted((r for r in kept if lanes[r.posting_id] != ""), key=rank_key)
+    manual_rows.sort(key=rank_key)
     return {
         "rows": [
             _row_json(
@@ -343,6 +352,16 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             )
             for row in review_rows
         ],
+        "manual": [
+            _row_json(
+                row,
+                facts[row.posting_id],
+                ctx,
+                follow_ups.get(row.job_id),
+                twins.get(row.posting_id, []),
+            )
+            for row in manual_rows
+        ],
         "counts": _counts(
             conn,
             apply_rows,
@@ -350,6 +369,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             review=len(review_rows),
             closed=len(closed_rows),
             lane_copy=len(open_rows) - len(kept),
+            manual=len(manual_rows),
             follow_ups=follow_ups,
         ),
         # A capability flag, not a preference: the button is hidden where the platform has no
@@ -379,7 +399,10 @@ def rejected_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     Leads the final gate judged `eligible` come first: the rules and the gate disagreeing is the
     strongest sign a rejection is wrong. Otherwise `delivered_unapplied`'s newest-first order.
     """
-    excluded = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    # A manual lead outranks `ineligible` (`_wanted_location`), so it is listed as manual, not here.
+    excluded = (
+        set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
+    )
     disputed = disputed_job_ids(conn)
     rows = [row for row in delivered_unapplied(conn, skipped=excluded) if _rejected(row)]
     rows.sort(key=lambda row: row.judge_verdict != "eligible")
@@ -642,6 +665,7 @@ def _counts(
     review: int = 0,
     closed: int = 0,
     lane_copy: int = 0,
+    manual: int = 0,
     follow_ups: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
@@ -704,6 +728,8 @@ def _counts(
         # folder is in `_lane_copy`, and counted so the band still reconciles with the delivered
         # set.
         "lane_copy": lane_copy,
+        # The apply-by-hand list, counted for the same reconciling reason as `review`.
+        "manual": manual,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         # Its own cell, never folded into `skipped`: a report is a distinct signal ("this looks

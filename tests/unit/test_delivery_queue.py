@@ -65,6 +65,7 @@ from boardwatch.delivery.queue import (
     LANE_COPY_DIR,
     LINK_FILE,
     LOCK_FILE,
+    MANUAL_DIR,
     REPORTED_DIR,
     REVIEW_DIR,
     SKIPPED_DIR,
@@ -107,9 +108,11 @@ from boardwatch.store.queries import (
     save_profile,
 )
 from boardwatch.store.queue_state import (
+    mark_job_manual,
     mark_job_reported,
     mark_job_skipped,
     skipped_job_ids,
+    unmark_job_manual,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -1446,6 +1449,41 @@ def test_an_applied_or_skipped_lead_keeps_that_folder_even_when_also_reported(
     assert _folders(root / REPORTED_DIR) == []
 
 
+def test_manual_drains_to_its_own_folder_survives_the_sync_and_undoes(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The apply-by-hand drain on BOTH sides, plus the half a reconcile-only test cannot see.
+
+    `refresh_queue` runs reconcile and then sync in one call. Without `standing_queue_rows`
+    withholding the manual job, the sync relocates the folder straight back out of `_manual/` --
+    `moved` is the tell, exactly as it was for `_reported` -- and the lead is in Jobs to explore
+    again every run while `to_manual` reads a healthy 1.
+    """
+    with engine.begin() as conn:
+        _, job_id = _deliver(conn, apps, "one")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    folder = _sole_folder(root).name
+
+    with engine.begin() as conn:
+        mark_job_manual(conn, job_id=job_id, at=NOW)
+    with engine.connect() as conn:
+        drained = reconcile_queue(conn, root=root)
+        synced = sync_queue(conn, root=root, owner_name=OWNER)
+    assert (drained.to_manual, drained.moved, drained.failed) == (1, 1, 0)
+    assert synced.moved == 0, "sync relocated a manual lead back to the apply queue"
+    assert _folders(root / MANUAL_DIR) == [folder]
+    assert _folders(root) == []
+
+    with engine.begin() as conn:
+        unmark_job_manual(conn, job_id=job_id)
+    with engine.connect() as conn:
+        restored = reconcile_queue(conn, root=root)
+    assert (restored.to_queue, restored.failed) == (1, 0)
+    assert _folders(root) == [folder]
+    assert _folders(root / MANUAL_DIR) == []
+
+
 #: A body the bundled catalog matches NOTHING in, so a real evaluation of it produces zero
 #: requirement rows — A3's population. Its premise is asserted in the test that uses it.
 SILENT_JD = "Join our team. We build delightful things and we value curiosity."
@@ -1730,6 +1768,7 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
         REVIEW_DIR,
         CLOSED_DIR,
         LANE_COPY_DIR,
+        MANUAL_DIR,
     }
 
 
@@ -1778,11 +1817,11 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     closed = {7}
     lane_copy = {1}  # keyed by the folder's POSTING, the other sets by its job (T189b)
     assert queue._wanted_location(
-        entry, applied=both, skipped=both, reported=both, closed=closed,
+        entry, applied=both, skipped=both, reported=both, manual=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == APPLIED_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped=both, reported=both, closed=closed,
+        entry, applied={}, skipped=both, reported=both, manual=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == SKIPPED_DIR
     # `reported` is an owner statement, so it outranks both derived drains AND `closed` -- but it
@@ -1790,33 +1829,40 @@ def test_wanted_location_prefers_an_owner_statement_over_a_derived_verdict() -> 
     # that: the `queue.reported.<job_id>` marker is the record an investigation reads, and it
     # survives whichever folder holds the copy (D-427).
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported=both, closed=closed,
+        entry, applied={}, skipped={}, reported=both, manual=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == REPORTED_DIR
     # closed ranks below BOTH owner statements and above both derived drains: the employer taking
     # the requisition down does not un-say what the owner already decided, but it does settle a
     # lead the gate could only have held for a second look.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported={}, closed=closed,
+        entry, applied={}, skipped={}, reported={}, manual=both, closed=closed,
         ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == CLOSED_DIR
+    # `manual` is the one owner statement BELOW `closed` -- an intent to apply by hand cannot be
+    # carried out on a requisition that is gone -- and above every derived drain, so a rule that
+    # tightens later cannot pull a lead the owner chose to apply to into `_ineligible`.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported={}, closed=set(),
+        entry, applied={}, skipped={}, reported={}, manual=both, closed=set(),
+        ineligible=verdict, review=review, lane_copy=lane_copy,
+    ) == MANUAL_DIR
+    assert queue._wanted_location(
+        entry, applied={}, skipped={}, reported={}, manual={}, closed=set(),
         ineligible=verdict, review=review, lane_copy=lane_copy,
     ) == INELIGIBLE_DIR
     # `lane_copy` ranks below `ineligible` -- a verdict about the LEAD beats a fact about
     # REDUNDANCY -- and above `review`, because a lead whose employer-board twin is already in
     # front of the owner is not a second thing to look at.
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported={}, closed=set(),
+        entry, applied={}, skipped={}, reported={}, manual={}, closed=set(),
         ineligible={}, review=review, lane_copy=lane_copy,
     ) == LANE_COPY_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported={}, closed=set(),
+        entry, applied={}, skipped={}, reported={}, manual={}, closed=set(),
         ineligible={}, review=review, lane_copy=set(),
     ) == REVIEW_DIR
     assert queue._wanted_location(
-        entry, applied={}, skipped={}, reported={}, closed=set(),
+        entry, applied={}, skipped={}, reported={}, manual={}, closed=set(),
         ineligible={}, review=set(), lane_copy=set(),
     ) == ""
 
@@ -3166,7 +3212,7 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
         [
             APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR, REPORTED_DIR,
-            LANE_COPY_DIR,
+            LANE_COPY_DIR, MANUAL_DIR,
         ]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks

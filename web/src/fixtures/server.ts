@@ -63,6 +63,8 @@ function moveStatus(jobId: number, to: string, note: string | null): void {
 const skippedPostingIds = new Set<number>();
 const reportedPostingIds = new Set<number>();
 const disputedJobIds = new Set<number>();
+// Apply by hand, keyed on the JOB exactly as the server's `queue.manual.<job_id>` is.
+const manualJobIds = new Set<number>();
 /*
  * Follow-up dates, by posting. Seeded relative to TODAY rather than to a fixed date, so the
  * due marker and the "follow-up due" facet are demonstrable on any day the fixtures are opened —
@@ -109,8 +111,26 @@ function visibleRows(): QueueRow[] {
       row.verdict !== "ineligible" &&
       !appliedJobIds.has(row.job_id) &&
       !skippedPostingIds.has(row.posting_id) &&
-      !reportedPostingIds.has(row.posting_id),
+      !reportedPostingIds.has(row.posting_id) &&
+      !manualJobIds.has(row.job_id),
   );
+}
+
+/*
+ * Apply by hand, mirroring the server's precedence: applied, skipped, reported and closed all
+ * outrank it, and an `ineligible` verdict does not — the owner's choice to apply by hand stands.
+ */
+function manualRows(): QueueRow[] {
+  return pool()
+    .filter(
+      (row) =>
+        manualJobIds.has(row.job_id) &&
+        row.status !== "closed" &&
+        !appliedJobIds.has(row.job_id) &&
+        !skippedPostingIds.has(row.posting_id) &&
+        !reportedPostingIds.has(row.posting_id),
+    )
+    .map(withFollowUp);
 }
 
 /*
@@ -145,7 +165,8 @@ function rejectedResponse(): RejectedResponse {
         row.status !== "closed" &&
         !appliedJobIds.has(row.job_id) &&
         !skippedPostingIds.has(row.posting_id) &&
-        !reportedPostingIds.has(row.posting_id),
+        !reportedPostingIds.has(row.posting_id) &&
+        !manualJobIds.has(row.job_id),
     )
     .sort((a, b) => Number(a.judge_verdict !== "eligible") - Number(b.judge_verdict !== "eligible"))
     .map((row) => ({
@@ -207,6 +228,7 @@ function counts(rows: QueueRow[]): QueueCounts {
     applied_ever: appliedJobIds.size,
     skipped: skippedPostingIds.size,
     reported: reportedPostingIds.size,
+    manual: manualRows().length,
     // Over the apply lane, exactly as the server counts it: the cell is a facet, so its number
     // has to be the number of rows clicking it shows.
     follow_up_due: rows.filter(
@@ -315,6 +337,7 @@ function queueResponse(): QueueResponse {
   return {
     rows,
     review: reviewRows(),
+    manual: manualRows(),
     counts: counts(rows),
     meta: { reveal_supported: true },
   };
@@ -351,10 +374,32 @@ function batchSkip(body: unknown, skip: boolean): unknown {
   return { skipped, failed };
 }
 
+/** The batch move to and from Apply by hand: `batchSkip`'s contract, answering under `manual`. */
+function batchManual(body: unknown, on: boolean): unknown {
+  const ids = (body as { job_ids?: unknown } | null)?.job_ids;
+  if (!Array.isArray(ids) || ids.some((entry) => typeof entry !== "number")) {
+    throw new FixtureError(400, 'expected {"job_ids": [<integer>, ...]}');
+  }
+  const manual: number[] = [];
+  const failed: number[] = [];
+  for (const jobId of ids as number[]) {
+    if (!ALL_ROWS.some((candidate) => candidate.job_id === jobId)) {
+      failed.push(jobId);
+      continue;
+    }
+    if (on) manualJobIds.add(jobId);
+    else manualJobIds.delete(jobId);
+    manual.push(jobId);
+  }
+  return { manual, failed };
+}
+
 function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/queue") return queueResponse();
   if (method === "POST" && path === "/api/queue/skip") return batchSkip(body, true);
   if (method === "POST" && path === "/api/queue/unskip") return batchSkip(body, false);
+  if (method === "POST" && path === "/api/queue/manual") return batchManual(body, true);
+  if (method === "POST" && path === "/api/queue/unmanual") return batchManual(body, false);
   if (method === "GET" && path === "/api/applied") return appliedResponse();
   if (method === "GET" && path === "/api/answers") return ANSWERS;
   // Dev serves no built bundle and its code is whatever Vite just reloaded: never stale.
@@ -412,7 +457,7 @@ function route(method: string, path: string, body: unknown): unknown {
   }
 
   const actionMatch =
-    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup|reveal)$/.exec(
+    /^\/api\/queue\/(\d+)\/(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup|manual|unmanual|reveal)$/.exec(
       path,
     );
   if (method === "POST" && actionMatch) {
@@ -445,6 +490,14 @@ function route(method: string, path: string, body: unknown): unknown {
     if (action === "unskip") {
       skippedPostingIds.delete(row.posting_id);
       return { outcome: "unskipped" };
+    }
+    if (action === "manual") {
+      manualJobIds.add(row.job_id);
+      return { outcome: "manual" };
+    }
+    if (action === "unmanual") {
+      manualJobIds.delete(row.job_id);
+      return { outcome: "unmanual" };
     }
     if (action === "disputed") {
       disputedJobIds.add(row.job_id);

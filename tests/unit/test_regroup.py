@@ -20,7 +20,9 @@ from boardwatch.store.ledger_queries import (
 )
 from boardwatch.store.queue_state import (
     followup_job_dates,
+    manual_job_ids,
     mark_job_disputed,
+    mark_job_manual,
     mark_job_reported,
     mark_job_skipped,
     reported_job_ids,
@@ -530,6 +532,10 @@ def _mark_report(conn: Connection, job_id: int) -> None:
     mark_job_reported(conn, job_id=job_id, at=NOW)
 
 
+def _mark_manual(conn: Connection, job_id: int) -> None:
+    mark_job_manual(conn, job_id=job_id, at=NOW)
+
+
 def _mark_followup(conn: Connection, job_id: int) -> None:
     set_job_followup(conn, job_id=job_id, on=NOW.date())
 
@@ -537,6 +543,7 @@ def _mark_followup(conn: Connection, job_id: int) -> None:
 QUEUE_ACTIONS = [
     pytest.param(_mark_skip, skipped_job_ids, id="skip"),
     pytest.param(_mark_report, reported_job_ids, id="report"),
+    pytest.param(_mark_manual, manual_job_ids, id="manual"),
     pytest.param(_mark_followup, followup_job_dates, id="followup"),
 ]
 
