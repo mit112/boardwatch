@@ -52,7 +52,7 @@ from boardwatch.delivery.answers import (
     WORK_AUTH_STATUS_WORDS,
 )
 from boardwatch.delivery.api import ApiContext, local_today
-from boardwatch.delivery.queue import SKIPPED_DIR, sync_queue
+from boardwatch.delivery.queue import MANUAL_DIR, SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
     FOLLOWUP_DATE_REASON,
@@ -1665,6 +1665,69 @@ def test_report_removes_a_lead_and_unreport_restores_it(live: Live, engine: Engi
     back = call(live, "/api/queue", bearer=live.token).json()
     assert [row["posting_id"] for row in back["rows"]] == [posting_id]
     assert back["counts"]["reported"] == 0
+
+
+def test_a_batch_manual_move_lists_the_leads_apart_and_one_call_undoes_it(
+    live: Live, engine: Engine, ctx: ApiContext
+) -> None:
+    """The apply-by-hand contract end to end: one call moves a selection out of Jobs to explore
+    into the `manual` list and `_manual/` on disk, an id in no lane is named in `failed`, it is
+    neither a skip nor an application, and one `unmanual` call puts every lead back."""
+    with engine.begin() as conn:
+        one, job_one = _deliver(conn, "one")
+        two, job_two = _deliver(conn, "two")
+    with engine.connect() as conn:
+        sync_queue(conn, root=ctx.queue_root, owner_name=ctx.owner_name)
+    standing = _queue_folders(ctx.queue_root)
+    assert len(standing) == 2, "two folders have to exist or the move below is unfalsifiable"
+
+    moved = call(
+        live,
+        "/api/queue/manual",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, 999999, job_two]},
+    )
+    assert moved.status == 200, moved.body[:200]
+    assert moved.json() == {"manual": [job_one, job_two], "failed": [999999]}
+    assert _queue_folders(ctx.queue_root) == []
+    assert _queue_folders(ctx.queue_root / MANUAL_DIR) == standing
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert page["rows"] == [] and page["review"] == []
+    assert sorted(row["posting_id"] for row in page["manual"]) == sorted([one, two])
+    assert page["counts"]["manual"] == 2
+    assert (page["counts"]["skipped"], page["counts"]["applied_ever"]) == (0, 0)
+
+    undone = call(
+        live,
+        "/api/queue/unmanual",
+        method="POST",
+        bearer=live.token,
+        body={"job_ids": [job_one, job_two]},
+    )
+    assert undone.json() == {"manual": [job_one, job_two], "failed": []}
+    assert _queue_folders(ctx.queue_root) == standing
+    assert _queue_folders(ctx.queue_root / MANUAL_DIR) == []
+    back = call(live, "/api/queue", bearer=live.token).json()
+    assert sorted(row["posting_id"] for row in back["rows"]) == sorted([one, two])
+    assert (back["manual"], back["counts"]["manual"]) == ([], 0)
+
+
+def test_a_single_manual_move_and_its_undo(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        posting_id, _job = _deliver(conn, "one")
+
+    moved = call(live, f"/api/queue/{posting_id}/manual", method="POST", bearer=live.token)
+    assert moved.json() == {"outcome": "manual"}
+    page = call(live, "/api/queue", bearer=live.token).json()
+    assert page["rows"] == []
+    assert [row["posting_id"] for row in page["manual"]] == [posting_id]
+
+    undone = call(live, f"/api/queue/{posting_id}/unmanual", method="POST", bearer=live.token)
+    assert undone.json() == {"outcome": "unmanual"}
+    back = call(live, "/api/queue", bearer=live.token).json()
+    assert [row["posting_id"] for row in back["rows"]] == [posting_id]
+    assert back["manual"] == []
 
 
 def test_reporting_a_posting_that_does_not_exist_is_a_404(live: Live, engine: Engine) -> None:

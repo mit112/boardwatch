@@ -9,7 +9,8 @@ below the skip ones.
 A **follow-up** is the third key here and the one that excludes NOTHING: it is a date pinned to a
 lead, so it changes no lane and no state. It shares this file only because it shares the
 mechanism. See the follow-up functions at the bottom. A **dispute** is the fourth, and excludes
-nothing either: the owner's disagreement with an `ineligible` verdict, kept for the audit.
+nothing either: the owner's disagreement with an `ineligible` verdict, kept for the audit. A
+**manual** lead is the fifth, and an exclusion like skip and report: "I will apply to this by hand".
 
 Skip deliberately does NOT live in `applications`. Two independent reasons, and either one
 alone would be enough:
@@ -177,6 +178,49 @@ def disputed_job_ids(conn: Connection) -> dict[int, str]:
             continue
         disputed[int(suffix)] = "" if row.value is None else str(row.value)
     return disputed
+
+
+# ---------------------------------------------------------------------------------------- manual
+#
+# The fifth key, and the third queue EXCLUSION: "I will apply to this one by hand". A lead behind an
+# account wall (Workday, SuccessFactors, an employer's own candidate portal) or one the owner simply
+# chose to apply to themselves has nowhere else to go — a skip says "not interested" and drains to
+# `_skipped` for good, a report disputes the verdict. A manual lead is live work the owner WANTS,
+# so it leaves Jobs to explore for its own list and its own `_manual` drain, and stays recoverable.
+# `queue.manual.<job_id>` -> the ISO-8601 instant it was moved. The reader mirrors
+# `reported_job_ids` for the reason that one gives.
+
+MANUAL_KEY_PREFIX = "queue.manual."
+
+
+def _manual_key(job_id: int) -> str:
+    return f"{MANUAL_KEY_PREFIX}{job_id}"
+
+
+def mark_job_manual(conn: Connection, *, job_id: int, at: datetime) -> None:
+    """Move a job to the apply-by-hand list. Idempotent: a repeat re-stamps `at`."""
+    set_state(conn, _manual_key(job_id), at.isoformat())
+
+
+def unmark_job_manual(conn: Connection, *, job_id: int) -> None:
+    """Move a job back out of the apply-by-hand list. A job never moved is a no-op, not an error."""
+    conn.execute(delete(app_state).where(app_state.c.key == _manual_key(job_id)))
+
+
+def manual_job_ids(conn: Connection) -> dict[int, str]:
+    """job_id -> the ISO-8601 instant it was moved to the apply-by-hand list. ONE statement."""
+    rows = conn.execute(
+        select(app_state.c.key, app_state.c.value).where(
+            app_state.c.key.like(f"{MANUAL_KEY_PREFIX}%")
+        )
+    ).all()
+    manual: dict[int, str] = {}
+    for row in rows:
+        suffix = str(row.key)[len(MANUAL_KEY_PREFIX) :]
+        if not suffix.isdecimal():
+            continue
+        manual[int(suffix)] = "" if row.value is None else str(row.value)
+    return manual
 
 
 # ------------------------------------------------------------------------------------- follow-up

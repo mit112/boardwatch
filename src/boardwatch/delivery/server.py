@@ -56,7 +56,7 @@ import re
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -112,10 +112,12 @@ from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.queue_state import (
     clear_job_followup,
     mark_job_disputed,
+    mark_job_manual,
     mark_job_reported,
     mark_job_skipped,
     set_job_followup,
     unmark_job_disputed,
+    unmark_job_manual,
     unmark_job_reported,
     unmark_job_skipped,
 )
@@ -191,13 +193,21 @@ _T = TypeVar("_T")
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _QUEUE = re.compile(r"^/api/queue$")
 _QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
-#: The BATCH skip and its undo. Disjoint from `_QUEUE_ACTION` by construction: that one requires
-#: a posting id, so `skip` can never be read as one.
-_QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip)$")
+#: The BATCH skip and manual moves, and their undos. Disjoint from `_QUEUE_ACTION` by
+#: construction: that one requires a posting id, so `skip` can never be read as one.
+_QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip|manual|unmanual)$")
+#: Each batch verb's write, and the response key naming the ids it acted on. ONE key per
+#: dimension for both directions, so an undo needs no second parser.
+_BATCH_WRITES: dict[str, tuple[Callable[[Connection, int, datetime], None], str]] = {
+    "skip": (lambda conn, job_id, at: mark_job_skipped(conn, job_id=job_id, at=at), "skipped"),
+    "unskip": (lambda conn, job_id, _at: unmark_job_skipped(conn, job_id=job_id), "skipped"),
+    "manual": (lambda conn, job_id, at: mark_job_manual(conn, job_id=job_id, at=at), "manual"),
+    "unmanual": (lambda conn, job_id, _at: unmark_job_manual(conn, job_id=job_id), "manual"),
+}
 _QUEUE_ACTION = re.compile(
     r"^/api/queue/(\d+)/"
     r"(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup"
-    r"|reveal)$"
+    r"|manual|unmanual|reveal)$"
 )
 #: The applied history's follow-up write, keyed on a JOB rather than a posting. Disjoint from
 #: every `_QUEUE*` route above by prefix: an imported application has no posting the queue
@@ -520,7 +530,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, payload)
                 return
         if method == "POST" and (batch := _QUEUE_BATCH.match(path)) is not None:
-            self._skip_batch(skip=batch.group(1) == "skip")
+            self._queue_batch(batch.group(1))
             return
         if method == "POST" and (action := _QUEUE_ACTION.match(path)) is not None:
             self._action(int(action.group(1)), action.group(2))
@@ -631,6 +641,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if action in ("reported", "unreport"):
             self._report(posting_id, report=action == "reported")
             return
+        if action in ("manual", "unmanual"):
+            self._manual(posting_id, manual=action == "manual")
+            return
         if action in ("followup", "unfollowup"):
             self._followup(posting_id, clearing=action == "unfollowup")
             return
@@ -678,8 +691,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "skipped" if skip else "unskipped"})
 
-    def _skip_batch(self, *, skip: bool) -> None:
-        """Skip — or un-skip — a whole selection in ONE transaction.
+    def _queue_batch(self, verb: str) -> None:
+        """Skip — or un-skip, or move to / back from the manual list — a whole selection in ONE
+        transaction. Skip is the case described below; manual is the same shape on its own key.
 
         Nothing here is a second skip implementation. It is the per-item route's own work, called
         per id: `mark_job_skipped` / `unmark_job_skipped` keyed on the canonical `job_id`, inside
@@ -706,6 +720,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
             }
         )["standing"]
 
+        write, key = _BATCH_WRITES[verb]
+
         def work(conn: Connection) -> tuple[list[int], list[int]]:
             done: list[int] = []
             unknown: list[int] = []
@@ -714,10 +730,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 if job_id not in standing:
                     unknown.append(job_id)
                     continue
-                if skip:
-                    mark_job_skipped(conn, job_id=job_id, at=at)
-                else:
-                    unmark_job_skipped(conn, job_id=job_id)
+                write(conn, job_id, at)
                 done.append(job_id)
             return done, unknown
 
@@ -725,10 +738,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
         if result is None:
             return
         self._reconcile()
-        # `skipped` for both directions, exactly as the request path names both `skip` and
-        # `unskip`: the key means "the ids this call acted on", so one client shape covers both
+        # `skipped` (or `manual`) for both directions, exactly as the request path names both `skip`
+        # and `unskip`: the key means "the ids this call acted on", so one client shape covers both
         # and the undo needs no second parser.
-        self._json(HTTPStatus.OK, {"skipped": result[0], "failed": result[1]})
+        self._json(HTTPStatus.OK, {key: result[0], "failed": result[1]})
 
     def _batch_ids(self) -> list[int] | None:
         """`{"job_ids": [...]}` as a de-duplicated list of ints in request order, or None once
@@ -790,6 +803,29 @@ class ReviewHandler(BaseHTTPRequestHandler):
             return
         self._reconcile()
         self._json(HTTPStatus.OK, {"outcome": "reported" if report else "unreported"})
+
+    def _manual(self, posting_id: int, *, manual: bool) -> None:
+        """Move a lead to the owner's apply-by-hand list, or back. Keyed on the canonical `job_id`
+        like skip and report, and reconciled like them: the folder moves to or from `_manual`."""
+
+        def work(conn: Connection) -> MarkResult:
+            job_id = job_id_for_posting(conn, posting_id)
+            if job_id is None:
+                return MarkResult(MarkOutcome.NO_POSTING)
+            if manual:
+                mark_job_manual(conn, job_id=job_id, at=utcnow())
+            else:
+                unmark_job_manual(conn, job_id=job_id)
+            return MarkResult(MarkOutcome.TRANSITIONED, job_id=job_id)
+
+        result = self._write(work)
+        if result is None:
+            return
+        if result.outcome is MarkOutcome.NO_POSTING:
+            self._error(HTTPStatus.NOT_FOUND, "no such posting")
+            return
+        self._reconcile()
+        self._json(HTTPStatus.OK, {"outcome": "manual" if manual else "unmanual"})
 
     def _dispute(self, posting_id: int, *, dispute: bool) -> None:
         """Record — or withdraw — the owner's disagreement with a lead's rejection.

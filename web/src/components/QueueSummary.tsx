@@ -178,7 +178,7 @@ export function QueueSummary({
   );
 }
 
-export type Lens = "explore" | "review" | "all";
+export type Lens = "explore" | "review" | "all" | "manual";
 
 export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
   {
@@ -197,12 +197,18 @@ export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
     key: "all",
     label: "All jobs",
     blurb:
-      "Jobs to explore and Needs review together, with no job counted twice. Filtered-out, closed, skipped and already-applied jobs are not included.",
+      "Jobs to explore and Needs review together, with no job counted twice. Filtered-out, closed, skipped, already-applied and Apply by hand jobs are not included.",
+  },
+  {
+    key: "manual",
+    label: "Apply by hand",
+    blurb:
+      "Jobs you moved here to apply to yourself — they need an account or a manual form. They stay out of Jobs to explore until you move them back.",
   },
 ];
 
 /*
- * The three lists, as a group of toggle buttons. Each count is the number of jobs IN THAT LIST
+ * The four lists, as a group of toggle buttons. Each count is the number of jobs IN THAT LIST
  * that match the current search, place and work arrangement — never a sum across lists that could
  * overlap — and the sentence under the buttons says what the selected list is and what "All"
  * leaves out. A tab-panel pattern would promise arrow-key semantics the buttons do not have, so

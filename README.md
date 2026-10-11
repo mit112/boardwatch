@@ -187,7 +187,8 @@ What a run leaves behind:
   description, a link to the posting (`apply.webloc` on macOS, `apply.url` on Windows,
   `apply-link.txt` elsewhere) and a `details.json`. Leads a check could not clear wait in
   `_review/`, without a PDF, for you to read first; what you act on moves to `_applied/`,
-  `_skipped/` or `_reported/`.
+  `_skipped/` or `_reported/`, and leads you will apply to yourself (an account-wall board, say)
+  move to `_manual/`.
 - **`~/boardwatch-applications/<date>/`** — the day's render folders, a `morning-<run>.md`
   summary, and a `funnel-<run>.md` that accounts for every posting the run considered.
 

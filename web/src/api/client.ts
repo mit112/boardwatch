@@ -27,6 +27,7 @@ import type {
   AppliedResponse,
   DisputeResponse,
   RejectedResponse,
+  BatchManualResponse,
   BatchSkipResponse,
   FollowUpResponse,
   QueueDetail,
@@ -133,6 +134,23 @@ export const skipMany = (jobIds: number[]): Promise<BatchSkipResponse> =>
 
 export const unskipMany = (jobIds: number[]): Promise<BatchSkipResponse> =>
   request<BatchSkipResponse>("/api/queue/unskip", "POST", { job_ids: jobIds });
+
+/**
+ * Move a lead to "Apply by hand", and back. Its own dimension, not a skip: a manual lead is a live
+ * job the owner wants, so it stays listed under `manual` rather than draining away.
+ */
+export const markManual = (postingId: number): Promise<SkipResponse> =>
+  request<SkipResponse>(`/api/queue/${String(postingId)}/manual`, "POST");
+
+export const unmanual = (postingId: number): Promise<SkipResponse> =>
+  request<SkipResponse>(`/api/queue/${String(postingId)}/unmanual`, "POST");
+
+/** The batch pair, keyed on `job_id` exactly as `skipMany` is and for the same reason. */
+export const manualMany = (jobIds: number[]): Promise<BatchManualResponse> =>
+  request<BatchManualResponse>("/api/queue/manual", "POST", { job_ids: jobIds });
+
+export const unmanualMany = (jobIds: number[]): Promise<BatchManualResponse> =>
+  request<BatchManualResponse>("/api/queue/unmanual", "POST", { job_ids: jobIds });
 
 export const report = (postingId: number): Promise<ReportResponse> =>
   request<ReportResponse>(`/api/queue/${String(postingId)}/reported`, "POST");

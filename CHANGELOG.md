@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **An "Apply by hand" list in the web viewer.** Select leads in Jobs to explore and press
+  "Move to manual" to take them out of that list without skipping them. Use it for jobs that need
+  an account (Workday, SuccessFactors, an employer's candidate portal) or that you simply want to
+  apply to yourself. They appear under a fourth list, "Apply by hand", where "Move back" returns
+  them. Both are one write for the whole selection, with an undo on the toast. Their folders move
+  to `~/boardwatch-queue/_manual/`. The state is `queue.manual.<job_id>` and is kept apart from
+  skip and report. Applied, skipped, reported and closed all outrank it. A job carrying it is
+  protected from regrouping like the other queue actions. New routes:
+  `POST /api/queue/manual` and `/unmanual` (batch, `{"job_ids": [...]}`), and
+  `POST /api/queue/<id>/manual` and `/unmanual`. `GET /api/queue` gains `manual` and `counts.manual`.
 - **Faster triage in the web viewer's queue.** Coming back to the tab after opening a lead's apply
   page (with `o` or a click on its apply link) asks "Did you apply?"; `a` marks it applied, Esc
   dismisses. Leads at one company under one title that differ only by city or formatting carry a
