@@ -57,8 +57,9 @@ before the switch. **Next run (2026-10-12 04:00) is the first Claude-judged run 
 `refresh_budget`.
 
 **Closing by the owner:** `boardwatch postings close --ids … --evidence … --apply` and `postings reopen` (D-630, #551). The
-Job apps session's 28 hand-closed LinkedIn postings (2026-10-11 12:59 UTC; skips 381 → 353) carry their `closed` events
-under **daily run 550**, which never observed them. Correcting that is a live-store edit waiting on the owner's call.
+Job apps session's 28 hand-closed LinkedIn postings (2026-10-11 12:59 UTC; skips 381 → 353) first carried their `closed`
+events under daily run 550. On the owner's call they were moved to run 551, a run of their own, with an evidence row each (D-632):
+run 550's closed events went 11,314 → 11,286.
 
 **Queue cleanup:** the 98 duplicate manual folders the Job apps session parked in its scratchpad were compared with
 `_manual/` (377 identical files, 12 regenerated `details.json`, nothing unique) and deleted.
