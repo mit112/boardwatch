@@ -1,5 +1,15 @@
 # STANDING FACTS — what a fresh session should not re-derive
 
+> **2026-10-05: no Claude subscription is currently active (owner confirmation, D-621).**
+> The retained judge sessions report `oauth_org_not_allowed`; the older October 1 seat note below is historical.
+> Authentication changes, new model calls and live-store recovery still require the owner’s go-ahead.
+
+> **2026-10-01: the enterprise seat ended; one Claude subscription now.** The gate judge runs on the personal
+> login: `gate.claude_config_dir` is unset in `config.toml` and the launchd plist no longer sets
+> `CLAUDE_CONFIG_DIR` (`~/.claude-boardwatch` archived as `~/.claude-boardwatch.retired-2026-10-01`). Every
+> "enterprise seat" / "executors on the seat" line in this file or the logs is history. Headless fan-out
+> now spends Mit's only window and needs his go-ahead.
+
 > Split out of `STATE.md` (D-139), which had grown to twice its stated length and was being read past.
 > **`STATE.md` is still the read-first file**; this one is reference, read by section when you are about
 > to touch the thing it describes.
@@ -5023,3 +5033,225 @@ all three.
 3. After the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272; T278–T280.
 4. The viewer's suggested usability comparison and its "not verified" list stand as written in the 2026-10-02 block (now in
    `STANDING-FACTS.md`).
+
+
+## Settled session blocks moved out of STATE on 2026-10-05 (verbatim)
+
+### 2026-10-04 — **DAY 8 IS RUN 533 AND FAILS B8: 13 NET-NEW APPLY LEADS; THE JUDGE ANSWERED NO BATCHES** (D-620). Read-only audit; no code, profile, rule, config or live-store change. The viewer was restarted.
+
+**Verify first:** the primary on `main`, carrying the owner's uncommitted enterprise-seat notes in `STATE.md` and
+`STANDING-FACTS.md`, the untracked pilot doc and `.agents/skills/verify/` (leave all four alone; stash the two tracked notes
+by ref around a pull). No daily run active; tick **enabled**. One viewer on port 8799, restarted this session (pid 50923).
+Store: `/Volumes/mit/boardwatch/boardwatch.db`; always read with `mode=ro`.
+
+**Read:** run **533**, `ok`, finished 09:00:06 → 11:21:16 UTC (2 h 21 m). B1 **36 net-new** (39 funnel / new folders),
+B2 13/13, B3 all one page, B4 0 unmatched on 13 PDFs (219 bullets; fabrication control fires), B5–B7 pass (0 work-auth abstain
+on 12,682), **B8 13 < 20 — FAIL**. `day_row.py 533 8` exits 1. `status=ok` is not an acceptance pass.
+Gate: **0 judged, 3 failed-open batches**, cached 5, 29 missing answers, 34 readings absent; refresh 0/145. Backlog 23 sent,
+0 judged, 2 failed-open batches, 127 skipped by breaker, 6,130 candidates. Every failed batch says `claude exited 1` with
+empty stderr; the saved evidence does not establish the cause. No new headless call or live-store recovery was attempted.
+**The seven-day passing streak is broken. October 10 cannot be claimed as completion from this record.** Keep the existing
+freeze and after-October-10 holds; a new qualifying streak or an owner-ruled recovery needs explicit recording.
+
+**Compared with daily run 531, not manual render row 532:** scan 4,697 vs 6,289 s, eligibility 835 vs 1,051, tailor 2,241 vs
+4,658 (13 vs 27 PDFs), gate 17 vs 97. The shorter run is not proof of healthy throughput: the judge failed. Boards attempted
+2,931, complete 1,907, unchanged 949, partial 59, failed 16 (531: 2,868 / 1,894 / 893 / 66 / 15). Board-deadline hits 5 → 4;
+null controls reproduce 524:35, 527:9, 528:6, 530:7, 531:5. No `WalUnsafe`, `locked`, `Traceback` or `gate refresh batch`
+after the run-531 summary. No config-dir `boardwatch.db*`. Inventory: 670 open apply-lane folders, 0 missing PDFs, all one
+page; `/api/queue` **670/670** after viewer restart (initially no listener). Buried-open 243 → 236; held captures 9/9 jobapps
+and 35/35 LinkedIn released, oraclehcm 1 held. Boot disk **24 GiB free**; no tracing or deletion.
+
+**Owner ruling:** backup stays as it is — the store and newest backup on the same SSD (D-620). The cross-disk backup call
+is closed; no backup copied or schedule changed.
+
+**Next, in order:**
+1. Resolve the judge's exit-1 failure before trusting gate-derived placements. Its error path saves stderr only; the cause
+   remains unknown. Headless diagnostics spend the owner's only window; any live-store rerun needs the owner's go-ahead.
+   Do not silently turn run 533 into a pass or change the acceptance thresholds.
+2. Read the next daily run with `day_row.py` and B4, and repeat the inventory, queue, buried, held-capture and disk checks.
+   Record its streak position explicitly; day 9 of the old passing sequence is not supported. Compare to daily run 533.
+3. Existing holds remain through the 2026-10-10 run: T277, T273, T274, T265, T268 items 2–4, T272, T278–T280. The key `a`,
+   past-seven-days viewer window and leave-the-disk-alone rulings stand (D-619).
+
+### 2026-09-29b — **THE LIVE STORE NOW LIVES ON THE OWNER'S EXTERNAL NVMe SSD (config `data_dir`); THE NIGHTLY RUN STARTS THROUGH A MOUNT GUARD** (D-613). No repo code change; machine-local config, launchd and a copied store. **The store is NOT under the config dir any more** — anything that read the old location (a probe, a scratch clone, a hand-typed `sqlite3` path) reads a STALE frozen copy.
+
+**Verify first (adds to the block below):** `python -c "from boardwatch.core.settings import load_settings; print(load_settings().data_dir)"` prints the SSD path; **no `boardwatch.db*` exists under the config dir** (a file there means something re-created the old store); the SSD volume is mounted; the viewer's open handle is the SSD store (`lsof -p <pid> | grep boardwatch.db`).
+
+**Done:** online backup → `quick_check` ok, 28/28 tables equal, same alembic head; `tailored/` and `projected/` copied byte-identical and the old paths left as **symlinks** (423 `artifacts.uri` rows point at the old `tailored/`; all resolve); config backed up; plist edited textually and reloaded; viewer restarted. The old store sits in a rollback folder under the config dir (its README says what to check) until **one clean run on the SSD store**; a one-shot reminder fires 2026-09-30 09:00.
+
+**Next, in order (the 2026-09-29 block's items follow):**
+1. **Day 4 (the 2026-09-30 04:00 run) is also the FIRST run on the SSD store.** **DONE 2026-09-30 (D-614): the 04:00 run (526) was killed by a reboot; the rerun, run 527, is the first clean SSD run.** Read it for that too: the run id is above 525 in the SSD store, the wrapper did not exit 75, the log has no `WalUnsafe`/lock errors, and **`stage_durations` against run 524 are the only measure of any speed change** (unmeasured). If it failed on the store, do NOT delete the rollback copy; reversal is the `config.toml.bak-…` and plist `.bak-…` beside the originals.
+2. Only after a clean read: delete the rollback folder (~21 GB internal). **DONE 2026-09-30 19:27 (D-614): deleted, disk 52 GiB free.** Then re-take the disk-free number — it will step up ~21 GiB.
+3. **RULED 2026-10-04 (D-620): keep it as it is.** The store and its newest full backup stay on the same SSD; no cross-disk backup armed; a manual `boardwatch` command with the SSD unmounted is unguarded (it would create an empty store on the boot disk).
+
+
+### 2026-09-28d — **T269 AND T270 SHIP; T268 IS SPLIT — its one-refusal half ships, the rest waits for day 14 AND a redesign; T251 (Windows) ships test-only** (D-609). The owner ruled five calls at 18:42 ("go with your recommendations"). Nothing touched the live store, the config or a run. **Day 3 (the 2026-09-29 04:00 run) is UNREAD: its read is the next session's first job** — the 2026-09-28b block's items 1–4, unchanged.
+
+**Verify first:** `git log --oneline -6 origin/main` (this record, T251 #525, T268a #524, #523 T269, #522 T270); the primary on
+`main` at this record, with `git -C boardwatch pull --ff-only` only when no run is active (it is the daily run's code); no run active.
+
+**Done:** #522 (T270: `config show` text, `config set lanes_enabled` check, the web-token mode, the Docker/CI warm-up that
+now renders offline), #523 (T269), #524 (T268 item 1), #525 (T251). T271 (the text residuals) and T272 (T251's
+Windows production bugs) filed. Branch `t268-resume-setup` (T268 items 2–3) is kept UNMERGED.
+
+**Next:** (1) DONE 2026-09-28f — the day-3 read (D-611). (2) After the 2026-10-10 run: T268 items 2–3 **after redesign** (Codex found
+two real defects in the owner-name check, see T268's status block), T268 item 4 as ruled (option A), T272, T265.
+Worktrees `bw-t268`, `bw-t268a`, `bw-t269`, `bw-t270`, `bw-t251`, `bw-warmup`, `bw-record` are this session's; they are safe to remove once merged.
+
+## Settled session block moved out of STATE on 2026-10-06 (verbatim)
+
+### 2026-10-05 — **RUN 534 FAILS B8 AGAIN; THE JUDGE’S ACCESS FAILURE IS DIAGNOSED** (D-621). Read-only audit and viewer restart; no code, config, authentication or live-store recovery change.
+
+**Verified:** primary `main` at the day-8 record, preserving the owner’s two tracked enterprise-seat notes,
+untracked pilot doc and `.agents/skills/verify/`. Run PID 91637 exited before the final audits. Tick **enabled**;
+viewer restarted on loopback 8799 (PID 97955), authenticated queue **646/646 PDFs**. Store remains
+`/Volumes/mit/boardwatch/boardwatch.db`; no config-dir `boardwatch.db*`; all probes used `mode=ro`.
+
+**Diagnosis:** retained Claude sessions for all five run-533 calls and all nine run-534 calls carry
+`oauth_org_not_allowed`: the organization has disabled Claude subscription access for Claude Code.
+The owner confirms **no Claude subscription is currently active**. The run log hides that evidence because
+`gate_judge` reports only stderr on a nonzero exit, discarding stdout. No fresh headless call was needed.
+No login change, re-judge or rerun was attempted; gate-dependent placements are **not newly verified**.
+
+**Read:** run **534**, `ok`, 09:00:06 → 11:43:51 UTC (2 h 44 m); the process continued emitting reports
+and syncing delivery until about 12:14 UTC, roughly 30 minutes beyond `finished_at`. `day_row.py` exits **1**.
+B1 **49 net-new** (51 funnel leads; queue log **33 new folders**, a different physical count), B2 15/15,
+B3 all one page, B4 **0 unmatched on 15 PDFs / 251 bullets**, real control matches and fabrication control fails;
+645 skill items all sourced. B5–B7 pass; 0 work-auth abstain on 12,681. **B8 13 net-new apply leads < 20 — FAIL**
+(15 total apply placements). Review 36: 24 no requirements, 9 experience, 1 seniority, 2 unevaluated.
+This is historical sequence day 9, **not day 9 of a passing streak**; current qualifying streak **0**.
+The existing closed B8 precision census is unchanged; no new precision claim about failed-open placements.
+
+**Judge:** main 0 judged / 4 failed-open batches, cached 4, 45 sent and missing, 47 readings absent;
+refresh 29/179 sent, all 179 still stale, 3 failed batches. Backlog 6,160 candidates, 9 sent / 0 judged,
+2 failed batches, breaker skips 141. Compared with run 533, stage seconds: scan **5,005 vs 4,697**,
+eligibility **1,145 vs 835**, tailor **2,818 vs 2,241** (15 vs 13 PDFs), gate **34 vs 17**.
+Neither gate time is healthy throughput. Boards attempted 2,942, complete 1,900, unchanged 940,
+partial 87, failed 15 (533: 2,931 / 1,907 / 949 / 59 / 16). Board-deadline hits **4 → 3**;
+historical controls reproduce 524:35, 527:9, 528:6, 530:7, 531:5. No `WalUnsafe`, standalone `locked`
+or `Traceback` after the run-533 summary; refresh failures are present. Inventory **646 open apply folders**,
+0 missing PDFs, all one page; buried-open **236 → 233**. Held captures unchanged: 9/9 jobapps and
+35/35 LinkedIn released, oraclehcm 1 held. Boot disk **16.6 GiB free**; nothing traced, deleted or backed up.
+
+**Next:** restore model access only on the owner’s authorization, then authorize any diagnostic call or
+live recovery separately. Until then measure each daily run honestly without treating cached or failed-open
+placements as fresh judge clearance. No completion date is evidenced. The 14-consecutive-run bar, freeze,
+after-October-10 work holds and keep-backups-as-is ruling remain unchanged. Local `make check` is the gate.
+
+## Settled session block moved out of STATE on 2026-10-06b (verbatim)
+
+### 2026-10-06 — **RUN 535 FAILS B8 AND JUDGE HEALTH; STREAK REMAINS ZERO** (D-622). Read-only daily acceptance audit and viewer restart; no code, config, authentication or live-store change.
+
+**Verified:** primary `main` remains at the merged day-8 record. No run process appeared in the required
+`ps -Ao pid,args` check before editing; the run had exited by the first probe. All five dirty tracked
+program docs and both untracked owner paths are preserved. Tick **enabled**; viewer restored on loopback
+8799 (PID 70569), authenticated queue **638/638 PDFs** (21.83 s). Store reads used the SSD URI with
+`mode=ro`; no config-dir `boardwatch.db*`. Existing linked worktrees remain untouched.
+
+**Read:** run **535**, `ok`, 09:00:06 → 11:55:02 UTC (2 h 55 m). `day_row.py` exits **1**.
+B1 **43 net-new** (43 funnel; 43 new queue folders), B2 8/8, B3 all one page, B4 **0 unmatched on
+8 PDFs / 136 bullets**, all 344 skill items sourced; real control matches, fabricated 40→45 control fails.
+B5–B7 pass; 0 work-auth abstain on 13,121. **B8 8 net-new apply leads < 20 — FAIL** (534: 13).
+Review 35: 26 no requirements, 6 unevaluated, 3 experience. Historical sequence **day 10**;
+current qualifying streak **0**. Closed pooled B8 precision census unchanged; no fresh precision claim.
+
+**Judge:** main 0 judged / 3 failed-open batches, cached 1, 36 sent and missing, 42 readings absent;
+refresh 59/210 sent, all 210 pending, 5 failed batches. Backlog 6,289 candidates, 21 sent / 0 judged,
+2 failed batches, breaker skips 129. All ten retained run-window Claude sessions contain gate prompts
+and `oauth_org_not_allowed`; no new diagnostic call. The owner’s no-active-subscription confirmation
+(D-621) still governs. Gate-dependent placements are **not freshly judge-verified**.
+
+**Versus 534:** stage seconds scan **7,301 / 5,005**, eligibility **1,047 / 1,145**, tailor **1,433 / 2,818**
+(8 / 15 PDFs), gate **33 / 34**; failed gate time is not healthy throughput. Boards attempted 2,955,
+complete 2,527, unchanged 321, partial 91, failed 16 (534: 2,942 / 1,900 / 940 / 87 / 15).
+Deadline hits **3 → 5**; historical controls reproduce 524:35, 527:9, 528:6, 530:7, 531:5, 533:4.
+Buried-open **233 → 231**; one previously cleared posting (669977) closed undelivered. Independent
+inventory: **638 open apply folders**, no missing PDFs, all one page. Four already-applied jobs remain
+in physical folders (also four yesterday); identity probes report 26 cross-host / 80 loose redundancies,
+which are standing-inventory diagnostics, not a new per-run dedup census. Held captures unchanged:
+9/9 jobapps and 35/35 LinkedIn released, oraclehcm 1 held. No `WalUnsafe`, standalone `locked` or
+`Traceback` in the run log after the run-534 summary; refresh failures are present. Boot disk **18.1 GiB**
+free, SSD **299.1 GiB**; nothing traced, deleted or backed up.
+
+**Next:** read the next scheduled daily run against 535; keep the historical sequence separate from the
+passing streak. Model access, new diagnostics and live recovery remain separately owner-gated (D-621).
+No completion date is evidenced. The 14-consecutive-frozen-run bar, after-October-10 work holds and
+keep-backups-as-is ruling are unchanged. `make check` remains the repository gate.
+
+### 2026-10-07 — **FIRST SCHEDULED GPT RUN WORKS; B8 STILL FAILS, STREAK ZERO** (D-624). Read-only daily audit against 535; no manual run, re-judge or render.
+
+Run **536** is historical day **11**, not a qualifying day: **20 net-new leads** of 26 delivered,
+**12 net-new apply** of 14 apply placements, below B8's 20. `day_row.py` exits **1**. B2 14/14,
+B3 all one page / no tailor failure, B5–B7 pass; work-auth abstain 0 on 13,424. Independent B4:
+0 unmatched on **14 PDFs / 234 bullets**, all **602 skills** sourced; the real bullet matches and
+fabricated 40→45 control fails. No fresh GPT precision census; the historical opus census is not
+inherited. Qualifying streak **0**, 14 frozen daily runs still required, no completion date.
+
+**GPT is evidenced live:** main 43 judged (13 E / 19 I / 11 U), no failed-open batch, missing or
+refused item; two delivered readings absent. Refresh **130/1,062**, 932 pending; backlog **150/150**
+judged (144 E / 6 U), no failure or breaker skip, 7,440 candidates. The actual ledger contains
+**323** `codex-agent` / `codex:gpt-6.1-sol` readings (247 E / 40 I / 36 U); sampled metadata records
+high effort. Refresh's 130 readings account for 90 E / 21 I / 19 U. All other LLM lanes remain off.
+
+**Coverage is still incomplete:** authenticated API **395 apply / 363 PDFs**, review 693;
+90 judge-eligible, 3 judge-uncertain, **302 unjudged**. Physical top-level queue independently agrees:
+395 open folders, 363 one-page PDFs, **32 missing**; one already-applied job, 14 cross-host and 44
+loose redundancies are standing diagnostics, not new per-run dedup findings. Viewer was absent at
+session start and restored on loopback 8799 (PID 50880). No token printed or authentication changed.
+No manual recovery or render; those still require the owner's separate authorization.
+
+**Against 535:** scan 6,828/7,301 s; eligibility 1,082/1,047; tailor 3,000/1,433 (14/8 PDFs);
+gate 581/33 s (the failed Claude time is not healthy throughput). Database wall 3 h 22 m,
+09:00:06–12:22:13 UTC; final funnel appeared 12:56:49 UTC, process exited by 12:57:38–12:58 UTC.
+The exact scheduled PID **28786** was awaited with `kill -0` before editing. Queue sync: 25 new
+folders, independently distinguished from 26 funnel leads and 20 net-new jobs. Boards 2,996 attempted,
+2,116 complete, 759 unchanged, 102 partial, 19 failed; deadline hits **4** (535:5). Held controls
+remain 9/9 jobapps and 35/35 LinkedIn released, one Oracle held. Buried current-key open **61**, stale
+open **189**, stale closed **12**; do not call the namespace change a simple 231→61 recovery.
+Posting 669977 remains closed. No WalUnsafe, standalone locked, Traceback or refresh failure in the
+current run log; no config-dir DB files. Boot free 16.1 GiB, SSD 298.4 GiB; store/backup unchanged.
+
+**Next:** read the next actual scheduled run against 536, including remaining refresh debt, apply
+volume, B4, API/physical PDFs, buried/held/deadline controls and final reporting completion. No extra
+model pilot, ledger drain, manual queue recovery or PDF render. Preserve all uncommitted adapter,
+source/tests/docs, owner paths and both worktrees; no pull, commit or publication this session.
+Session evidence and the full repository gate log/exit: `.agent/2026-10-07-daily/` (`check.*`).
+
+### 2026-10-08 — **DAILY VOLUME AND PDF CHECKS PASS; GPT PRECISION STILL PENDING** (D-625). Read-only scheduled-run audit against 536.
+
+Run **537**, historical day **12**: **30 net-new leads** of 31 delivered, **26 net-new apply**
+of 27 apply placements. `day_row.py` exits **0**; this is the first measured daily-volume pass
+since 531, not a certified B1–B8 pass. B2 **27/27**, B3 all one page / no tailor failure,
+B5–B7 pass, work-auth abstain **0 on 13,635**. Independent B4: **455 bullets / 27 PDFs**, zero
+unmatched; all **1,161 skills** sourced; real/fabricated controls discriminate. GPT has no fresh
+precision census and cannot inherit Claude's. Certified qualifying streak remains **0**; the
+14-consecutive-frozen-run bar, no completion date and after-October-10 work holds remain intact.
+
+**Judge health:** main **41** judged (27 E / 11 I / 3 U), zero failed-open, missing or refused;
+one delivered reading absent. Refresh **130/922**, **792 pending** (536:932); refresh ledger
+98 E / 8 I / 24 U. Backlog **150/150** judged (144 E / 2 I / 4 U), zero failed batches or
+breaker skips, 7,457 candidates. Independent ledger **321** codex-agent / codex:gpt-6.1-sol rows
+(269 E / 21 I / 31 U); sampled effort high. No extra model diagnostic or precision census run.
+
+**Standing coverage is incomplete:** authenticated API and physical inventory agree exactly on
+**478 open apply folders / 436 one-page PDFs / 42 missing** (536:395/363/32); no ID or PDF
+availability disagreements. Review **617**; judge **177 eligible / 2 uncertain / 299 unjudged**.
+One already-applied job, 19 cross-host and 55 loose redundancies are standing diagnostics, not
+new per-run dedup findings. Viewer absent on arrival, restored at **PID22017**, loopback8799;
+API read26.78s, token never printed. No manual recovery or render; both remain owner-gated.
+
+**Controls / timing:** buried **112 current-key open / 136 stale open / 12 stale closed**
+(536:61/189/12). Stale-cleared undelivered posting **603524** closed; 669977 remains closed.
+Held9/9 jobapps and35/35 LinkedIn released, one Oracle held. Deadline hits **5** vs4; boards
+3,044 attempted, 2,498 complete /433 unchanged /91 partial /22 failed. Scan7,083/6,828s;
+eligibility1,618/1,082; gate420/581; tailor5,927/3,000 (27/14 PDFs). Database09:00:06–13:22:14
+UTC (4h22m); funnel13:58:01, exact PID6929 exited by13:59:02 UTC, then audited. Queue31 new
+folders differs from30 net-new jobs. No WalUnsafe, standalone locked, Traceback, refresh failure
+or config-dir DB. Boot14.55GiB and SSD297.21GiB free at audit; no tracing/deletion/backup.
+
+**Next:** read the next actual scheduled run against537, including refresh debt, net-new apply,
+independent B4, API/physical PDFs, buried/held/deadline controls and final reporting completion.
+Fresh GPT precision remains unproven; no extra model calls, ledger drain, queue recovery or render
+without owner authorization. Prior uncommitted adapter/docs/tests, owner paths and both worktrees
+preserved; no pull, commit or publication. Evidence / full repository gate: `.agent/2026-10-08-daily/`
+(`check.log`, `check.exit`). D-620's same-SSD store/backup ruling remains unchanged.

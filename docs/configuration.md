@@ -107,9 +107,10 @@ too, and a failed post never fails the run.
 ## `[gate]`
 
 The headless final-eligibility judge that runs inside `boardwatch run` between ranking and
-tailoring. It calls the `claude` CLI on your `PATH` under your own Claude account, and
+tailoring. It calls the `claude` CLI under your Claude account, or `codex exec` under your
+existing ChatGPT login when `gate.model` starts with `codex:`. The selected CLI must be on your `PATH`, and
 [SECURITY.md](../SECURITY.md) lists what each call sends. Off by default; arming it is a hand edit of
-`config.toml` (`config set` refuses `gate.*` keys and there is no toggle), and it spends Claude
+`config.toml` (`config set` refuses `gate.*` keys and there is no toggle), and it spends the selected account's
 usage on every run while on. Every seam around the call fails open: a missing binary, a
 timeout, a non-zero exit or an unreadable response drops that batch's verdicts, never a lead.
 `boardwatch config show` prints every `gate.*` key — read them back there after any edit, because
@@ -120,7 +121,7 @@ success.
 |---|---|---|---|---|
 | `gate.enabled` | bool | `false` | Arms the judge | next run |
 | `gate.claude_config_dir` | absolute path (`~` is not expanded) | unset | `CLAUDE_CONFIG_DIR` for the headless call, i.e. which Claude account it uses | next run |
-| `gate.model` | string, a `claude` model alias | `sonnet` | The model the judge runs on | next run |
+| `gate.model` | string, a Claude alias or `codex:<model>` | `sonnet` | The CLI and model the judge runs on; the full string keys its cached verdicts | next run |
 | `gate.batch_size` | int, ≥ 1 | 13 | Leads per call | next run |
 | `gate.call_timeout_s` | int, ≥ 1 | 300 | Seconds per call | next run |
 | `gate.effort` | `low` \| `medium` \| `high` \| `xhigh` \| `max` | unset | The call's `--effort`; unset passes no flag, so the CLI default applies | next run |
@@ -128,6 +129,17 @@ success.
 | `gate.refresh_budget` | int, ≥ 0 | 0 (off) | Standing-queue leads re-judged per run when their reading is stale | next run |
 | `gate.backlog_budget` | int, ≥ 0 | 0 (off) | Unjudged in-field postings below the judged slate sent to the judge per run | next run |
 | `gate.seniority_hold` | bool | `false` | Hold a lead for review when the judge reads its body as above your target band; off, the reading is still recorded | next run |
+
+For example, `model = "codex:gpt-6.1-sol"` and `effort = "high"` use that model through
+Codex without an API key. Log in with `codex login` beforehand. This requires a Codex CLI
+supporting `exec --ignore-user-config --ignore-rules --ephemeral` and the isolation settings
+used by the adapter (verified with 0.160.1). `claude_config_dir` is ignored for Codex.
+The Codex judge uses a fresh temporary working directory with project instructions, skills,
+memories, plugins, hooks, shell tools and web search disabled. A response that uses a tool,
+reports an error or never completes fails open. The existing verdict schema and evidence
+validation apply unchanged. Validate a model against hard cases before using its verdicts.
+Changing the model makes previous-model readings stale; existing refresh/backlog budgets
+bound subsequent re-judging. It does not rewrite stored verdicts or reopen built leads.
 
 ## Résumé tailoring
 

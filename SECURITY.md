@@ -71,9 +71,12 @@ files under `{data_dir}/llm-cache/`, same as the eligibility-extraction tier.
 The gate is **disabled by default** (`gate.enabled = false`). When you arm it, `boardwatch run`
 sends each judged lead's job-description text, together with your eligibility facts (the answers
 stored by `boardwatch eligibility facts`, such as work authorization, degree and years of
-experience) and fixed judging instructions that name your target seniority band, to the `claude`
-CLI on your `PATH`, which sends them to Anthropic under your own Claude account; `gate.claude_config_dir`
-chooses which account. Your résumé, your profile text and your application history are not sent.
+experience) and fixed judging instructions that name your target seniority band. By default the
+`claude` CLI sends them to Anthropic under your Claude account; `gate.claude_config_dir` chooses
+which account. With `gate.model = "codex:<model>"`, `codex exec` sends the same payload to OpenAI
+using your existing ChatGPT login. It runs in an ephemeral temporary directory with user/project
+instructions, skills, plugins, hooks, memories, shell tools and web search disabled; tool-using
+responses are refused. Your résumé, profile text and application history are not sent.
 The gate takes no API key and boardwatch stores no credential for it.
 
 ## What leaves your machine for an unattended run's monitors
