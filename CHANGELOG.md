@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch postings close` and `postings reopen`** close a posting you saw closed yourself,
+  typically a LinkedIn listing that no probe reaches. `--evidence` (what you saw) is required, and
+  the command only reports unless you pass `--apply`. A close writes the same shape as boardwatch's
+  own closes (`status`, `closed_at`, a `closed` event) under a run of its own, records the evidence
+  as `posting.ownerclosed.<posting_id>`, and holds the scan lease while it writes. The lead leaves
+  the viewer's lists at once and its folder moves to `_closed/` at the next reconcile. A scan that
+  lists the posting again reopens it, and `postings reopen` is the undo.
 - **An "Apply by hand" list in the web viewer.** Select leads in Jobs to explore and press
   "Move to manual" to take them out of that list without skipping them. Use it for jobs that need
   an account (Workday, SuccessFactors, an employer's candidate portal) or that you simply want to
