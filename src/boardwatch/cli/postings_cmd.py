@@ -21,6 +21,11 @@ no later run can reach. Identities are recomputed only for the OPEN ones, which 
 job-apps lane's overwrite, D-500/D-502) cannot be re-derived, only re-read. It re-reads each named
 posting from its OWN board and hands the result to `scan.apply.apply_refetched`, the scan's write
 path, so no column is written by hand here.
+
+`postings close` / `postings reopen` are the OWNER's closing path (D-630): a listing the owner saw
+closed — typically a LinkedIn one no probe reaches — is closed with the native shape under a run
+minted for the write, with the owner's evidence recorded beside it (`store/owner_close.py`). The
+death probe still owns every closure it measures; this adds the one it cannot.
 """
 
 from __future__ import annotations
@@ -34,7 +39,7 @@ from typing import Any
 import typer
 from sqlalchemy import Engine, select
 
-from boardwatch.cli.context import build_context
+from boardwatch.cli.context import AppContext, build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.politeness import Fetcher
@@ -52,7 +57,8 @@ from boardwatch.scan.coordinator import ScanLockHeldError, scan_lease
 from boardwatch.store.body_revision import record_body_revision
 from boardwatch.store.db import ensure_schema, write_connection
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
-from boardwatch.store.queries import RUN_RUNNING
+from boardwatch.store.owner_close import OwnerClose, close_postings, plan, reopen_postings
+from boardwatch.store.queries import RUN_RUNNING, ensure_run, finish_run
 from boardwatch.store.tables import companies, postings, runs
 
 #: Closed catalog. A provider is repairable here only if its stored `raw_json` carries everything
@@ -269,3 +275,101 @@ def _refetch_one(
         # The writer's own count, not the prediction above: the two must agree.
         outcome = Refetched.REVISED if result.revised else Refetched.REFRESHED
     return outcome, ""
+
+
+@postings_app.command("close")
+def close(
+    ctx: typer.Context,
+    evidence: str = typer.Option(
+        ...,
+        "--evidence",
+        help="Why: what you saw and where (e.g. 'LinkedIn: No longer accepting applications').",
+    ),
+    ids: str | None = typer.Option(None, "--ids", help="Comma-separated posting ids."),
+    ids_file: Path | None = typer.Option(  # noqa: B008
+        None, "--ids-file", help="File of posting ids, one per line or comma-separated."
+    ),
+    apply_: bool = typer.Option(
+        False, "--apply", help="Actually write. Without it this only reports."
+    ),
+) -> None:
+    """Close named postings on your own observation, with the evidence recorded.
+
+    Per id: `closed`, `unchanged` (already closed) or `missing`. Under `--apply` the closures are
+    one transaction under a run of their own. The lead leaves the viewer's lists at once; its
+    folder moves to `_closed/` at the next reconcile. A scan that lists the posting again reopens
+    it on its own; `postings reopen` is the undo.
+    """
+    if not evidence.strip():
+        raise typer.BadParameter("--evidence must say what you saw")
+    posting_ids = _parse_ids(ids, ids_file)
+    # Report-only must not migrate the store, exactly as `refetch` (Codex on T210).
+    app_ctx = build_context(ctx.obj, ensure=False)
+    _owner_close(app_ctx, posting_ids, apply_, close=True, evidence=evidence.strip())
+
+
+@postings_app.command("reopen")
+def reopen(
+    ctx: typer.Context,
+    ids: str | None = typer.Option(None, "--ids", help="Comma-separated posting ids."),
+    ids_file: Path | None = typer.Option(  # noqa: B008
+        None, "--ids-file", help="File of posting ids, one per line or comma-separated."
+    ),
+    apply_: bool = typer.Option(
+        False, "--apply", help="Actually write. Without it this only reports."
+    ),
+) -> None:
+    """Reopen named closed postings: the undo for `postings close`.
+
+    Per id: `reopened`, `unchanged` (already open) or `missing`. The death probe may close a
+    reopened posting again if it later measures it dead.
+    """
+    posting_ids = _parse_ids(ids, ids_file)
+    app_ctx = build_context(ctx.obj, ensure=False)  # as `close`: report-only never migrates
+    _owner_close(app_ctx, posting_ids, apply_, close=False, evidence="")
+
+
+def _owner_close(
+    app_ctx: AppContext, posting_ids: list[int], apply_: bool, *, close: bool, evidence: str
+) -> None:
+    name = "close" if close else "reopen"
+    engine = app_ctx.engine
+    if not apply_:
+        with engine.connect() as conn:
+            outcome = plan(conn, posting_ids, close=close)
+        _report(name, outcome, applied=False)
+        return
+    with ExitStack() as held_lease:
+        # A run's scan writes `postings.status` too, so the write holds T133's scan lease, as
+        # `refetch --apply` does: a running scan refuses this, and a scan starting now waits.
+        try:
+            held_lease.enter_context(scan_lease(app_ctx.settings))
+        except ScanLockHeldError as exc:
+            typer.echo(f"{name} refused: {exc}")
+            raise typer.Exit(code=2) from None
+        ensure_schema(engine)
+        # A run of its OWN: `posting_events.run_id` is NOT NULL, and borrowing another run's id
+        # would make that run claim closures it never observed.
+        run_id = ensure_run(engine, None)
+        with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
+            outcome = (
+                close_postings(conn, posting_ids, run_id=run_id, evidence=evidence, at=utcnow())
+                if close
+                else reopen_postings(conn, posting_ids, run_id=run_id)
+            )
+        finish_run(engine, run_id)
+    _report(name, outcome, applied=True, run_id=run_id)
+
+
+def _report(
+    name: str, outcome: dict[int, OwnerClose], *, applied: bool, run_id: int | None = None
+) -> None:
+    for posting_id, result in outcome.items():
+        typer.echo(f"  {posting_id}\t{result}")
+    counts = {kind: sum(1 for r in outcome.values() if r is kind) for kind in OwnerClose}
+    summary = ", ".join(f"{kind} {count}" for kind, count in counts.items() if count)
+    where = f" under run {run_id}" if run_id is not None else ""
+    verb = "applied" if applied else "would apply"
+    typer.echo(f"{name}: {verb} {len(outcome)} posting(s){where}: {summary or 'nothing'}")
+    if not applied and (counts[OwnerClose.CLOSED] or counts[OwnerClose.REOPENED]):
+        typer.echo("  re-run with --apply to write.")
