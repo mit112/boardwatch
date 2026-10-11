@@ -574,6 +574,21 @@ through the scan's writer: a changed body is a revision, `raw_json` and provider
 replaced, closed stays closed. Fetches but writes nothing without `--apply`, and only `--apply`
 opens the migrating context. Refuses while a run is in progress.""",
     ),
+    "postings close": Entry(
+        ("writes store",),
+        """Closes the postings named by `--ids`/`--ids-file` on your own observation, typically a
+LinkedIn listing no probe reaches. `--evidence` (what you saw) is required and recorded. Writes the
+same closed shape a scan does, under a run of its own; the lead leaves the viewer's lists at once
+and its folder moves to `_closed/` at the next reconcile. A scan that lists the posting again
+reopens it. Reports without `--apply`; only `--apply` migrates, and it refuses while a scan holds
+the lease.""",
+    ),
+    "postings reopen": Entry(
+        ("writes store",),
+        """The undo for `postings close`: reopens the named closed postings and drops their recorded
+evidence. Reports without `--apply`; only `--apply` migrates, and it refuses while a scan holds
+the lease. The death probe may close a reopened posting again if it measures it dead.""",
+    ),
     # ---- résumé -----------------------------------------------------------------------------
     "tailor init": Entry(
         ("writes files",),
