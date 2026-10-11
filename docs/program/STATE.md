@@ -41,6 +41,32 @@
 
 ## Current standing
 
+### 2026-10-11 — **PRIMARY CHECKOUT COMMITTED AND CURRENT; OWNER CLOSE COMMAND SHIPPED; THE JUDGE IS CLAUDE AGAIN** (D-630, D-631, #549, #551).
+
+**Primary:** the six days of uncommitted work the primary carried (the Codex judge transport, the eligibility filter, the
+records for runs 534–539 and D-621 to D-628) are committed as #549, byte-identical to the working copy. The apply-by-hand
+decision is renumbered D-629. The primary is clean on `main`, apart from the untracked pilot doc and `.agents/skills/verify/`
+(left alone on purpose). The exact pre-commit state is kept at `refs/backup/primary-wip-2026-10-11`. The viewer on 8799
+runs from the primary again: Jobs to explore 395, Needs review 445, Apply by hand 98.
+
+**Judge:** the owner has Claude access again, so `gate.model`/`effort` are back to `sonnet`/`medium` (D-631). The config
+is byte-identical to `config.toml.bak-before-gpt-20261006`, with a fresh backup at
+`config.toml.bak-before-claude-return-20261011`. The judge's exact headless call answered (`claude-sonnet-5-5`, no error)
+before the switch. **Next run (2026-10-12 04:00) is the first Claude-judged run since 10-04: read its gate line**
+(judged vs failed-open batches). GPT-era cached verdicts are not current for `sonnet` and are re-judged within
+`refresh_budget`.
+
+**Closing by the owner:** `boardwatch postings close --ids … --evidence … --apply` and `postings reopen` (D-630, #551). The
+Job apps session's 28 hand-closed LinkedIn postings (2026-10-11 12:59 UTC; skips 381 → 353) carry their `closed` events
+under **daily run 550**, which never observed them. Correcting that is a live-store edit waiting on the owner's call.
+
+**Queue cleanup:** the 98 duplicate manual folders the Job apps session parked in its scratchpad were compared with
+`_manual/` (377 identical files, 12 regenerated `details.json`, nothing unique) and deleted.
+
+**Open:** the Codex transport stays in the code, unused. If it is selected again, fix two things first: it loads the owner's
+`~/.codex/AGENTS.md` into the judge, and a timeout orphans the native `codex` process (#549 body). The adopt()/review-lane
+follow-ups from the 2026-10-10 block stand.
+
 ### 2026-10-10 — **APPLY-BY-HAND (MANUAL) STATE SHIPPED AND SEEDED** (D-629, #547). Code change plus one live-store seed; no profile, rule or config change. Days 9+ (runs 534–550) were NOT read this session.
 
 **What exists:** `queue.manual.<job_id>` in `app_state`; the `_manual/` drain; a fourth web lens, "Apply by hand"; batch routes
@@ -53,11 +79,7 @@ applied), and Vantive 808587, AAON 111453 and Dexcom 787619, which the owner had
 list went 0 → 98. Folders: `_manual` 0 → 98, top level 469 → 384, `_review` 450 → 437. `/api/queue` reads 384 / 437 / 98.
 Run 550 (2026-10-11 04:00 tick, `ok`) left all three folder counts unchanged.
 
-**Live viewer:** port 8799 is served from the worktree `../bw-manual` (pid 80427), not from the primary checkout. The primary is
-still on 38d6fea2 with **23 dirty entries owned by another session**: a staged eligibility filter in `QueueToolbar` /
-`QueuePage` / the bundle, `codex_gate.py`, and STATE / DECISIONS / STANDING-FACTS edits. They conflict with #547's files, so
-the primary could not be pulled without touching that work. **Next:** the owner of that work commits or parks it, then
-`git pull` on the primary, then restart the viewer from the primary and remove the `bw-manual` worktree.
+**Live viewer:** served from the primary checkout again since 2026-10-11 (see the 2026-10-11 block); the `bw-manual` worktree is removed.
 
 **Handed off:** session `job-apps-8e` was told the routes and asked to move any other appropriate jobs into manual, including
 anything added to `manual_apply.json` after ~22:10 CDT on 2026-10-10.
