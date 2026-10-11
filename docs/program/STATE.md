@@ -27,6 +27,32 @@
 
 ## Current standing
 
+### 2026-10-10 — **APPLY-BY-HAND (MANUAL) STATE SHIPPED AND SEEDED** (D-621, #547). Code change plus one live-store seed; no profile, rule or config change. Days 9+ (runs 534–550) were NOT read this session.
+
+**What exists:** `queue.manual.<job_id>` in `app_state`; the `_manual/` drain; a fourth web lens, "Apply by hand"; batch routes
+`POST /api/queue/manual` and `/unmanual`; per-lead routes `/api/queue/<id>/manual` and `/unmanual`. Precedence: applied >
+skipped > reported > closed > manual > ineligible > lane_copy > review. Manual keeps its slate slot.
+
+**Seeded (measured from the store, not from the script's output):** 105 posting ids, from Job apps' `autoapply/manual_apply.json`
+(98) plus 7 leads its prep state routed as manual. 101 jobs marked: 98 standing and 3 closed. Not marked: 833120 (already
+applied), and Vantive 808587, AAON 111453 and Dexcom 787619, which the owner had already skipped. Keys went 0 → 101; the manual
+list went 0 → 98. Folders: `_manual` 0 → 98, top level 469 → 384, `_review` 450 → 437. `/api/queue` reads 384 / 437 / 98.
+Run 550 (2026-10-11 04:00 tick, `ok`) left all three folder counts unchanged.
+
+**Live viewer:** port 8799 is served from the worktree `../bw-manual` (pid 80427), not from the primary checkout. The primary is
+still on 38d6fea2 with **23 dirty entries owned by another session**: a staged eligibility filter in `QueueToolbar` /
+`QueuePage` / the bundle, `codex_gate.py`, and STATE / DECISIONS / STANDING-FACTS edits. They conflict with #547's files, so
+the primary could not be pulled without touching that work. **Next:** the owner of that work commits or parks it, then
+`git pull` on the primary, then restart the viewer from the primary and remove the `bw-manual` worktree.
+
+**Handed off:** session `job-apps-8e` was told the routes and asked to move any other appropriate jobs into manual, including
+anything added to `manual_apply.json` after ~22:10 CDT on 2026-10-10.
+
+**Open:** Needs-review rows cannot be selected in the UI, so review leads move through the API. `adopt()` clears every
+pending optimistic removal (follow-up). A "closed by owner" state waits on the owner's call. Artifact row 2964 (a scratch
+`/private/tmp` path) is untouched; `boardwatch verify` was not run. This file is over 250 lines: the next session that reads
+day 9 should move settled blocks out (blocked today by the uncommitted STATE edits on the primary).
+
 ### 2026-10-04 — **DAY 8 IS RUN 533 AND FAILS B8: 13 NET-NEW APPLY LEADS; THE JUDGE ANSWERED NO BATCHES** (D-620). Read-only audit; no code, profile, rule, config or live-store change. The viewer was restarted.
 
 **Verify first:** the primary on `main`, carrying the owner's uncommitted enterprise-seat notes in `STATE.md` and
