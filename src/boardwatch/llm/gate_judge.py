@@ -108,6 +108,9 @@ class GateStageResult:
     sent: int = 0
     missing_items: int = 0
     refused_items: int = 0
+    # Due but never sent: `build_gate_request` withheld the body as not the employer's own text
+    # (D-406), or the lead had no current version. Counted off the request, never restated.
+    withheld: int = 0
     # T107 — the FIELD-level split, three-way and never two. `_seniority_fit` folds an absent
     # or out-of-catalog answer to `"unclear"`, which is also what a judge that genuinely could
     # not tell returns: of 1,999 stored gate verdicts 215 carry an explicit `"unclear"`, so
@@ -213,6 +216,21 @@ def _unfence(text: str) -> str:
     return "\n".join(lines[1:-1])
 
 
+def _leading_array(text: str) -> object:
+    """The JSON value at the start of `text`, ignoring a PROSE tail after it.
+
+    The judge sometimes appends a note after the array. Runs 581 and two earlier runs each lost a
+    whole batch to `Extra data: line 3 column 1`, which is an array, a blank line, then text.
+    Only a tail that cannot itself be JSON is dropped. A tail that opens another array or object
+    still raises, because a second answer is a response this stage cannot trust (`_unfence`).
+    """
+    parsed, end = json.JSONDecoder().raw_decode(text)
+    tail = text[end:].strip()
+    if tail[:1] in ("[", "{"):
+        raise ValueError("a second JSON value follows the verdict array")
+    return parsed
+
+
 #: The closed vocabulary the judge may answer `seniority_fit` in. Out-of-catalog is `"unclear"`,
 #: the inert value — NOT a raise. Every other field in this parser fails the whole batch open
 #: because it decides a VERDICT; this one only decides which lane a lead is delivered to, and a
@@ -295,7 +313,7 @@ def _parse_verdicts(
     result_text = envelope["result"]
     if not isinstance(result_text, str):
         raise TypeError(f"expected envelope['result'] to be a string, got {type(result_text)}")
-    parsed = json.loads(_unfence(result_text))
+    parsed = _leading_array(_unfence(result_text))
     if not isinstance(parsed, list) or len(parsed) > len(expected_labels):
         raise ValueError(
             f"expected a JSON array of at most {len(expected_labels)} verdicts, got "
@@ -583,6 +601,7 @@ def run_gate_stage(
         candidates=candidates,
         cached=len(already_gated),
         sent=len(items),
+        withheld=len(to_judge) - len(items),
         missing_items=missing_items,
         refused_items=len(refused),
         seniority_answered=seniority.count(_SENIORITY_ANSWERED),
@@ -627,12 +646,14 @@ class GateRefreshResult:
     says so without trusting the stage's own tally. `pending_after` staying high run over run is
     the signal that the budget cannot keep up with the re-keys. A lead whose body the send boundary
     withholds (D-406) is stale and can never be sent, so it stays in both counts as a constant
-    floor rather than being hidden by a restated send predicate; the live queue held none of them
-    on 2026-09-22 (D-548 sent 833 of 833).
+    floor rather than being hidden by a restated send predicate. `withheld` is that floor as the
+    walk met it, summed from the stage's own requests: on 2026-10-14 it was 22 of 35 stale leads,
+    so a refresh that had nothing left to send read as stalled.
     """
 
     candidates: int = 0
     sent: int = 0
+    withheld: int = 0
     pending_after: int = 0
     errors: tuple[str, ...] = ()
 
@@ -698,6 +719,7 @@ def run_gate_refresh(
     return GateRefreshResult(
         candidates=len(stale),
         sent=sum(result.sent for result in results),
+        withheld=sum(result.withheld for result in results),
         pending_after=len(stale) if after is None else len(after),
         errors=tuple(errors),
     )

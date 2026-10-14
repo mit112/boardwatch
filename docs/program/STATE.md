@@ -31,6 +31,24 @@
 
 ## Current standing
 
+### 2026-10-14 — **RUN 581 FAILS B8 VOLUME (19 < 20) AND THE GATE CHECK; THE CANDIDATE STREAK RESETS; CENSUS 1/77; TWO GATE FIXES** (D-634).
+
+**Run 581 (10-14, day 18):** B1 36 net-new, B2–B7 pass (19/19 one-page PDFs, B4 0 unmatched), **B8 19 net-new apply — FAIL**
+(17 held for review, 13 `no_requirements_found`). **Gate: 1 batch failed open** (`Extra data` after the verdict array, 13 leads
+unjudged). `day_row.py` exit 1. Runs 579/580 can no longer be streak days 1–2. The streak restarts at the next passing day.
+
+**B8 census:** run 581's 19 apply placements were added as batches 10–13 in both opus arms (`stage_extend.py`; batches 00–09
+untouched). **Pooled 1/77 = 1.3% (Wilson 0.2–7.0)**, 0/19 this run, arms agree 77/77, null controls exit 1. n is still < 100.
+
+**Fixed in D-634:** the gate now reads a verdict array followed by a prose note instead of failing the batch. The refresh
+line reports `withheld` leads. The stalled refresh was not a budget fault: 22 of the 35 stale standing leads (read after run
+581) are Jobright pages that D-406 never sends. They stay delivered and unjudged by design (D-463).
+
+**Next:** read run 582 (10-15) with `day_row.py` (scratch copy with `?immutable=1`, only after `lsof` shows no writer) and
+`b4_audit.py`. Extend the census with `python3 stage_extend.py <date>:<run>`, then `judge.py A` and `judge.py B`, `score.py`,
+`validate.py`. Once n ≥ 100, a passing day is certified only if the pooled rate is ≤ 16%. Check the refresh line's `withheld`
+against `still stale`. If they differ, the refresh has a real backlog.
+
 ### 2026-10-13 — **RUNS 579 AND 580 PASS EVERY MEASURED BAR; THE TWO-OPUS CENSUS READS 1/58; B8 NOT YET CERTIFIED (n < 100)** (D-633).
 
 **The first two Claude-judged days.** Run 579 (10-12): 54 net-new, 27 net-new apply. Run 580 (10-13): 41 net-new, 31
@@ -40,11 +58,6 @@ exit 0. Run 550 (10-11, the last GPT run; its backlog stopped on two `codex exit
 **B8 census:** two `claude-opus-5-5` arms, each judging all 58 apply placements: **1/58 = 1.7% (Wilson 0.3–9.1)**, arms
 agree 58/58. The bar pools to n ≥ 100. **Days 16–17 are candidate streak days 1–2, certified only once the pooled census
 reaches n ≥ 100.**
-
-**Next:** read each scheduled run with `python3 .agent/acceptance/day_row.py <run> <day>` and `b4_audit.py --run <run>`;
-extend the census in `.agent/2026-10-13-claude-census/` (re-stage with the new runs, judge only the new items in both arms,
-re-score). `?mode=ro` fails with "unable to open database file" on the cleanly-checkpointed store; use `?immutable=1` only
-after `lsof` shows no writer. Watch run 580's refresh stall (18 stale leads, 0 sent): if it repeats, find out why.
 
 ### 2026-10-11 — **PRIMARY CHECKOUT COMMITTED AND CURRENT; OWNER CLOSE COMMAND SHIPPED; THE JUDGE IS CLAUDE AGAIN** (D-630, D-631, #549, #551).
 

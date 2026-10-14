@@ -2817,7 +2817,8 @@ def _run_pipeline_leased(
                 refresh_errors = refresh.errors
                 console.print(
                     f"gate refresh: {refresh.candidates} standing lead(s) stale, "
-                    f"{refresh.sent} sent, {refresh.pending_after} still stale"
+                    f"{refresh.sent} sent, {refresh.withheld} withheld (not the employer's "
+                    f"text), {refresh.pending_after} still stale"
                 )
             except Exception as exc:  # noqa: BLE001 - the refresh must never cost the slate
                 # UNMEASURED, not zero: batches before the fault may already have committed, and
