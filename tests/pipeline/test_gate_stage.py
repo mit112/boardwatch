@@ -1877,6 +1877,7 @@ def test_the_refresh_spends_its_budget_on_leads_it_can_send(
     assert _current_gate_verdict(env, clean) == "eligible"
     assert _current_gate_verdict(env, foreign) is None
     assert (result.candidates, result.pending_after) == (2, 1), "the withheld body stays pending"
+    assert result.withheld == 1, "and is reported as withheld, not as a stalled refresh"
 
 
 def _gate_row_order(data_dir: Path) -> list[int]:

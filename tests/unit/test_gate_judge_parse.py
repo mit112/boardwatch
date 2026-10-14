@@ -67,6 +67,31 @@ def test_an_answer_this_stage_cannot_trust_fails_the_whole_batch_open(
         _parse_verdicts(_stdout([_verdict(label) for label in answered]), ["1", "2"])
 
 
+def _stdout_text(result: str) -> str:
+    return json.dumps({"is_error": False, "result": result})
+
+
+def test_a_prose_note_after_the_array_keeps_the_verdicts() -> None:
+    """RED before: `JSONDecodeError: Extra data: line 3 column 1`. That failure cost run 581 a
+    batch of 13."""
+    text = json.dumps([_verdict("1"), _verdict("2")]) + "\n\nNote: both leads read clean."
+    verdicts, missing, _ = _parse_verdicts(_stdout_text(text), ["1", "2"])
+    assert [v.label for v in verdicts] == ["1", "2"]
+    assert missing == ()
+
+
+@pytest.mark.parametrize("tail", ["[]", '{"label": "1"}', json.dumps([_verdict("2")])])
+def test_a_second_json_value_after_the_array_still_fails_open(tail: str) -> None:
+    text = json.dumps([_verdict("1")]) + "\n\n" + tail
+    with pytest.raises(ValueError):
+        _parse_verdicts(_stdout_text(text), ["1", "2"])
+
+
+def test_leading_prose_still_fails_open() -> None:
+    with pytest.raises(json.JSONDecodeError):
+        _parse_verdicts(_stdout_text("Here are the verdicts: []"), ["1"])
+
+
 # ---------------------------------------------------------------- `seniority_fit`, fail-open
 
 

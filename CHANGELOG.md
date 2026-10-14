@@ -86,6 +86,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
+  a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
+  That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a
+  prose tail ignored. A second JSON value after the array still fails the batch open.
+- **The gate refresh line now says how many stale leads it withheld.** A standing lead whose body
+  is an aggregator page (D-406) can never be sent to the judge, so it stayed stale and the refresh
+  read as stalled: `21 stale, 2 sent, 19 still stale` on 2026-10-14, when 22 of 35 such leads were
+  Jobright pages. The line now reads `… sent, N withheld (not the employer's text), …`.
+
 - **The Applied page no longer takes about 106 seconds to load.** The lookup scanned every posting; it now starts from the applications and returns the same rows in
   about 0.07 seconds. The viewer must be restarted to pick this up.
 - **The Runs page no longer shows "404" for a run with no funnel file** (a manual re-render); it shows the newest run that has one and says why.
