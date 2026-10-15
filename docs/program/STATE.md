@@ -31,6 +31,26 @@
 
 ## Current standing
 
+### 2026-10-15 — **RUN 589 PASSES EVERY BAR; THE CENSUS READS 1/108 (0.9%); B8 CERTIFIED; RUN 589 IS CERTIFIED STREAK DAY 1** (D-635).
+
+**Run 589 (10-15, day 19):** the next scheduled run, not 582 (runs 582–588 are CLI rows). B1 42 net-new, B2–B7 pass (31/31
+one-page PDFs, B4 0 unmatched), **B8 31 net-new apply**, `day_row.py` exit 0. **Gate 42 judged, 0 failed-open**: the first
+live run of the D-634 parser. Refresh 2 stale / 2 sent / 0 withheld / 0 still stale, so no backlog. The stale standing set
+fell from 35 to 2 since run 581; the cause was not traced (owner applies and skips shrink it).
+
+**B8 census:** batches 14–19 added in both opus arms. **Pooled 1/108 = 0.9% (Wilson 0.2–5.1)**, 0/31 this run, arms agree
+108/108, null controls exit 1. n ≥ 100 and under 16%, so precision is certified. **Streak: day 1 of 14.** Runs 579–581 stay
+outside it.
+
+**Job-apps lane (read-only check):** source wrote 86 records on 10-14 and 85 on 10-15; the lane read 9,430 and resolved 9,222
+(growth about 175 a day, no silent outage); 79 of the 86 10-14 records are in the store by URL or LinkedIn job id (the 7
+absent: 2 `insidehighered` outside the admit set, 4 `jobright`, 1 `simplify`, not traced). 17 of run 589's 42 leads carry a
+jobapps board target.
+
+**Next:** read the next scheduled run (10-16, day 20 = streak day 2) with `day_row.py` and `b4_audit.py`. Extend the census
+with `stage_extend.py <date>:<run>` only if a further point on the rate is wanted; the bar is already met. Watch the gate
+line for `failed_open_batches` and the refresh `withheld` against `still stale`.
+
 ### 2026-10-14 — **RUN 581 FAILS B8 VOLUME (19 < 20) AND THE GATE CHECK; THE CANDIDATE STREAK RESETS; CENSUS 1/77; TWO GATE FIXES** (D-634).
 
 **Run 581 (10-14, day 18):** B1 36 net-new, B2–B7 pass (19/19 one-page PDFs, B4 0 unmatched), **B8 19 net-new apply — FAIL**
