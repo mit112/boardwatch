@@ -31,6 +31,26 @@
 
 ## Current standing
 
+### 2026-10-16 — **RUN 590 PASSES EVERY BAR; CERTIFIED STREAK DAY 2; THE EXISTING 1/108 CENSUS IS UNCHANGED** (D-636).
+
+**Run 590 (10-16, day 20):** identified from the newest funnel file and the runner log, not an assumed run id.
+B1 **27 net-new** (28 funnel leads and new folders; CACI 815169 was first decided on 10-08 and is in review), B2–B7 pass:
+23/23 one-page PDFs, 0 tailor_failed, B4 0 unmatched on 386 bullets and 989 skills, 0 work-auth abstain on 15,159.
+**B8 23 net-new apply**, 5 review (2 `no_requirements_found`); `day_row.py` exit 0.
+
+**Health:** gate 28 judged, 0 failed-open; refresh 3 stale / 0 sent / 3 withheld / 3 still stale, so **no actionable
+refresh backlog**. Backlog 150 judged, 0 failed-open, 0 breaker skips. Jobapps lane 9,604 read / 9,387 resolved, no silent
+outage; 11/28 leads use provider `jobapps`. Run 589 and 590 manifests match exactly, including code, config, profile and
+rule hashes. Funnel wall 3 h 48 m (09:00:05 → 12:47:45 UTC); final artifact files written around 08:28 CDT.
+
+**B8 precision:** D-635's two-opus census stays **1/108 = 0.9% (Wilson 0.2–5.1)**. Locally rescored and validated;
+all three null controls exit 1. Run 590 was not added and no Claude calls were launched. **Certified streak: 2 of 14.**
+
+**Next:** score the next scheduled run (10-17, historical day 21, candidate certified streak day 3), finding its id by
+funnel file or runner log. Use `day_row.py` and `b4_audit.py`; immutable reads only after `lsof` confirms no writer.
+Watch failed-open batches and the difference between refresh `still stale` and `withheld`. Extending the census remains
+optional; its bar is met. Keep the primary on `main` for the daily run.
+
 ### 2026-10-15 — **RUN 589 PASSES EVERY BAR; THE CENSUS READS 1/108 (0.9%); B8 CERTIFIED; RUN 589 IS CERTIFIED STREAK DAY 1** (D-635).
 
 **Run 589 (10-15, day 19):** the next scheduled run, not 582 (runs 582–588 are CLI rows). B1 42 net-new, B2–B7 pass (31/31
