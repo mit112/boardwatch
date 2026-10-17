@@ -31,6 +31,31 @@
 
 ## Current standing
 
+### 2026-10-17 — **RUN 592 FAILS B8 VOLUME (17 < 20); CERTIFIED STREAK RESETS TO ZERO** (D-637).
+
+**Run 592 (10-17, historical day 21):** identified from the funnel file and runner log; run 591 is a CLI row.
+B1 **27 net-new** of 28 funnel leads (28 new queue folders; TalentHop 856653 was first decided on 10-09 and is in review).
+B2–B7 pass: 17/17 one-page PDFs, 0 tailor_failed, B4 0 unmatched on 286 bullets and 731 skills, controls discriminate,
+0 work-auth abstain on 15,466. **B8 17 net-new apply — FAIL**; `day_row.py` exit 1. Review holds 11: 4
+`no_requirements_found`, 7 `unevaluated`. All seven unevaluated bodies carry Jobright page chrome and fail the existing
+employer-body precondition (D-406/D-463); no drain or refetch work is proposed for them.
+
+**Health:** main gate 25 judged (16 E / 4 I / 5 U), 0 cached, **0 failed-open**; refresh 0 stale / 0 sent / 0 withheld /
+0 still stale, no actionable backlog. Backlog 150/150 judged (104 E / 17 I / 29 U), 0 failed-open/breaker skips,
+6,893 candidates. Jobapps 9,781 read / 9,553 resolved, no silent outage; 8/28 leads use provider `jobapps`.
+Run 590 and 592 manifests match exactly. Boards 3,445 attempted: 2,336 complete, 84 partial, 846 unchanged, **179 failed**
+(138 missing Workday `jobPostings`, 8 unreadable facet catalogs, 33 other). Queue sync reports one closed-folder conflict
+for Neto Capital posting 781631; `_closed` contains distinct jobs 781631 and 758711 under colliding base names. It is not
+one of this run's 28 leads. Funnel wall 3 h 08 m (09:00:05 → 12:07:57 UTC); final files around 07:48 CDT.
+
+**Precision:** D-635's two-opus census remains **1/108 = 0.9% (Wilson 0.2–5.1)**, arms agree 108/108; local score and
+validation exit 0, all three null controls exit 1. Run 592 was not added and no Claude calls were launched.
+Runs 589–590 remain two passing historical days; **current certified streak: 0 of 14**.
+
+**Next:** score the 10-18 scheduled run (historical day 22, candidate new streak day 1), identifying it by file/log.
+Watch Workday failures and the Neto closed-folder conflict; record recurrence without changing eligibility, profile or
+the résumé gate. Immutable reads require no open store handles or active daily writer. Keep primary on `main`.
+
 ### 2026-10-16 — **RUN 590 PASSES EVERY BAR; CERTIFIED STREAK DAY 2; THE EXISTING 1/108 CENSUS IS UNCHANGED** (D-636).
 
 **Run 590 (10-16, day 20):** identified from the newest funnel file and the runner log, not an assumed run id.
