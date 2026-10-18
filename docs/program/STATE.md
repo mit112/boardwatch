@@ -31,6 +31,32 @@
 
 ## Current standing
 
+### 2026-10-18 — **RUN 593 FAILS B8 VOLUME (15 < 20); BACKLOG BREAKER FIRES; CERTIFIED STREAK STAYS ZERO** (D-638).
+
+**Run 593 (10-18, historical day 22):** identified from the funnel file and runner log; no later completed daily run.
+B1 **26 net-new** of 26 funnel leads (26 new queue folders), independently recounted with normalized datetimes.
+B2–B7 pass: 15/15 one-page PDFs, 0 tailor_failed, B4 0 unmatched on 254 bullets and 645 skills, controls discriminate,
+0 work-auth abstain on 15,289. **B8 15 net-new apply — FAIL**; `day_row.py` exit 1. Review holds 11: 5
+`no_requirements_found`, 4 `unevaluated`, 1 `seniority_judged_above_band`, 1 `experience_requirement`. All four unevaluated
+bodies carry Jobright page chrome and fail the existing employer-body precondition (D-406/D-463).
+
+**Health:** main gate 25 judged (14 E / 4 I / 7 U), 1 cached, **0 failed-open**; refresh 0 stale / 0 sent / 0 withheld /
+0 still stale, no actionable refresh backlog. **Backlog 51/77 judged** (36 E / 7 I / 8 U), **2 failed-open batches**,
+73 breaker skips, 6,813 candidates. Batches 5–6 report `claude exited 1:` without stderr detail; cause unestablished.
+Jobapps 9,924 read / 9,686 resolved, no silent outage; 14/26 leads use provider `jobapps`. No lane reports a silent outage.
+Run 592 and 593 manifests match exactly. Boards 3,497 attempted: 1,970 complete, 86 partial, 1,409 unchanged, **32 failed**
+(down from 179): 24 HTTP 404, 6 HTTP 422, 1 HTTP 403, 1 all-detail-fetch failure; no missing `jobPostings` or unreadable
+facet-catalog failures this run. The historical Neto Capital 781631 closed-folder conflict recurs, outside today's leads;
+both closed folders remain preserved. Funnel wall 2 h 54 m (09:00:03 → 11:53:45 UTC); final files around 07:36 CDT.
+
+**Precision:** D-635's two-opus census remains **1/108 = 0.9% (Wilson 0.2–5.1)**, arms agree 108/108; local score and
+validation exit 0, all three null controls exit 1. Run 593 was not added and no Claude calls were launched.
+Runs 589–590 remain passing historical days; **current certified streak: 0 of 14**.
+
+**Next:** score the 10-19 scheduled run (historical day 23, candidate new streak day 1), identifying it by file/log.
+Watch backlog failed-open batches/breaker skips, Workday failures and the Neto conflict without changing eligibility,
+profile or the résumé gate. Immutable reads require no open store handles or active daily writer. Keep primary on `main`.
+
 ### 2026-10-17 — **RUN 592 FAILS B8 VOLUME (17 < 20); CERTIFIED STREAK RESETS TO ZERO** (D-637).
 
 **Run 592 (10-17, historical day 21):** identified from the funnel file and runner log; run 591 is a CLI row.
