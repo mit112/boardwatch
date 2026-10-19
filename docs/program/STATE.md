@@ -31,6 +31,35 @@
 
 ## Current standing
 
+### 2026-10-19 — **RUN 594 FAILS B8 VOLUME (14 < 20); BACKLOG SWEEP CLEAN; CERTIFIED STREAK STAYS ZERO** (D-639).
+
+**Run 594 (10-19, historical day 23):** identified from funnel file and runner log; no later completed daily run.
+B1 **21 net-new** of 22 funnel leads and 22 new folders; independent datetime-normalized recount agrees. TalentHop
+887481 is a repeat first decided on 10-11 and is in review. B2–B7 pass: 14/14 one-page PDFs, 0 tailor_failed,
+B4 0 unmatched on 236 bullets and 602 skills, controls discriminate; 0 work-auth abstain on 15,205.
+**B8 14 net-new apply — FAIL**; day reader exit 1 solely for volume. Review holds 8: 5 `no_requirements_found`,
+2 `unevaluated`, 1 `seniority_judged_above_band`. Both unevaluated bodies fail the employer-body precondition
+with Jobright page chrome (D-406/D-463); no drain or refetch path is owed for them.
+
+**Health:** main gate 20 judged (12 E / 2 I / 6 U), 2 cached, **0 failed-open**. Refresh 4 stale / 0 sent /
+4 withheld / 4 still stale: **0 actionable refresh backlog**. Backlog **150/150 judged** (109 E / 15 I / 26 U),
+0 failed-open batches or breaker skips, 6,796 candidates. This run's clean sweep does not establish the cause of
+run 593's failures or certify its previously unjudged items. Jobapps 10,017 read / 9,765 resolved; 5/22 leads use
+provider `jobapps`; no lane reports a silent outage. Run 593/594 manifests match exactly. Boards 3,503 attempted:
+2,490 complete, 100 partial, 880 unchanged, **33 failed** (25 HTTP 404, 6 HTTP 422, 1 HTTP 403, 1 HTTP 429 after
+three attempts); no missing Workday `jobPostings` or unreadable facet catalogs. Neto 781631's historical queue
+conflict recurs outside today's leads; both closed folders preserved. Funnel wall 2 h 41 m
+(09:00:06 → 11:41:24 UTC); final files around 07:25 CDT. Two judge-cleared leads closed undelivered (959146,
+970011); 419 remain open below the cut. Record only; no ranking change during this audit.
+
+**Precision:** D-635's two-opus census remains **1/108 = 0.9% (Wilson 0.2–5.1)**, arms agree 108/108.
+Local score/validate exit 0; missing-id, duplicate-id and fabricated-evidence controls each exit 1.
+Run 594 was not added; no Claude calls launched. **Certified streak: 0 of 14.**
+
+**Next:** score the 10-20 scheduled run (historical day 24, candidate new streak day 1), identifying it by file/log.
+Watch backlog failures/breaker skips, actionable refresh backlog, board failures and Neto without changing
+eligibility, profile or résumé gate. Immutable reads require no store handles or active daily writer. Keep primary on `main`.
+
 ### 2026-10-18 — **RUN 593 FAILS B8 VOLUME (15 < 20); BACKLOG BREAKER FIRES; CERTIFIED STREAK STAYS ZERO** (D-638).
 
 **Run 593 (10-18, historical day 22):** identified from the funnel file and runner log; no later completed daily run.
