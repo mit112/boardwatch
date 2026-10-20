@@ -31,6 +31,31 @@
 
 ## Current standing
 
+### 2026-10-20 — **RUN 596 PASSES B1–B8 (23 net-new apply); CERTIFIED STREAK DAY 1 OF 14** (D-640).
+
+**Run 596 (10-20, historical day 24):** identified from funnel file and runner log. Store id 595 is not a daily run:
+started 10-19 17:36 UTC, status `running`, 0 boards, no runner-log line (a CLI-consumed id); not scored.
+B1 **30 net-new** of 30 funnel leads and 30 new folders; independent datetime-normalized recount agrees, 0 repeats.
+B2–B7 pass: 24/24 one-page PDFs, 0 tailor_failed, B4 0 unmatched on 405 bullets and 1,032 skills, controls
+discriminate; 0 work-auth abstain on 15,498. **B8 23 net-new apply — PASS**; day reader exit 0. Review holds 7:
+4 `no_requirements_found`, 1 `seniority_judged_above_band`, 1 `form_question_hard_stop`, 1 `unevaluated` (jobapps
+1029479, non-employer Jobright body, the withheld D-406/D-463 class; no drain owed).
+
+**Health:** main gate 35 judged (24 E / 6 I / 5 U), 0 cached, **0 failed-open**. Refresh 0 stale: **0 actionable
+refresh backlog**. Backlog **150/150 judged** (105 E / 22 I / 23 U), 6,820 candidates, 0 failed-open batches or
+breaker skips. Jobapps 10,116 read / 9,852 resolved; 5/30 leads use provider `jobapps`; no lane silent outage.
+Run 594/596 manifests match exactly. Boards 3,516 attempted: 2,772 complete, 110 partial, 600 unchanged, **34 failed**
+(26 HTTP 404, 6 HTTP 422, 1 HTTP 403, 1 HTTP 429 after three attempts); no missing `jobPostings` or unreadable facets.
+Queue: 2 failed copies. Neto 781631 recurs; **new: Amazon 978805** collides with closed folder of a different posting
+(946877), same shape as Neto. All four closed folders preserved; no repair. Buried: 1 judge-cleared closed undelivered
+(982898); 440 open below the cut. Funnel wall **3 h 48 m** (09:00:05 → 12:48:37 UTC); morning files 08:33 CDT.
+
+**Precision:** D-635 census unchanged, **1/108 = 0.9% (Wilson 0.2–5.1)**; run 596 not added; no Claude calls.
+**Certified streak: 1 of 14** (run 596).
+
+**Next:** score the 10-21 scheduled run (historical day 25, candidate streak day 2) by file/log identity. Watch the
+Amazon/Neto queue conflicts (record only), backlog and board failures. Freeze holds. Keep primary on `main`.
+
 ### 2026-10-19 — **RUN 594 FAILS B8 VOLUME (14 < 20); BACKLOG SWEEP CLEAN; CERTIFIED STREAK STAYS ZERO** (D-639).
 
 **Run 594 (10-19, historical day 23):** identified from funnel file and runner log; no later completed daily run.
