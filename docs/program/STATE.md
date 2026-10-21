@@ -31,6 +31,33 @@
 
 ## Current standing
 
+### 2026-10-21 — **RUN 597 PASSES B1–B8 (30 net-new apply); CERTIFIED STREAK DAY 2 OF 14** (D-641).
+
+**Run 597 (10-21, historical day 25):** identified from `funnel-597.json` and the runner log; store ids 596/597 both
+`ok`, no stranded row between them. B1 **36 net-new** of 36 funnel leads and 36 new folders; independent
+datetime-normalized recount agrees, 0 repeats. B2–B7 pass: 30/30 one-page PDFs, 0 tailor_failed, B4 0 unmatched on
+501 bullets and 1,290 skills, controls discriminate; 0 work-auth abstain on 15,591. **B8 30 net-new apply — PASS**;
+day reader exit 0. Review holds 6: 3 `unevaluated` (jobapps 1051775 Palantir, 1051849 L3Harris, 1051791 TETRAHED —
+all non-employer Jobright bodies, the withheld D-406/D-463 class; no drain owed), 2 `no_requirements_found` (Medpace
+1051698, VTG 1051792), 1 `seniority_judged_above_band` (Rilla 1051678).
+
+**Health:** main gate 37 judged (30 E / 4 I / 3 U), 0 cached, **0 failed-open**. Refresh 0 stale: **0 actionable
+refresh backlog**. Backlog **150/150 judged** (94 E / 34 I / 22 U), 6,829 candidates, 0 failed-open batches or
+breaker skips. Jobapps 10,291 read / 10,020 resolved; 6/36 leads use provider `jobapps`; no lane silent outage.
+Run 596/597 manifests match exactly. Boards 3,570 attempted: 2,648 complete, 95 partial, 793 unchanged, **34 failed**
+(26 HTTP 404, 7 HTTP 422, 1 HTTP 403; no 429); no missing `jobPostings` or unreadable facets. Queue: 2 failed copies,
+the same two as 10-20 (Neto 781631, Amazon 978805); all four closed folders preserved; no repair. Buried: 7
+judge-cleared closed undelivered; 474 open below the cut. Funnel wall **4 h 51 m** (09:00:06 → 13:51:06 UTC);
+morning files 09:36 CDT. Measured stage split vs run 596: scan 5,541 → 8,035 s (+42 min), tailor 5,897 → 7,280 s
+(+23 min, 36 tailored vs 30); the scan growth is not attributed further (Domino's alone took 1,340 s, partial).
+
+**Precision:** D-635 census unchanged, **1/108 = 0.9% (Wilson 0.2–5.1)**; run 597 not added; no Claude calls.
+**Certified streak: 2 of 14** (runs 596, 597).
+
+**Next:** score the 10-22 scheduled run (historical day 26, candidate streak day 3) by file/log identity. Watch scan
+wall time (two rising days), the Amazon/Neto queue conflicts (record only), backlog and board failures. Freeze holds.
+Keep primary on `main`.
+
 ### 2026-10-20 — **RUN 596 PASSES B1–B8 (23 net-new apply); CERTIFIED STREAK DAY 1 OF 14** (D-640).
 
 **Run 596 (10-20, historical day 24):** identified from funnel file and runner log. Store id 595 is not a daily run:
