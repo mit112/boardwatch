@@ -31,6 +31,40 @@
 
 ## Current standing
 
+### 2026-10-23 — **RUN 601 FAILS B8 VOLUME (11 net-new apply < 20); CERTIFIED STREAK RESETS TO 0 OF 14** (D-643).
+
+**Run 601 (10-23, historical day 27):** identified from `funnel-601.json` and the runner log; store ids run 600 → 601
+with no stranded scheduled row. B1 **20 net-new** of 20 funnel leads and 20 new folders; independent
+datetime-normalized recount agrees, 0 repeats. B2–B7 pass: 11/11 one-page PDFs, 0 tailor_failed, B4 0 unmatched on
+186 bullets and 473 skills, controls discriminate; 0 work-auth abstain on 16,044. **B8 11 net-new apply — FAIL**;
+day reader exit 1 solely for B8. Volume fell upstream: 29 shortlisted (35 on 600), gate 23 judged with 11 eligible
+(22 on 600), 20 placeable, 9 held. Even with all 9 placed the day would sit at the bar, not above it. Review holds 9:
+4 `unevaluated` (Dev10 1094826 jobapps and 1094875 linkedin, ESPN 1094810, Causeway Capital 1094819 — all fail
+`is_employer_body` with Jobright page chrome, the withheld D-406/D-463 class; no drain owed), 5
+`no_requirements_found` (Apple 1095006, Rokt 1074212, TikTok 1094766, and jobapps 1094755/1094757 whose company name
+reads `↳` — the D-642 parse defect **recurs, twice**; not fixed during the freeze). Same-role pairs in the funnel:
+Remitly 1080782/1094673, Apple 1095006/1095008, Dev10 1094826/1094875 (record only).
+
+**Health:** main gate 23 judged (11 E / 8 I / 4 U) of 24 sent, 0 cached, 0 failed-open batches, **1 missing verdict**
+(TikTok 1094766, left unchanged, no gate row). Refresh 0 stale / 0 sent / 0 still stale. Backlog **150/150 judged**
+(99 E / 19 I / 32 U), 6,830 candidates, 0 failed-open batches or breaker skips. Jobapps 10,642 read / 10,352
+resolved; 5/20 leads `jobapps`; no lane silent outage. Run 600/601 manifests match exactly. Boards 3,642 attempted:
+2,676 complete, 98 partial, 832 unchanged, **36 failed** (27 HTTP 404, 8 HTTP 422, 1 HTTP 403; no 429).
+**Throttle: 30 retries, 3 exhausted** (careers.appliedmaterials.com, eaton.eightfold.ai, jobs.northropgrumman.com; 0
+on 600). 21 empty-complete guarded (21 on 600; `pocket` out, `quadric` in). Queue: 2 failed copies, the same Neto
+781631 / Amazon 978805 conflicts (10-20 to 10-23); all four closed folders preserved; no repair. Buried: 3
+judge-cleared closed undelivered (918785, 982898, 997689); 524 open below the cut (496 on 600). Funnel wall
+**3 h 17 m** (09:00:06 → 12:16:58 UTC), down from 4 h 13 m; morning files 08:06 CDT. Stage split vs run 600: scan
+7,529 → 6,276 s, tailor 5,476 → 3,048 s (20 tailored vs 27).
+
+**Precision:** D-635 census unchanged, **1/108 = 0.9% (Wilson 0.2–5.1)**; run 601 not added; no Claude calls.
+**Certified streak: 0 of 14** (596, 597, 600 ended by 601).
+
+**Next:** score the 10-24 scheduled run (historical day 28, candidate streak day 1) by file/log identity. Watch B8
+volume (11 today; shortlist and gate-eligible both fell), the `↳` company recurrence, the 3 throttle-exhausted
+eightfold/Workday-style hosts, the Amazon/Neto queue conflicts (record only), backlog and board failures. Freeze
+holds. Keep primary on `main`.
+
 ### 2026-10-22 — **RUN 600 PASSES B1–B8 (21 net-new apply); CERTIFIED STREAK DAY 3 OF 14** (D-642).
 
 **Run 600 (10-22, historical day 26):** identified from `funnel-600.json` and the runner log. Store ids 598 and 599
