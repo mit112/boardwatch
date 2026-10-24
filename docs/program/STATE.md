@@ -31,6 +31,43 @@
 
 ## Current standing
 
+### 2026-10-24 — **RUN 606 FAILS B8 VOLUME (9 net-new apply < 20); CERTIFIED STREAK STAYS 0 OF 14** (D-644).
+
+**Run 606 (10-24, historical day 28):** identified from `funnel-606.json` and the runner log. Store ids 602–605 are
+CLI rows from 10-23 evening (0 boards, sub-second); no stranded scheduled row. B1 **25 net-new** of 25 funnel leads
+and 25 new folders; independent datetime-normalized recount agrees, 0 repeats. B2–B7 pass: 9/9 one-page PDFs, 0
+tailor_failed, B4 0 unmatched on 151 bullets and 387 skills, controls discriminate; 0 work-auth abstain on 16,098.
+**B8 9 net-new apply — FAIL**; day reader exit 1 solely for B8. Shortlist held at 29 (29 on 601) but gate-eligible
+fell to 9 (11 on 601) and review holds rose to 16 of 25 placeable. Review holds 16: 8 `no_requirements_found`
+(Abnormal AI 1112201, IBM 1112092, ByteDance 1112069, Integral Federal 1112144, Anduril 1096438, TalentHop
+1029489/436579, Palantir 1112104), 5 `unevaluated` (Principal Global Services 1112160, Spectrum Asset Management
+1112171, RFA Engineering 1112163, Principal México 1112161, Dev10 1112119 — all jobapps, all fail `is_employer_body`
+with Jobright page chrome, the withheld D-406/D-463 class; no drain owed), 2 `seniority_judged_above_band` (Comcast
+1112587, Kelly 1112213), 1 `experience_requirement` (Pinterest 1111963). The `↳` company name does **not** recur (0
+on 606). Possible same-role pair: Principal Global Services 1112160 / Principal México 1112161 (both "Software
+Engineer I", separate Jobright ids; record only).
+
+**Health:** main gate 23 judged of 23 sent (9 E / 3 I / 11 U), 0 cached, 0 failed-open batches, **0 missing
+verdicts**. Refresh 0 stale / 0 sent / 0 still stale. Backlog **150/150 judged** (87 E / 25 I / 38 U), 6,806
+candidates, 0 failed-open batches or breaker skips. Jobapps 10,852 read / 10,539 resolved; 10/25 leads `jobapps`; no
+lane silent outage. Run 601/606 manifests match exactly. Boards 3,668 attempted: 2,766 complete, 78 partial, 767
+unchanged, **57 failed** (27 HTTP 404, 8 HTTP 422, 1 HTTP 403, no 429, and **21 new `invalid board payload: missing
+'jobPostings' list`** — every one a `wd501` Workday board; 21 of the 24 `wd501` boards failed between 09:08 and 10:29
+UTC, the other 3 partial at 10:36; 0 such failures on 590/596/597/600/601, where `wd501` was 17 complete / 6 partial
+on 601; no cause inferred). **Throttle: 0 retries, 0 exhausted** (30/3 on 601). 21 empty-complete guarded. Queue: 2
+failed copies, the same Neto 781631 / Amazon 978805 conflicts (10-20 to 10-24); all four closed folders preserved; no
+repair. Buried: 6 judge-cleared closed undelivered (906383, 906430, 906447, 907335, 918736, 996284); 543 open below
+the cut (524 on 601). Funnel wall **2 h 52 m** (09:00:06 → 11:52:10 UTC), down from 3 h 17 m; morning files 07:40
+CDT. Stage split vs run 601: scan 6,276 → 5,732 s, tailor 3,048 → 2,427 s (25 tailored, 9 with PDF).
+
+**Precision:** D-635 census unchanged, **1/108 = 0.9% (Wilson 0.2–5.1)**; run 606 not added; no Claude calls.
+**Certified streak: 0 of 14** (the 10-24 candidate day 1 failed).
+
+**Next:** score the 10-25 scheduled run (historical day 29, candidate streak day 1) by file/log identity. Watch B8
+volume (9 today; gate-eligible 9 and review holds 16 of 25), whether the 21 `wd501` "missing jobPostings" failures
+recur, the `↳` company (0 today), the Amazon/Neto queue conflicts (record only), backlog and board failures. Freeze
+holds. Keep primary on `main`.
+
 ### 2026-10-23 — **RUN 601 FAILS B8 VOLUME (11 net-new apply < 20); CERTIFIED STREAK RESETS TO 0 OF 14** (D-643).
 
 **Run 601 (10-23, historical day 27):** identified from `funnel-601.json` and the runner log; store ids run 600 → 601
