@@ -1,5 +1,6 @@
 # boardwatch docs
 
+- [User guide](user-guide.md) — every part of boardwatch, in the order you meet it. Start here.
 - [Configuration](configuration.md) — settings and where they live.
 - [Platform support](platform-support.md) — Windows caveats and what's fixed.
 - [Scheduling](scheduling.md) — cron/launchd/systemd scan recipes and notifications.

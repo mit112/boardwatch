@@ -10,7 +10,7 @@ exclude = [
 [project]
 name = "boardwatch"
 version = "0.6.0"
-description = "Self-hosted job radar over official ATS APIs"
+description = "Self-hosted job radar over official ATS job boards: explainable ranking, eligibility checks that quote the posting, and a tailored résumé PDF per lead"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Mit Sheth" }]
