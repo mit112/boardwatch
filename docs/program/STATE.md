@@ -31,6 +31,45 @@
 
 ## Current standing
 
+### 2026-10-25 — **RUN 680 FAILS B8 VOLUME (19 net-new apply < 20); CERTIFIED STREAK STAYS 0 OF 14** (D-645).
+
+**Run 680 (10-25, historical day 29):** identified from `funnel-680.json` and the runner log. Store ids 607–679 are
+CLI rows (0 boards): 607–608 from 10-24 evening, and 609–679 from an **owner-directed job-apps Claude session**
+(00:26–02:06 CDT, finished before the 04:00 run). That session triaged the manual lane (136 leads closed natively, 82
+skipped, 29 Jobright URLs swapped to employer URLs in `postings.url`) and built 54 manual-lane résumés with `tailor
+run`, which put 54 folders in the 2026-10-25 day folder. Seventeen of its CLI rows (610–612, 641–654) are still marked
+`running`, left over from killed parallel builds; they were recorded and not repaired. No scheduled row was stranded.
+B1 **29 net-new** of 29 funnel leads and 29 new folders; independent recount agrees, 0 repeats. B2–B7 pass: 19/19
+one-page PDFs, 0 tailor_failed, B4 0 unmatched on 320 bullets and 817 skills, controls discriminate; 0 work-auth
+abstain on 15,950. **B8 19 net-new apply — FAIL by one**; day reader exit 1 solely for B8. Shortlist 34 (29 on 606);
+gate-eligible 19 (9 on 606); 29 placeable, 10 held. Review holds 10: 5 `unevaluated` (Delta Pipeline 1119865, Citi
+1073743, Cotiviti 1119863, Uber 110223, CoStar 224225 — all jobapps, all fail `is_employer_body` with Jobright page
+chrome, the withheld D-406/D-463 class; no drain owed), 4 `no_requirements_found` (Auto-Chlor 1119920, Seagate
+1119848, Association of American Railroads 111539, and 187687 whose company parses as `↳`), 1
+`seniority_judged_above_band` (Affirm 978619). **The `↳` company recurs (1 lead, 187687; 0 on 606).** Affirm 978619
+(Las Vegas) has the same title as 606's Affirm 978613 (Chicago), a possible same-role pair; record only.
+
+**Health:** main gate 27 judged of 27 sent (19 E / 4 I / 4 U), 1 cached, 0 failed-open batches, **0 missing
+verdicts**. Refresh 0 stale / 0 sent / 0 still stale. Backlog **150/150 judged** (104 E / 15 I / 31 U), 6,747
+candidates, 0 failed-open batches or breaker skips. Jobapps 11,019 read / 10,696 resolved; 12/29 leads `jobapps`; no
+lane silent outage. Run 606/680 manifests match exactly. Boards 3,724 attempted: 1,947 complete, 78 partial, **1,662
+unchanged** (767 on 606), 37 failed (28 HTTP 404, 8 HTTP 422, 1 HTTP 403, no 429). Postings seen 59,113 (125,785 on
+606). No cause inferred for either change. **The `wd501` "missing jobPostings" failures do not recur:** 0 of 24
+boards failed, 20 complete and 4 partial (21 failed on 606). **Throttle: 8 retries, 2 exhausted** (eaton.eightfold.ai,
+jobs.northropgrumman.com; 0/0 on 606). 21 empty-complete guarded. Queue: 2 failed copies, the same Neto 781631 /
+Amazon 978805 conflicts (10-20 to 10-25); all four closed folders preserved; no repair. Buried: 6 judge-cleared closed
+undelivered (723070, 906070, 925768, 947271, 1035638, 1068087); 566 open below the cut (543 on 606). Funnel wall **3 h
+27 m** (09:00:06 → 12:27:13 UTC), up from 2 h 52 m; morning files 08:16 CDT. Stage split vs run 606: scan 5,732 →
+5,325 s, tailor 2,427 → 4,962 s (29 tailored, 19 with PDF).
+
+**Precision:** D-635 census unchanged, **1/108 = 0.9% (Wilson 0.2–5.1)**; run 680 not added; no Claude calls.
+**Certified streak: 0 of 14** (the 10-25 candidate day 1 failed).
+
+**Next:** score the 10-26 scheduled run (historical day 30, candidate streak day 1) by file/log identity; expect CLI
+rows to have taken ids. Watch B8 volume (19 today; gate-eligible 19, review holds 10 of 29), the `↳` company (1
+today), the unchanged-board jump (1,662) and postings seen (59,113), throttle exhaustion, whether `wd501` stays clean,
+the Amazon/Neto queue conflicts (record only), backlog and board failures. Freeze holds. Keep primary on `main`.
+
 ### 2026-10-24 — **RUN 606 FAILS B8 VOLUME (9 net-new apply < 20); CERTIFIED STREAK STAYS 0 OF 14** (D-644).
 
 **Run 606 (10-24, historical day 28):** identified from `funnel-606.json` and the runner log. Store ids 602–605 are
