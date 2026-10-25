@@ -74,6 +74,10 @@ All notable changes to this project are documented here. The format follows
   shows the review page, the quickstart, the daily pipeline and the eligibility audit in about 320
   lines instead of 680. Every section it dropped is in the user guide word for word. The PyPI
   description now says what boardwatch does.
+- **`boardwatch --help` groups its 29 commands** into Set up, Daily, Review and track, Help for
+  agents, and Advanced and maintenance, so `init` and `top` no longer sit among the store
+  maintenance commands. `boardwatch --version` works as well as `boardwatch version`, and the
+  `scan` and `resume` help lines no longer use internal terms.
 - **The web viewer is organised around applying.** Jobs to explore, Needs review and All jobs replace the pipeline's sixteen counters; a short summary shows what is new,
   how many applications you recorded today and in the past 7 days, and what needs attention. Each row carries one note about what to check. A job workspace gathers
   what to check, the résumé, your application answers and a follow-up date; an optional apply session works down the list. Status shows four separate readings
