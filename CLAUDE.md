@@ -1,7 +1,7 @@
 # boardwatch — agent instructions
 
 **This file states only what is true now.** Change history goes in `docs/program/DECISIONS.md`; known gaps
-and current standing go in `docs/program/STATE.md`. Instructions that narrate their own history stop being
+and current standing go in the private ops `STATE.md` (D-646). Instructions that narrate their own history stop being
 followed — keep incidents out of this file.
 
 ---
