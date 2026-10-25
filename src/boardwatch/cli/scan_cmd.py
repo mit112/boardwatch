@@ -18,7 +18,7 @@ def scan(
     company: str | None = typer.Option(None, "--company", help="Scan only this company slug."),
     provider: str | None = typer.Option(None, "--provider", help="Scan only this provider."),
 ) -> None:
-    """Fetch watched boards (workers) and apply per board in one transaction (coordinator)."""
+    """Fetch every watched board and record new, changed and closed postings."""
     app_ctx = build_context(ctx.obj, ensure=False)  # run_scan migrates inside the lock
     try:
         summary = run_scan(app_ctx.engine, app_ctx.settings, company=company, provider=provider)

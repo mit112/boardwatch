@@ -384,7 +384,7 @@ def project(
 #: is safe; that suite is re-run, not assumed, to prove it.
 resume_app = typer.Typer(
     no_args_is_help=True,
-    help="Project a career-profile bundle into a posting-aware résumé (Stage 1 + Stage 2).",
+    help="Turn a career-profile bundle into a résumé aimed at one posting.",
 )
 
 POSTING_OPTION = typer.Option(..., "--posting", help="Posting id (the # column of top).")  # noqa: B008
