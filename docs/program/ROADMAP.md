@@ -31,7 +31,7 @@ to eligibility, the profile or the résumé gate restarts the count; a scan/boar
 The historical sequence began with the **2026-09-27 04:00 run** (D-600). Run 533 on October 4 failed B8,
 breaking seven passing days; run 534 on October 5 also failed B8 and judge health (D-620, D-621).
 **Current qualifying streak: 0; no completion date is evidenced.** The bar remains 14 consecutive frozen daily runs;
-existing after-October-10 work holds remain unchanged. Each daily row goes in `METRICS.md` "Acceptance run".
+existing after-October-10 work holds remain unchanged. Each daily row goes in the maintainer's private `RUNS.md` (D-646); `METRICS.md` holds the rows through run 680.
 
 ## Milestones
 

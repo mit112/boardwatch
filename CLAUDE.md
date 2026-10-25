@@ -8,19 +8,23 @@ followed — keep incidents out of this file.
 
 ## Session-start ritual — do this before anything else
 
-1. **Read `docs/program/STATE.md`.** It is the single source of truth for where the program stands:
-   current phase, what shipped, next action, blocked items, open questions.
+1. **Read the program's `STATE.md`.** It is the single source of truth for where the program stands:
+   current phase, what shipped, next action, blocked items, open questions. It lives in the maintainer's
+   private ops checkout beside this repo, `../boardwatch-ops/STATE.md` (D-646). Without that checkout,
+   read `docs/program/ROADMAP.md` instead: you are working on the product, not the daily runs.
 2. **Verify it against the repo.** `git log --oneline -5`, `git status`, and check that any phase STATE
    claims is complete actually is. **If STATE and the repo disagree, the repo wins** — correct STATE and
-   record the correction in `DECISIONS.md`. A stale state file that is trusted is worse than none.
+   record the correction (`RECORDS.md` for a run-scoped fact, `DECISIONS.md` for a product one). A stale
+   state file that is trusted is worse than none.
 3. **Pick the next task from `docs/program/PROGRAM.md`.** Work one phase at a time. **Do not start a phase
    whose predecessor's gate has not been met.** A gate is met when its metric says so, not when the work
    feels done.
 4. **Work.** Run the tests (below). **Preserve dirty files and linked worktrees** — do not reset or clean
    another worker's changes.
-5. **Before ending, update `STATE.md` and `METRICS.md`** — even if the session accomplished little. An
-   honest "blocked on X" is worth more than silence. Append to `DECISIONS.md` for any architectural choice
-   so it is never re-litigated after a context reset.
+5. **Before ending, update the ops `STATE.md`** — even if the session accomplished little. An honest
+   "blocked on X" is worth more than silence. A run reading goes in the ops `RUNS.md` row and an `R-` entry
+   in the ops `RECORDS.md`, **never in this repo** (D-646). Append to `DECISIONS.md` for any architectural
+   choice so it is never re-litigated after a context reset; product measurements go in `METRICS.md`.
    **Write them ONCE, at the end.** Keep running notes in `.agent/` (gitignored) and do the real write at
    close. Live-editing `STATE.md` through a session is churn, not memory — one measured session rewrote it
    43 times — and it guarantees a conflict with any branch that rewrites the file wholesale.
@@ -31,7 +35,8 @@ followed — keep incidents out of this file.
 
 | File | What it is |
 |---|---|
-| `docs/program/STATE.md` | **Read first.** Current standing. Rewritten every session. Kept near 170 lines. |
+| `../boardwatch-ops/` (private) | **Read `STATE.md` first** — current standing, rewritten every session. `RUNS.md` is the acceptance table, `RECORDS.md` the append-only `R-` run log. Every run record lives here, not in this repo (D-646). |
+| `docs/program/STATE.md` | A pointer to the private `STATE.md`. Closed. |
 | `docs/program/STANDING-FACTS.md` | Facts a fresh session should not re-derive, in six sections. Read the section for the subsystem you are about to touch — not the whole file. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
 | `docs/program/ROADMAP.md` | **The focus view and the finish line.** What "complete" means (B1–B8 for 14 frozen daily runs, D-598), the freeze rule, and what is deliberately off the path. Read it to pick what to work on; rewrite it only when the finish line moves. |
@@ -39,7 +44,7 @@ followed — keep incidents out of this file.
 | `docs/program/RETIREMENT-PLAN.md` | **The job-apps retirement plan** (its switch-off end state is retired — job-apps stays on as a source, D-566 §4, D-598). The finished gap analysis, job-apps' full source list, the phases, and what is already settled. Read before proposing any discovery work — it exists so the comparison is never re-derived. |
 | `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |
 | `docs/program/DECISIONS-ARCHIVE.md` | D-001 … D-076, verbatim. **Closed** — never append here. |
-| `docs/program/METRICS.md` | Per-run numbers. Gates are checked here. Holds the live tables, the P6-era records, and **the index for both metrics files**. |
+| `docs/program/METRICS.md` | Product measurements, the closed per-run history through run 680 (the acceptance table continues in the private `RUNS.md`, D-646), the P6-era records, and **the index for both metrics files**. |
 | `docs/program/METRICS-ARCHIVE.md` | The closed P0–P5 session records. **Closed** — never append here. |
 | `CHANGELOG.md` | Authoritative for what actually shipped. |
 | `docs/program/archive/`, `docs/archive/` | **Consumed** handoffs, reports, reviews, shipped designs, closed ticket files, the August plans/specs. Do not read them to pick work; open one only when a decision or code comment cites it (each folder's README maps old paths). |
