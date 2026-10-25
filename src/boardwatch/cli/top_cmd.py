@@ -275,7 +275,7 @@ class RankedResults:
     # comment here claimed two clauses with one never observed, citing a 2026-08-06 measurement
     # taken when the mode was `soft` and two of the clauses did not exist; D-265 corrected the
     # same sentence in the funnel note and left this one. Drained by `--include-hard-filter`,
-    # which is unbounded by the rank cutoff (Mit's ruling: 59% of the corpus is exactly where a
+    # which is unbounded by the rank cutoff (owner's ruling: 59% of the corpus is exactly where a
     # silently truncated audit would hide).
     hidden_hard_filter: int = 0
     # Cleared every filter but ranked outside `limit`. The bucket that did not exist before
@@ -498,7 +498,7 @@ def rank_open_postings(
 ) -> RankedResults:
     """Rank the open corpus. `record_surfaced=False` ranks WITHOUT consuming the queue.
 
-    The `seen` write makes ranking a mutation (D-103, Mit's ruling), which is right for a caller
+    The `seen` write makes ranking a mutation (D-103, owner's ruling), which is right for a caller
     that *delivers* a lead to somebody and wrong for one that merely needs the population.
     Delivering callers leave the default; `eligibility gate request` (which judges the shortlist
     and hands it back) and the pipeline (which records its own dispositions after the tailor loop,

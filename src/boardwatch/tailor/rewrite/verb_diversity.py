@@ -13,7 +13,7 @@ shares the rewrite's verb, or the Tier-A verb is itself already at/over cap, rev
 ships the same violation for nothing -- the rewrite is kept instead, sacrificing no good
 rewrite for zero diversity gain. The Tier-A baseline (bullets never rewritten, or
 dropped by an earlier gate) is NEVER modified and MAY legitimately exceed the cap on its
-own; Mit's authored content is never audited or demoted. Pure: no I/O, no LLM call.
+own; the user's authored content is never audited or demoted. Pure: no I/O, no LLM call.
 """
 
 from __future__ import annotations

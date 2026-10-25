@@ -438,7 +438,7 @@ def apply_oracle_verdicts(
     its worksheet row by `label`, in place (M5: preserves every other column — `hint`,
     `company`, `title`, `source`, `facts`, `body_text`, ...). Skips rows the M4 guard
     protects. Flags `applied/`-prefix (hard-negative, H1) rows accepted as `ineligible`
-    for review — Mit actually applied to those, so an ineligible verdict is a red flag,
+    for review — the owner actually applied to those, so an ineligible verdict is a red flag,
     not necessarily a bug."""
     by_label = {r["label"]: r for r in rows}
     labeled = 0

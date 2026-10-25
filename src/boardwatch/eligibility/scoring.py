@@ -11,7 +11,7 @@ procedure that cannot produce the evidence it needs).
 Under the shipped all-`preference` default, INELIGIBLE is structurally 0 — engine.evaluate's
 `blocking()` finds no `blocker` family — so precision is 0/0 and undefined. The reference
 policy sets every DECLARED family to `blocker` so the gate measures the RULES, not a user's
-policy. Mit's personal policy is a separate, unscored instance.
+policy. The owner's personal policy is a separate, unscored instance.
 
 The deferred-audit drain is mechanical, not a printed warning: `LabeledCase.label_provenance`
 marks a row `"oracle"` (AI-judged only) or `"audited"` (human-checked), `PrecisionReport.
@@ -45,7 +45,7 @@ from boardwatch.store.eligibility import RequirementItem
 LABELED_VERDICTS = frozenset({"eligible", "ineligible", "uncertain"})
 
 # Placeholder bar for PrecisionReport.meets_ship_gate's audited-coverage requirement.
-# Mit confirms the real value at ship time; 0.20 is not a measured or negotiated number.
+# The owner confirms the real value at ship time; 0.20 is not a measured or negotiated number.
 SHIP_AUDIT_COVERAGE_BAR: float = 0.20
 
 

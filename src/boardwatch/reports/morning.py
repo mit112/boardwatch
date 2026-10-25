@@ -1,6 +1,6 @@
 """The run-scoped morning artifact — PROGRAM.md §3.P3 **item 7**.
 
-This is Mit's actionable daily surface: for each lead this run tailored, where to apply, where
+This is the user's actionable daily surface: for each lead this run tailored, where to apply, where
 the PDF landed, the honest verdict label, and the strongest piece of evidence behind it — the
 thing `bw-daily`'s per-lead `apply.txt` did, unified with eligibility and rendered once per run
 instead of once per folder.
@@ -76,7 +76,7 @@ MARKDOWN_ALERT_LIMIT = 8
 
 @dataclass(frozen=True)
 class MorningLead:
-    """One tailored lead, ranked-order, with everything Mit needs to act on it this morning.
+    """One tailored lead, ranked-order, with everything the user needs to act on it this morning.
 
     `verdict_label` is `AuditView.presentation` (D-036) — the honest `eligible_cleared` /
     `eligible_mixed` / ... label, never the bare stored `verdict` — so "eligible" here never
@@ -97,7 +97,7 @@ class MorningLead:
     pdf_path: str | None
     evidence_kind: str | None
     evidence_text: str | None
-    # P4 item 6: keyword coverage of the JD's requirement terms against Mit's real résumé. A
+    # P4 item 6: keyword coverage of the JD's requirement terms against the user's real résumé. A
     # report, not a gate — `None` when it could not be measured, which renders honestly below.
     coverage: CoverageReport | None = None
 
@@ -135,7 +135,7 @@ def build_morning(
 ) -> MorningArtifact:
     """Assemble the artifact from already-built lead rows. Pure: no engine, no clock, no I/O.
 
-    Ranked by score, descending — the read order for a list Mit works top to bottom. A tie
+    Ranked by score, descending — the read order for a list the user works top to bottom. A tie
     keeps the caller's original relative order (`sorted` is stable).
     """
     ordered = tuple(sorted(leads, key=lambda lead: lead.score, reverse=True))

@@ -32,8 +32,8 @@ still reads URLs and writes nothing, ever. One 404 against a lead withholds it f
 from nothing else.
 
 **Fail-open is the whole design.** The cost of treating a dead posting as alive is one wasted
-résumé; the cost of treating a live posting as dead is a job Mit never sees and cannot know he
-missed. Only an explicit gone-status earns `dead`. Everything else — a timeout, a refused
+résumé; the cost of treating a live posting as dead is a job the user never sees and cannot
+know they missed. Only an explicit gone-status earns `dead`. Everything else — a timeout, a refused
 connection, a 403 from a bot-blocker, a 500, a redirect to a careers homepage, a posting with no
 URL at all — is `unknown`, and `unknown` is served.
 

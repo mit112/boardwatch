@@ -45,7 +45,7 @@ def validate_master(resume: Resume) -> None:
     Deliberately does NOT check bullet length or bullet count (P4 item 5a's job, on the
     TAILORED résumé): those are genuinely per-lead risks (Tier-B rewrite, JD-driven trimming)
     that vary posting to posting, whereas a concise or long authored bullet, or an entry with
-    more than 6 bullets, is Mit's authoring choice on the master. Gating the master on them
+    more than 6 bullets, is the user's authoring choice on the master. Gating the master on them
     was exactly the regression D-055 removed — this function must not reintroduce it.
     """
     if not resume.header or not resume.header[0].strip():

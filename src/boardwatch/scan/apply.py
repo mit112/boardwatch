@@ -515,7 +515,7 @@ def _inserted_fields(raw: RawPosting, now: datetime) -> dict[str, Any]:
     gate's failure modes are not symmetric: a false `non_us` DELETES a real lead permanently and
     invisibly, while a false `unknown` merely declines to filter one. `classify_location` builds a
     per-segment verdict list and returns `unknown` when it is empty, so `[]` classifies `unknown` —
-    which the hard gate KEEPS (Mit's fail-open ruling, D-251). Recording no location is therefore
+    which the hard gate KEEPS (owner's fail-open ruling, D-251). Recording no location is therefore
     the direction that cannot delete. It costs the location-bearing identity kinds: with `[]`,
     `normalized_locations` returns None and `compute_identities` emits no `company_title_location`,
     `cross_host` or `exact_quad`, so this row can neither suppress nor be suppressed on a place the

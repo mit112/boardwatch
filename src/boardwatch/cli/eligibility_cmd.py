@@ -87,7 +87,7 @@ eligibility_app.add_typer(gate_app, name="gate")
 
 # Worksheet default: the labeled-set *.jsonl directory the label/score commands read and
 # write. Rooted under the user's own data_dir (not a repo-relative path) so multi-tenancy
-# holds — Mit's own worksheet lives in his gitignored working dir and is passed via
+# holds — the owner's worksheet lives in a gitignored working dir and is passed via
 # --worksheet, never hardcoded here.
 _DEFAULT_WORKSHEET_DIRNAME = "eligibility-labels"
 
