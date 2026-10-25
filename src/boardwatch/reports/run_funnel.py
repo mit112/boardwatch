@@ -441,7 +441,7 @@ class Lead:
         beside stored locations is two facts that can drift, and a lead labelled in-target over
         an address outside the targets is worse than no label at all. A posting naming no place
         is `unknown`, which is what the gate FAIL-OPENS on (never silently delete a real role,
-        Mit's ruling) — and reporting it is the point: `unknown` is not `in_target`. Where the
+        owner's ruling) — and reporting it is the point: `unknown` is not `in_target`. Where the
         gate abstains (T204: no targets recorded or declared, or a target with no pack) the lead
         reads `abstain`, never a location verdict the gate did not give.
         """

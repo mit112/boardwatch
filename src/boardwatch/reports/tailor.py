@@ -821,7 +821,7 @@ def run_tailor(
         else:
             # No layout gate here (P4 checkpoint fix): the untailored master is the
             # unconditionally-shippable safety net (P1a — never silently delete a real
-            # job). It is Mit's authored, already page-valid résumé; `validate_layout`'s
+            # job). It is the user's authored, already page-valid résumé; `validate_layout`'s
             # TOO_MANY_BULLETS reuses MAX_BULLETS_PER_ENTRY, which is a *selection* cap
             # `build_plan` trims TO, so the authored master can legitimately have entries
             # that exceed it before trimming. Gating this fallback on the same check the

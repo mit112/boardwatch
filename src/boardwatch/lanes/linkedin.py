@@ -17,7 +17,7 @@ question has since been answered -- the owner approved that route on 2026-09-01 
 
 **Permission is a separate axis and it is refused.** `robots.txt` disallows `/jobs-guest/` in all
 77 agent groups and names `ClaudeBot` / `anthropic-ai` / `Claude-User` by name; User Agreement §8.2
-forbids scripted scraping; the repo is public. Mit ruled BUILD with all of that in front of him
+forbids scripted scraping; the repo is public. The owner ruled BUILD with all of that in view
 (D-290) -- an owner's call about the owner's own risk, recorded, not re-litigated. The lane ships
 OFF by default (`lanes_enabled` is empty) and is not armed.
 

@@ -278,7 +278,7 @@ def evaluate(
             overlap = seen & group
             if len(overlap) < 2:
                 continue
-            # A UNANIMOUS group is not a contradiction (T103, Mit's ruling 2026-09-19).
+            # A UNANIMOUS group is not a contradiction (T103, owner's ruling 2026-09-19).
             # Presence alone used to dissolve the group, but two members that AGREE are two
             # statements of one outcome, not a posting arguing with itself. The owner's words
             # on the case that motivated it -- an active clearance required AND an obtainable

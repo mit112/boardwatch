@@ -225,7 +225,7 @@ if TYPE_CHECKING:
 # 320 a day — 7.6x the median it was chosen to match. The two decisions were taken separately and
 # neither noticed the other.
 #
-# Lowered to 10 (D-293, Mit's ruling) as a HOLDING value, not a new equilibrium. The cost of this
+# Lowered to 10 (D-293, owner's ruling) as a HOLDING value, not a new equilibrium. The cost of this
 # cap is the render — every lead is a tailored résumé and a PDF — and D-292 measured that ~51% of
 # what currently reaches the shortlist is not a software role at all. Producing 320 résumés a day
 # against a half-junk pile is the waste this avoids; 10 x 8 runs = 80/day, which still clears

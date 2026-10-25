@@ -441,7 +441,7 @@ def classify(
     # own structured `employmentType` says this is not a full-time role, and the JD body says
     # nothing a rule can quote.
     #
-    # It HOLDS and can never DECIDE, which is the whole of D-519 ruling 5 and Mit's T92 ruling:
+    # It HOLDS and can never DECIDE, which is the whole of D-519 ruling 5 and the T92 ruling:
     # a provider-authored structured field is NOT the frozen JD, so `INELIGIBLE`'s "quoted span
     # from the frozen JD" keeps its literal reading and this may never yield a verdict. Same
     # shape as `form_question_hard_stop` above, which quotes a form question for the same reason.
@@ -465,7 +465,7 @@ def classify(
     # the caller normalises, so only a genuine non-full-time value can move anything.
     #
     # F8 (2026-09-23 review). The hold used to fire unconditionally, which assumed every tenant
-    # seeks full-time employment -- correct for Mit's own profile and wrong for a contract or
+    # seeks full-time employment -- correct for the owner's profile and wrong for a contract or
     # intern seeker, whose Ashby leads all went to review regardless of what they asked for.
     # `_conflicts_with_employment_preference` reads the SAME two facts the JD-body families
     # (`contract_not_fte`, `internship`) already read, so a stated preference this gate agrees
