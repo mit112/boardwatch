@@ -44,7 +44,9 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "platformdirs>=4.2",
-    "selectolax>=0.3.21",
+    # 1.0 removed the `selectolax.parser` (Modest) backend every HTML read imports; moving to
+    # `selectolax.lexbor` changes extracted JD text, so it is its own change, not a bump.
+    "selectolax>=0.3.21,<1",
     "rapidfuzz>=3.9",
     "tenacity>=8.3",
     "filelock>=3.13",

@@ -1,0 +1,35 @@
+name: install-smoke
+
+# Every other job installs from `uv.lock`, so a dependency release that breaks a fresh
+# `pipx install boardwatch` never reaches them: selectolax 1.0 broke every PyPI install for three
+# weeks under a green CI. This job resolves the way a user's install does, without the lock.
+on:
+  schedule:
+    - cron: "30 7 * * *"
+  pull_request:
+    paths:
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/install-smoke.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      # The wheel this commit would publish, with today's newest allowed dependencies.
+      - run: uv build --wheel
+      - run: uvx --no-cache --python ${{ matrix.python }} --from dist/boardwatch-*.whl boardwatch --help
+      # What `pipx install boardwatch` hands a new user right now. Not on a PR: the published
+      # package's health is not the change under review.
+      - if: github.event_name != 'pull_request'
+        run: uvx --no-cache --python ${{ matrix.python }} --from boardwatch boardwatch --help
