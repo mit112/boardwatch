@@ -86,6 +86,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A fresh `pipx install boardwatch` starts again.** selectolax 1.0 (2026-10-03) removed the
+  `selectolax.parser` backend boardwatch imports, so every new install failed with an
+  `ImportError` before any command ran. The dependency is capped below 1.0. A new `install-smoke`
+  workflow installs the wheel and the published package nightly without the lockfile, the way a
+  user's install resolves, because every other job installs from `uv.lock` and stayed green.
 - **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
   a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
   That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a
