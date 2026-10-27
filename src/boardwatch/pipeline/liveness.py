@@ -26,10 +26,12 @@ from boardwatch.core.liveness import (
     Liveness,
     verdict_for_failure,
     verdict_for_status,
+    verdict_for_workday_cxs,
     verdict_without_url,
 )
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
+from boardwatch.providers.workday import cxs_job_url
 from boardwatch.store.tables import postings
 
 # A probe of one posting. Injectable so tests never touch the network and so the pipeline does
@@ -51,10 +53,29 @@ def build_prober(settings: Settings) -> LivenessProber:
     What reuse also brings is `follow_redirects=True`, so the status this sees may belong to a
     resource the stored URL was sent to rather than the posting itself — `FetchFailure.redirected`
     is forwarded for exactly that reason, and `core/liveness.py` decides what it means.
+
+    A Workday posting page is asked about through its CXS endpoint instead, because the page
+    answers 200 whether or not the requisition is open (`core/liveness.py`).
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
 
+    def probe_workday(posting_id: int, cxs_url: str) -> Liveness:
+        try:
+            result = fetcher.get(cxs_url, headers={"Accept": "application/json"})
+        except FetchFailure as exc:
+            if exc.status_code is None:
+                return verdict_for_failure(posting_id, None, str(exc))
+            return verdict_for_workday_cxs(
+                posting_id, exc.status_code, exc.body, redirected=exc.redirected
+            )
+        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
+            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+        return verdict_for_workday_cxs(posting_id, result.status_code, result.content)
+
     def probe(posting_id: int, url: str) -> Liveness:
+        cxs_url = cxs_job_url(url)
+        if cxs_url is not None:
+            return probe_workday(posting_id, cxs_url)
         try:
             result = fetcher.get(url)
         except FetchFailure as exc:

@@ -12,6 +12,7 @@ respx + a real `Fetcher` is the repo's standard network seam (see `tests/contrac
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import httpx
@@ -168,3 +169,141 @@ def test_the_probe_survives_a_client_that_raises_something_unforeseen(
     assert result.verdict == "unknown"
     assert result.withholds is False
     assert "RuntimeError" in result.detail
+
+
+# --- Workday: the CXS endpoint, never the page ---------------------------------------------
+#
+# Every closed Workday requisition measured answered HTTP 200 on its PAGE (0 of 37, D-325), so a
+# page probe can only ever say `alive`. The expected shapes below are the ones measured on the
+# CXS endpoint 2026-10-25/27 (23 known-closed, 9 known-open, 9 more S22 closures), not values
+# read back from the classifier.
+
+WD_PAGE = "https://acme.wd5.myworkdayjobs.com/en-US/Acme_Careers/job/Austin-TX/Engineer_R123?src=li"
+WD_CXS = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/Acme_Careers/job/Austin-TX/Engineer_R123"
+S22_BODY = b'{"errorCode":"S22","message":"The job posting is no longer available"}'
+
+
+@pytest.mark.parametrize(
+    ("page", "cxs"),
+    [
+        (WD_PAGE, WD_CXS),
+        (
+            "https://acme.wd1.myworkdayjobs.com/Acme_Careers/job/Remote/Engineer_JR42",
+            "https://acme.wd1.myworkdayjobs.com/wday/cxs/acme/Acme_Careers/job/Remote/Engineer_JR42",
+        ),
+        (
+            "https://wd1.myworkdaysite.com/en-US/recruiting/uchicago/External/job/Chicago-IL/Analyst_JR1",
+            "https://wd1.myworkdaysite.com/wday/cxs/uchicago/External/job/Chicago-IL/Analyst_JR1",
+        ),
+    ],
+)
+def test_a_workday_page_maps_to_its_cxs_endpoint(page: str, cxs: str) -> None:
+    from boardwatch.providers.workday import cxs_job_url  # noqa: PLC0415
+
+    assert cxs_job_url(page) == cxs
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://acme.wd5.myworkdayjobs.com/Acme_Careers",  # a board, not a posting
+        "https://acme.wd5.myworkdayjobs.com/Acme_Careers/details/Engineer_R123",
+        "https://wd1.myworkdaysite.com/recruiting/uchicago/External",
+        "https://boards.greenhouse.io/acme/jobs/1",
+        "https://notmyworkdayjobs.com/Acme/job/X/Y_R1",
+    ],
+)
+def test_anything_else_keeps_the_page_probe(url: str) -> None:
+    from boardwatch.providers.workday import cxs_job_url  # noqa: PLC0415
+
+    assert cxs_job_url(url) is None
+
+
+@respx.mock
+def test_a_workday_page_is_never_fetched_its_cxs_endpoint_is(tmp_path: Path) -> None:
+    page = respx.get(WD_PAGE).mock(return_value=httpx.Response(200))
+    cxs = respx.get(WD_CXS).mock(return_value=httpx.Response(403, content=S22_BODY))
+
+    build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert not page.called
+    assert cxs.call_count == 1
+    assert cxs.calls[0].request.headers["accept"] == "application/json"
+
+
+@respx.mock
+def test_a_cxs_403_naming_S22_is_DEAD(tmp_path: Path) -> None:  # noqa: N802
+    respx.get(WD_CXS).mock(return_value=httpx.Response(403, content=S22_BODY))
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert result.verdict == "dead"
+    assert result.signal == "workday_unposted"
+
+
+@respx.mock
+def test_a_cxs_403_WITHOUT_S22_is_unknown(tmp_path: Path) -> None:  # noqa: N802
+    """A bot-blocker answers 403 too. The body code is the evidence, not the status."""
+    respx.get(WD_CXS).mock(return_value=httpx.Response(403, content=b"<html>Access denied</html>"))
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert result.verdict == "unknown"
+    assert result.withholds is False
+
+
+@pytest.mark.parametrize("status", [404, 410])
+@respx.mock
+def test_a_cxs_404_or_410_is_DEAD(tmp_path: Path, status: int) -> None:  # noqa: N802
+    respx.get(WD_CXS).mock(return_value=httpx.Response(status))
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert result.verdict == "dead"
+    assert result.signal == "refetch_gone"
+
+
+@respx.mock
+def test_a_cxs_S22_reached_through_a_redirect_is_served(tmp_path: Path) -> None:  # noqa: N802
+    respx.get(WD_CXS).mock(
+        return_value=httpx.Response(302, headers={"Location": "https://other.example/x"})
+    )
+    moved = respx.get("https://other.example/x").mock(
+        return_value=httpx.Response(403, content=S22_BODY)
+    )
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert moved.called
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
+
+
+@respx.mock
+def test_a_cxs_200_with_a_posting_is_ALIVE(tmp_path: Path) -> None:  # noqa: N802
+    body = json.dumps({"jobPostingInfo": {"title": "Engineer", "canApply": True}})
+    respx.get(WD_CXS).mock(return_value=httpx.Response(200, content=body.encode()))
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert result.verdict == "alive"
+    assert result.signal == "refetch_ok"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"jobPostingInfo": {"title": "Engineer", "canApply": false}}',
+        b'{"hiringOrganization": {}}',
+        b"<html>not json</html>",
+        b"[]",
+    ],
+)
+@respx.mock
+def test_a_cxs_200_without_a_live_posting_is_unknown(tmp_path: Path, body: bytes) -> None:
+    """Never `alive`: on the death-probe path an `alive` RESETS earned strikes."""
+    respx.get(WD_CXS).mock(return_value=httpx.Response(200, content=body))
+
+    result = build_prober(_settings(tmp_path))(42, WD_PAGE)
+
+    assert result.verdict == "unknown"

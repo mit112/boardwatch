@@ -81,6 +81,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from typing import Any, NamedTuple
+from urllib.parse import urlsplit
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
@@ -220,6 +221,42 @@ def split_target(slug: str) -> tuple[str, str, str, FacetSlice | None]:
     if any(c.isspace() for c in parameter):
         raise ValueError(f"facet group {parameter!r} contains whitespace")
     return host, tenant, site, FacetSlice(parameter, descriptor)
+
+
+# The second public host family. Its career-site URLs carry the tenant in the PATH
+# (`/recruiting/{tenant}/{site}/job/...`) instead of in the first host label.
+_SITE_HOST_SUFFIX = ".myworkdaysite.com"
+
+
+def cxs_job_url(url: str) -> str | None:
+    """The CXS JSON endpoint for one posting's public page, or None if `url` is not one.
+
+    The page itself is useless as a liveness signal: every closed requisition measured still
+    answers HTTP 200 on it (0 of 37, D-325). The CXS endpoint does not, so the probe asks it
+    instead (`pipeline/liveness.py`). Two page shapes map onto it:
+
+        {tenant}.wdN.myworkdayjobs.com/[{locale}/]{site}/job/{location}/{ref}
+        {host}.myworkdaysite.com/[{locale}/]recruiting/{tenant}/{site}/job/{location}/{ref}
+            -> https://{host}/wday/cxs/{tenant}/{site}/job/{location}/{ref}
+
+    Anything else, `/details/` pages included, is None and keeps the plain page probe: a guessed
+    endpoint that 404s would be read as a death.
+    """
+    parts_url = urlsplit(url)
+    host = (parts_url.hostname or "").lower()
+    parts = [part for part in parts_url.path.split("/") if part]
+    if parts and _is_locale(parts[0]):
+        parts = parts[1:]
+    if host.endswith(_HOST_SUFFIX):
+        tenant, rest = host.split(".", 1)[0], parts
+    elif host.endswith(_SITE_HOST_SUFFIX) and len(parts) >= 2 and parts[0].lower() == "recruiting":
+        tenant, rest = parts[1], parts[2:]
+    else:
+        return None
+    # site, "job", then at least the posting's own reference
+    if len(rest) < 3 or rest[1].lower() != "job" or not tenant:
+        return None
+    return f"https://{host}/wday/cxs/{tenant}/{rest[0]}/{'/'.join(rest[1:])}"
 
 
 def _search_url(host: str, tenant: str, site: str) -> str:

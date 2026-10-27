@@ -48,6 +48,17 @@ against a control of postings the scanner PROVED closed (n=60) it detects **4 �
 requisition still answers HTTP 200. Against 90 live lane postings it returned **0 false
 deaths**. It almost never lies and it almost never fires.
 
+**D-647: a Workday row is now asked through its CXS endpoint, not its page.** The page answers
+200 for a closed requisition, and an `alive` here RESETS earned strikes, so the page probe was
+worse than blind on Workday too. The endpoint answers an unposted requisition 403 naming `S22`
+(`workday_unposted`) and a removed one 404 (`refetch_gone`); both strike. Re-measured 2026-10-27
+on the same kind of control, scanner-proven-closed Workday postings closed in the last 30 days:
+the page probe **0 of 80**, the CXS probe **80 of 80** (Wilson 95% CI 95.4%–100%). Of 80 postings
+their own board had listed that morning, 76 answered alive and 4 answered S22. All 4 were absent
+from their board's live search an hour later, and the same search found the alive ones, so they
+were real closures the scanner had not reached yet. That makes **0 false deaths in 76**. The
+class it covers is small: 284 open unwatched rows carried a Workday URL that day.
+
 **T89: on a registry ATS the URL half is worse than blind — it DISARMS the counter.** Probed
 live 2026-09-17 against five postings a hand pre-flight had found dead: `jobs.ashbyhq.com`
 answers **HTTP 200** with a 9,144-byte empty shell (live controls: 200, 42–78 KB) and
@@ -125,10 +136,11 @@ from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
 from boardwatch.store.tables import companies, postings
 
-# The ONE liveness signal permitted to close a posting on the URL path, compared as a catalog
-# member rather than re-derived from a status code: `core/liveness.py` owns what "gone" means,
+# The liveness signals permitted to strike a posting on the URL path, compared as catalog
+# members rather than re-derived from a status code: `core/liveness.py` owns what "gone" means,
 # including the redirect rule, and a second derivation here would let the two drift.
-CLOSING_SIGNAL = "refetch_gone"
+# `workday_unposted` is the CXS 403/S22 answer; a Workday 404 there is already `refetch_gone`.
+CLOSING_SIGNALS: frozenset[str] = frozenset({"refetch_gone", "workday_unposted"})
 
 # T89. The closed catalog of providers whose whole board is readable in ONE request, with the
 # JSON key the job array sits under (`None` = the payload IS the array). These are the bare
@@ -450,7 +462,7 @@ def sweep_unwatched_deaths(
     for row in candidates:
         result = prober(int(row.id), str(row.url))
         strikes = int(row.death_strikes)
-        if result.signal == CLOSING_SIGNAL:
+        if result.signal in CLOSING_SIGNALS:
             gone += 1
             strikes += 1
         elif result.verdict == "alive":
@@ -584,7 +596,7 @@ def sweep_unwatched_deaths(
 
 
 __all__ = [
-    "CLOSING_SIGNAL",
+    "CLOSING_SIGNALS",
     "LISTING_ENDPOINTS",
     "LISTING_SIGNALS",
     "Listing",

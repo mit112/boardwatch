@@ -94,6 +94,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Closed Workday postings are now detected.** A Workday job page answers HTTP 200 whether or not
+  the requisition is open, so the death probe never closed a Workday posting (0 of 80 scanner-proven
+  closures). The probe now asks the posting's CXS endpoint, where an unposted requisition answers
+  403 with error `S22` and a removed one 404: 80 of 80 detected, 0 false deaths in 76 open (D-647).
+  The shortlist liveness check uses the same probe, so a dead Workday lead is withheld from the run.
+
 - **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
   a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
   That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a
