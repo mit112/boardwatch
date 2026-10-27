@@ -106,6 +106,11 @@ All notable changes to this project are documented here. The format follows
   name and reported `QueueConflictError: … already exists at its destination`. Sync now applies
   the same widening, so the folder stays where reconcile put it.
 
+- **Apply-by-hand folders now follow the store.** Sync left `~/boardwatch-queue/_manual/` folders
+  alone so it would not move them, which also meant a résumé built after the move never reached
+  the folder and a corrected apply link never replaced the old one. Each sync now rewrites a manual
+  folder in place, under the name it already has, keeping your own files in it.
+
 - **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
   a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
   That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a

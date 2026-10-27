@@ -5247,3 +5247,72 @@ def test_a_closed_lead_widened_beside_its_drained_twin_is_left_where_it_is(
         again_synced.failures,
     )
     assert _snapshot(root) == before
+
+
+@pytest.mark.parametrize("manual", [False, True], ids=["queue", "manual"])
+def test_a_changed_posting_url_reaches_the_folders_link_and_details(
+    engine: Engine, root: Path, apps: Path, manual: bool
+) -> None:
+    """Triage swaps an aggregator link for the employer's own (`postings.url`), and the folder must
+    follow: the apply link and `details.json`'s `apply_url` both carry the new URL after the next
+    `refresh_queue`. The manual arm is the one the owner hits, because Apply-by-hand leads are the
+    ones that get their link swapped."""
+    new_url = "https://employer.test/careers/job/42"
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    base = root
+    if manual:
+        with engine.begin() as conn:
+            mark_job_manual(conn, job_id=job_id, at=NOW)
+        queue.refresh_queue(engine, root=root, owner_name=OWNER)
+        base = root / MANUAL_DIR
+    folder = _sole_folder(base)
+    assert _link_url(folder) == APPLY_URL, "premise: the folder carries the old link"
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == posting_id).values(url=new_url))
+    _drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert synced.failed == 0, synced.failures
+    folder = _sole_folder(base)
+    assert _link_url(folder) == new_url
+    assert _details(folder)["apply_url"] == new_url
+
+
+def test_a_resume_built_after_the_move_to_manual_reaches_the_manual_folder(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Backlog 63. A lead moved to Apply-by-hand before its résumé existed kept a PDF-less folder
+    for good: sync withholds manual leads, so nothing ever copied the PDF in or set the
+    `pdf_*` fields. The folder must gain the PDF IN PLACE, under the name it already has."""
+    with engine.begin() as conn:
+        _posting_id, job_id = _deliver(conn, apps, "one", pdf=False)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        mark_job_manual(conn, job_id=job_id, at=NOW)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    folder = _sole_folder(root / MANUAL_DIR)
+    assert _details(folder)["pdf_missing"] is True, "premise: moved before the résumé was built"
+    (folder / "my-notes.txt").write_text("owner's own file\n", encoding="utf-8")
+
+    built = apps / "2026-08-26" / "one" / "tailored-one.pdf"
+    built.write_bytes(b"%PDF-1.7\nbuilt later\n%%EOF\n")
+    _drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert synced.failed == 0, synced.failures
+    assert _sole_folder(root / MANUAL_DIR) == folder, "the folder moved or was renamed"
+    details = _details(folder)
+    assert details["pdf_missing"] is False
+    assert details["pdf_absent_reason"] is None
+    pdf = folder / str(details["pdf_filename"])
+    assert pdf.read_bytes() == built.read_bytes()
+    assert details["pdf_sha256"] == hashlib.sha256(built.read_bytes()).hexdigest()
+    assert (folder / "my-notes.txt").read_text(encoding="utf-8") == "owner's own file\n"
+    assert _folders(root) == [], "a second copy was created in the apply queue"
+    before = _snapshot(root)
+
+    _drained, again = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert (again.updated, again.failed) == (0, 0), again.failures
+    assert _snapshot(root) == before

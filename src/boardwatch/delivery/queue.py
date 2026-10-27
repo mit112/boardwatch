@@ -371,6 +371,17 @@ def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     ]
 
 
+def _manual_rows(conn: Connection) -> list[QueueRow]:
+    """The Apply-by-hand leads `standing_queue_rows` withholds. Their folders are never moved out
+    of `_manual/`, but their content still follows the store: a résumé built after the move, or a
+    link swapped for the employer's own, has to reach the folder the owner applies from."""
+    manual = set(manual_job_ids(conn))
+    if not manual:
+        return []
+    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    return [row for row in delivered_unapplied(conn, skipped=withheld) if row.job_id in manual]
+
+
 def reconcile_queue(conn: Connection, *, root: Path, owner_name: str = "") -> ReconcileReport:
     """Move every folder to the drain the database says it belongs in, in both directions.
 
@@ -552,6 +563,10 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         known_job_ids.pop(entry.path, None)
         known_job_ids[target] = entry.job_id
 
+    manual_rows = _manual_rows(conn)
+    manual_planned, manual_failures = _plan(manual_rows, root=root, owner_name=owner_name)
+    failures.extend(manual_failures)
+
     created = updated = unchanged = repaired = 0
     staging = root / f"{STAGING_PREFIX}{token_hex(8)}"
     staging.mkdir()
@@ -593,6 +608,33 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                     created += 1
                 else:
                     updated += 1
+            except Exception as exc:  # one lead must never cost the rest
+                failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
+        # Apply-by-hand folders are rewritten IN PLACE under the name they already have, and only
+        # while reconcile has them in `_manual/`: a closed or applied manual lead is that drain's.
+        for row in manual_rows:
+            entry = _entry_for(row, entries, by_job)
+            names = manual_planned.get(row.posting_id)
+            if entry is None or names is None or entry.location != MANUAL_DIR:
+                continue
+            try:
+                payload = _payload(
+                    conn,
+                    row,
+                    names=replace(names, folder=entry.path.name),
+                    artifact_ids=artifact_ids,
+                    review_reason=lane_decision(row).reason,
+                )
+                if entry.content_hash == payload.content_hash:
+                    if _destination_intact(entry.path, payload.content_hash):
+                        unchanged += 1
+                        continue
+                    _repair(staging, entry.path, payload)
+                    repaired += 1
+                    updated += 1
+                    continue
+                renamed += _install(staging, entry.path, payload)
+                updated += 1
             except Exception as exc:  # one lead must never cost the rest
                 failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
     finally:
