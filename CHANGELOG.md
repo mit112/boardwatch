@@ -100,6 +100,12 @@ All notable changes to this project are documented here. The format follows
   403 with error `S22` and a removed one 404: 80 of 80 detected, 0 false deaths in 76 open (D-647).
   The shortlist liveness check uses the same probe, so a dead Workday lead is withheld from the run.
 
+- **A closed lead whose twin already holds its folder name no longer fails every run.** When two
+  jobs share a company and title and one is already in `_closed/`, reconcile files the second
+  under a widened name, and the sync in the same refresh then tried to move it back to the plain
+  name and reported `QueueConflictError: … already exists at its destination`. Sync now applies
+  the same widening, so the folder stays where reconcile put it.
+
 - **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
   a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
   That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a
