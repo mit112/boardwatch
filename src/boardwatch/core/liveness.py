@@ -129,9 +129,10 @@ SIGNAL_VERDICTS: dict[str, str] = {
 # the requisition.
 GONE_STATUSES = frozenset({404, 410})
 
-# The error code Workday's CXS endpoint names in a 403 body for a requisition that has been
-# unposted. A 403 WITHOUT it stays `unknown`, for the bot-blocker reason above.
-WORKDAY_UNPOSTED_CODE = b"S22"
+# The `errorCode` Workday's CXS endpoint names in a 403 body for a requisition that has been
+# unposted (measured: `{"errorCode":"S22","httpStatus":403,"message":"permission denied",...}`).
+# A 403 WITHOUT it stays `unknown`, for the bot-blocker reason above.
+WORKDAY_UNPOSTED_CODE = "S22"
 
 
 class UnknownLivenessVerdict(Exception):
@@ -254,6 +255,16 @@ def verdict_for_failure(
     )
 
 
+def _cxs_error_code(body: bytes) -> object:
+    """The `errorCode` of a CXS error body, or None if it is not one. Read as a field, never as a
+    substring: a bot-blocker page that happens to contain `S22` must not read as a death."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    return payload.get("errorCode") if isinstance(payload, dict) else None
+
+
 def verdict_for_workday_cxs(
     posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
 ) -> Liveness:
@@ -261,10 +272,10 @@ def verdict_for_workday_cxs(
 
     The posting PAGE answers 200 for a closed requisition, so its status means nothing; the
     endpoint's does. Measured 2026-10-25 against 23 known-closed and 9 known-open postings, all
-    consistent: a live one answers 200 with a `jobPostingInfo` object, an unposted one 403 with
-    `S22` in the body, a removed one 404. Only those three shapes earn a verdict. A 200 without a
-    live `jobPostingInfo` (`canApply: false` included) and any other status are `unknown`, and the
-    redirect rule applies to both gone shapes exactly as it does to a page probe.
+    consistent: a live one answers 200 with a `jobPostingInfo` object, an unposted one 403 whose
+    JSON `errorCode` is `S22`, a removed one 404. Only those three shapes earn a verdict. A 200
+    without a live `jobPostingInfo` (`canApply: false` included) and any other status are
+    `unknown`, and the redirect rule applies to both gone shapes exactly as it does to a page probe.
     """
     if status_code == 200:
         try:
@@ -279,7 +290,7 @@ def verdict_for_workday_cxs(
             signal="refetch_error",
             detail="workday CXS 200 without a live jobPostingInfo",
         )
-    if status_code == 403 and WORKDAY_UNPOSTED_CODE in body:
+    if status_code == 403 and _cxs_error_code(body) == WORKDAY_UNPOSTED_CODE:
         if redirected:
             return Liveness(
                 posting_id=posting_id,

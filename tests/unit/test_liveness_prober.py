@@ -180,7 +180,8 @@ def test_the_probe_survives_a_client_that_raises_something_unforeseen(
 
 WD_PAGE = "https://acme.wd5.myworkdayjobs.com/en-US/Acme_Careers/job/Austin-TX/Engineer_R123?src=li"
 WD_CXS = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/Acme_Careers/job/Austin-TX/Engineer_R123"
-S22_BODY = b'{"errorCode":"S22","message":"The job posting is no longer available"}'
+# The body measured live 2026-10-27, error-case id aside.
+S22_BODY = b'{"errorCode":"S22","errorCaseId":"X","httpStatus":403,"message":"permission denied"}'
 
 
 @pytest.mark.parametrize(
@@ -208,6 +209,8 @@ def test_a_workday_page_maps_to_its_cxs_endpoint(page: str, cxs: str) -> None:
     [
         "https://acme.wd5.myworkdayjobs.com/Acme_Careers",  # a board, not a posting
         "https://acme.wd5.myworkdayjobs.com/Acme_Careers/details/Engineer_R123",
+        "https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Austin-TX/Engineer_R123/apply",
+        "https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Engineer_R123",
         "https://wd1.myworkdaysite.com/recruiting/uchicago/External",
         "https://boards.greenhouse.io/acme/jobs/1",
         "https://notmyworkdayjobs.com/Acme/job/X/Y_R1",
@@ -241,10 +244,20 @@ def test_a_cxs_403_naming_S22_is_DEAD(tmp_path: Path) -> None:  # noqa: N802
     assert result.signal == "workday_unposted"
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"<html>Access denied</html>",
+        b"<html>Blocked. Reference S22-4471</html>",  # the code as text, not as the error field
+        b'{"errorCode":"S21","message":"S22"}',
+    ],
+)
 @respx.mock
-def test_a_cxs_403_WITHOUT_S22_is_unknown(tmp_path: Path) -> None:  # noqa: N802
+def test_a_cxs_403_WITHOUT_the_S22_error_code_is_unknown(  # noqa: N802
+    tmp_path: Path, body: bytes
+) -> None:
     """A bot-blocker answers 403 too. The body code is the evidence, not the status."""
-    respx.get(WD_CXS).mock(return_value=httpx.Response(403, content=b"<html>Access denied</html>"))
+    respx.get(WD_CXS).mock(return_value=httpx.Response(403, content=body))
 
     result = build_prober(_settings(tmp_path))(42, WD_PAGE)
 

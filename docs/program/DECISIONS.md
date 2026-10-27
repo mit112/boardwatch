@@ -34955,13 +34955,16 @@ live posting, 403 with error code `S22` in the body for an unposted one, and 404
 **Choice.** `build_prober` maps a Workday posting page (`*.myworkdayjobs.com`, and `myworkdaysite.com/recruiting/
 <tenant>/<site>/job/...`, with a leading locale stripped) to that endpoint (`providers/workday.cxs_job_url`) and
 asks it for JSON instead of fetching the page. `core/liveness.verdict_for_workday_cxs` reads exactly three shapes:
-200 with a `jobPostingInfo` whose `canApply` is not `false` is `alive`; 403 whose body contains `S22` is
-`dead` under a new signal, `workday_unposted`; 404/410 is `refetch_gone`. Everything else is `unknown`: a bare 403
+200 with a `jobPostingInfo` whose `canApply` is not `false` is `alive`; 403 whose JSON `errorCode` is `S22`
+is `dead` under a new signal, `workday_unposted` (read as a field, not a substring); 404/410 is `refetch_gone`. Everything else is `unknown`: a bare 403
 (a bot-blocker's answer too), a 200 without a live `jobPostingInfo`, and any gone shape reached through a redirect.
 The death probe's closing set becomes `CLOSING_SIGNALS = {refetch_gone, workday_unposted}`; two strikes in
 different runs, `unknown` never resets, and the column and drain are unchanged (D-325's four narrowings hold).
-`FetchFailure` now carries the non-200 body so the probe can read `S22`. A page with no `/job/` segment (a
-`/details/` page, a board root) keeps the plain page probe rather than a guessed endpoint.
+`FetchFailure` now carries the non-200 body so the probe can read `S22`. Only the exact `externalPath` shape
+the board scan stores (`<site>/job/<location>/<ref>`) is mapped. Anything else (a `/details/` page, an `/apply`
+tail, a 2-letter locale such as `/es/`, a path without the location segment) keeps the plain page probe, which
+can never strike, rather than a guessed endpoint whose 404 would read as a death. Of the 284 rows below, 273
+have the exact shape: 5 lack the location, 5 carry `/es/` and 1 an `/apply` tail.
 
 The shortlist probe shares `build_prober`, so a Workday lead answering `S22` is also withheld from the run that
 saw it. `check_leads` still writes nothing.

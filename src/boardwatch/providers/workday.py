@@ -239,8 +239,9 @@ def cxs_job_url(url: str) -> str | None:
         {host}.myworkdaysite.com/[{locale}/]recruiting/{tenant}/{site}/job/{location}/{ref}
             -> https://{host}/wday/cxs/{tenant}/{site}/job/{location}/{ref}
 
-    Anything else, `/details/` pages included, is None and keeps the plain page probe: a guessed
-    endpoint that 404s would be read as a death.
+    Exactly that shape and nothing looser: anything else (a `/details/` page, an `/apply` tail, a
+    path without the location segment) is None and keeps the plain page probe, which can never
+    strike. A guessed endpoint that 404s would be read as a death.
     """
     parts_url = urlsplit(url)
     host = (parts_url.hostname or "").lower()
@@ -253,8 +254,8 @@ def cxs_job_url(url: str) -> str | None:
         tenant, rest = parts[1], parts[2:]
     else:
         return None
-    # site, "job", then at least the posting's own reference
-    if len(rest) < 3 or rest[1].lower() != "job" or not tenant:
+    # site, "job", location, reference: the `externalPath` shape the board scan itself stores
+    if len(rest) != 4 or rest[1].lower() != "job" or not tenant:
         return None
     return f"https://{host}/wday/cxs/{tenant}/{rest[0]}/{'/'.join(rest[1:])}"
 
