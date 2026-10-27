@@ -9,4 +9,4 @@ origin: hand-authored
 
 This skill lives in the job-apps repo, which owns the triage engine, the apply sheet and the closed/skip logs.
 Read `~/dev/Job apps/.claude/skills/job-apps-triage/SKILL.md` and follow it exactly. Run every command from
-`~/dev/Job apps`; the engine calls this checkout's `.venv` for the DB writes.
+`~/dev/Job apps`; the engine calls boardwatch's `.venv` for the DB writes.
