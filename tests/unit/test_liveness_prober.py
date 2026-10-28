@@ -222,6 +222,7 @@ def test_a_workday_page_maps_to_its_cxs_endpoint(page: str, cxs: str) -> None:
         "https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Austin-TX/Engineer_R123/apply",
         "https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Engineer_R123",
         "https://wd1.myworkdaysite.com/recruiting/uchicago/External",
+        "https://wd1.myworkdaysite.com/recruiting/uchicago/es/External/job/Madrid/Analyst_JR1",
         "https://boards.greenhouse.io/acme/jobs/1",
         "https://notmyworkdayjobs.com/Acme/job/X/Y_R1",
     ],

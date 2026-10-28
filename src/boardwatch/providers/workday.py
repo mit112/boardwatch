@@ -261,7 +261,8 @@ def cxs_job_url(url: str) -> str | None:
 
     # A 2-letter locale (`/es/`) cannot be told from a 2-letter site by shape, so it is peeled
     # only when what remains is a posting and the unpeeled path is not one.
-    if not is_posting(rest) and len(rest) == 5 and len(rest[0]) == 2 and is_posting(rest[1:]):
+    peelable = host.endswith(_HOST_SUFFIX) and len(rest) == 5 and len(rest[0]) == 2
+    if peelable and not is_posting(rest) and is_posting(rest[1:]):
         rest = rest[1:]
     if not is_posting(rest) or not tenant:
         return None
