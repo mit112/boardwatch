@@ -102,6 +102,7 @@ VERDICTS: tuple[str, ...] = ("alive", "dead", "unknown")
 SIGNALS: tuple[str, ...] = (
     "refetch_gone",  # a 404/410 from the URL asked about — yields `dead`
     "workday_unposted",  # Workday's CXS 403 naming error S22 — yields `dead`
+    "oracle_unposted",  # Oracle HCM's detail resource answering an empty `items` — yields `dead`
     "refetch_gone_after_redirect",  # gone, but a different URL said so — served
     "refetch_ok",
     "refetch_error",
@@ -116,6 +117,7 @@ SIGNALS: tuple[str, ...] = (
 SIGNAL_VERDICTS: dict[str, str] = {
     "refetch_gone": "dead",
     "workday_unposted": "dead",
+    "oracle_unposted": "dead",
     "refetch_gone_after_redirect": "unknown",
     "refetch_ok": "alive",
     "refetch_error": "unknown",
@@ -306,6 +308,52 @@ def verdict_for_workday_cxs(
         )
     return verdict_for_failure(
         posting_id, status_code, f"workday CXS HTTP {status_code}", redirected=redirected
+    )
+
+
+def verdict_for_oracle_details(
+    posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
+) -> Liveness:
+    """Classify an answer from a posting's Oracle HCM detail resource
+    (`providers/oraclehcm.details_url_for_page`).
+
+    The posting page is a client-rendered shell, so its 200 means nothing. The resource answers
+    200 either way and its `items` carries the difference. Measured 2026-10-27 (D-648): of 40
+    postings the scanner had proved closed, 33 answered an empty `items` and 7 still returned
+    their requisition; of 40 their board had listed that morning, 38 returned it and 2 answered
+    empty, both absent from their board's live search beside 3 of 3 alive controls. So an empty
+    `items` is `dead`, a non-empty one `alive`, and anything else `unknown`. A requisition that
+    is returned is `alive` even with a null `ExternalPostedStartDate`: one listed posting had it.
+    """
+    if status_code == 200:
+        try:
+            items = json.loads(body).get("items")
+        except (ValueError, AttributeError):
+            items = None
+        if isinstance(items, list) and items:
+            return verdict_for_status(posting_id, status_code)
+        if isinstance(items, list):
+            if redirected:
+                return Liveness(
+                    posting_id=posting_id,
+                    verdict="unknown",
+                    signal="refetch_gone_after_redirect",
+                    detail="oracle details empty items after a redirect",
+                )
+            return Liveness(
+                posting_id=posting_id,
+                verdict="dead",
+                signal="oracle_unposted",
+                detail="oracle details 200 with empty items",
+            )
+        return Liveness(
+            posting_id=posting_id,
+            verdict="unknown",
+            signal="refetch_error",
+            detail="oracle details 200 without an items list",
+        )
+    return verdict_for_failure(
+        posting_id, status_code, f"oracle details HTTP {status_code}", redirected=redirected
     )
 
 

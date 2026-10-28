@@ -69,8 +69,10 @@ this path.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
@@ -275,10 +277,7 @@ class OracleHCMProvider:
         # `ByRequisitionId;requisitionId=...` is rejected with HTTP 400 "not valid", and
         # passing `siteNumber` as its own query parameter is rejected with "cannot be used in
         # this context". Both were measured; the resource's own /describe is what named `ById`.
-        return (
-            f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails"
-            f"?expand=all&onlyData=true&finder=ById;Id={posting_id},siteNumber={site}"
-        )
+        return details_url(host, site, posting_id)
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         try:
@@ -522,6 +521,52 @@ def parse_posting(
         body_text=_body_text(detail),
         raw_json={"listed": listed, "detail": detail},
     )
+
+
+def details_url(host: str, site: str, posting_id: str) -> str:
+    """One requisition's detail resource. Shared by the scan's detail fetch and the liveness
+    probe, so the two ask the same question."""
+    return (
+        f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitionDetails"
+        f"?expand=all&onlyData=true&finder=ById;Id={posting_id},siteNumber={site}"
+    )
+
+
+# The tails a public posting page ends in after `/sites/{site}/`, each followed by the numeric
+# requisition id. `job` is what the scan stores; the two `requisitions/` forms are what
+# aggregator copies carry (233 and 4 of 279 open unwatched rows on 2026-10-27).
+# A site as live boards spell it (`CX_1`, `CX`, `CampusHiring`): nothing the finder grammar or a
+# query string could read as structure.
+_PAGE_SITE = re.compile(r"[A-Za-z0-9_-]+")
+_POSTING_TAILS = (("job",), ("requisitions", "preview"), ("requisitions", "job"))
+
+
+def details_url_for_page(url: str) -> str | None:
+    """The detail resource for a public posting page, or None if `url` is not exactly one.
+
+    The page is a client-rendered shell that answers 200 whatever the requisition's state, so
+    the liveness probe asks this resource instead (`pipeline/liveness.py`). Exactly
+    `{host}/hcmUI/CandidateExperience/{locale}/sites/{site}/{tail}/{id}`, with the query string
+    ignored. Anything looser (no site segment, a redirect wrapper) is None and keeps the page
+    probe: a guessed site would answer an empty `items`, and that is read as a death.
+    """
+    parts_url = urlsplit(url)
+    parts = [part for part in parts_url.path.split("/") if part]
+    if len(parts) < 7 or tuple(x.lower() for x in parts[:2]) != _UI_PREFIX:
+        return None
+    if parts[3].lower() != _SITES_SEGMENT or not parts[-1].isdigit():
+        return None
+    if tuple(x.lower() for x in parts[5:-1]) not in _POSTING_TAILS:
+        return None
+    # The site lands in the finder unescaped. A scanned slug is validated by `split_slug`, but a
+    # stored aggregator URL is anyone's text, and `+` or `&` there changes what is asked.
+    if not _PAGE_SITE.fullmatch(parts[4]):
+        return None
+    try:
+        host, site = split_slug(f"{parts_url.hostname or ''}/{parts[4]}")
+    except ValueError:
+        return None
+    return details_url(host, site, parts[-1])
 
 
 def posting_url(host: str, site: str, posting_id: str) -> str:

@@ -18,6 +18,7 @@ from boardwatch.core.liveness import (
     Liveness,
     UnknownLivenessVerdict,
     verdict_for_failure,
+    verdict_for_oracle_details,
     verdict_for_status,
     verdict_for_workday_cxs,
     verdict_without_url,
@@ -104,17 +105,20 @@ def test_the_catalogs_are_closed_and_pinned() -> None:
     assert set(SIGNALS) == {
         "refetch_gone",
         "workday_unposted",
+        "oracle_unposted",
         "refetch_gone_after_redirect",
         "refetch_ok",
         "refetch_error",
         "no_url",
     }
-    # Every signal declares its verdict, and `dead` is reachable through exactly two of them:
-    # a 404/410 from the URL asked about, and Workday's CXS 403 naming S22.
+    # Every signal declares its verdict, and `dead` is reachable through exactly three of them:
+    # a 404/410 from the URL asked about, Workday's CXS 403 naming S22, and an Oracle HCM detail
+    # resource answering an empty `items`.
     assert set(SIGNAL_VERDICTS) == set(SIGNALS)
     assert [s for s, v in SIGNAL_VERDICTS.items() if v == "dead"] == [
         "refetch_gone",
         "workday_unposted",
+        "oracle_unposted",
     ]
 
 
@@ -128,6 +132,7 @@ def test_every_signal_in_the_catalog_is_actually_emitted() -> None:
         verdict_for_failure(1, 404, "x", redirected=True).signal,
         verdict_without_url(1).signal,
         verdict_for_workday_cxs(1, 403, b'{"errorCode":"S22"}').signal,
+        verdict_for_oracle_details(1, 200, b'{"items":[]}').signal,
     }
     assert emitted == set(SIGNALS)
 
