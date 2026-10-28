@@ -111,6 +111,12 @@ All notable changes to this project are documented here. The format follows
   the folder and a corrected apply link never replaced the old one. Each sync now rewrites a manual
   folder in place, under the name it already has, keeping your own files in it.
 
+- **Concurrent `tailor run`s no longer fail with `database is locked`.** The closing write looked up
+  the master résumé artifact and then inserted, in a transaction that took the write lock only at
+  the insert. When another run committed in between, SQLite failed the insert at once instead of
+  waiting on `busy_timeout` (8 of 60 runs, six at a time, on a scratch store). That transaction now
+  takes the write lock at its start, so concurrent runs queue: 0 of 120.
+
 - **A judge note after the verdict array no longer costs the whole gate batch.** The gate failed
   a batch open on `Extra data: line 3 column 1` when the judge added text after its JSON array.
   That cost run 581 thirteen unjudged leads and happened twice before. The array is now read and a
