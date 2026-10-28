@@ -545,8 +545,14 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
   healthy corpus. `tests/unit/test_liveness_prober.py` is the only module driving the real `Fetcher` — its two
   redirect cases are the sole coverage; do not delete them as duplicates.
 - **A `Liveness` verdict must be the one its signal carries** (D-113) — `dead` is reachable through
-  `refetch_gone` and nothing else. **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111);
+  `refetch_gone`, `workday_unposted` (D-647) and `oracle_unposted` (D-648), and nothing else. **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111);
   `run --no-check-liveness` opts out.
+- **What the URL probe can close, per host, measured 2026-10-27** (each against a known-closed AND a known-open
+  control): Workday through its CXS endpoint, 80/80 and 0 false deaths in 76 (D-647); Oracle HCM through its
+  requisition detail resource, 33/40 and 0 in 38 (D-648); amazon.jobs by a plain 404, 39/39 and 0 in 38, but 740 of
+  768 unwatched amazon rows had never been probed (T284). Eightfold's page answers 200 either way and its
+  `og:title` split 80/80 on two tenants only, so it is not a signal yet (T285). A LinkedIn job page almost never
+  answers gone, which is why `linkedin` rows with a LinkedIn URL are probed last.
 - **Applied state is read from `applications`, never mirrored into the ledger** (D-111). `interested` does not
   suppress (it is `track add`'s default); `withdrawn` is the drain.
 - **Only a deterministic refusal earns a permanent `skipped`** (D-110). `DETERMINISTIC_GATE_REFUSALS` is the
