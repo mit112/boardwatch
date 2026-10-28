@@ -392,7 +392,18 @@ def sweep_unwatched_deaths(
         # unheld row only tidies the store.
         has_a_standing_lead = postings.c.job_id.in_(standing)
         held_by_a_standing_lead = case((has_a_standing_lead, 0), else_=1)  # 0 sorts first
-        probed_last = case((companies.c.provider.in_(tuple(PROBED_LAST_PROVIDERS)), 1), else_=0)
+        # Only while the URL is still the LinkedIn page the measurement was about: a row resolved
+        # to an employer URL (a Workday one the CXS probe can close) keeps its priority.
+        probed_last = case(
+            (
+                and_(
+                    companies.c.provider.in_(tuple(PROBED_LAST_PROVIDERS)),
+                    postings.c.url.like("%linkedin.com/%"),
+                ),
+                1,
+            ),
+            else_=0,
+        )
         company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather

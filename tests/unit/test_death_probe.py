@@ -1056,6 +1056,26 @@ def test_a_linkedin_lead_does_not_take_the_budget_from_a_row_that_can_close(
     assert url.asked == [other]  # type: ignore[attr-defined]
 
 
+def test_a_linkedin_row_with_an_employer_url_keeps_its_lead_priority(tmp_path: Path) -> None:
+    """The measurement behind the demotion is about the LinkedIn job-view PAGE. A `linkedin` row
+    whose URL is an employer's (149 of 17,408 open on 2026-10-27, 24 of them Workday, which the
+    CXS probe can close) is not that page, so its standing lead is asked first again."""
+    engine = _store(tmp_path)
+    _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    workday_row = _posting(
+        engine,
+        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Austin-TX/Engineer_R123",
+    )
+    _deliver_lead(engine, workday_row)
+
+    url = _url_prober_that_records(_alive)
+    _sweep(engine, url, budget=1)
+
+    assert url.asked == [workday_row]  # type: ignore[attr-defined]
+
+
 def test_a_linkedin_row_is_still_probed_when_budget_is_left(tmp_path: Path) -> None:
     """The order moves; the set does not. With room for both, the LinkedIn row is asked too, so
     a real `gone` from it can still strike."""
