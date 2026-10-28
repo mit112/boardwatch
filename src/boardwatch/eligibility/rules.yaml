@@ -1527,6 +1527,7 @@ families:
     implies_vocabulary:
       - degree_required
       - degree_required_with_field
+      - degree_listed_with_field
       - degree_required_or_equivalent
       - degree_preferred
       - degree_preferred_or_equivalent
@@ -1871,6 +1872,61 @@ families:
         # "A Bachelor's degree in CS is required. A Master's degree in Physics is preferred."
         # dropped BOTH rows and returned `eligible` to a candidate with no degree at all.
         abstain_by_adjacent: [*degree_equivalence]
+      # D-651. The same bar written as a bare LIST ITEM, with no marker in its sentence:
+      # "Bachelor's degree in Computer Science, Software Engineering, or a related field." That
+      # line, under a Qualifications heading, is how most postings state the degree, and the
+      # marker patterns above wrote no row for it, so the posting read as stating no degree at
+      # all ("no flags" is not cleared). The marker is the heading, as it is for the years bars
+      # (total_years_minimum's recorded deviation). Measured on run 690's apply lane: 30 of the
+      # 38 zero-row bodies carried a degree sentence and none wrote a row.
+      # Three fences keep it to a list item that states a qualification:
+      #  * it starts its unit (`^`, an optional bullet, an optional article), so prose that only
+      #    MENTIONS a degree ("Candidates with a Bachelor's degree in CS thrive here") never
+      #    matches, and neither does "completing or have recently completed a Bachelor's ...",
+      #    which a current student meets;
+      #  * it stands down when its sentence carries a requirement marker after the field, where
+      #    bachelor_in_field_required writes the row (no second row for one bar);
+      #  * a hedge -- inline, as the sentence's tail, or as a "Preferred Qualifications" heading
+      #    -- carries it as the preferred twin below, which never blocks.
+      #  * it stands down on a sentence that offers an alternative to the degree ("or 3 years of
+      #    professional experience", "or currently pursuing one") or describes who may apply
+      #    ("... students are encouraged to apply"), where it would add a bar the posting waived;
+      #  * its `implies`, degree_listed_with_field, is in NO exclusive group: the row only ever adds
+      #    itself, so it can never dissolve another degree row ("A PhD is required." in the next item
+      #    stays `unmet`, Codex r2). The resolver reads it exactly as degree_required_with_field.
+      #  * `unmet_abstains`: a list item's heading is what makes it required, and the detector does
+      #    not read every preference heading ("Desired Education:", "Nice to haves:"), so the bar
+      #    can clear a degree-holder but its `unmet` abstains -- never an `ineligible` the posting
+      #    did not state. A candidate without the degree reads `uncertain`, as before this pattern.
+      # A coordinated higher level ("Bachelor's or Master's degree in X", "Bachelor's degree or
+      # above in X") is a bachelor's bar: either level meets it, so the rank is the lowest named.
+      - id: bachelor_in_field_listed
+        requiredness: required
+        implies: degree_listed_with_field
+        scope: sentence
+        required_rank: 3
+        requirement_text: "A bachelor's degree in a named field is listed as a qualification"
+        unmet_abstains: true
+        suppressed_by_sentence:
+          - "\\bor\\s+(?:at\\s+least\\s+)?(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)"
+          - "\\bor\\s+(?:be\\s+)?(?:currently\\s+)?(?:pursuing|enrolled|working\\s+toward|completing|in\\s+progress)"
+          - "\\b(?:students|candidates|applicants|holders|majors)\\b|encouraged\\s+to\\s+apply"
+          # A higher level named in the same sentence ("... and a PhD in Physics", Codex r2): this
+          # bar is the bachelor's floor of a list item, and a conjoined higher bar is not its own.
+          - "master|doctora|ph\\.?\\s?d\\.?|(?:graduate|advanced)\\s+degree"
+        hedged_by_tail: [*degree_hedges]
+        hedged_as: bachelor_in_field_listed_preferred
+        suppressed_by_unit: [*degree_hedges]
+        abstain_by_adjacent: [*degree_equivalence]
+        pattern: '^\s*(?:[•‣●▪◦·*–-]\s*)?(?:an?\s+)?(?:Bachelor[''’‘]?s?(?:\s+of\s+(?:Science|Arts|Engineering|Applied\s+Science|Business\s+Administration))?|(?<![\w.])B\.?S\.?(?!\w)|(?<![\w.])B\.?A\.?(?!\w)|(?<![\w.])B\.?Sc\.?(?!\w)|(?<![\w.])B\.?Eng\.?(?!\w)|Undergraduate)(?:\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*(?:Master[''’‘]?s?|(?<![\w.])M\.?S\.?(?!\w)|(?<![\w.])M\.?Sc\.?(?!\w)|(?<![\w.])M\.?Eng\.?(?!\w)|Graduate)(?:\s*(?:degree)?\s*(?:,\s*)?(?:or|/)\s*(?:Ph\.?D\.?|Doctorate|Doctoral))?)?\s*(?:degree)?(?:\s+or\s+(?:above|higher))?\s+in\s+(?:(?=(?P<study_field>(?:(?!\b(?:and|with|required|require|requires|mandatory|necessary|essential|compulsory|needed|preferred|desirable|desired|advantageous|nice|bonus|ideally|plus|experience)\b)[^.;:]){2,160})))?\S(?![^.;:]*?(?<!\w)(?:required|mandatory|necessary|essential|compulsory|needed|a\s+must|a\s+requirement|non-negotiable)(?!\w))'
+      # Its hedged row: no preferred wording of its own writes one, so it is carried (T173).
+      - id: bachelor_in_field_listed_preferred
+        requiredness: preferred
+        implies: degree_preferred
+        scope: sentence
+        required_rank: 3
+        carrier: true
+        requirement_text: "A bachelor's degree in a named field is preferred"
       - id: master_in_field_required
         requiredness: required
         implies: degree_required_with_field

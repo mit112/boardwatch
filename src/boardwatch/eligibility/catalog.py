@@ -134,6 +134,11 @@ class PatternSpec:
     # Sibling patterns of this family whose row over EXACTLY this pattern's span, abstained or not
     # alike, is the same bar read another way: this pattern then writes no row there (T234).
     yields_to: tuple[str, ...] = ()
+    # D-651. A bar whose requiredness the posting states only by LAYOUT (a bare list item) can
+    # clear but never fail: the engine renders its `unmet` as `unknown`. Its heading may be one
+    # the detector does not read as a preference ("Desired Education:"), and a wrong `unmet`
+    # there would be an `ineligible` the posting never stated.
+    unmet_abstains: bool = False
 
     @property
     def rule_id(self) -> str:
@@ -188,6 +193,9 @@ class FamilySpec:
     fields_of_study: tuple[StudyFieldSpec, ...] = ()
     related_fields_of_study: tuple[frozenset[str], ...] = ()
     related_field_escapes: tuple[re.Pattern[str], ...] = ()
+    # D-651. False only on a family `effective_family` handed a policy of
+    # `degree_field_of_study = "ignore"`: a field-naming degree bar is then decided on its level.
+    compare_field_of_study: bool = True
     # F9 (T156, 2026-09-23 review). The season->month mapping as HEMISPHERE-keyed catalog DATA
     # (CLAUDE.md "taxonomy as versioned DATA, not code"), replacing the module-level constant
     # `resolve._SEASON_MONTHS` used to be. Every catalog-declared hemisphere table, empty for
@@ -306,13 +314,19 @@ class RulesCatalog:
                 policy.graduation_hemisphere, season_months
             )
         effective_ceiling = family.near_miss_years_ceiling if ceiling is None else ceiling
+        # D-651. Only a family that declares a field-of-study vocabulary has a comparison to skip.
+        compare_field = not (family.fields_of_study and policy.degree_field_of_study == "ignore")
         if (
             effective_ceiling == family.near_miss_years_ceiling
             and season_months == family.season_months
+            and compare_field == family.compare_field_of_study
         ):
             return family
         return replace(
-            family, near_miss_years_ceiling=effective_ceiling, season_months=season_months
+            family,
+            near_miss_years_ceiling=effective_ceiling,
+            season_months=season_months,
+            compare_field_of_study=compare_field,
         )
 
 
@@ -850,6 +864,11 @@ def _pattern(
     carrier = raw.get("carrier", False)
     if not isinstance(carrier, bool):
         raise CatalogError(f"{where}: pattern {pattern_id!r} 'carrier' must be true or false")
+    unmet_abstains = raw.get("unmet_abstains", False)
+    if not isinstance(unmet_abstains, bool):
+        raise CatalogError(
+            f"{where}: pattern {pattern_id!r} 'unmet_abstains' must be true or false"
+        )
     body = str(raw.get("pattern", ""))
     if carrier:
         # Every value it renders comes from the bar it carries, so its text names none.
@@ -908,6 +927,7 @@ def _pattern(
         bounded_above_as=_optional_str(raw.get("bounded_above_as")),
         carrier=carrier,
         yields_to=tuple(str(x) for x in (raw.get("yields_to") or ())),
+        unmet_abstains=unmet_abstains,
     )
 
 

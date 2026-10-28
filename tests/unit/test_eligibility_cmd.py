@@ -327,6 +327,29 @@ def test_a_family_declaring_no_ceiling_is_refused(env: Path) -> None:
     assert policy.near_miss_years_ceilings == {}
 
 
+# ---- D-651: level-only degree bars are per-user policy data
+
+
+def test_setting_the_degree_field_choice_preserves_the_rest_of_the_policy(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "set", "degree", "blocker"]).exit_code == 0
+    assert _run(env, ["eligibility", "policy", "ceiling", "experience_years", "1"]).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "degree-field", "ignore"])
+    assert result.exit_code == 0, result.output
+    _, policy = _facts(env)
+    assert policy.degree_field_of_study == "ignore"
+    assert policy.families["degree"] == "blocker"
+    assert policy.near_miss_years_ceilings == {"experience_years": 1}
+
+
+def test_an_unknown_degree_field_choice_is_refused(env: Path) -> None:
+    assert _run(env, ["init"], INIT_INPUT).exit_code == 0
+    result = _run(env, ["eligibility", "policy", "degree-field", "sometimes"])
+    assert result.exit_code != 0
+    _, policy = _facts(env)
+    assert policy.degree_field_of_study is None
+
+
 def test_a_negative_ceiling_is_refused_by_the_pure_writer() -> None:
     """Asserted on the pure writer, not through the CLI. A negative literal on the command
     line is refused by the option parser before the writer is ever reached, so a CLI-only
