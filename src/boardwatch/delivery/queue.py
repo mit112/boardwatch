@@ -379,7 +379,13 @@ def _manual_rows(conn: Connection) -> list[QueueRow]:
     if not manual:
         return []
     withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
-    return [row for row in delivered_unapplied(conn, skipped=withheld) if row.job_id in manual]
+    # A closed lead belongs in `_closed/`. Excluded here rather than trusted to reconcile, because a
+    # refused move (an unclassified folder holding the name) leaves it sitting in `_manual/`.
+    return [
+        row
+        for row in delivered_unapplied(conn, skipped=withheld)
+        if row.job_id in manual and not row.closed
+    ]
 
 
 def reconcile_queue(conn: Connection, *, root: Path, owner_name: str = "") -> ReconcileReport:

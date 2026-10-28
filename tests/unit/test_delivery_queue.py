@@ -5316,3 +5316,32 @@ def test_a_resume_built_after_the_move_to_manual_reaches_the_manual_folder(
 
     assert (again.updated, again.failed) == (0, 0), again.failures
     assert _snapshot(root) == before
+
+
+def test_a_closed_manual_lead_stuck_in_manual_is_not_rewritten(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """Codex review round 1's blocker. A closed manual lead belongs in `_closed/`; when an
+    unclassified folder already holds its name there, reconcile refuses the move and the lead stays
+    in `_manual/`. The in-place refresh must not then rewrite it with fresh content."""
+    with engine.begin() as conn:
+        posting_id, job_id = _deliver(conn, apps, "one")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        mark_job_manual(conn, job_id=job_id, at=NOW)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    folder = _sole_folder(root / MANUAL_DIR)
+    (root / CLOSED_DIR / folder.name).mkdir(parents=True)  # unclassified: no details.json
+    with engine.begin() as conn:
+        _set_status(conn, posting_id, "closed")
+        conn.execute(
+            update(postings)
+            .where(postings.c.id == posting_id)
+            .values(url="https://employer.test/careers/job/42")
+        )
+    before = _snapshot(root / MANUAL_DIR)
+
+    drained, _synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert drained.failed == 1, "premise: reconcile refused the move into `_closed/`"
+    assert _snapshot(root / MANUAL_DIR) == before
