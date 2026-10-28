@@ -58,6 +58,7 @@ from boardwatch.store.artifacts import (
     get_or_create_master_artifact,
     record_artifact,
 )
+from boardwatch.store.db import write_connection
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -918,7 +919,9 @@ def run_tailor(
         # `boardwatch run` the pipeline supplies the id and all leads share it.
         owns_run = run_id is None
         run_id = ensure_run(engine, run_id)
-        with engine.begin() as conn:
+        # Read-then-write: the master lookup precedes the inserts, so a DEFERRED begin would
+        # fail the first insert at once when another process commits in between.
+        with write_connection(engine) as conn, conn.begin():
             master_id = get_or_create_master_artifact(
                 conn,
                 content_hash=master_hash,

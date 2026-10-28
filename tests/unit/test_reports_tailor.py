@@ -13,12 +13,15 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Connection, Engine, insert
+from sqlalchemy.exc import OperationalError
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.reports import tailor as tailor_module
 from boardwatch.reports.tailor import (
     NoCurrentVersionError,
     UnsupportedFormatError,
@@ -461,6 +464,42 @@ def test_no_write_lock_held_across_render(tmp_path: Path) -> None:
     res = run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path),
                      out_dir=tmp_path / "out", typst_runner=runner)
     assert res.tailored_artifact_id is not None
+
+
+def test_closing_write_survives_a_commit_between_its_read_and_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two concurrent `tailor run`s failed with `database is locked` (job-apps backlog 64).
+
+    The closing transaction reads the master artifact, then inserts. Opened DEFERRED, that read
+    pins a WAL snapshot, and another process committing before the insert makes the insert
+    fail at once, without waiting on busy_timeout. Here a second engine commits at exactly that
+    point. Holding the write lock from BEGIN, the transaction refuses the interloper instead.
+    The master must already exist: creating it is itself a write and takes the lock early.
+    """
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path),
+               out_dir=tmp_path / "first", typst_runner=_runner_ok)
+    other = get_engine(settings.data_dir, busy_timeout_ms=0)
+    interloper: list[str] = []
+    real = tailor_module.get_or_create_master_artifact
+
+    def read_then_interleave(conn: Connection, **kwargs: Any) -> int:
+        master_id = real(conn, **kwargs)
+        try:
+            insert_run(other)
+            interloper.append("committed")
+        except OperationalError:
+            interloper.append("refused")
+        return master_id
+
+    monkeypatch.setattr(tailor_module, "get_or_create_master_artifact", read_then_interleave)
+    res = run_tailor(engine, settings, pid, resume_path=_resume_yaml(tmp_path),
+                     out_dir=tmp_path / "out", typst_runner=_runner_ok)
+    assert res.tailored_artifact_id is not None
+    assert interloper == ["refused"]
 
 
 # -- P4 item 6: keyword-coverage measurement (a REPORT, never a veto) ---------------
