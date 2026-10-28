@@ -94,6 +94,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Workday URL with a 2-letter locale (`/es/`) now gets the CXS death probe.** It fell back to
+  the page probe, which cannot see a closed Workday requisition. The locale is peeled only when
+  the rest of the path is the exact posting shape, so a 2-letter site name is still read as a site.
+
+- **A LinkedIn-sourced row with an employer URL is no longer probed last.** The death probe asks
+  `linkedin` rows after every other row because a LinkedIn job page almost never answers gone. That
+  now applies only while the row's URL is a LinkedIn page: 149 of 17,408 open rows carry an
+  employer URL (24 Workday, which the CXS probe can close) and keep their standing-lead priority.
+
 - **Closed Workday postings are now detected.** A Workday job page answers HTTP 200 whether or not
   the requisition is open, so the death probe never closed a Workday posting (0 of 80 scanner-proven
   closures). The probe now asks the posting's CXS endpoint, where an unposted requisition answers
