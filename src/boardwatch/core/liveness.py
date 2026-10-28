@@ -47,6 +47,13 @@ failure this module exists to prevent — so a gone-status reached through a red
 transport-error bucket. A redirect that ends in success needs no special handling: it is served
 either way.
 
+**Workday is asked through its CXS endpoint, not its page.** Every closed Workday requisition
+measured still answered HTTP 200 on its page (0 of 37, D-325), so a page probe there can only
+ever say `alive` — and on the death-probe path that RESETS earned strikes. The posting's JSON
+endpoint answers an unposted requisition with a 403 naming error `S22` and a removed one with a
+404, and `verdict_for_workday_cxs` reads exactly those (`workday_unposted`, `refetch_gone`). A
+bare 403 stays `unknown`: it is the body code, not the status, that is the evidence.
+
 **What is deliberately NOT here: a closed-phrase catalog.** `PROGRAM.md` item 6 names "a saved
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
 scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
@@ -79,6 +86,7 @@ flag is never re-read. It is a first-discovery filter on 1 of 6 providers, not a
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 # Closed and ordered by confidence. `dead` is the only verdict that withholds a lead, and only
@@ -92,7 +100,8 @@ VERDICTS: tuple[str, ...] = ("alive", "dead", "unknown")
 # `checked is None`, so there is deliberately no `not_probed` member here. A catalog entry
 # nothing emits is a bucket that cannot be audited.
 SIGNALS: tuple[str, ...] = (
-    "refetch_gone",  # the only signal that yields `dead`
+    "refetch_gone",  # a 404/410 from the URL asked about — yields `dead`
+    "workday_unposted",  # Workday's CXS 403 naming error S22 — yields `dead`
     "refetch_gone_after_redirect",  # gone, but a different URL said so — served
     "refetch_ok",
     "refetch_error",
@@ -106,6 +115,7 @@ SIGNALS: tuple[str, ...] = (
 # passing. Enforced in `__post_init__` for that reason.
 SIGNAL_VERDICTS: dict[str, str] = {
     "refetch_gone": "dead",
+    "workday_unposted": "dead",
     "refetch_gone_after_redirect": "unknown",
     "refetch_ok": "alive",
     "refetch_error": "unknown",
@@ -118,6 +128,11 @@ SIGNAL_VERDICTS: dict[str, str] = {
 # silently blacklist whole employers. Not 5xx: a server having a bad minute says nothing about
 # the requisition.
 GONE_STATUSES = frozenset({404, 410})
+
+# The `errorCode` Workday's CXS endpoint names in a 403 body for a requisition that has been
+# unposted (measured: `{"errorCode":"S22","httpStatus":403,"message":"permission denied",...}`).
+# A 403 WITHOUT it stays `unknown`, for the bot-blocker reason above.
+WORKDAY_UNPOSTED_CODE = "S22"
 
 
 class UnknownLivenessVerdict(Exception):
@@ -193,7 +208,7 @@ class Liveness:
 
 
 def verdict_for_status(posting_id: int, status_code: int) -> Liveness:
-    """Classify a completed re-fetch. `GONE_STATUSES` is the only path to `dead`."""
+    """Classify a completed page re-fetch. `GONE_STATUSES` is its only path to `dead`."""
     if status_code in GONE_STATUSES:
         return Liveness(
             posting_id=posting_id,
@@ -240,6 +255,60 @@ def verdict_for_failure(
     )
 
 
+def _cxs_error_code(body: bytes) -> object:
+    """The `errorCode` of a CXS error body, or None if it is not one. Read as a field, never as a
+    substring: a bot-blocker page that happens to contain `S22` must not read as a death."""
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    return payload.get("errorCode") if isinstance(payload, dict) else None
+
+
+def verdict_for_workday_cxs(
+    posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
+) -> Liveness:
+    """Classify an answer from a posting's Workday CXS endpoint (`providers/workday.cxs_job_url`).
+
+    The posting PAGE answers 200 for a closed requisition, so its status means nothing; the
+    endpoint's does. Measured 2026-10-25 against 23 known-closed and 9 known-open postings, all
+    consistent: a live one answers 200 with a `jobPostingInfo` object, an unposted one 403 whose
+    JSON `errorCode` is `S22`, a removed one 404. Only those three shapes earn a verdict. A 200
+    without a live `jobPostingInfo` (`canApply: false` included) and any other status are
+    `unknown`, and the redirect rule applies to both gone shapes exactly as it does to a page probe.
+    """
+    if status_code == 200:
+        try:
+            info = json.loads(body).get("jobPostingInfo")
+        except (ValueError, AttributeError):
+            info = None
+        if isinstance(info, dict) and info.get("canApply") is not False:
+            return verdict_for_status(posting_id, status_code)
+        return Liveness(
+            posting_id=posting_id,
+            verdict="unknown",
+            signal="refetch_error",
+            detail="workday CXS 200 without a live jobPostingInfo",
+        )
+    if status_code == 403 and _cxs_error_code(body) == WORKDAY_UNPOSTED_CODE:
+        if redirected:
+            return Liveness(
+                posting_id=posting_id,
+                verdict="unknown",
+                signal="refetch_gone_after_redirect",
+                detail="workday CXS 403 S22 after a redirect",
+            )
+        return Liveness(
+            posting_id=posting_id,
+            verdict="dead",
+            signal="workday_unposted",
+            detail="workday CXS 403 S22",
+        )
+    return verdict_for_failure(
+        posting_id, status_code, f"workday CXS HTTP {status_code}", redirected=redirected
+    )
+
+
 def verdict_without_url(posting_id: int) -> Liveness:
     """`postings.url` is nullable. Nothing to ask, so nothing is claimed."""
     return Liveness(posting_id=posting_id, verdict="unknown", signal="no_url")
@@ -250,10 +319,12 @@ __all__ = [
     "SIGNALS",
     "SIGNAL_VERDICTS",
     "VERDICTS",
+    "WORKDAY_UNPOSTED_CODE",
     "ContradictoryLiveness",
     "Liveness",
     "UnknownLivenessVerdict",
     "verdict_for_failure",
     "verdict_for_status",
+    "verdict_for_workday_cxs",
     "verdict_without_url",
 ]

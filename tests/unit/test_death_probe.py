@@ -268,6 +268,30 @@ def test_two_measured_deaths_in_different_runs_close_the_posting(tmp_path: Path)
     assert _events(engine, posting_id) == ["closed"]
 
 
+def _unposted(posting_id: int, url: str) -> Liveness:
+    """Workday's CXS 403 naming S22 — an unposted requisition."""
+    return Liveness(
+        posting_id=posting_id, verdict="dead", signal="workday_unposted", detail="403 S22"
+    )
+
+
+def test_two_workday_unposted_answers_in_different_runs_close_the_posting(
+    tmp_path: Path,
+) -> None:
+    engine = _store(tmp_path)
+    posting_id = _posting(engine, _company(engine, slug="acme", watched=False))
+
+    first = _sweep(engine, _unposted)
+    assert first.gone == 1
+    assert _row(engine, posting_id) == ("open", 1, None)
+    _age_the_probe(engine)
+    report = _sweep(engine, _unposted)
+
+    assert report.closed == 1
+    assert _row(engine, posting_id)[:2] == ("closed", 2)
+    assert _events(engine, posting_id) == ["closed"]
+
+
 def test_a_gone_status_reached_through_a_redirect_never_closes(tmp_path: Path) -> None:
     """`refetch_gone_after_redirect` is the ONE signal that can disarm the whole check while
     every other number holds still: `Fetcher` follows redirects, so an employer migrating ATS

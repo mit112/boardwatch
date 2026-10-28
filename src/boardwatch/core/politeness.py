@@ -66,10 +66,15 @@ class FetchFailure(Exception):
         *,
         redirected: bool = False,
         final_url: str = "",
+        body: bytes = b"",
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.redirected = redirected
+        # The non-200 response's body, when one was read. Providers ignore it; the Workday
+        # liveness probe cannot, because Workday answers an unposted requisition with a 403 whose
+        # body names error `S22`, and a bare 403 is a bot-blocker's answer too (`core/liveness.py`).
+        self.body = body
         # WHERE THE NON-200 CAME FROM, when a response was seen at all. `redirected` says only
         # THAT the client moved; a caller resolving a shortener needs to know WHERE, because a
         # redirect target that 404s has still NAMED the board it 404'd on. Empty when no response
@@ -543,7 +548,7 @@ class Fetcher:
         the caller believed it had applied would be silently absent exactly when the host was
         under stress.
 
-        `headers` exists for THREE callers, and each is documented here so a fourth has to justify
+        `headers` exists for FOUR callers, and each is documented here so a fifth has to justify
         itself. TWO are in the hiring.cafe lane. Its SEARCH route needs the header set a browser
         sends for a top-level navigation, and that set must not leak onto the other lane sharing
         this client (D-369). Its BOARD route is the opposite direction: the lane client carries
@@ -551,7 +556,9 @@ class Fetcher:
         host has to restore `identifying_user_agent()` — D22 is owed to a board that answers us
         honestly, whatever the aggregator's edge behaviour made necessary elsewhere. The THIRD is
         the JSON-LD resolver lane, which restores `identifying_user_agent()` for the same reason on
-        the ATS posting pages it fetches. Client-level headers could express none of them.
+        the ATS posting pages it fetches. The FOURTH is the Workday liveness probe, which asks a
+        posting's CXS endpoint for JSON (`pipeline/liveness.py`). Client-level headers could
+        express none of them.
 
         They are merged UNDER the conditional-GET validators, so a caller cannot suppress an
         `If-None-Match` by passing one of its own — the validator half is this client's
@@ -847,6 +854,7 @@ class Fetcher:
                 status_code=response.status_code,
                 redirected=bool(response.history),
                 final_url=str(response.url),
+                body=response.content,
             )
         etag = response.headers.get("ETag")
         last_modified = response.headers.get("Last-Modified")

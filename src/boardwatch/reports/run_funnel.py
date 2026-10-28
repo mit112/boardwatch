@@ -3741,9 +3741,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "scanner never revisits them (D-314). Only a non-redirect 404/410 from the posting's "
         "own URL counts, and only twice in different runs, mirroring `CLOSE_AFTER_MISSES`. "
         "Sensitivity is LOW and measured: 4 of 60 postings the scanner had PROVED closed "
-        "(6.7%, Wilson 95% CI 2.6%–15.9%), because a closed Workday requisition still answers "
-        "200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` staying "
-        "at 0 is the expected reading, not evidence the class is healthy.*",
+        "(6.7%, Wilson 95% CI 2.6%–15.9%), because a closed Workday requisition's page still "
+        "answers 200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` "
+        "staying at 0 is the expected reading, not evidence the class is healthy. Since D-647 a "
+        "Workday row is asked through its CXS endpoint instead, where an unposted requisition "
+        "answers 403 `S22`: 80 of 80 scanner-proven-closed Workday postings detected, 0 false "
+        "deaths in 76 open.*",
         "",
         "*T89 gave `ashby`, `greenhouse` and `lever` rows a second, disjoint mechanism: "
         "membership of their company's ATS list endpoint, one GET per COMPANY. On those two "
