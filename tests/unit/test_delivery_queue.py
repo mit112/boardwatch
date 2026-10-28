@@ -5201,3 +5201,49 @@ def test_refresh_reads_the_store_only_after_the_lock_is_held(
     assert order.count("lock") == 1, "reconcile and sync must share ONE lock hold"
     assert order[0] == "lock" and "sql" in order
     assert _folders(root) != []
+
+
+def test_a_closed_lead_widened_beside_its_drained_twin_is_left_where_it_is(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """The recurring `QueueConflictError` from runs 685/686 (Blue Bird 1112126, CoStar 224225 and
+    the rest of the eight). Job A's folder already holds the PLAIN name in `_closed/` and A is no
+    longer a standing lead, so `_plan` never disambiguates against it. Job B closes later: reconcile widens B
+    to `_closed/<plain>_<hash>` (T172), and then the sync half of the SAME `refresh_queue` tried to
+    relocate B back to the plain name, which A holds. Every run, for ever.
+    """
+    with engine.begin() as conn:
+        posting_a, job_a = _deliver(conn, apps, "one", title="Backend Engineer")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    # Apply-by-hand, then closed by a triage pass: closed outranks manual for the folder, and
+    # manual keeps A out of `standing_queue_rows`, so nothing plans A's name any more.
+    with engine.begin() as conn:
+        mark_job_manual(conn, job_id=job_a, at=NOW)
+        _set_status(conn, posting_a, "closed")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert _folders(root / CLOSED_DIR) == ["Acme_Corp_Backend_Engineer"], "premise: A drained"
+
+    with engine.begin() as conn:
+        posting_b, _job_b = _deliver(conn, apps, "two", title="Backend Engineer")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert _folders(root) == ["Acme_Corp_Backend_Engineer"], "premise: B took the free plain name"
+    with engine.begin() as conn:
+        _set_status(conn, posting_b, "closed")
+
+    drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert drained.failed == 0, drained.failures
+    assert synced.failed == 0, synced.failures
+    closed = _folders(root / CLOSED_DIR)
+    assert len(closed) == 2 and "Acme_Corp_Backend_Engineer" in closed, closed
+    widened = next(name for name in closed if name != "Acme_Corp_Backend_Engineer")
+    assert _details(root / CLOSED_DIR / widened)["posting_id"] == posting_b
+    before = _snapshot(root)
+
+    again_drained, again_synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+
+    assert (again_drained.failed, again_synced.failed, again_synced.moved) == (0, 0, 0), (
+        again_drained.failures,
+        again_synced.failures,
+    )
+    assert _snapshot(root) == before

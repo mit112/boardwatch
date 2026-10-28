@@ -520,13 +520,26 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     failures.extend(retire_failures)
     failed.update(failure.posting_id for failure in retire_failures)
 
+    # Where each lead's folder lives after the relocation pass, read again by the create pass.
+    targets: dict[int, Path] = {}
+    # T172 from this side. A planned name a DIFFERENT job's drained folder already holds is
+    # widened exactly as reconcile widens it, or a folder reconcile just filed under the widened
+    # name is moved straight back at the occupied plain one and refused, every run.
+    known_job_ids: dict[Path, int] = {entry.path: entry.job_id for entry in entries.values()}
     moved = 0
     for row in rows:
         names = planned.get(row.posting_id)
         entry = _entry_for(row, entries, by_job)
-        if names is None or entry is None:
+        if names is None:
             continue
         target = _dest(root, decision_of[row.posting_id].lane, names.folder)
+        if entry is None:
+            targets[row.posting_id] = target
+            continue
+        target = _widen_for_a_different_job(
+            entry, target, root=root, owner_name=owner_name, known_job_ids=known_job_ids
+        )
+        targets[row.posting_id] = target
         if entry.path == target:
             continue
         try:
@@ -535,6 +548,9 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
         except Exception as exc:  # one lead must never cost the rest
             failures.append(LeadFailure(posting_id=row.posting_id, detail=_detail(exc)))
             failed.add(row.posting_id)
+            continue
+        known_job_ids.pop(entry.path, None)
+        known_job_ids[target] = entry.job_id
 
     created = updated = unchanged = repaired = 0
     staging = root / f"{STAGING_PREFIX}{token_hex(8)}"
@@ -548,7 +564,7 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
                 # `entry.path` is stale after the relocation pass, so every read of the folder
                 # below goes through `target`, which is where that pass left it.
                 entry = _entry_for(row, entries, by_job)
-                target = _dest(root, decision_of[row.posting_id].lane, names.folder)
+                target = targets[row.posting_id]
                 if entry is None and target.exists():
                     raise QueueConflictError(
                         f"{names.folder} already exists and does not identify posting "
