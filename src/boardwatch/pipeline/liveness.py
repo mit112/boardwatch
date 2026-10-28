@@ -19,7 +19,7 @@ a funnel that reports the check as *unmeasured* rather than as zero dead (the D-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import Engine, select
 
@@ -88,11 +88,12 @@ def build_prober(settings: Settings) -> LivenessProber:
         except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
             return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
         # An empty `items` is a death only from the resource asked about, so a 200 that came from
-        # somewhere else carries the redirect rule too. Host and path, not the whole string: the
-        # finder's `;` and `,` must not read as a move if a client re-encodes them.
+        # somewhere else carries the redirect rule too. The query is compared as well, because the
+        # requisition's identity lives there; decoded, so a re-encoded `;` or `,` is not a move.
         final, asked = urlsplit(result.final_url), urlsplit(details_url)
         moved = bool(result.final_url) and (
-            (final.hostname, final.path) != (asked.hostname, asked.path)
+            (final.hostname, final.path, unquote(final.query))
+            != (asked.hostname, asked.path, unquote(asked.query))
         )
         return verdict_for_oracle_details(
             posting_id, result.status_code, result.content, redirected=moved

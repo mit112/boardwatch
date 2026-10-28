@@ -69,6 +69,7 @@ this path.
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -534,6 +535,9 @@ def details_url(host: str, site: str, posting_id: str) -> str:
 # The tails a public posting page ends in after `/sites/{site}/`, each followed by the numeric
 # requisition id. `job` is what the scan stores; the two `requisitions/` forms are what
 # aggregator copies carry (233 and 4 of 279 open unwatched rows on 2026-10-27).
+# A site as live boards spell it (`CX_1`, `CX`, `CampusHiring`): nothing the finder grammar or a
+# query string could read as structure.
+_PAGE_SITE = re.compile(r"[A-Za-z0-9_-]+")
 _POSTING_TAILS = (("job",), ("requisitions", "preview"), ("requisitions", "job"))
 
 
@@ -553,6 +557,10 @@ def details_url_for_page(url: str) -> str | None:
     if parts[3].lower() != _SITES_SEGMENT or not parts[-1].isdigit():
         return None
     if tuple(x.lower() for x in parts[5:-1]) not in _POSTING_TAILS:
+        return None
+    # The site lands in the finder unescaped. A scanned slug is validated by `split_slug`, but a
+    # stored aggregator URL is anyone's text, and `+` or `&` there changes what is asked.
+    if not _PAGE_SITE.fullmatch(parts[4]):
         return None
     try:
         host, site = split_slug(f"{parts_url.hostname or ''}/{parts[4]}")

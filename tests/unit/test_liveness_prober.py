@@ -372,6 +372,11 @@ def test_an_oracle_posting_page_maps_to_its_details_resource(page: str) -> None:
         "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1/apply",
         "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/requisitions/1",
         "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/C;X/job/1",
+        # The site lands in the finder unescaped, so anything outside a plain identifier could
+        # change what is asked (`&offset=` would page past the answer, `+` reads as a space).
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX+1/job/1",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1&offset=9/job/1",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX%261/job/1",
         "https://notoraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1",
         "https://acme.example/redirect?rx_url=https%3A%2F%2Facme.fa.us2.oraclecloud.com%2Fx",
     ],
@@ -455,3 +460,25 @@ def test_an_oracle_non_200_follows_the_page_rules(
     respx.get(ORA_DETAILS).mock(return_value=httpx.Response(status))
 
     assert build_prober(_settings(tmp_path))(42, ORA_PAGE).verdict == verdict
+
+
+@pytest.mark.parametrize(
+    "moved_to",
+    [
+        ORA_DETAILS.replace("Id=26012119", "Id=99999999"),
+        ORA_DETAILS.replace("siteNumber=CX_1", "siteNumber=CX_2"),
+    ],
+)
+@respx.mock
+def test_an_oracle_empty_answer_for_a_different_requisition_is_served(
+    tmp_path: Path, moved_to: str
+) -> None:
+    """The requisition's identity is in the QUERY, so a redirect that changes only the query is
+    still an answer about something else."""
+    respx.get(ORA_DETAILS).mock(return_value=httpx.Response(302, headers={"Location": moved_to}))
+    respx.get(moved_to).mock(return_value=httpx.Response(200, content=b'{"items":[]}'))
+
+    result = build_prober(_settings(tmp_path))(42, ORA_PAGE)
+
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
