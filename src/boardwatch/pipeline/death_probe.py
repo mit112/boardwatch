@@ -59,6 +59,10 @@ from their board's live search an hour later, and the same search found the aliv
 were real closures the scanner had not reached yet. That makes **0 false deaths in 76**. The
 class it covers is small: 284 open unwatched rows carried a Workday URL that day.
 
+**D-648: an Oracle HCM row is asked through its requisition detail resource.** The page is a
+client-rendered shell; the resource answers an unposted requisition with an empty `items`
+(`oracle_unposted`), which strikes. 33 of 40 scanner-proven closures, 0 false deaths in 38 open.
+
 **T89: on a registry ATS the URL half is worse than blind — it DISARMS the counter.** Probed
 live 2026-09-17 against five postings a hand pre-flight had found dead: `jobs.ashbyhq.com`
 answers **HTTP 200** with a 9,144-byte empty shell (live controls: 200, 42–78 KB) and
@@ -140,7 +144,10 @@ from boardwatch.store.tables import companies, postings
 # members rather than re-derived from a status code: `core/liveness.py` owns what "gone" means,
 # including the redirect rule, and a second derivation here would let the two drift.
 # `workday_unposted` is the CXS 403/S22 answer; a Workday 404 there is already `refetch_gone`.
-CLOSING_SIGNALS: frozenset[str] = frozenset({"refetch_gone", "workday_unposted"})
+# `oracle_unposted` is an Oracle HCM detail resource answering an empty `items` (D-648).
+CLOSING_SIGNALS: frozenset[str] = frozenset(
+    {"refetch_gone", "workday_unposted", "oracle_unposted"}
+)
 
 # T89. The closed catalog of providers whose whole board is readable in ONE request, with the
 # JSON key the job array sits under (`None` = the payload IS the array). These are the bare

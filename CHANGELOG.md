@@ -103,6 +103,12 @@ All notable changes to this project are documented here. The format follows
   now applies only while the row's URL is a LinkedIn page: 149 of 17,408 open rows carry an
   employer URL (24 Workday, which the CXS probe can close) and keep their standing-lead priority.
 
+- **Closed Oracle HCM postings are now detected.** An Oracle careers page answers 200 whatever the
+  requisition's state, so the death probe could not close an Oracle copy (279 open unwatched rows,
+  most from Indeed). The probe now asks the requisition's detail resource, where a closed one answers
+  an empty `items`: 33 of 40 scanner-proven closures detected, 0 false deaths in 38 open (D-648). The
+  shortlist liveness check uses the same probe. amazon.jobs already answered 404 for a closed posting.
+
 - **Closed Workday postings are now detected.** A Workday job page answers HTTP 200 whether or not
   the requisition is open, so the death probe never closed a Workday posting (0 of 80 scanner-proven
   closures). The probe now asks the posting's CXS endpoint, where an unposted requisition answers

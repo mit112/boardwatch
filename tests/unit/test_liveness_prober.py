@@ -331,3 +331,127 @@ def test_a_cxs_200_without_a_live_posting_is_unknown(tmp_path: Path, body: bytes
     result = build_prober(_settings(tmp_path))(42, WD_PAGE)
 
     assert result.verdict == "unknown"
+
+
+# --- Oracle HCM: the requisition detail resource, never the page ---------------------------
+#
+# The page is a client-rendered shell. Measured 2026-10-27 against the detail resource (D-648):
+# 33 of 40 scanner-proven-closed postings answered an empty `items`, 38 of 40 listed ones
+# returned the requisition, and the 2 listed ones that answered empty were gone from their
+# board's own search. A returned requisition with a null `ExternalPostedStartDate` was listed.
+
+ORA_PAGE = "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/26012119"
+ORA_DETAILS = (
+    "https://acme.fa.us2.oraclecloud.com/hcmRestApi/resources/latest/"
+    "recruitingCEJobRequisitionDetails?expand=all&onlyData=true&finder=ById;Id=26012119,siteNumber=CX_1"
+)
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        ORA_PAGE,
+        ORA_PAGE + "?utm_medium=jobboard",
+        ORA_PAGE.replace("/job/", "/requisitions/preview/"),
+        ORA_PAGE.replace("/job/", "/requisitions/job/"),
+        ORA_PAGE.replace("/hcmUI/CandidateExperience/", "/hcmui/candidateexperience/"),
+    ],
+)
+def test_an_oracle_posting_page_maps_to_its_details_resource(page: str) -> None:
+    from boardwatch.providers.oraclehcm import details_url_for_page  # noqa: PLC0415
+
+    assert details_url_for_page(page) == ORA_DETAILS
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/job/26012119",  # no site
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/abc",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1/apply",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/requisitions/1",
+        "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/C;X/job/1",
+        "https://notoraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/1",
+        "https://acme.example/redirect?rx_url=https%3A%2F%2Facme.fa.us2.oraclecloud.com%2Fx",
+    ],
+)
+def test_anything_else_keeps_the_page_probe_on_oracle(url: str) -> None:
+    from boardwatch.providers.oraclehcm import details_url_for_page  # noqa: PLC0415
+
+    assert details_url_for_page(url) is None
+
+
+@respx.mock
+def test_an_oracle_page_is_never_fetched_its_details_resource_is(tmp_path: Path) -> None:
+    page = respx.get(ORA_PAGE).mock(return_value=httpx.Response(200))
+    details = respx.get(ORA_DETAILS).mock(
+        return_value=httpx.Response(200, content=b'{"items":[{"Title":"Engineer"}]}')
+    )
+
+    result = build_prober(_settings(tmp_path))(42, ORA_PAGE)
+
+    assert not page.called
+    assert details.call_count == 1
+    assert details.calls[0].request.headers["accept"] == "application/json"
+    assert (result.verdict, result.signal) == ("alive", "refetch_ok")
+
+
+@respx.mock
+def test_an_oracle_details_answer_with_no_items_is_DEAD(tmp_path: Path) -> None:  # noqa: N802
+    respx.get(ORA_DETAILS).mock(return_value=httpx.Response(200, content=b'{"items":[],"count":0}'))
+
+    result = build_prober(_settings(tmp_path))(42, ORA_PAGE)
+
+    assert result.verdict == "dead"
+    assert result.signal == "oracle_unposted"
+
+
+@respx.mock
+def test_an_unposted_looking_requisition_that_is_returned_is_ALIVE(  # noqa: N802
+    tmp_path: Path,
+) -> None:
+    """A null `ExternalPostedStartDate` was measured on a posting its board still listed."""
+    body = b'{"items":[{"Title":"Technician","ExternalPostedStartDate":null}]}'
+    respx.get(ORA_DETAILS).mock(return_value=httpx.Response(200, content=body))
+
+    assert build_prober(_settings(tmp_path))(42, ORA_PAGE).verdict == "alive"
+
+
+@pytest.mark.parametrize(
+    "body", [b"<html>challenge</html>", b'{"count":0}', b'{"items":null}', b"[]"]
+)
+@respx.mock
+def test_an_oracle_200_without_an_items_list_is_unknown(tmp_path: Path, body: bytes) -> None:
+    """A WAF page or a changed payload is not evidence either way."""
+    respx.get(ORA_DETAILS).mock(return_value=httpx.Response(200, content=body))
+
+    result = build_prober(_settings(tmp_path))(42, ORA_PAGE)
+
+    assert result.verdict == "unknown"
+    assert result.withholds is False
+
+
+@respx.mock
+def test_an_oracle_empty_answer_reached_through_a_redirect_is_served(tmp_path: Path) -> None:
+    respx.get(ORA_DETAILS).mock(
+        return_value=httpx.Response(302, headers={"Location": "https://other.example/x"})
+    )
+    respx.get("https://other.example/x").mock(
+        return_value=httpx.Response(200, content=b'{"items":[]}')
+    )
+
+    result = build_prober(_settings(tmp_path))(42, ORA_PAGE)
+
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
+
+
+@pytest.mark.parametrize(("status", "verdict"), [(404, "dead"), (403, "unknown"), (500, "unknown")])
+@respx.mock
+def test_an_oracle_non_200_follows_the_page_rules(
+    tmp_path: Path, status: int, verdict: str
+) -> None:
+    respx.get(ORA_DETAILS).mock(return_value=httpx.Response(status))
+
+    assert build_prober(_settings(tmp_path))(42, ORA_PAGE).verdict == verdict

@@ -19,18 +19,21 @@ a funnel that reports the check as *unmeasured* rather than as zero dead (the D-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from urllib.parse import urlsplit
 
 from sqlalchemy import Engine, select
 
 from boardwatch.core.liveness import (
     Liveness,
     verdict_for_failure,
+    verdict_for_oracle_details,
     verdict_for_status,
     verdict_for_workday_cxs,
     verdict_without_url,
 )
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
+from boardwatch.providers.oraclehcm import details_url_for_page
 from boardwatch.providers.workday import cxs_job_url
 from boardwatch.store.tables import postings
 
@@ -55,7 +58,8 @@ def build_prober(settings: Settings) -> LivenessProber:
     is forwarded for exactly that reason, and `core/liveness.py` decides what it means.
 
     A Workday posting page is asked about through its CXS endpoint instead, because the page
-    answers 200 whether or not the requisition is open (`core/liveness.py`).
+    answers 200 whether or not the requisition is open (`core/liveness.py`). An Oracle HCM posting
+    page is asked through its requisition detail resource, for the same reason (D-648).
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
 
@@ -72,10 +76,35 @@ def build_prober(settings: Settings) -> LivenessProber:
             return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
         return verdict_for_workday_cxs(posting_id, result.status_code, result.content)
 
+    def probe_oracle(posting_id: int, details_url: str) -> Liveness:
+        try:
+            result = fetcher.get(details_url, headers={"Accept": "application/json"})
+        except FetchFailure as exc:
+            if exc.status_code is None:
+                return verdict_for_failure(posting_id, None, str(exc))
+            return verdict_for_oracle_details(
+                posting_id, exc.status_code, exc.body, redirected=exc.redirected
+            )
+        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
+            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+        # An empty `items` is a death only from the resource asked about, so a 200 that came from
+        # somewhere else carries the redirect rule too. Host and path, not the whole string: the
+        # finder's `;` and `,` must not read as a move if a client re-encodes them.
+        final, asked = urlsplit(result.final_url), urlsplit(details_url)
+        moved = bool(result.final_url) and (
+            (final.hostname, final.path) != (asked.hostname, asked.path)
+        )
+        return verdict_for_oracle_details(
+            posting_id, result.status_code, result.content, redirected=moved
+        )
+
     def probe(posting_id: int, url: str) -> Liveness:
         cxs_url = cxs_job_url(url)
         if cxs_url is not None:
             return probe_workday(posting_id, cxs_url)
+        details_url = details_url_for_page(url)
+        if details_url is not None:
+            return probe_oracle(posting_id, details_url)
         try:
             result = fetcher.get(url)
         except FetchFailure as exc:
