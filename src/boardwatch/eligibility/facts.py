@@ -153,6 +153,14 @@ class Policy(BaseModel):
     # undeclared would decide a southern graduate's Spring window against the northern months
     # and never say so (T182 review).
     graduation_hemisphere: Literal["northern", "southern"] | None = None
+    # D-651. Whether a degree bar that names a field of study ("Bachelor's degree in Computer
+    # Science") is decided on the LEVEL alone. `compare` is the catalog's behaviour: the declared
+    # `field_of_study` is checked against the field the posting names. `ignore` is a PER-USER
+    # choice that any degree at or above the bar's level qualifies, whatever field it is in --
+    # the level comparison itself is unchanged, so a doctorate bar still fails a master's.
+    # `None` reads as `compare`, and only `ignore` is hashed, so landing this re-keys nobody
+    # (D-P2-2), for the reason `graduation_hemisphere` gives above.
+    degree_field_of_study: Literal["compare", "ignore"] | None = None
 
 
 class ProfileRowInvalid(ValueError):

@@ -786,11 +786,16 @@ def _resolve_degree(detection: Detection, facts: Facts, family: FamilySpec) -> R
         if gname.startswith("coord_rank"):
             named = int(gname[len("coord_rank"):].split("_")[0])
             bar = named if bar is None else min(bar, named)
-    if pattern.implies == "degree_required_with_field":
+    if pattern.implies in ("degree_required_with_field", "degree_listed_with_field"):
         # Rank FIRST, and it stays decidable on its own: no field can rescue a missing degree,
         # so the field comparison only ever runs on a rank that already clears the bar.
         if bar is not None and rank < bar:
             return Resolution(UNMET, f"rank {rank} < {bar}", support)
+        if bar is not None and not family.compare_field_of_study:
+            # D-651: the user's policy decides this bar on its level alone.
+            return Resolution(
+                MET, f"rank {rank} >= {bar}; field of study not compared (policy)", support
+            )
         return _resolve_field_of_study(detection, facts, family)
     if bar is None:
         if rank == 0:

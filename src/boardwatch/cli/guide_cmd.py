@@ -474,6 +474,12 @@ demotion; `ignore` silences it. This is policy data, not the catalog. Re-keys ev
         """Sets the highest required-years bar that abstains instead of rejecting, per family.
 Re-keys every verdict.""",
     ),
+    "eligibility policy degree-field": Entry(
+        ("writes store",),
+        """`ignore` decides a degree bar that names a field on its level alone: any degree at or
+above the level asked for qualifies, whatever its field. `compare` (the default) checks the field.
+Setting `ignore` re-keys every verdict.""",
+    ),
     "eligibility run": Entry(
         ("writes store",),
         """Evaluates every open posting with no current-version verdict. Idempotent; `run` does

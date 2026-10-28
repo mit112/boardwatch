@@ -131,7 +131,9 @@ def test_the_bundled_catalog_loads(tmp_path: Path) -> None:
     # preferred wording, so it wrote no row at all.
     # T221: 65 -> 69. `bachelor_length_or_equivalent_required` and `associate_length_or_equivalent_required`,
     # a degree's length before its `or equivalent` read as the degree bar it is, and their two carriers.
-    assert sum(len(f.patterns) for f in catalog.families) == 69
+    # D-651: 69 -> 71. `bachelor_in_field_listed`, the bare list-item degree bar whose marker is its
+    # heading, and `bachelor_in_field_listed_preferred`, the carrier its hedge writes.
+    assert sum(len(f.patterns) for f in catalog.families) == 71
 
 
 def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> None:
@@ -168,12 +170,14 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # labelled block's own hedge, and it must stand the bar down like any other.
         # T200: +2, the two domain range twins, which carry their siblings' suppressors.
         # T221: +2, the two degree-length patterns' hedge lists.
-        "suppressed_by_unit": 25,
+        # D-651: +1, `bachelor_in_field_listed`'s hedge list.
+        "suppressed_by_unit": 26,
         # 2026-09-22 (T157): +13 sentence, one per experience pattern carrying
         # `company_side_years`. That anchor reaches only a subject BEFORE the bar;
         # `company_tenure_after_bar` is its narrow after-span complement.
         # T200: +2, the domain range twins.
-        "suppressed_by_sentence": 20,
+        # D-651: +1, `bachelor_in_field_listed`'s alternative and who-may-apply stand-downs.
+        "suppressed_by_sentence": 21,
         # T201: one per experience pattern carrying `company_tenure_after_bar`, the same set. A
         # credit or substitution rule whose subject is the bar ("One year of experience will be
         # credited ...") is matched at the span's end, which a sentence scope cannot express.
@@ -222,7 +226,8 @@ def test_the_bundled_catalog_carries_every_suppressor_kind(tmp_path: Path) -> No
         # now ZERO -- the field stays in the loader for an override, but no bundled pattern
         # uses it. The pair must move together: an `abstain_by` that climbs off 0 means a new
         # pattern took the UNBOUNDED reach that finding 4 exists to remove.
-        "abstain_by_adjacent": 11,
+        # D-651: +1, `bachelor_in_field_listed` carries the degree equivalence escape.
+        "abstain_by_adjacent": 12,
         "jurisdiction_map": 2,
         "consumes_cues": 3,
     }

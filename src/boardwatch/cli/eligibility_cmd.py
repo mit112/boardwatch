@@ -995,3 +995,29 @@ def policy_ceiling(ctx: typer.Context, family: str, years: int) -> None:
             policy_json=new_policy.model_dump(mode="json"),
         )
     console.print(f"set near-miss ceiling {family} = {years}")
+
+
+@policy_app.command("degree-field")
+def policy_degree_field(ctx: typer.Context, choice: str) -> None:
+    """Decide a degree bar that names a field on its level alone (`ignore`) or not (`compare`).
+
+    `ignore` means any degree at or above the bar's level qualifies, whatever its field; a bar
+    above your level still fails. A per-user preference, stored beside severity (D-651).
+    """
+    if choice not in ("compare", "ignore"):
+        typer.echo(f"choice must be compare or ignore, got {choice!r}")
+        raise typer.Exit(code=1)
+    app_ctx = build_context(ctx.obj)
+    with app_ctx.engine.begin() as conn:
+        row = get_profile(conn)
+        if row is None:
+            _no_profile()
+        facts = facts_of(row.eligibility_facts_json)
+        policy = policy_of(row.eligibility_policy_json)
+        new_policy = policy.model_copy(update={"degree_field_of_study": choice})
+        save_eligibility(
+            conn,
+            facts_json=facts_payload(facts),
+            policy_json=new_policy.model_dump(mode="json"),
+        )
+    console.print(f"set degree field of study = {choice}")

@@ -121,6 +121,15 @@ def test_a_misspelt_hemisphere_is_refused_not_read_as_northern() -> None:
     assert parse_policy({"graduation_hemisphere": "southern"}).graduation_hemisphere == "southern"
 
 
+def test_a_misspelt_degree_field_choice_is_refused() -> None:
+    """`degree_field_of_study` is a closed choice (D-651): read as unset, `ingore` would keep
+    comparing fields for a user who asked not to, and never say so."""
+    with pytest.raises(ProfileRowInvalid) as caught:
+        parse_policy({"degree_field_of_study": "ingore"})
+    assert "degree_field_of_study" in str(caught.value)
+    assert parse_policy({"degree_field_of_study": "ignore"}).degree_field_of_study == "ignore"
+
+
 def test_an_unknown_facts_key_names_itself_in_the_refusal() -> None:
     """The operator has to know WHICH key made the row unusable; a bare "invalid" leaves
     them editing JSON blind."""

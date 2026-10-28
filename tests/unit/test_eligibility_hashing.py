@@ -435,3 +435,25 @@ def test_a_southern_hemisphere_re_keys_the_rules_hash(tmp_path: Path) -> None:
     assert southern.rules_snapshot["graduation_hemisphere"] == "southern"
     assert digest(southern.rules_snapshot) == southern.rules_hash
     verify_identity(southern, posting_version_id=1)
+
+
+# ---- D-651: the degree field-of-study choice enters the rules snapshot DIFFERING-ONLY too.
+
+
+def test_declaring_compare_is_not_a_second_fingerprint(tmp_path: Path) -> None:
+    """`compare` is the catalog's behaviour, so stating it must hash like stating nothing."""
+    base = _identity(tmp_path)
+    stated = _identity(tmp_path, policy=Policy(degree_field_of_study="compare"))
+    assert stated.rules_hash == base.rules_hash
+    assert stated.rules_snapshot == base.rules_snapshot
+
+
+def test_ignoring_the_degree_field_re_keys_the_rules_hash(tmp_path: Path) -> None:
+    """A real change of behaviour MUST re-key (D-P2-22), or the anti-join keeps serving the
+    field-compared verdicts to a tenant who chose level-only."""
+    base = _identity(tmp_path)
+    ignored = _identity(tmp_path, policy=Policy(degree_field_of_study="ignore"))
+    assert ignored.rules_hash != base.rules_hash
+    assert ignored.rules_snapshot["degree_field_of_study"] == "ignore"
+    assert digest(ignored.rules_snapshot) == ignored.rules_hash
+    verify_identity(ignored, posting_version_id=1)

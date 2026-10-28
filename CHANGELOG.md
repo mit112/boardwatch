@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A degree stated as a bare qualification line is now read.** "Bachelor's degree in Computer
+  Science, Software Engineering, or a related field." under a Qualifications heading wrote no
+  eligibility row, because every field-naming degree rule needed "required" (or similar) in the
+  sentence. Such postings read as stating no degree and came out `uncertain`. The line now clears
+  a candidate who holds the degree, and under a "Preferred" heading or with "preferred" after it
+  reads as a preference. It never makes a posting `ineligible` on its own: a candidate without the
+  degree stays `uncertain`. On run 690's delivered leads, 14 move from `uncertain` to `eligible`.
+- **`boardwatch eligibility policy degree-field ignore`** decides a degree bar on its level alone:
+  any degree at or above the level the posting asks for qualifies, whatever field it names. A bar
+  above your level (a PhD when you hold a master's) still fails. `compare`, the default, keeps the
+  field-of-study check. Changing it re-evaluates every open posting at the next run.
 - **`boardwatch postings close` and `postings reopen`** close a posting you saw closed yourself,
   typically a LinkedIn listing that no probe reaches. `--evidence` (what you saw) is required, and
   the command only reports unless you pass `--apply`. A close writes the same shape as boardwatch's

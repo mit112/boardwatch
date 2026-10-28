@@ -127,6 +127,9 @@ def build_identity(
     # MUST re-key (D-P2-22) -- which is what makes landing the feature free and using it honest.
     if policy.graduation_hemisphere is not None and policy.graduation_hemisphere != "northern":
         rules_snapshot["graduation_hemisphere"] = policy.graduation_hemisphere
+    # D-651. DIFFERING-ONLY, the same rule: `compare` is today's behaviour.
+    if policy.degree_field_of_study == "ignore":
+        rules_snapshot["degree_field_of_study"] = "ignore"
     profile_hash = digest(profile_snapshot)
     rules_hash = digest(rules_snapshot)
     return InputIdentity(

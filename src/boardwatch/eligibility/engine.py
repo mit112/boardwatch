@@ -246,6 +246,17 @@ def evaluate(
             resolution = resolve(
                 detection, facts, catalog.effective_family(detection.family, policy)
             )
+            if resolution.disposition == UNMET and detection.pattern.unmet_abstains:
+                # D-651: a layout-only bar clears but never fails (`PatternSpec.unmet_abstains`).
+                staged.append(
+                    _Staged(
+                        detection,
+                        UNKNOWN,
+                        f"stated as a list item, not as a requirement: {resolution.rationale}",
+                        (),
+                    )
+                )
+                continue
             staged.append(
                 _Staged(
                     detection, resolution.disposition, resolution.rationale, resolution.support
