@@ -658,3 +658,36 @@ def test_a_delivered_copy_that_was_REPORTED_and_ranks_again_is_not_held_as_new(e
     results = rank_open_postings(engine, _settings(env), limit=10)
     assert results.hidden_lane_copy == 1
     assert _providers(env, results) == ["jobapps", "greenhouse", "greenhouse"]
+
+
+# ------------------------------------------------------------------- held copies take no slot
+
+
+def test_a_lane_copy_held_by_a_DELIVERED_twin_gives_its_slot_to_the_next_lead(env: Path) -> None:
+    """Run 686: 121 of the 150 ranked slots were lane copies dropped AFTER the cutoff, nothing
+    refilled them, and 29 leads reached the gate. The held copy ranks first here, so a drop after
+    the cutoff leaves one lead of two; deciding it before the cutoff fills both slots."""
+    engine = _seed(env, [_lane(0), _lane(1, provider="indeed"), *FILLER])
+    _delivered_by_a_PRIOR_run(engine, _posting_id(engine, "jobapps-acme"))
+    results = rank_open_postings(engine, _settings(env), limit=2)
+    assert [p.posting_id for p in results.visible] == [
+        _posting_id(engine, "beta"), _posting_id(engine, "gamma"),
+    ]
+    assert results.hidden_lane_copy == 1
+    assert results.hidden_below_cutoff == 0
+
+
+def test_a_lane_copy_held_by_a_STANDING_board_copy_gives_its_slot_to_the_next_lead(
+    env: Path,
+) -> None:
+    """The other slate-independent arm, isolated: the lane copy was itself delivered (so the
+    delivered-twin rule cannot hold it) and ranks again, and only the standing board copy holds."""
+    engine = _seed(env, [_lane(0), _board(1), *FILLER])
+    _delivered_by_a_PRIOR_run(engine, _posting_id(engine, "acme"))
+    _artifact_only(engine, _posting_id(engine, "jobapps-acme"))
+    results = rank_open_postings(engine, _settings(env), limit=2)
+    assert [p.posting_id for p in results.visible] == [
+        _posting_id(engine, "beta"), _posting_id(engine, "gamma"),
+    ]
+    assert results.hidden_lane_copy == 1
+    assert results.hidden_below_cutoff == 0
