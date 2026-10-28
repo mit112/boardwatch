@@ -239,8 +239,9 @@ def cxs_job_url(url: str) -> str | None:
         {host}.myworkdaysite.com/[{locale}/]recruiting/{tenant}/{site}/job/{location}/{ref}
             -> https://{host}/wday/cxs/{tenant}/{site}/job/{location}/{ref}
 
-    Exactly that shape and nothing looser: anything else (a `/details/` page, an `/apply` tail, a
-    path without the location segment) is None and keeps the plain page probe, which strikes only
+    `{locale}` is `en-US`, or on the first host family also a 2-letter `es`. Exactly that shape
+    and nothing looser: anything else (a `/details/` page, an `/apply` tail, a path without the
+    location segment) is None and keeps the plain page probe, which strikes only
     when the page itself answers 404/410. A guessed endpoint that 404s would be read as a death.
     """
     parts_url = urlsplit(url)
@@ -255,7 +256,14 @@ def cxs_job_url(url: str) -> str | None:
     else:
         return None
     # site, "job", location, reference: the `externalPath` shape the board scan itself stores
-    if len(rest) != 4 or rest[1].lower() != "job" or not tenant:
+    def is_posting(segments: list[str]) -> bool:
+        return len(segments) == 4 and segments[1].lower() == "job"
+
+    # A 2-letter locale (`/es/`) cannot be told from a 2-letter site by shape, so it is peeled
+    # only when what remains is a posting and the unpeeled path is not one.
+    if not is_posting(rest) and len(rest) == 5 and len(rest[0]) == 2 and is_posting(rest[1:]):
+        rest = rest[1:]
+    if not is_posting(rest) or not tenant:
         return None
     return f"https://{host}/wday/cxs/{tenant}/{rest[0]}/{'/'.join(rest[1:])}"
 

@@ -94,6 +94,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Workday URL with a 2-letter locale (`/es/`) now gets the CXS death probe.** It fell back to
+  the page probe, which cannot see a closed Workday requisition. The locale is peeled only when
+  the rest of the path is the exact posting shape, so a 2-letter site name is still read as a site.
+
 - **Closed Workday postings are now detected.** A Workday job page answers HTTP 200 whether or not
   the requisition is open, so the death probe never closed a Workday posting (0 of 80 scanner-proven
   closures). The probe now asks the posting's CXS endpoint, where an unposted requisition answers

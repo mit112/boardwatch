@@ -196,6 +196,16 @@ S22_BODY = b'{"errorCode":"S22","errorCaseId":"X","httpStatus":403,"message":"pe
             "https://wd1.myworkdaysite.com/en-US/recruiting/uchicago/External/job/Chicago-IL/Analyst_JR1",
             "https://wd1.myworkdaysite.com/wday/cxs/uchicago/External/job/Chicago-IL/Analyst_JR1",
         ),
+        # A 2-letter locale, peeled only because what remains is the exact posting shape.
+        (
+            "https://acme.wd5.myworkdayjobs.com/es/Acme_Careers/job/Madrid/Ingeniero_R7",
+            "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/Acme_Careers/job/Madrid/Ingeniero_R7",
+        ),
+        # ...and a 2-letter SITE is still a site: peeling it would leave three segments.
+        (
+            "https://acme.wd5.myworkdayjobs.com/US/job/Austin-TX/Engineer_R8",
+            "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/US/job/Austin-TX/Engineer_R8",
+        ),
     ],
 )
 def test_a_workday_page_maps_to_its_cxs_endpoint(page: str, cxs: str) -> None:
