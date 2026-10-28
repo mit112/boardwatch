@@ -94,6 +94,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Lane copies of already-delivered jobs no longer take the daily slate's slots.** The ranker
+  dropped a lane copy held by a standing board copy or a delivered twin only after it had filled
+  its 150 slots, and nothing refilled them. Lane postings never close, so the held set only grew:
+  121 of 150 slots by run 686, leaving 29 leads for the gate. Those copies are now dropped before
+  the cutoff, and the next leads in rank order take the slots (D-650).
+
 - **A Workday URL with a 2-letter locale (`/es/`) now gets the CXS death probe.** It fell back to
   the page probe, which cannot see a closed Workday requisition. The locale is peeled only when
   the rest of the path is the exact posting shape, so a 2-letter site name is still read as a site.

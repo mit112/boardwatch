@@ -18,6 +18,9 @@ the earlier filters (D-288) — so there is no predicate to write and they keep 
 from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
+from typing import TypeVar
+
+_T = TypeVar("_T")
 
 # Deliberately well under the 999 SQLite allowed before 3.32, so the size is safe on any
 # SQLite this could be run against, and so a statement binding its own scalars (profile_hash,
@@ -26,7 +29,7 @@ from collections.abc import Iterator, Sequence
 ID_CHUNK_SIZE = 500
 
 
-def id_chunks(ids: Sequence[int]) -> Iterator[list[int]]:
+def id_chunks(ids: Sequence[_T]) -> Iterator[list[_T]]:
     """`ids` in `ID_CHUNK_SIZE`-sized pieces, in order. Empty input yields nothing.
 
     Splitting an `IN` list across statements is only sound when the chunked column is the

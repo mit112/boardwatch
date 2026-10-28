@@ -77,6 +77,7 @@ from boardwatch.store.identity_queries import (
     load_identity_inputs,
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.regroup import job_anchors
@@ -616,6 +617,18 @@ def rank_open_postings(
         )
         # The delivered-twin rule's seed, in the same snapshot for the same reason.
         delivered_keys, delivered_ids = delivered_cross_host_keys(conn)
+        # The lane copies those two seeds already hold, whatever else ranks this run. Decided
+        # BEFORE the cutoff so a held copy never takes a slot (see the fill loop).
+        held_lane_copies = (
+            set()
+            if include_lane_copy
+            else _held_lane_copy_ids(
+                conn,
+                standing_board_keys=standing_board_keys,
+                delivered_keys=delivered_keys,
+                delivered_ids=delivered_ids,
+            )
+        )
     scored: list[RankedPosting] = []
     # posting_id -> slate key, absent for a posting that cannot be keyed (see below).
     slate_keys: dict[int, tuple[int, str, str]] = {}
@@ -956,6 +969,7 @@ def rank_open_postings(
     # eligible posting lands in `visible` or `hidden_below_cutoff`; with it closed,
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
+    hidden_lane_copy_held = 0
     hidden_slate_cap = 0
     hidden_slate_cap_standing = 0
     hidden_cluster_cap = 0
@@ -1044,6 +1058,15 @@ def rank_open_postings(
             # drain bounded by the cutoff reaches only the vetoed rows that would also have
             # ranked, which cannot audit the 59% of the corpus that never gets near it.
             visible.append(posting)
+            continue
+        if posting.posting_id in held_lane_copies:
+            # A lane copy held by a STANDING board copy or a DELIVERED twin. Neither depends on
+            # what else ranks this run, so it is dropped here, before `kept`, instead of taking a
+            # slot and being dropped after the cutoff with nothing refilling it. Lane postings
+            # never close (D-314), so a delivered-twin hold lasts indefinitely: left inside the
+            # cutoff, 121 of the 150 ranked slots were held copies by run 686. No `seen` is
+            # written, so the drain is the one `_suppress_lane_copies` states.
+            hidden_lane_copy_held += 1
             continue
         if kept < limit:
             # The slate cap (D-345), and it sits HERE rather than earlier for two reasons.
@@ -1183,6 +1206,7 @@ def rank_open_postings(
         delivered_ids=delivered_ids,
         include_lane_copy=include_lane_copy,
     )
+    hidden_lane_copy += hidden_lane_copy_held
     lane_copy_job_ids = {
         surfaced_job_of[posting_id]
         for posting_id in lane_copy_ids
@@ -1348,6 +1372,53 @@ def _suppress_lane_copies(
         hidden += 1
         dropped.add(posting.posting_id)
     return kept, hidden, dropped
+
+
+def _held_lane_copy_ids(
+    conn: Connection,
+    *,
+    standing_board_keys: dict[str, tuple[int, ...]],
+    delivered_keys: dict[str, tuple[int, ...]],
+    delivered_ids: frozenset[int],
+) -> set[int]:
+    """The LANE postings `_suppress_lane_copies` drops on its two slate-independent arms.
+
+    Rule (a)'s standing half (an employer-board copy standing in the queue) and the delivered-twin
+    rule read only the seeds, never the slate, so whether they hold a row is known before ranking.
+    The slate-relative arms (a board copy or a higher-ranked lane copy on THIS slate) stay after
+    the cutoff, where their answer is defined. Same membership test as there: which ROW a posting
+    sits on, the CURRENT `algorithm_version`, and a delivered row is never held by its twins.
+
+    Reached through the held KEYS, not the candidates: the `(kind, identity_key)` index answers
+    "who else shares this key" for the few thousand delivered and standing groups, where keying
+    every ranked candidate would read a `cross_host` row for most of the open corpus.
+    """
+    keys = sorted(standing_board_keys.keys() | delivered_keys.keys())
+    held: set[int] = set()
+    for chunk in id_chunks(keys):
+        rows = conn.execute(
+            select(
+                posting_identities.c.posting_id,
+                posting_identities.c.identity_key,
+                companies.c.provider,
+            )
+            .join(postings, postings.c.id == posting_identities.c.posting_id)
+            .join(companies, companies.c.id == postings.c.company_id)
+            .where(
+                posting_identities.c.kind == "cross_host",
+                posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+                posting_identities.c.identity_key.in_(chunk),
+            )
+        ).all()
+        for row in rows:
+            posting_id, key = int(row.posting_id), str(row.identity_key)
+            if str(row.provider) in PROVIDER_NAMES:
+                continue
+            if standing_board_keys.get(key) or (
+                posting_id not in delivered_ids and delivered_keys.get(key)
+            ):
+                held.add(posting_id)
+    return held
 
 
 def _record_surfaced(
