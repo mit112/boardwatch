@@ -159,8 +159,9 @@ def test_built_leads_are_counted_through_the_filesystem_not_just_the_ledger(
     first = _pipeline(env, out_root, top_n=2)
     _pipeline(env, out_root, top_n=2)
 
-    day_dir = out_root / utcnow().date().isoformat()
-    folders = {p.name for p in day_dir.iterdir() if p.is_dir()}
+    # Each run writes under its own UTC day, so two runs that straddle midnight split the
+    # folders across two day dirs: count every day dir, not today's.
+    folders = {p.name for p in out_root.glob("????-??-??/*") if p.is_dir()}
     with get_engine(env).connect() as conn:
         built = {
             job_id
