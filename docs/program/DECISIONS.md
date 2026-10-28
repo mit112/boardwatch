@@ -34963,7 +34963,7 @@ different runs, `unknown` never resets, and the column and drain are unchanged (
 `FetchFailure` now carries the non-200 body so the probe can read `S22`. Only the exact `externalPath` shape
 the board scan stores (`<site>/job/<location>/<ref>`) is mapped. Anything else (a `/details/` page, an `/apply`
 tail, a 2-letter locale such as `/es/`, a path without the location segment) keeps the plain page probe, which
-can never strike, rather than a guessed endpoint whose 404 would read as a death. Of the 284 rows below, 273
+strikes only on the page's own 404/410, rather than a guessed endpoint whose 404 would read as a death. Of the 284 rows below, 273
 have the exact shape: 5 lack the location, 5 carry `/es/` and 1 an `/apply` tail.
 
 The shortlist probe shares `build_prober`, so a Workday lead answering `S22` is also withheld from the run that

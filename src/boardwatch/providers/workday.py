@@ -240,8 +240,8 @@ def cxs_job_url(url: str) -> str | None:
             -> https://{host}/wday/cxs/{tenant}/{site}/job/{location}/{ref}
 
     Exactly that shape and nothing looser: anything else (a `/details/` page, an `/apply` tail, a
-    path without the location segment) is None and keeps the plain page probe, which can never
-    strike. A guessed endpoint that 404s would be read as a death.
+    path without the location segment) is None and keeps the plain page probe, which strikes only
+    when the page itself answers 404/410. A guessed endpoint that 404s would be read as a death.
     """
     parts_url = urlsplit(url)
     host = (parts_url.hostname or "").lower()
