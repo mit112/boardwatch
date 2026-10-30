@@ -39,7 +39,8 @@ followed — keep incidents out of this file.
 | `docs/program/STATE.md` | A pointer to the private `STATE.md`. Closed. |
 | `docs/program/STANDING-FACTS.md` | Facts a fresh session should not re-derive, in six sections. Read the section for the subsystem you are about to touch — not the whole file. |
 | `docs/program/PROGRAM.md` | Phases, measurable gates, scope, departures from job-apps' roadmap. |
-| `docs/program/ROADMAP.md` | **The focus view and the finish line.** What "complete" means (B1–B8 for 14 frozen daily runs, D-598), the freeze rule, and what is deliberately off the path. Read it to pick what to work on; rewrite it only when the finish line moves. |
+| `docs/program/ROADMAP.md` | **The focus view.** The daily bars B1–B8 (no freeze and no 14-day finish line since D-652), and what is deliberately off the path. Read it to pick what to work on; rewrite it when the focus changes. |
+| `docs/program/RUN-PROGRESS-PLAN.md` | **How a run says how much work it has, how far along it is and when it will finish** (T286–T289). Read before touching run output, the web app's run view or `doctor`. |
 | `docs/program/LINKEDIN-CLOSURE-PLAN.md` | **LinkedIn is the whole retirement residual.** The measured decomposition, the JobSpy refusal and three sized tracks. Read before proposing ANY LinkedIn work — it exists so the JobSpy comparison is never re-derived. |
 | `docs/program/RETIREMENT-PLAN.md` | **The job-apps retirement plan** (its switch-off end state is retired — job-apps stays on as a source, D-566 §4, D-598). The finished gap analysis, job-apps' full source list, the phases, and what is already settled. Read before proposing any discovery work — it exists so the comparison is never re-derived. |
 | `docs/program/DECISIONS.md` | Append-only decision log. Context · choice · alternatives rejected. Holds D-077 onward, and **the index for both decision files**. |

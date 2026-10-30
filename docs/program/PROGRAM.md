@@ -26,6 +26,9 @@ eligibility, profile, or the résumé gate resets it. So the clock starts **afte
 it early and mutating underneath it produces 14 days of uninterpretable data. This is the single most
 important program-level scheduling fact and it is why no phase gate below is "run for 14 days".
 
+**Retired 2026-10-29 (D-652):** the owner ended the freeze and the 14-day count. The bars above are still read on
+every scheduled run, as a daily health check; a change no longer resets anything, and no streak is kept.
+
 ### The provisional pass — how "done" is called (D-280)
 
 **"Done" is called on a provisional pass; the 14-day clock confirms it afterwards instead of gating it.**

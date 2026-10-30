@@ -1,6 +1,7 @@
 # Roadmap — what "complete" means, how it is measured, and what is deliberately off the path
 
-**Rewritten 2026-09-25b (D-598)** at the owner's request — "get me to a state where you can confidently say, yes this is a
+**Finish line retired 2026-10-29 (D-652): there is no freeze and no 14-day count; the bars below are read every day as a
+health check.** **Rewritten 2026-09-25b (D-598)** at the owner's request — "get me to a state where you can confidently say, yes this is a
 complete product" — after all five milestones of the 2026-09-05 roadmap had closed and its end state ("job-apps is switched
 off") had been retired by D-566 §4. The 2026-09-05 version is in `archive/ROADMAP-2026-09-05.md`. This file is the FOCUS
 view: `PROGRAM.md` holds the bars, `STATE.md` where things stand today. Rewrite it only when the finish line moves.
@@ -8,14 +9,15 @@ view: `PROGRAM.md` holds the bars, `STATE.md` where things stand today. Rewrite 
 ## The goal, in one line
 
 **Every morning, one unattended command hands the owner a queue of live, deduplicated, profile-eligible new-grad roles,
-each with a one-page tailored résumé PDF — and it has done so, meeting every bar, for 14 frozen days in a row.**
+each with a one-page tailored résumé PDF, meeting every bar.**
 job-apps stays on as an upstream source (D-566 §4); boardwatch is the one queue the owner reads.
 
-## The finish line (D-598)
+## The daily bars (D-598; the finish line retired by D-652)
 
-boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14 consecutive frozen daily runs**:
+Each scheduled run is scored against bars **B1–B8** (`PROGRAM.md` §1). A failing bar is a defect to fix; there is no
+streak to keep and no count to restart (D-652):
 
-| # | bar | how it is read each day | latest reading (2026-09-26b) |
+| # | bar | how it is read each day | reading at D-598 (2026-09-26b) |
 |---|---|---|---|
 | B1 | ≥ 10 net-new eligible, live, deduped leads | funnel `leads` whose job the run decided FIRST (`day_row.py`; D-600 — the bare count includes drain re-deliveries) | **8 (478), 1 (480)** of 40; 40 on 474, before the drain |
 | B2 | 100% of apply-lane leads have a PDF | funnel `pdf` advanced / entered | 100% |
@@ -26,12 +28,10 @@ boardwatch is **complete** when bars **B1–B8** (`PROGRAM.md` §1) hold on **14
 | B7 | work authorization decided, never abstained | `us_authorization_required` abstain % | 0% |
 | B8 | ≥ 20 apply-lane leads/day **and** ≤ 16% unapplyable | NET-NEW apply-lane placements (D-600); a census of each run's placements judged by **two opus judges**, pooled to n ≥ 100 | 8 (478), 1 (480) net-new; **5.6% on 125 (Wilson 3–11), opus census of runs 476–480 — closed** |
 
-**Frozen means (D-598 ruling 5):** during the 14 days only a fix for a defect in a lead actually DELIVERED may ship. A change
-to eligibility, the profile or the résumé gate restarts the count; a scan/board fix does not; everything else waits.
-The historical sequence began with the **2026-09-27 04:00 run** (D-600). Run 533 on October 4 failed B8,
-breaking seven passing days; run 534 on October 5 also failed B8 and judge health (D-620, D-621).
-**Current qualifying streak: 0; no completion date is evidenced.** The bar remains 14 consecutive frozen daily runs;
-existing after-October-10 work holds remain unchanged. Each daily row goes in the maintainer's private `RUNS.md` (D-646); `METRICS.md` holds the rows through run 680.
+**No freeze (D-652, retiring D-598 ruling 5).** Any change may ship on its own review; a change to eligibility, the
+profile or the résumé gate no longer restarts anything. The frozen-day count ran from the **2026-09-27 04:00 run**
+(D-600) to 2026-10-29 and never reached 14. Each daily row goes in the maintainer's private `RUNS.md` (D-646);
+`METRICS.md` holds the rows through run 680.
 
 ## Milestones
 
@@ -41,7 +41,7 @@ existing after-October-10 work holds remain unchanged. Each daily row goes in th
 - **M4 — find what job-apps finds.** Gate 1 per-source recall met, 100% for each employer-board source (D-521, re-read
   2026-09-25); the switch-off it was for is retired (D-566 §4, D-598).
 - **M5 — the 14-day confirm of B1–B7.** DONE at run 447 (D-521 §5).
-- **M6 — B8, and all eight bars together, for 14 frozen days.** OPEN — the finish line above.
+- **M6 — B8, and all eight bars together, for 14 frozen days.** RETIRED 2026-10-29 (D-652); the bars are read daily.
 
 ## What is deliberately NOT on the path
 
