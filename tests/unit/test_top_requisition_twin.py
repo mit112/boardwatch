@@ -399,3 +399,27 @@ def test_a_malformed_url_on_the_slate_or_in_the_seed_does_not_stop_the_ranking(
     _delivered(engine, delivered)
 
     assert _visible(_rank(engine, data_dir)) == [broken, other]
+
+
+def test_an_attempt_never_submitted_does_not_hold_its_requisition(data_dir: Path) -> None:
+    """`track add` makes an `interested` attempt; nothing was applied, so it holds nothing.
+
+    The two rows still share a requisition, so the slate keeps one: the higher-ranked copy. Had the
+    unsubmitted attempt held its requisition, the copy would be the row held instead."""
+    from boardwatch.store.applications import create_application  # noqa: PLC0415
+
+    engine, (copy, interested) = _seed(data_dir, [
+        ("amazon-com", "indeed", "SDE, Robotics, Early Career", AMAZON.format(req="10567489")),
+        ("software-development", "amazon", "Software Development Engineer",
+         AMAZON.format(req="10567489")),
+    ])
+    with engine.begin() as conn:
+        job = conn.execute(
+            select(postings.c.job_id).where(postings.c.id == interested)
+        ).scalar_one()
+        create_application(conn, job_id=job)
+
+    results = _rank(engine, data_dir)
+
+    assert _visible(results) == [copy]
+    assert results.hidden_requisition_twin == 1

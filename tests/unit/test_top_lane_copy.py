@@ -29,7 +29,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert, select
+from sqlalchemy import Engine, String, cast, insert, select
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
@@ -280,9 +280,13 @@ def test_the_employer_board_test_is_the_company_row_not_the_url_host(env: Path) 
     defect. Seeding both rows with an employer ATS url proves the rule reads the company ROW.
     """
     engine = _seed(env, [_lane(0), _board(1), *FILLER])
+    # One employer ATS url per row. A single url on every row would make them one requisition,
+    # which D-654 holds on its own and which is not the question here.
     with engine.begin() as conn:
         conn.execute(
-            postings.update().values(url="https://job-boards.greenhouse.io/acme/jobs/1")
+            postings.update().values(
+                url="https://job-boards.greenhouse.io/acme/jobs/" + cast(postings.c.id, String)
+            )
         )
     results = rank_open_postings(engine, _settings(env), limit=10)
     assert results.hidden_lane_copy == 1

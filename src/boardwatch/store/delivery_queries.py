@@ -74,7 +74,6 @@ from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.store.applications import APPLIED_STATUSES, STATE_EVENTS, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
-from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import (
     CurrentVersion,
@@ -979,13 +978,13 @@ def requisition_holder_urls(conn: Connection) -> tuple[dict[int, str], frozenset
         delivered.add(posting_id)
         if int(row.job_id) not in reported and row.url:
             holders[posting_id] = str(row.url)
-    applied = sorted(applied_job_ids(conn))
-    for chunk in id_chunks(applied):
-        for row in conn.execute(
-            select(postings.c.id, postings.c.url).where(postings.c.job_id.in_(chunk))
-        ).all():
-            if row.url:
-                holders[int(row.id)] = str(row.url)
+    # Reached by the JOIN outward from `applications` the Applied page uses, never by binding a
+    # job-id list (this module builds no `.in_()`). That join also returns jobs whose only attempt
+    # was never submitted, so the rows are kept to `applied_job_ids`, the ranker's own test.
+    applied = applied_job_ids(conn)
+    for row in conn.execute(_applied_postings_select()).all():
+        if int(row.job_id) in applied and row.url:
+            holders[int(row.posting_id)] = str(row.url)
     return holders, frozenset(delivered)
 
 
