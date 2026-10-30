@@ -66,12 +66,17 @@ def run_preflight(
     console: Console | None = None,
     *,
     profile_already_refreshed: bool = False,
+    posting_id: int | None = None,
 ) -> PreflightStats:
     """`profile_already_refreshed` means a caller already ran `refresh_profile_taxonomy` this
     run and it fired (T164). It only keeps the `taxonomy changed — re-extracting` line below
     truthful. The refresh is still re-checked here, never skipped on the caller's word: it is a
     no-op on a fresh profile, and a taxonomy edited between the two calls must still refresh the
-    profile before these extractions are written against the new version."""
+    profile before these extractions are written against the new version.
+
+    `posting_id` scopes the backfill to that one posting (T290). A per-lead caller reads only its
+    own posting's extraction, and the unscoped scan walks every open posting: called twice per
+    lead in the tailor loop, it read ~13 GB of store pages per résumé on run 713."""
     console = console or Console()
     taxonomy = load_taxonomy(settings.config_dir)
     stats = PreflightStats()
@@ -79,7 +84,7 @@ def run_preflight(
         refresh_profile_taxonomy(engine, taxonomy) or profile_already_refreshed
     )
 
-    pending = _open_postings_missing_extraction(engine, taxonomy.version)
+    pending = _open_postings_missing_extraction(engine, taxonomy.version, posting_id=posting_id)
     if pending:
         # The CAUSE is read, never assumed. A posting lacks an extraction at the current
         # version for two unrelated reasons and only one of them is a taxonomy change: the
@@ -108,7 +113,7 @@ def run_preflight(
 
 
 def _open_postings_missing_extraction(
-    engine: Engine, version: str
+    engine: Engine, version: str, *, posting_id: int | None = None
 ) -> list[tuple[int, str, str]]:
     current = (
         select(extractions.c.id)
@@ -120,10 +125,11 @@ def _open_postings_missing_extraction(
         )
         .exists()
     )
+    query = select(postings.c.id, postings.c.content_hash, postings.c.body_text).where(
+        postings.c.status == "open", ~current
+    )
+    if posting_id is not None:
+        query = query.where(postings.c.id == posting_id)
     with engine.connect() as conn:
-        rows = conn.execute(
-            select(postings.c.id, postings.c.content_hash, postings.c.body_text)
-            .where(postings.c.status == "open", ~current)
-            .order_by(postings.c.id)
-        ).all()
+        rows = conn.execute(query.order_by(postings.c.id)).all()
     return [(int(r.id), str(r.content_hash), str(r.body_text)) for r in rows]

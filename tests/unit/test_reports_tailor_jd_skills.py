@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -191,4 +191,25 @@ def test_run_tailor_coalesces_a_jd_skills_for_miss_to_empty_skills(
         out_dir=tmp_path / "out", typst_runner=_runner_ok,
     )
     assert res.jd_skills == []
+    assert res.tailored_artifact_id is not None
+
+
+def test_run_tailor_backfills_only_its_own_posting(tmp_path: Path) -> None:
+    """T290: `run_tailor` runs once per lead, so `_plan_tier_a`'s preflight is scoped to the lead.
+    The other open posting is missing its extraction and must stay missing; the lead's own is
+    backfilled, so the lead is still tailored against its real `jd_skills`."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    lead = _seed_posting(engine, slug="lead")
+    other = _seed_posting(engine, slug="other")
+
+    res = run_tailor(
+        engine, settings, lead, resume_path=_resume_yaml(tmp_path),
+        out_dir=tmp_path / "out", typst_runner=_runner_ok,
+    )
+
+    with engine.connect() as conn:
+        extracted = set(conn.execute(select(extractions.c.posting_id)).scalars())
+    assert extracted == {lead}
+    assert other not in extracted
     assert res.tailored_artifact_id is not None

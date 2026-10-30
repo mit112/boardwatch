@@ -504,7 +504,7 @@ def _plan_tier_a(
     are checked against the three this function loads (see `_reject_mixed_transformation`) before
     anything at all is read out of the database.
     """
-    run_preflight(engine, settings)
+    run_preflight(engine, settings, posting_id=posting_id)
     taxonomy = load_taxonomy(settings.config_dir)
     # A malformed registry (bundled OR override) raises PersonaError here, before any render or
     # write — the pipeline runner treats it as a run-level fatal, never a per-lead degrade.

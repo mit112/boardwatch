@@ -14,7 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, insert, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
@@ -201,7 +201,9 @@ def test_a_missing_extraction_raises_no_jd_extraction(
     in practice — preflight itself is the drain for exactly this bucket. To exercise the
     guard this seam owns for whatever preflight does not catch, preflight is stubbed to a
     no-op here so the extraction row this test omits stays missing."""
-    monkeypatch.setattr("boardwatch.projection.posting.run_preflight", lambda engine, settings: None)
+    monkeypatch.setattr(
+        "boardwatch.projection.posting.run_preflight", lambda engine, settings, **kwargs: None
+    )
     settings = _settings(tmp_path)
     engine = _engine(settings)
     posting_id = _seed(engine, settings, with_extraction=False)
@@ -211,3 +213,22 @@ def test_a_missing_extraction_raises_no_jd_extraction(
         assert exc.violation.issue is ProjectionIssue.NO_JD_EXTRACTION
     else:
         raise AssertionError("expected ProjectionError(NO_JD_EXTRACTION)")
+
+
+def test_the_per_lead_preflight_backfills_only_its_own_posting(tmp_path: Path) -> None:
+    """T290: `posting_context` runs once per lead in the tailor loop, so its preflight is scoped
+    to `posting_id`. Unscoped, it walked every open posting per lead (~13 GB of store pages per
+    résumé on run 713). The other open posting is missing its extraction and must stay missing;
+    the lead's own missing extraction is still backfilled, so the NO_JD_EXTRACTION guarantee
+    holds."""
+    settings = _settings(tmp_path)
+    engine = _engine(settings)
+    lead = _seed(engine, settings, with_extraction=False, slug="lead")
+    other = _seed(engine, settings, with_extraction=False, slug="other")
+
+    _context(engine, settings, lead)
+
+    with engine.connect() as conn:
+        extracted = set(conn.execute(select(extractions.c.posting_id)).scalars())
+    assert extracted == {lead}
+    assert other not in extracted
