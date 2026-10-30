@@ -74,6 +74,7 @@ from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.store.applications import APPLIED_STATUSES, STATE_EVENTS, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.quarantine_queries import is_quarantined
 from boardwatch.store.queries import (
     CurrentVersion,
@@ -946,6 +947,46 @@ def delivered_cross_host_keys(
         if posting_id not in held.setdefault(key, []):
             held[key].append(posting_id)
     return {key: tuple(ids) for key, ids in held.items()}, frozenset(delivered)
+
+
+def requisition_holder_urls(conn: Connection) -> tuple[dict[int, str], frozenset[int]]:
+    """posting id -> URL for every posting that holds its requisition (D-654); and every delivered
+    open posting id.
+
+    The seed for the requisition-twin rule in `top_cmd`: a posting that has never been delivered is
+    held when another posting of the SAME employer requisition (`lanes.dereference.requisition_key`)
+    was delivered or applied to. Measured 2026-10-30: 7 of the 11 duplicates a manual triage removed
+    that day were the same requisition reached a second way (a job-apps or Indeed copy carrying the
+    employer's own URL, or one Oracle requisition published on two career sites), and `cross_host`
+    missed every one because the company spelling or the location differed.
+
+    **The holders are the delivered-twin rule's, by requisition instead of by `cross_host`.** A
+    delivered open posting holds unless its job is reported, and applied or skipped ones still hold:
+    the owner has already acted on that requisition. Every posting of a job carrying an
+    application holds whatever its status, because applying again is redundant even after the copy
+    applied through closed. Keys are computed by the caller, which owns the URL reading.
+
+    **The second value is the guard,** as in `delivered_cross_host_keys`: a delivered row is never
+    held by this rule, so two delivered copies cannot hold each other and both vanish.
+    """
+    reported = reported_job_ids(conn)
+    holders: dict[int, str] = {}
+    delivered: set[int] = set()
+    for row in conn.execute(
+        _delivered_select().where(postings.c.status == "open", postings.c.job_id.is_not(None))
+    ).all():
+        posting_id = int(row.posting_id)
+        delivered.add(posting_id)
+        if int(row.job_id) not in reported and row.url:
+            holders[posting_id] = str(row.url)
+    applied = sorted(applied_job_ids(conn))
+    for chunk in id_chunks(applied):
+        for row in conn.execute(
+            select(postings.c.id, postings.c.url).where(postings.c.job_id.in_(chunk))
+        ).all():
+            if row.url:
+                holders[int(row.id)] = str(row.url)
+    return holders, frozenset(delivered)
 
 
 def lane_copy_posting_ids(conn: Connection) -> set[int]:

@@ -176,6 +176,10 @@ _TOP_MISSING = 10
 # the same stage rather than folded into a neighbour, so the reconciliation identity a consumer
 # checks still adds up from keys it can read.
 #
+# **D-654's `shortlist.hidden_requisition_twin` does NOT bump it either**, on D-498's precedent just
+# above: a new reason `advanced` can be smaller, published as its own `Drop` in the same stage, so
+# the reconciliation identity a consumer checks still adds up from keys it can read.
+#
 # **T117's `scan.watched_never_complete` does NOT bump it either**, on the same `fetch_cost` /
 # `empty_complete_guarded` precedent. No new top-level section — `scan` has been here since v1 —
 # and no existing key changes MEANING: the four board buckets still count THIS RUN's attempts,
@@ -514,6 +518,10 @@ class ShortlistCounts:
     # makes no identity claim — it says only that the employer's own rendering of this job is
     # already in front of the owner. Not gated on identity completeness, so 0 here means 0.
     hidden_lane_copy: int = 0
+    # D-654: the same EMPLOYER REQUISITION as a posting delivered or applied to, or as one
+    # already on this slate. A genuine DROP and part of the identity above, never folded into
+    # `hidden_duplicate` or `hidden_lane_copy`. Not gated on identity completeness, so 0 means 0.
+    hidden_requisition_twin: int = 0
     # P6 slice 2: suppressed by a live ledger disposition — already built, already refused, or
     # surfaced recently enough to still be inside its `seen` TTL. Unlike `hidden_duplicate` this
     # is NOT gated on identity completeness, so 0 here means 0: no job the ranker considered
@@ -2271,6 +2279,18 @@ def build_run_funnel(
                         "applied to, skipped or closed — or, under the delivered-twin rule, once "
                         "every delivered copy is closed or reported. Inspect with "
                         "`top --include-lane-copy`"
+                    ),
+                ),
+                Drop(
+                    reason="hidden_requisition_twin",
+                    count=shortlist.hidden_requisition_twin,
+                    note=(
+                        "the same employer requisition, read from the posting URL, as a posting "
+                        "delivered and still open and unreported, as one applied to, or as one "
+                        "already on this slate (D-654). Reaches board copies too: one Oracle "
+                        "requisition on two career sites. No `seen` row is written, so a held "
+                        "posting returns once every delivered holder is closed or reported; an "
+                        "applied requisition holds for good"
                     ),
                 ),
                 Drop(

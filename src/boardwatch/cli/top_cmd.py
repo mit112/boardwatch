@@ -36,6 +36,7 @@ from boardwatch.eligibility.preflight import engine_facts, run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
+from boardwatch.lanes.dereference import requisition_key
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
@@ -68,6 +69,7 @@ from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     EMPTY_BODY_HASH,
     delivered_cross_host_keys,
+    requisition_holder_urls,
     standing_board_cross_host_keys,
     standing_slate_keys,
 )
@@ -177,8 +179,8 @@ class RankedResults:
     `considered == len(visible) + skipped_not_new + hidden_hard_filter + hidden_non_swe +
     hidden_zero_signal + hidden_over_seniority + hidden_ineligible + hidden_duplicate +
     hidden_applied + hidden_handled + hidden_slate_cap + hidden_cluster_cap +
-    hidden_lane_copy + hidden_below_cutoff`. Each is its own counter, incremented where the
-    posting actually leaves, never a remainder by subtraction —
+    hidden_lane_copy + hidden_requisition_twin + hidden_below_cutoff`. Each is its own counter,
+    incremented where the posting actually leaves, never a remainder by subtraction —
     a remainder cannot catch a `continue` that forgot to count, which is the only way this
     identity realistically breaks (P0 item 3).
 
@@ -347,6 +349,11 @@ class RankedResults:
     # already in front of the owner, so the aggregator's copy of it is not worth a second slot.
     # Not gated on identity completeness, so 0 here means 0.
     hidden_lane_copy: int = 0
+    # D-654: the same EMPLOYER REQUISITION as a posting delivered or applied to, or as one already
+    # on this slate (`lanes.dereference.requisition_key`). A genuine DROP and part of the identity
+    # above. Never folded into `hidden_duplicate` (no dedup survivor is elected) or into
+    # `hidden_lane_copy` (it reaches board-vs-board pairs: one Oracle requisition on two sites).
+    hidden_requisition_twin: int = 0
     # Whether the dedup gate was actually open. Defaults to False, the noisy direction: a
     # caller that forgets to set it gets "suppression disabled" rather than silently
     # claiming the subsystem ran. `hidden_duplicate == 0` on its own is ambiguous — it means
@@ -541,6 +548,9 @@ def rank_open_postings(
             select(
                 postings.c.id,
                 postings.c.title,
+                # The requisition-twin rule's input (D-654), read off the row the ranker already
+                # loads. Keyed only for the rows that reach the slate, inside the fill loop.
+                postings.c.url,
                 postings.c.posted_at,
                 postings.c.locations_json,
                 postings.c.remote_policy,
@@ -617,6 +627,8 @@ def rank_open_postings(
         )
         # The delivered-twin rule's seed, in the same snapshot for the same reason.
         delivered_keys, delivered_ids = delivered_cross_host_keys(conn)
+        # The requisition-twin rule's seed (D-654), in the same snapshot.
+        requisition_urls, requisition_delivered = requisition_holder_urls(conn)
         # The lane copies those two seeds already hold, whatever else ranks this run. Decided
         # BEFORE the cutoff so a held copy never takes a slot (see the fill loop).
         held_lane_copies = (
@@ -635,6 +647,8 @@ def rank_open_postings(
     # posting_id -> CLUSTER key (T73), absent for a posting that cannot be keyed: no
     # `normalized_title`, or no location evidence at all. See CLUSTER_CAP_PER_KEY.
     cluster_keys: dict[int, tuple[int, str, str]] = {}
+    # posting_id -> URL, the requisition-twin rule's input (D-654).
+    posting_urls: dict[int, str] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
@@ -808,6 +822,8 @@ def rank_open_postings(
             cluster_keys[int(row.id)] = (
                 int(row.company_id), row.normalized_title, locations_key,
             )
+        if row.url:
+            posting_urls[int(row.id)] = str(row.url)
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
@@ -970,6 +986,14 @@ def rank_open_postings(
     # duplicates land in `hidden_duplicate` instead.
     kept = 0
     hidden_lane_copy_held = 0
+    hidden_requisition_twin = 0
+    # requisition key -> the posting_ids holding it: the delivered and applied ones from the seed,
+    # then every row this run delivers (D-654).
+    requisition_held_by: dict[tuple[str, str, str], list[int]] = {}
+    for holder, holder_url in requisition_urls.items():
+        holder_key = requisition_key(holder_url)
+        if holder_key is not None:
+            requisition_held_by.setdefault(holder_key, []).append(holder)
     hidden_slate_cap = 0
     hidden_slate_cap_standing = 0
     hidden_cluster_cap = 0
@@ -1069,6 +1093,24 @@ def rank_open_postings(
             hidden_lane_copy_held += 1
             continue
         if kept < limit:
+            # The requisition-twin rule (D-654): the same employer requisition as a posting that
+            # was delivered or applied to, or as one already on this slate. Inside `kept < limit`
+            # for the slate cap's attribution reason below, and ahead of it because it is the
+            # stronger claim: one requisition, not one JD. Not surfaced and not counted against
+            # `limit`, so the slot refills; no `seen` is written, so the row ranks again once its
+            # holder closes or is reported. A row that was itself delivered is never held.
+            url = posting_urls.get(posting.posting_id)
+            requisition = requisition_key(url) if url is not None else None
+            if (
+                requisition is not None
+                and posting.posting_id not in requisition_delivered
+                and any(
+                    held != posting.posting_id
+                    for held in requisition_held_by.get(requisition, [])
+                )
+            ):
+                hidden_requisition_twin += 1
+                continue
             # The slate cap (D-345), and it sits HERE rather than earlier for two reasons.
             # Inside `kept < limit`, so a row the rank cutoff would have dropped anyway is
             # attributed to `hidden_below_cutoff` — the constraint that actually bound first —
@@ -1175,6 +1217,10 @@ def rank_open_postings(
                 cluster_holding = cluster_held_by.setdefault(cluster_key, [])
                 if posting.posting_id not in cluster_holding:
                     cluster_holding.append(posting.posting_id)
+            if requisition is not None:
+                requisition_holding = requisition_held_by.setdefault(requisition, [])
+                if posting.posting_id not in requisition_holding:
+                    requisition_holding.append(posting.posting_id)
             visible.append(posting)
             kept += 1
         else:
@@ -1236,6 +1282,7 @@ def rank_open_postings(
         hidden_slate_cap_standing=hidden_slate_cap_standing,
         hidden_cluster_cap=hidden_cluster_cap,
         hidden_lane_copy=hidden_lane_copy,
+        hidden_requisition_twin=hidden_requisition_twin,
         identities_are_complete=ids_complete,
         hidden_handled=hidden_handled,
         hidden_applied=hidden_applied,
