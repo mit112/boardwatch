@@ -105,6 +105,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A copy of a requisition you already have is no longer delivered.** A job-apps or Indeed copy
+  carrying the employer's own URL, under a differently spelled company ("Amazon" / "Amazon.com"),
+  and one Oracle requisition published on two career sites, were delivered as separate leads,
+  because duplicate detection compares company, title and location. The requisition is now read
+  from the posting URL (Workday, Oracle HCM, Greenhouse, Lever, Ashby, SmartRecruiters, Workable and
+  amazon.jobs): a posting is held when the same requisition was delivered and is still open and
+  unreported, was applied to, or is already on this run's slate, and its slot goes to the next lead
+  (D-654). It is counted as `same-requisition` in the run summary. On 2026-10-30, 7 of the 11
+  duplicates a manual triage removed were this case.
+
 - **Tailoring no longer re-scans every open posting for each résumé.** Building each résumé ran
   the run-wide extraction check twice, and each pass read every open posting (~829k): 148 s per
   pass on a MacBook Air reading the store from a USB SSD, so about 5 minutes per résumé and 8–10

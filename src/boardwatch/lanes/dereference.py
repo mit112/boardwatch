@@ -549,3 +549,65 @@ def _workday_posting_target(url: str, slug: str) -> PostingTarget:
             f"workday posting reference is not readable from {segments[-1]!r} in {url!r}"
         )
     return PostingTarget(provider="workday", slug=slug, posting_ref=matched.group(1))
+
+
+# An amazon.jobs posting: `[{locale}/]jobs/{id}[/{title slug}]`. `parse_posting_target` refuses it
+# for want of a BOARD slug (above), and a requisition key needs none: the id alone names the job
+# across amazon.jobs.
+_AMAZON_JOB = re.compile(
+    r"^https?://(?:www\.)?amazon\.jobs/(?:[a-z]{2}(?:-[a-z]{2})?/)?jobs/(\d+)(?:[/?#]|$)",
+    re.IGNORECASE,
+)
+# A SmartRecruiters reference is the numeric prefix of its last segment. Measured ids are 15 digits;
+# a shorter prefix is a UUID's first group or similar, which two different jobs can share.
+_SMARTRECRUITERS_MIN_DIGITS = 12
+# The apply-form segment some links end in. `parse_posting_target` refuses it, rightly for
+# convergence; the requisition it names is the one in front of it.
+_FORM_TAILS = frozenset({"application", "apply"})
+
+
+def _without_form_tail(url: str) -> str | None:
+    """`url` with a trailing apply-form segment and its query removed, or None if it has none.
+
+    Raises ValueError on a URL `urlparse` cannot read; `requisition_key` reads that as no key."""
+    parsed = urlparse(url.strip())
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if not segments or segments[-1].lower() not in _FORM_TAILS:
+        return None
+    return parsed._replace(path="/" + "/".join(segments[:-1]), query="", fragment="").geturl()
+
+
+def requisition_key(url: str) -> tuple[str, str, str] | None:
+    """(provider, employer scope, requisition) for a posting URL, or None when it names none.
+
+    Two URLs with one key are one requisition at one employer, whichever lane brought each in
+    (D-654). It is read through `parse_posting_target`, the exact shapes convergence already
+    rests on, so a URL this module cannot read gets no key and is never matched. Two widenings,
+    both on the requisition rather than the board: an amazon.jobs id, and a trailing apply-form
+    segment. The scope drops a Workday or Oracle HCM career site, because the same requisition is
+    published under more than one site (Oracle 341917 on CX_1 and CX_45001) and its id is unique
+    across the tenant.
+    """
+    amazon = _AMAZON_JOB.match(url.strip())
+    if amazon is not None:
+        return ("amazon", "amazon.jobs", amazon.group(1))
+    # ValueError, not only the two parser errors (both subclass it): a stored URL `urlparse`
+    # cannot read must cost its key, never the run.
+    try:
+        target = parse_posting_target(url)
+    except ValueError:
+        try:
+            trimmed = _without_form_tail(url)
+            if trimmed is None:
+                return None
+            target = parse_posting_target(trimmed)
+        except ValueError:
+            return None
+    if target.provider == "smartrecruiters" and not (
+        target.posting_ref.isdigit() and len(target.posting_ref) >= _SMARTRECRUITERS_MIN_DIGITS
+    ):
+        return None
+    scope = target.slug.lower()
+    if target.provider in ("workday", "oraclehcm"):
+        scope = scope.rsplit("/", 1)[0]
+    return (target.provider, scope, target.posting_ref.lower())
