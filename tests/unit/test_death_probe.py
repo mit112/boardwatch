@@ -316,6 +316,35 @@ def test_two_oracle_unposted_answers_in_different_runs_close_the_posting(
     assert _events(engine, posting_id) == ["closed"]
 
 
+def _linkedin_closed(posting_id: int, url: str) -> Liveness:
+    """LinkedIn's guest top card marked closed (D-653)."""
+    return Liveness(
+        posting_id=posting_id, verdict="dead", signal="linkedin_closed", detail="top card closed"
+    )
+
+
+def test_two_linkedin_closed_answers_in_different_runs_close_the_posting(
+    tmp_path: Path,
+) -> None:
+    engine = _store(tmp_path)
+    posting_id = _posting(
+        engine,
+        _company(engine, slug="acme-corp", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://www.linkedin.com/jobs/view/4458214586",
+    )
+
+    first = _sweep(engine, _linkedin_closed)
+    assert first.gone == 1
+    assert _row(engine, posting_id) == ("open", 1, None)
+    _age_the_probe(engine)
+    report = _sweep(engine, _linkedin_closed)
+
+    assert report.closed == 1
+    assert _row(engine, posting_id)[:2] == ("closed", 2)
+    assert _events(engine, posting_id) == ["closed"]
+
+
 def test_a_gone_status_reached_through_a_redirect_never_closes(tmp_path: Path) -> None:
     """`refetch_gone_after_redirect` is the ONE signal that can disarm the whole check while
     every other number holds still: `Fetcher` follows redirects, so an employer migrating ATS
@@ -1057,15 +1086,12 @@ def test_the_priority_is_applied_before_the_budget_not_after_it(tmp_path: Path) 
     assert url.asked == [ids[-1]]  # type: ignore[attr-defined]
 
 
-def test_a_linkedin_lead_does_not_take_the_budget_from_a_row_that_can_close(
-    tmp_path: Path,
-) -> None:
-    """LinkedIn job-view pages almost never answer gone (0 of 7,106 `linkedin` rows ever closed),
-    and job-apps' LinkedIn finds now become standing leads. At a budget of one, a LinkedIn row
-    HOLDING a lead is asked after a row nobody holds on a host that can close -- the lead
-    priority alone would spend the budget on the LinkedIn row every run."""
+def test_a_linkedin_lead_is_asked_before_a_row_nobody_holds(tmp_path: Path) -> None:
+    """The guest endpoint can close a LinkedIn row (D-653), so a LinkedIn row HOLDING a lead takes
+    the lead priority like any other. At a budget of one it is asked before an unheld row on
+    another host."""
     engine = _store(tmp_path)
-    other = _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
     linkedin_row = _posting(
         engine,
         _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
@@ -1077,32 +1103,11 @@ def test_a_linkedin_lead_does_not_take_the_budget_from_a_row_that_can_close(
     url = _url_prober_that_records(_alive)
     _sweep(engine, url, budget=1)
 
-    assert url.asked == [other]  # type: ignore[attr-defined]
-
-
-def test_a_linkedin_row_with_an_employer_url_keeps_its_lead_priority(tmp_path: Path) -> None:
-    """The measurement behind the demotion is about the LinkedIn job-view PAGE. A `linkedin` row
-    whose URL is an employer's (149 of 17,408 open on 2026-10-27, 24 of them Workday, which the
-    CXS probe can close) is not that page, so its standing lead is asked first again."""
-    engine = _store(tmp_path)
-    _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
-    workday_row = _posting(
-        engine,
-        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
-        pid="4458214586",
-        url="https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Austin-TX/Engineer_R123",
-    )
-    _deliver_lead(engine, workday_row)
-
-    url = _url_prober_that_records(_alive)
-    _sweep(engine, url, budget=1)
-
-    assert url.asked == [workday_row]  # type: ignore[attr-defined]
+    assert url.asked == [linkedin_row]  # type: ignore[attr-defined]
 
 
 def test_a_linkedin_row_is_still_probed_when_budget_is_left(tmp_path: Path) -> None:
-    """The order moves; the set does not. With room for both, the LinkedIn row is asked too, so
-    a real `gone` from it can still strike."""
+    """With room for both, the LinkedIn row is asked too, so a real `gone` from it can strike."""
     engine = _store(tmp_path)
     other = _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
     linkedin_row = _posting(

@@ -26,6 +26,7 @@ from sqlalchemy import Engine, select
 from boardwatch.core.liveness import (
     Liveness,
     verdict_for_failure,
+    verdict_for_linkedin_guest,
     verdict_for_oracle_details,
     verdict_for_status,
     verdict_for_workday_cxs,
@@ -33,6 +34,8 @@ from boardwatch.core.liveness import (
 )
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
+from boardwatch.lanes.linkedin import LANE_NAME as LINKEDIN_LANE
+from boardwatch.lanes.linkedin import guest_posting_url
 from boardwatch.providers.oraclehcm import details_url_for_page
 from boardwatch.providers.workday import cxs_job_url
 from boardwatch.store.tables import postings
@@ -59,9 +62,12 @@ def build_prober(settings: Settings) -> LivenessProber:
 
     A Workday posting page is asked about through its CXS endpoint instead, because the page
     answers 200 whether or not the requisition is open (`core/liveness.py`). An Oracle HCM posting
-    page is asked through its requisition detail resource, for the same reason (D-648).
+    page is asked through its requisition detail resource, for the same reason (D-648), and a
+    LinkedIn job-view page through the guest `jobPosting` endpoint (D-653) — only when the user
+    has enabled the LinkedIn lane, because that endpoint is the lane's opt-in request (D-290).
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
+    ask_linkedin_guest = LINKEDIN_LANE in settings.lanes_enabled
 
     def probe_workday(posting_id: int, cxs_url: str) -> Liveness:
         try:
@@ -99,6 +105,22 @@ def build_prober(settings: Settings) -> LivenessProber:
             posting_id, result.status_code, result.content, redirected=moved
         )
 
+    def probe_linkedin(posting_id: int, guest_url: str) -> Liveness:
+        try:
+            result = fetcher.get(guest_url)
+        except FetchFailure as exc:
+            if exc.status_code is None:
+                return verdict_for_failure(posting_id, None, str(exc))
+            return verdict_for_linkedin_guest(
+                posting_id, exc.status_code, exc.body, redirected=exc.redirected
+            )
+        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
+            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+        moved = bool(result.final_url) and urlsplit(result.final_url)[:3] != urlsplit(guest_url)[:3]
+        return verdict_for_linkedin_guest(
+            posting_id, result.status_code, result.content, redirected=moved
+        )
+
     def probe(posting_id: int, url: str) -> Liveness:
         cxs_url = cxs_job_url(url)
         if cxs_url is not None:
@@ -106,6 +128,9 @@ def build_prober(settings: Settings) -> LivenessProber:
         details_url = details_url_for_page(url)
         if details_url is not None:
             return probe_oracle(posting_id, details_url)
+        guest_url = guest_posting_url(url) if ask_linkedin_guest else None
+        if guest_url is not None:
+            return probe_linkedin(posting_id, guest_url)
         try:
             result = fetcher.get(url)
         except FetchFailure as exc:
