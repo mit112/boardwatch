@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from linkedin_shape import job_posting_html, search_cards, top_card_html
 
 from boardwatch.core.settings import Settings
 from boardwatch.pipeline.liveness import build_prober
@@ -482,3 +483,206 @@ def test_an_oracle_empty_answer_for_a_different_requisition_is_served(
 
     assert result.verdict == "unknown"
     assert result.signal == "refetch_gone_after_redirect"
+
+
+# --- LinkedIn guest endpoint (D-653) -------------------------------------------------------------
+
+LI_VIEW = (
+    "https://www.linkedin.com/jobs/view/software-engineer-new-grad-at-acme-4458214586"
+    "?position=2&pageNum=0&refId=abc%3D%3D"
+)
+LI_GUEST = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4458214586"
+
+
+def _li_prober(tmp_path: Path):  # type: ignore[no-untyped-def]
+    """The prober for a user who enabled the LinkedIn lane, the only user it asks the guest
+    endpoint for (D-290, D-653)."""
+    return build_prober(_settings(tmp_path, lanes_enabled=("linkedin",)))
+
+
+def _li_body(*, closed: bool | None, description: str | None = None) -> bytes:
+    """A guest answer: `closed=None` serves no top card at all (a wall or an error shell)."""
+    card = search_cards()[0]
+    top = "" if closed is None else top_card_html(card, closed=closed)
+    return job_posting_html(card, body=description, top_card=top).encode()
+
+
+@pytest.mark.parametrize(
+    "view",
+    [
+        LI_VIEW,
+        "https://www.linkedin.com/jobs/view/4458214586",
+        "https://www.linkedin.com/jobs/view/4458214586/",
+        "https://uk.linkedin.com/jobs/view/4458214586",
+    ],
+)
+def test_a_linkedin_job_view_url_maps_to_its_guest_posting(view: str) -> None:
+    from boardwatch.lanes.linkedin import guest_posting_url  # noqa: PLC0415
+
+    assert guest_posting_url(view) == LI_GUEST
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.linkedin.com/jobs/search/?currentJobId=4458214586",
+        "https://www.linkedin.com/company/acme",
+        "https://notlinkedin.com/jobs/view/4458214586",
+        "https://boards.example.test/jobs/view/4458214586",
+    ],
+)
+def test_anything_else_is_not_mapped_to_the_guest_endpoint(url: str) -> None:
+    from boardwatch.lanes.linkedin import guest_posting_url  # noqa: PLC0415
+
+    assert guest_posting_url(url) is None
+
+
+@respx.mock
+def test_a_linkedin_view_page_is_never_fetched_its_guest_posting_is(tmp_path: Path) -> None:
+    """The page answers 200 for a closed job, so asking it could only ever say `alive`."""
+    page = respx.get(url__startswith="https://www.linkedin.com/jobs/view/").mock(
+        return_value=httpx.Response(200)
+    )
+    guest = respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=_li_body(closed=False)))
+
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+
+    assert not page.called
+    assert guest.call_count == 1
+    assert (result.verdict, result.signal) == ("alive", "refetch_ok")
+
+
+@respx.mock
+def test_a_linkedin_top_card_marked_closed_is_DEAD(tmp_path: Path) -> None:  # noqa: N802
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=_li_body(closed=True)))
+
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+
+    assert result.verdict == "dead"
+    assert result.signal == "linkedin_closed"
+
+
+@respx.mock
+def test_the_closed_class_inside_a_description_is_not_a_death(tmp_path: Path) -> None:
+    """Only the top card is read. An open job whose description carries the class or the words
+    is open: the description is employer text, and the marker is LinkedIn's markup."""
+    description = (
+        '<p class="closed-job__flavor--closed">No longer accepting applications from '
+        "agencies.</p><p>closed-job__flavor--closed</p>"
+    )
+    respx.get(LI_GUEST).mock(
+        return_value=httpx.Response(200, content=_li_body(closed=False, description=description))
+    )
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).verdict == "alive"
+
+
+@respx.mock
+def test_the_closed_words_without_the_class_are_not_a_death(tmp_path: Path) -> None:
+    body = _li_body(closed=False).replace(
+        b"<h4", b"<p>No longer accepting applications</p><h4", 1
+    )
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).verdict == "alive"
+
+
+@respx.mock
+def test_a_linkedin_200_without_a_top_card_is_unknown(tmp_path: Path) -> None:
+    """A login wall or an error shell. `alive` here would clear earned strikes."""
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=_li_body(closed=None)))
+
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+
+    assert (result.verdict, result.signal) == ("unknown", "refetch_error")
+
+
+@pytest.mark.parametrize("status", [404, 410, 429, 999, 403, 500])
+@respx.mock
+def test_every_linkedin_guest_non_200_is_unknown(tmp_path: Path, status: int) -> None:
+    """A 404 included: one guest 404 has been seen against a removed job, and one is not a
+    measurement. A 429 or 999 is LinkedIn rate-limiting and says nothing about the job."""
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(status))
+
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+
+    assert result.verdict == "unknown"
+    assert result.withholds is False
+
+
+@respx.mock
+def test_a_linkedin_closed_card_reached_through_a_redirect_is_served(tmp_path: Path) -> None:
+    respx.get(LI_GUEST).mock(
+        return_value=httpx.Response(302, headers={"Location": "https://www.linkedin.com/x"})
+    )
+    respx.get("https://www.linkedin.com/x").mock(
+        return_value=httpx.Response(200, content=_li_body(closed=True))
+    )
+
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+
+    assert result.verdict == "unknown"
+    assert result.signal == "refetch_gone_after_redirect"
+
+
+@respx.mock
+def test_without_the_linkedin_lane_the_guest_endpoint_is_never_asked(tmp_path: Path) -> None:
+    """The guest endpoint is the LinkedIn lane's opt-in request (D-290). A user who has not
+    enabled the lane keeps the page probe for a LinkedIn URL another source brought in."""
+    page = respx.get(url__startswith="https://www.linkedin.com/jobs/view/").mock(
+        return_value=httpx.Response(200)
+    )
+    guest = respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=_li_body(closed=True)))
+
+    result = build_prober(_settings(tmp_path))(42, LI_VIEW)
+
+    assert not guest.called
+    assert page.call_count == 1
+    assert result.verdict == "alive"
+
+
+@pytest.mark.parametrize(
+    "klass",
+    ["closed-job__flavor--closed-x", "x-closed-job__flavor--closed", "xclosed-job__flavor--closed"],
+)
+@respx.mock
+def test_only_the_exact_closed_class_token_is_a_death(tmp_path: Path, klass: str) -> None:
+    body = _li_body(closed=False).replace(b"<h4", f'<span class="a {klass} b"></span><h4'.encode(), 1)
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).verdict == "alive"
+
+
+@pytest.mark.parametrize("klass", ["closed-job__flavor--closed", "a closed-job__flavor--closed b"])
+@respx.mock
+def test_the_closed_class_token_among_others_is_a_death(tmp_path: Path, klass: str) -> None:
+    body = _li_body(closed=False).replace(b"<h4", f"<span class='{klass}'></span><h4".encode(), 1)
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).signal == "linkedin_closed"
+
+
+@respx.mock
+def test_a_title_carrying_the_description_class_name_cannot_hide_a_closure(
+    tmp_path: Path,
+) -> None:
+    """The top card ends at the description's CLASS ATTRIBUTE, not at the first occurrence of its
+    name, which a title can carry as text."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    card = replace(search_cards()[0], title="Frontend Engineer - show-more-less-html")
+    body = job_posting_html(card, top_card=top_card_html(card, closed=True)).encode()
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).signal == "linkedin_closed"
+
+
+@pytest.mark.parametrize(
+    ("lanes", "asks"), [((), False), (("jobapps",), False), (("jobapps", "linkedin"), True)]
+)
+def test_the_guest_endpoint_is_asked_exactly_when_the_linkedin_lane_is_on(
+    tmp_path: Path, lanes: tuple[str, ...], asks: bool
+) -> None:
+    from boardwatch.pipeline.liveness import asks_linkedin_guest  # noqa: PLC0415
+
+    assert asks_linkedin_guest(_settings(tmp_path, lanes_enabled=lanes)) is asks

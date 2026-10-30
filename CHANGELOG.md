@@ -126,6 +126,15 @@ All notable changes to this project are documented here. The format follows
   now applies only while the row's URL is a LinkedIn page: 149 of 17,408 open rows carry an
   employer URL (24 Workday, which the CXS probe can close) and keep their standing-lead priority.
 
+- **Closed LinkedIn postings are now detected** when the LinkedIn lane is enabled. A LinkedIn job page
+  answers 200 for a closed job, so the death probe had never closed a LinkedIn row (0 of 7,106). The
+  probe now asks the guest `jobPosting` endpoint the LinkedIn lane already uses, whose top card marks
+  a closed job: 40 of 40 jobs whose logged-in page read "No longer accepting applications" detected,
+  0 false deaths in 109 open (D-653). With the lane enabled, LinkedIn rows take the standing-lead
+  priority like any other instead of being asked last, and the shortlist liveness check uses the same
+  probe. With the lane off nothing changes. On 2026-10-30, 46 of the 84 dead leads a manual triage
+  removed were LinkedIn copies.
+
 - **Closed Oracle HCM postings are now detected.** An Oracle careers page answers 200 whatever the
   requisition's state, so the death probe could not close an Oracle copy (279 open unwatched rows,
   most from Indeed). The probe now asks the requisition's detail resource, where a closed one answers

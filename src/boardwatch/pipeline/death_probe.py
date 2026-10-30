@@ -145,8 +145,9 @@ from boardwatch.store.tables import companies, postings
 # including the redirect rule, and a second derivation here would let the two drift.
 # `workday_unposted` is the CXS 403/S22 answer; a Workday 404 there is already `refetch_gone`.
 # `oracle_unposted` is an Oracle HCM detail resource answering an empty `items` (D-648).
+# `linkedin_closed` is LinkedIn's guest top card marked closed (D-653).
 CLOSING_SIGNALS: frozenset[str] = frozenset(
-    {"refetch_gone", "workday_unposted", "oracle_unposted"}
+    {"refetch_gone", "workday_unposted", "oracle_unposted", "linkedin_closed"}
 )
 
 # T89. The closed catalog of providers whose whole board is readable in ONE request, with the
@@ -180,13 +181,13 @@ LISTING_ENDPOINTS: dict[str, tuple[str, str | None]] = {
 # module, which owns the mechanism that emits them.
 LISTING_SIGNALS: tuple[str, ...] = ("listing_absent", "listing_present", "listing_unknown")
 
-# Providers whose rows the URL probe has been measured NOT to close, so they are asked only after
-# every other due row. LinkedIn: 0 of 7,106 open `linkedin` rows ever closed on the store as of
-# 2026-09-26, with 402 probed and 1 strike -- a job-view page almost never answers `refetch_gone`.
-# The priority (T90) would otherwise spend the capped budget on them first once job-apps' LinkedIn
-# finds became standing leads, starving rows that can close. Still probed when budget is left
-# over, so an `alive`/`gone` answer is never refused outright -- the order moves, the set does not.
-# Delivery's own liveness check (`pipeline/liveness.check_leads`) still withholds a dead lead.
+# Providers whose job-view page the URL probe cannot close, asked only after every other due row
+# unless the run says it can (`linkedin_can_close`). LinkedIn: 0 of 7,106 open `linkedin` rows ever
+# closed through the page as of 2026-09-26, because the page answers 200 for a closed job. The
+# guest endpoint can close them (D-653), and the prober asks it only when the user enabled the
+# LinkedIn lane; with the lane off the page probe is all there is, and the lead priority (T90)
+# would spend the capped budget on rows that cannot close every run. Still probed when budget is
+# left over -- the order moves, the set does not.
 PROBED_LAST_PROVIDERS: frozenset[str] = frozenset({LINKEDIN_PROVIDER})
 
 
@@ -345,6 +346,7 @@ def sweep_unwatched_deaths(
     budget: int,
     company_budget: int,
     ttl_hours: int,
+    linkedin_can_close: bool = False,
 ) -> DeathProbeReport:
     """Probe the unreachable-by-the-scanner class two ways and close the proven-dead postings.
 
@@ -365,6 +367,9 @@ def sweep_unwatched_deaths(
     Both budgets go to the rows carrying a STANDING LEAD first (T90). The priority reorders the
     due set and never widens it, so it cannot become "always the same leads": a probed row leaves
     the due set for `ttl_hours`, and the next run's budget flows to the rest of the class.
+
+    `linkedin_can_close` says whether `prober` asks a LinkedIn job-view URL through the guest
+    endpoint (D-653). Without it those rows go last (`PROBED_LAST_PROVIDERS`).
     """
     now = utcnow()
     cutoff = now - timedelta(hours=ttl_hours)
@@ -411,6 +416,15 @@ def sweep_unwatched_deaths(
             ),
             else_=0,
         )
+        # Ahead of the standing-lead key: a row that cannot close is not worth a probe before one
+        # that can, whoever holds it.
+        url_order = [
+            held_by_a_standing_lead.asc(),
+            postings.c.last_death_probe_at.asc(),
+            postings.c.id.asc(),
+        ]
+        if not linkedin_can_close:
+            url_order.insert(0, probed_last.asc())
         company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather
@@ -439,14 +453,7 @@ def sweep_unwatched_deaths(
             select(postings.c.id, postings.c.url, postings.c.death_strikes)
             .select_from(board)
             .where(and_(due_predicate, has_url, on_url_path))
-            .order_by(
-                # Ahead of the standing-lead key: a row that cannot close is not worth a probe
-                # before one that can, whoever holds it.
-                probed_last.asc(),
-                held_by_a_standing_lead.asc(),
-                postings.c.last_death_probe_at.asc(),
-                postings.c.id.asc(),
-            )
+            .order_by(*url_order)
             .limit(budget)
         ).all()
         # The listing half's queue, one row per COMPANY. A company is due when any of its open

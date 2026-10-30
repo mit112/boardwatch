@@ -106,7 +106,7 @@ from boardwatch.pipeline.funnel_writer import (
     read_execution_provenance,
     read_run_identity,
 )
-from boardwatch.pipeline.liveness import LivenessProber, check_leads
+from boardwatch.pipeline.liveness import LivenessProber, asks_linkedin_guest, check_leads
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.profile_bundle.paths import resolve_bundle_root
 from boardwatch.projection.errors import ProjectionError
@@ -2558,6 +2558,7 @@ def _run_pipeline_leased(
                     budget=settings.death_probe_budget,
                     company_budget=settings.death_probe_company_budget,
                     ttl_hours=settings.death_probe_ttl_hours,
+                    linkedin_can_close=asks_linkedin_guest(settings),
                 )
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 message = f"death probe: sweep failed ({type(exc).__name__}: {exc})"

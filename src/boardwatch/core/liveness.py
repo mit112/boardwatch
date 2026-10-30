@@ -54,6 +54,14 @@ endpoint answers an unposted requisition with a 403 naming error `S22` and a rem
 404, and `verdict_for_workday_cxs` reads exactly those (`workday_unposted`, `refetch_gone`). A
 bare 403 stays `unknown`: it is the body code, not the status, that is the evidence.
 
+**LinkedIn is asked through its guest `jobPosting` endpoint, not its job-view page** (D-653). The
+page answers 200 for a closed job, which is why 0 of 7,106 `linkedin` rows had ever closed. The
+endpoint's top card carries the class `closed-job__flavor--closed` on a closed job and a title
+without it on an open one. `verdict_for_linkedin_guest` reads only the top card, which the endpoint
+serves before the job description, so nothing an employer writes in a description can match. This
+is a class in LinkedIn's own markup, not a phrase in a JD, so the catalog rejected below does not
+apply to it.
+
 **What is deliberately NOT here: a closed-phrase catalog.** `PROGRAM.md` item 6 names "a saved
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
 scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
@@ -87,6 +95,7 @@ flag is never re-read. It is a first-discovery filter on 1 of 6 providers, not a
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 # Closed and ordered by confidence. `dead` is the only verdict that withholds a lead, and only
@@ -103,6 +112,7 @@ SIGNALS: tuple[str, ...] = (
     "refetch_gone",  # a 404/410 from the URL asked about — yields `dead`
     "workday_unposted",  # Workday's CXS 403 naming error S22 — yields `dead`
     "oracle_unposted",  # Oracle HCM's detail resource answering an empty `items` — yields `dead`
+    "linkedin_closed",  # LinkedIn's guest top card marked closed — yields `dead`
     "refetch_gone_after_redirect",  # gone, but a different URL said so — served
     "refetch_ok",
     "refetch_error",
@@ -118,6 +128,7 @@ SIGNAL_VERDICTS: dict[str, str] = {
     "refetch_gone": "dead",
     "workday_unposted": "dead",
     "oracle_unposted": "dead",
+    "linkedin_closed": "dead",
     "refetch_gone_after_redirect": "unknown",
     "refetch_ok": "alive",
     "refetch_error": "unknown",
@@ -135,6 +146,25 @@ GONE_STATUSES = frozenset({404, 410})
 # unposted (measured: `{"errorCode":"S22","httpStatus":403,"message":"permission denied",...}`).
 # A 403 WITHOUT it stays `unknown`, for the bot-blocker reason above.
 WORKDAY_UNPOSTED_CODE = "S22"
+
+# The class LinkedIn's guest `jobPosting` endpoint puts on the top card of a closed job (measured
+# 2026-10-30, D-653: on all 40 jobs whose logged-in page read "No longer accepting applications",
+# and 0 false deaths in 109 open controls; the 2 of those it marked had really closed). Matched as a
+# class token inside a `class` attribute, never as text.
+LINKEDIN_CLOSED_CLASS = "closed-job__flavor--closed"
+_LINKEDIN_CLOSED = re.compile(
+    rb"""class\s*=\s*["'](?:[^"']*\s)?"""
+    + re.escape(LINKEDIN_CLOSED_CLASS).encode()
+    + rb"""(?=["'\s])"""
+)
+# Present on every job's top card, open or closed. A 200 without it is not a job page at all (a
+# login wall, an error shell), so it says nothing and must not clear earned strikes.
+_LINKEDIN_TOP_CARD_TITLE = b"top-card-layout__title"
+# Where the job description starts: the class attribute of its section, not the bare name, which a
+# title could carry as text. The top card is served before it.
+_LINKEDIN_DESCRIPTION = re.compile(
+    rb"""class\s*=\s*["'](?:[^"']*\s)?show-more-less-html(?=["'\s])"""
+)
 
 
 class UnknownLivenessVerdict(Exception):
@@ -357,6 +387,50 @@ def verdict_for_oracle_details(
     )
 
 
+def verdict_for_linkedin_guest(
+    posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
+) -> Liveness:
+    """Classify an answer from a job's LinkedIn guest endpoint (`lanes/linkedin.guest_posting_url`).
+
+    Only a 200 earns a verdict. Its top card, the part before the description, decides it: the
+    closed class is `dead` (`linkedin_closed`), a title without it is `alive`, and no title is
+    `unknown`. A closed card reached through a redirect is `unknown`, by the module's redirect rule.
+    Every non-200 is `unknown`, a 404 included: no guest 404 has been measured against a
+    known-closed job, and a 429 or 999 is LinkedIn rate-limiting, which says nothing about the job.
+    """
+    if status_code != 200:
+        return Liveness(
+            posting_id=posting_id,
+            verdict="unknown",
+            signal="refetch_error",
+            detail=f"linkedin guest HTTP {status_code}",
+        )
+    description = _LINKEDIN_DESCRIPTION.search(body)
+    top_card = body[: description.start()] if description is not None else body
+    if _LINKEDIN_CLOSED.search(top_card):
+        if redirected:
+            return Liveness(
+                posting_id=posting_id,
+                verdict="unknown",
+                signal="refetch_gone_after_redirect",
+                detail="linkedin guest closed after a redirect",
+            )
+        return Liveness(
+            posting_id=posting_id,
+            verdict="dead",
+            signal="linkedin_closed",
+            detail="linkedin guest top card closed",
+        )
+    if _LINKEDIN_TOP_CARD_TITLE in top_card:
+        return verdict_for_status(posting_id, status_code)
+    return Liveness(
+        posting_id=posting_id,
+        verdict="unknown",
+        signal="refetch_error",
+        detail="linkedin guest 200 without a top card",
+    )
+
+
 def verdict_without_url(posting_id: int) -> Liveness:
     """`postings.url` is nullable. Nothing to ask, so nothing is claimed."""
     return Liveness(posting_id=posting_id, verdict="unknown", signal="no_url")
@@ -364,6 +438,7 @@ def verdict_without_url(posting_id: int) -> Liveness:
 
 __all__ = [
     "GONE_STATUSES",
+    "LINKEDIN_CLOSED_CLASS",
     "SIGNALS",
     "SIGNAL_VERDICTS",
     "VERDICTS",
@@ -372,6 +447,7 @@ __all__ = [
     "Liveness",
     "UnknownLivenessVerdict",
     "verdict_for_failure",
+    "verdict_for_linkedin_guest",
     "verdict_for_status",
     "verdict_for_workday_cxs",
     "verdict_without_url",

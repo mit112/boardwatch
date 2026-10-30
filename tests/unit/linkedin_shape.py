@@ -139,10 +139,31 @@ def job_description_body(title: str, employer: str) -> str:
     )
 
 
-def job_posting_html(card: Card, *, body: str | None = None) -> str:
+def top_card_html(card: Card, *, closed: bool) -> str:
+    """The `jobPosting/{id}` top card in the shape measured 2026-10-30 (D-653): a title, then for a
+    closed job a `figure.closed-job` whose figcaption carries `closed-job__flavor--closed`, and for
+    an open one an apply button instead. Served before the description."""
+    state = (
+        '<figure class="closed-job closed-job__flavor topcard__flavor-row">'
+        '<span class="closed-job__icon closed-job__icon--error-pebble lazy-load"></span>'
+        '<figcaption class="closed-job__flavor--closed">No longer accepting applications</figcaption>'
+        "</figure>"
+        if closed
+        else '<button class="apply-button apply-button--default top-card-layout__cta">Apply</button>'
+    )
+    return (
+        '<section class="top-card-layout container-lined overflow-hidden">'
+        f'<h2 class="top-card-layout__title font-sans topcard__title">{card.title}</h2>'
+        f'<h4 class="top-card-layout__second-subline">{state}</h4>'
+        "</section>"
+    )
+
+
+def job_posting_html(card: Card, *, body: str | None = None, top_card: str = "") -> str:
     """`jobPosting/{id}` -> an HTML fragment; the description in `.show-more-less-html__markup`."""
     markup = body if body is not None else job_description_body(card.title, card.company_name)
     return (
+        f"{top_card}"
         '<section class="show-more-less-html">'
         '<div class="show-more-less-html__markup show-more-less-html__markup--clamp-after-5">'
         f"{markup}"

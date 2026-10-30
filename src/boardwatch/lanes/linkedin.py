@@ -241,6 +241,17 @@ def job_id_from_view_url(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+def guest_posting_url(url: str) -> str | None:
+    """The guest `jobPosting/{id}` endpoint for a job-view URL, or None when the URL is not one.
+
+    The liveness probe asks this instead of the job-view page (D-653): the page answers 200 for a
+    closed job, and the endpoint marks a closed one in its top card. It is the same request shape
+    this lane already sends for a body, so the probe adds no new kind of request.
+    """
+    job_id = job_id_from_view_url(url)
+    return f"{_JOB_POSTING_URL}{job_id}" if job_id is not None else None
+
+
 def search_urls(facets: Sequence[str]) -> tuple[str, ...]:
     """One keyword search per facet, in order, or the unfaceted search when there are no facets.
 
