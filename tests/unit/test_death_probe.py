@@ -213,6 +213,7 @@ def _sweep(
     budget: int = 10,
     company_budget: int = 10,
     ttl_hours: int = 24,
+    linkedin_can_close: bool = False,
 ):
     """One sweep under its OWN `runs` row — `posting_events.run_id` is a real foreign key, so a
     synthetic id would make the `closed` event unwritable and the close silently fail.
@@ -229,6 +230,7 @@ def _sweep(
         budget=budget,
         company_budget=company_budget,
         ttl_hours=ttl_hours,
+        linkedin_can_close=linkedin_can_close,
     )
 
 
@@ -1086,9 +1088,53 @@ def test_the_priority_is_applied_before_the_budget_not_after_it(tmp_path: Path) 
     assert url.asked == [ids[-1]]  # type: ignore[attr-defined]
 
 
+def test_a_linkedin_lead_does_not_take_the_budget_from_a_row_that_can_close(
+    tmp_path: Path,
+) -> None:
+    """Without the guest probe (the LinkedIn lane off), a job-view page almost never answers gone
+    (0 of 7,106 `linkedin` rows ever closed),
+    and job-apps' LinkedIn finds now become standing leads. At a budget of one, a LinkedIn row
+    HOLDING a lead is asked after a row nobody holds on a host that can close -- the lead
+    priority alone would spend the budget on the LinkedIn row every run."""
+    engine = _store(tmp_path)
+    other = _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    linkedin_row = _posting(
+        engine,
+        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://www.linkedin.com/jobs/view/4458214586",
+    )
+    _deliver_lead(engine, linkedin_row)
+
+    url = _url_prober_that_records(_alive)
+    _sweep(engine, url, budget=1)
+
+    assert url.asked == [other]  # type: ignore[attr-defined]
+
+
+def test_a_linkedin_row_with_an_employer_url_keeps_its_lead_priority(tmp_path: Path) -> None:
+    """The measurement behind the demotion is about the LinkedIn job-view PAGE. A `linkedin` row
+    whose URL is an employer's (149 of 17,408 open on 2026-10-27, 24 of them Workday, which the
+    CXS probe can close) is not that page, so its standing lead is asked first again."""
+    engine = _store(tmp_path)
+    _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
+    workday_row = _posting(
+        engine,
+        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://acme.wd5.myworkdayjobs.com/Acme_Careers/job/Austin-TX/Engineer_R123",
+    )
+    _deliver_lead(engine, workday_row)
+
+    url = _url_prober_that_records(_alive)
+    _sweep(engine, url, budget=1)
+
+    assert url.asked == [workday_row]  # type: ignore[attr-defined]
+
+
 def test_a_linkedin_lead_is_asked_before_a_row_nobody_holds(tmp_path: Path) -> None:
-    """The guest endpoint can close a LinkedIn row (D-653), so a LinkedIn row HOLDING a lead takes
-    the lead priority like any other. At a budget of one it is asked before an unheld row on
+    """With the guest probe on, a LinkedIn row can close (D-653), so a LinkedIn row HOLDING a lead
+    takes the lead priority like any other. At a budget of one it is asked before an unheld row on
     another host."""
     engine = _store(tmp_path)
     _posting(engine, _company(engine, slug="acme", watched=False), pid="p-1")
@@ -1101,7 +1147,7 @@ def test_a_linkedin_lead_is_asked_before_a_row_nobody_holds(tmp_path: Path) -> N
     _deliver_lead(engine, linkedin_row)
 
     url = _url_prober_that_records(_alive)
-    _sweep(engine, url, budget=1)
+    _sweep(engine, url, budget=1, linkedin_can_close=True)
 
     assert url.asked == [linkedin_row]  # type: ignore[attr-defined]
 

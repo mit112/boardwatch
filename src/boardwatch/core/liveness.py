@@ -160,8 +160,11 @@ _LINKEDIN_CLOSED = re.compile(
 # Present on every job's top card, open or closed. A 200 without it is not a job page at all (a
 # login wall, an error shell), so it says nothing and must not clear earned strikes.
 _LINKEDIN_TOP_CARD_TITLE = b"top-card-layout__title"
-# Where the job description starts. The top card is served before it.
-_LINKEDIN_DESCRIPTION = b"show-more-less-html"
+# Where the job description starts: the class attribute of its section, not the bare name, which a
+# title could carry as text. The top card is served before it.
+_LINKEDIN_DESCRIPTION = re.compile(
+    rb"""class\s*=\s*["'](?:[^"']*\s)?show-more-less-html(?=["'\s])"""
+)
 
 
 class UnknownLivenessVerdict(Exception):
@@ -402,7 +405,8 @@ def verdict_for_linkedin_guest(
             signal="refetch_error",
             detail=f"linkedin guest HTTP {status_code}",
         )
-    top_card = body.split(_LINKEDIN_DESCRIPTION, 1)[0]
+    description = _LINKEDIN_DESCRIPTION.search(body)
+    top_card = body[: description.start()] if description is not None else body
     if _LINKEDIN_CLOSED.search(top_card):
         if redirected:
             return Liveness(

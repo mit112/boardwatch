@@ -660,3 +660,29 @@ def test_the_closed_class_token_among_others_is_a_death(tmp_path: Path, klass: s
     respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
 
     assert _li_prober(tmp_path)(42, LI_VIEW).signal == "linkedin_closed"
+
+
+@respx.mock
+def test_a_title_carrying_the_description_class_name_cannot_hide_a_closure(
+    tmp_path: Path,
+) -> None:
+    """The top card ends at the description's CLASS ATTRIBUTE, not at the first occurrence of its
+    name, which a title can carry as text."""
+    from dataclasses import replace  # noqa: PLC0415
+
+    card = replace(search_cards()[0], title="Frontend Engineer - show-more-less-html")
+    body = job_posting_html(card, top_card=top_card_html(card, closed=True)).encode()
+    respx.get(LI_GUEST).mock(return_value=httpx.Response(200, content=body))
+
+    assert _li_prober(tmp_path)(42, LI_VIEW).signal == "linkedin_closed"
+
+
+@pytest.mark.parametrize(
+    ("lanes", "asks"), [((), False), (("jobapps",), False), (("jobapps", "linkedin"), True)]
+)
+def test_the_guest_endpoint_is_asked_exactly_when_the_linkedin_lane_is_on(
+    tmp_path: Path, lanes: tuple[str, ...], asks: bool
+) -> None:
+    from boardwatch.pipeline.liveness import asks_linkedin_guest  # noqa: PLC0415
+
+    assert asks_linkedin_guest(_settings(tmp_path, lanes_enabled=lanes)) is asks

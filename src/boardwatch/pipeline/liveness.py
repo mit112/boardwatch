@@ -45,6 +45,15 @@ from boardwatch.store.tables import postings
 LivenessProber = Callable[[int, str], Liveness]
 
 
+def asks_linkedin_guest(settings: Settings) -> bool:
+    """Whether the prober asks a LinkedIn job-view URL through the guest endpoint (D-653).
+
+    Only when the user enabled the LinkedIn lane: that endpoint is the lane's opt-in request
+    (D-290). One function, so the death probe's ordering and the prober cannot disagree on it.
+    """
+    return LINKEDIN_LANE in settings.lanes_enabled
+
+
 def build_prober(settings: Settings) -> LivenessProber:
     """The production prober: one GET per posting through the politeness Fetcher.
 
@@ -67,7 +76,7 @@ def build_prober(settings: Settings) -> LivenessProber:
     has enabled the LinkedIn lane, because that endpoint is the lane's opt-in request (D-290).
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
-    ask_linkedin_guest = LINKEDIN_LANE in settings.lanes_enabled
+    ask_linkedin_guest = asks_linkedin_guest(settings)
 
     def probe_workday(posting_id: int, cxs_url: str) -> Liveness:
         try:

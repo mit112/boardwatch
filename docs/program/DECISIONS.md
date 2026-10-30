@@ -35184,15 +35184,17 @@ request shape the LinkedIn lane already sends for a body under D-290, so the pro
 It is asked only when `lanes_enabled` names `linkedin`: that endpoint is the lane's opt-in request (D-290 ships the
 lane off), so a user who never enabled the lane keeps the page probe for a LinkedIn URL another source brought in.
 `core/liveness.verdict_for_linkedin_guest` reads only the top card, the part of the answer before
-`show-more-less-html` (the description), so employer text cannot match. A 200 whose top card carries the class
+the description section's `show-more-less-html` class attribute (not the bare name, which a title can carry as
+text), so employer text cannot match. A 200 whose top card carries the class
 token `closed-job__flavor--closed` inside a `class` attribute (an exact token, so `x-closed-job__flavor--closed`
 does not match) is `dead` under a new signal, `linkedin_closed`;
 a 200 with a `top-card-layout__title` and no marker is `alive`; a 200 with neither (a wall, an error shell) is
 `unknown`. Every non-200 is `unknown`: a 429 or 999 is rate-limiting, and a guest 404 has been seen once, on a
 removed job, which is not a measurement. A closed card reached through a redirect is `unknown`
 (`refetch_gone_after_redirect`). `CLOSING_SIGNALS` gains `linkedin_closed`; two strikes in different runs, as
-for every closing signal. `PROBED_LAST_PROVIDERS` and its sort key are removed: their only reason was that the
-probe could not close a LinkedIn row. The shortlist probe shares `build_prober`, so a closed LinkedIn lead is
+for every closing signal. `PROBED_LAST_PROVIDERS` now applies only when the guest probe is off: its reason was that the
+probe could not close a LinkedIn row, which stays true for a user without the lane. `pipeline/liveness.
+asks_linkedin_guest(settings)` is the one predicate the prober and the sweep's ordering (`linkedin_can_close`) read. The shortlist probe shares `build_prober`, so a closed LinkedIn lead is
 withheld from the run that saw it too.
 
 **Measured 2026-10-30, live, read-only.** Closed control: the 40 leads that morning's triage closed on the
@@ -35212,7 +35214,14 @@ board posting the scanner closed) was not available: no `linkedin` row shares a 
 words "No longer accepting applications":* the class is LinkedIn's markup and the words can be employer prose;
 the body-phrase catalog this module rejected was all false positives. *Read the whole answer:* the description
 is employer text and is served in the same response. *Strike on a guest 404:* one observation. *Keep LinkedIn
-rows last:* they can close now, and they are the largest dead class the owner sees.
+rows last with the lane on:* they can close then, and they are the largest dead class the owner sees.
 
-**Follow-ups.** Measure guest 404 against known-removed jobs before it can strike. `death_probe_budget` (300 in
+**Review (Codex, one round).** Three blockers. Fixed: a title carrying `show-more-less-html` as text ended the top
+card early and hid the marker; with the lane off, LinkedIn rows lost the demotion while their probe still could not
+close them. Recorded as a follow-up, because it predates this change: a posting whose STORED URL is already a guest
+URL, or one that redirects to it, takes the generic page probe, which reads any 404 as gone and ignores the lane gate.
+The lanes store job-view URLs, so no row is known to carry one.
+
+**Follow-ups.** Measure guest 404 against known-removed jobs before it can strike. Route a stored or redirected guest
+URL through `verdict_for_linkedin_guest` and the lane gate. `death_probe_budget` (300 in
 the owner's config) is sized below the standing-lead population once LinkedIn rows compete for it.
