@@ -105,6 +105,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Tailoring no longer re-scans every open posting for each résumé.** Building each résumé ran
+  the run-wide extraction check twice, and each pass read every open posting (~829k): 148 s per
+  pass on a MacBook Air reading the store from a USB SSD, so about 5 minutes per résumé and 8–10
+  hours for a 100-lead slate. The per-résumé check now covers only that résumé's posting (0.004 s);
+  the run still checks the whole store once, before ranking.
+
 - **Lane copies of already-delivered jobs no longer take the daily slate's slots.** The ranker
   dropped a lane copy held by a standing board copy or a delivered twin only after it had filled
   its 150 slots, and nothing refilled them. Lane postings never close, so the held set only grew:

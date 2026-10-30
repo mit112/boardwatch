@@ -60,7 +60,7 @@ def posting_context(
     `run_preflight` stays: it is extraction preflight, not configuration — it backfills the
     extraction rows `jd_skills_for` then reads, and owns its own taxonomy load for that.
     """
-    run_preflight(engine, settings)
+    run_preflight(engine, settings, posting_id=posting_id)
     with engine.connect() as conn:
         cv = current_posting_versions(conn, [posting_id]).get(posting_id)
         if cv is None:

@@ -271,3 +271,29 @@ def test_the_stale_profile_refresh_survives_an_unrelated_concurrent_writer(
     # The competitor is not starved either -- it queued and then landed.
     with engine.connect() as conn:
         assert conn.execute(select(tables.runs)).all()
+
+
+def test_a_posting_scoped_preflight_backfills_only_that_posting(
+    engine: Engine, settings: Settings
+) -> None:
+    """T290: `posting_id` scopes the backfill. The second posting is a live candidate: the
+    unscoped call afterwards backfills it, so its absence after the scoped call is the scope, not
+    an ineligible row."""
+    current = load_taxonomy(settings.config_dir).version
+    cid = _seed_company(engine)
+    lead = _seed_posting(engine, cid, "1", "Python and Kafka systems.")
+    other = _seed_posting(engine, cid, "2", "Go services on Kubernetes.")
+    _seed_profile(engine, current)
+
+    stats = run_preflight(engine, settings, _console()[0], posting_id=lead)
+
+    with engine.connect() as conn:
+        extracted = set(conn.execute(select(tables.extractions.c.posting_id)).scalars())
+    assert extracted == {lead}
+    assert stats.postings_backfilled == 1
+
+    run_preflight(engine, settings, _console()[0])
+
+    with engine.connect() as conn:
+        extracted = set(conn.execute(select(tables.extractions.c.posting_id)).scalars())
+    assert extracted == {lead, other}
