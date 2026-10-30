@@ -373,3 +373,29 @@ def test_two_delivered_copies_never_hold_each_other(data_dir: Path) -> None:
 
     assert _visible(results) == [a, b]
     assert results.hidden_requisition_twin == 0
+
+
+def test_a_smartrecruiters_id_keys_and_a_uuid_prefix_does_not() -> None:
+    """The numeric prefix of a UUID's first group is shared by unrelated jobs, so it is no key."""
+    real = "https://jobs.smartrecruiters.com/ServiceNow/744000153279380-software-engineer"
+    assert requisition_key(real) == ("smartrecruiters", "servicenow", "744000153279380")
+    for uuid in ("12345678-1234-4234-8234-123456789abc", "12345678-abcd-4abc-8abc-abcdefabcdef"):
+        assert requisition_key(f"https://jobs.smartrecruiters.com/servicenow/{uuid}") is None
+
+
+@pytest.mark.parametrize("url", ["https://[broken/jobs/1", "https://[broken/jobs/1/apply"])
+def test_a_url_urlparse_cannot_read_has_no_key(url: str) -> None:
+    assert requisition_key(url) is None
+
+
+def test_a_malformed_url_on_the_slate_or_in_the_seed_does_not_stop_the_ranking(
+    data_dir: Path,
+) -> None:
+    engine, (broken, delivered, other) = _seed(data_dir, [
+        ("simplify", "jobapps", "Backend Engineer", "https://[broken/jobs/1"),
+        ("simplify-2", "jobapps", "Data Engineer", "https://[broken/jobs/2/apply"),
+        ("beta", "greenhouse", "Platform Engineer", "https://boards.greenhouse.io/beta/jobs/111111"),
+    ])
+    _delivered(engine, delivered)
+
+    assert _visible(_rank(engine, data_dir)) == [broken, other]

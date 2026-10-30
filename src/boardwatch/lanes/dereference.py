@@ -303,7 +303,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.core.board_urls import parse_board_target
 
 # Provider -> the FIXED path segments that sit between the board slug and the posting
 # reference. A posting URL's path must be exactly `{slug}/{*fixed}/{ref}` — nothing
@@ -558,13 +558,18 @@ _AMAZON_JOB = re.compile(
     r"^https?://(?:www\.)?amazon\.jobs/(?:[a-z]{2}(?:-[a-z]{2})?/)?jobs/(\d+)(?:[/?#]|$)",
     re.IGNORECASE,
 )
+# A SmartRecruiters reference is the numeric prefix of its last segment. Measured ids are 15 digits;
+# a shorter prefix is a UUID's first group or similar, which two different jobs can share.
+_SMARTRECRUITERS_MIN_DIGITS = 12
 # The apply-form segment some links end in. `parse_posting_target` refuses it, rightly for
 # convergence; the requisition it names is the one in front of it.
 _FORM_TAILS = frozenset({"application", "apply"})
 
 
 def _without_form_tail(url: str) -> str | None:
-    """`url` with a trailing apply-form segment and its query removed, or None if it has none."""
+    """`url` with a trailing apply-form segment and its query removed, or None if it has none.
+
+    Raises ValueError on a URL `urlparse` cannot read; `requisition_key` reads that as no key."""
     parsed = urlparse(url.strip())
     segments = [segment for segment in parsed.path.split("/") if segment]
     if not segments or segments[-1].lower() not in _FORM_TAILS:
@@ -586,16 +591,22 @@ def requisition_key(url: str) -> tuple[str, str, str] | None:
     amazon = _AMAZON_JOB.match(url.strip())
     if amazon is not None:
         return ("amazon", "amazon.jobs", amazon.group(1))
+    # ValueError, not only the two parser errors (both subclass it): a stored URL `urlparse`
+    # cannot read must cost its key, never the run.
     try:
         target = parse_posting_target(url)
-    except (UnknownBoardURL, UnresolvablePostingURL):
-        trimmed = _without_form_tail(url)
-        if trimmed is None:
-            return None
+    except ValueError:
         try:
+            trimmed = _without_form_tail(url)
+            if trimmed is None:
+                return None
             target = parse_posting_target(trimmed)
-        except (UnknownBoardURL, UnresolvablePostingURL):
+        except ValueError:
             return None
+    if target.provider == "smartrecruiters" and not (
+        target.posting_ref.isdigit() and len(target.posting_ref) >= _SMARTRECRUITERS_MIN_DIGITS
+    ):
+        return None
     scope = target.slug.lower()
     if target.provider in ("workday", "oraclehcm"):
         scope = scope.rsplit("/", 1)[0]
