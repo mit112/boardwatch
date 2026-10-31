@@ -2477,3 +2477,35 @@ def test_a_posting_the_backlog_clears_in_run_one_ranks_in_tier_one_in_run_two(
 
     assert run_two.fatal is None, run_two.fatal
     assert [lead.posting_id for lead in run_two.tailored] == [before[2]]
+
+
+@_needs_an_executable_fake
+def test_gate_refresh_progress_advances_after_committed_batch(
+    env: Path, fake_claude: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from boardwatch.llm import gate_judge
+    from boardwatch.pipeline.progress import ProgressUpdate, StageProgress
+
+    _ready(env)
+    ids = [_seed(env, slug=f"progress-refresh-{n}", body=BODY) for n in range(2)]
+    _arm_gate(env, batch_size=1, refresh_budget=2)
+    monkeypatch.setenv("GATE_FAKE_MODE", "ok")
+    observed: list[tuple[int, int]] = []
+
+    def record(update: ProgressUpdate) -> None:
+        if update.stage == "gate refresh":
+            committed = sum(_current_gate_verdict(env, pid) is not None for pid in ids)
+            observed.append((update.done, committed))
+
+    def create(stage: str, total: int, **kwargs: object) -> StageProgress:
+        return StageProgress(stage, total, every=1, on_update=record)
+
+    monkeypatch.setattr(gate_judge, "StageProgress", create)
+    result = gate_judge.run_gate_refresh(
+        get_engine(env), load_settings(data_dir=env),
+        [SimpleNamespace(posting_id=pid) for pid in ids], run_id=None,
+    )
+    assert result.sent == 2
+    assert observed == [(0, 0), (1, 1), (2, 2), (2, 2)]

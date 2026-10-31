@@ -2,6 +2,7 @@
 
 import io
 
+import pytest
 from rich.console import Console
 
 from boardwatch.pipeline.progress import ProgressUpdate, StageProgress
@@ -85,3 +86,13 @@ def test_finish_forces_a_line_without_inventing_completed_work() -> None:
     assert [u.done for u in updates] == [0, 2]
     assert updates[-1].finished is True
     assert updates[-1].remaining_seconds == 120
+
+
+def test_no_console_is_silent_but_still_reports_snapshots(capsys: pytest.CaptureFixture[str]) -> None:
+    updates: list[ProgressUpdate] = []
+    progress = StageProgress("example", 2, every=1, on_update=updates.append)
+    progress.advance()
+    progress.finish()
+    assert [u.done for u in updates] == [0, 1, 1]
+    assert updates[-1].finished
+    assert capsys.readouterr().out == ""

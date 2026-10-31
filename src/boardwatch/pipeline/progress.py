@@ -40,7 +40,7 @@ class StageProgress:
         self.total = total
         self.done = 0
         self.item: str | None = None
-        self._console = console if console is not None else Console()
+        self._console = console
         self._every = every
         self._clock = clock
         self._on_update = on_update
@@ -67,11 +67,12 @@ class StageProgress:
         )
         label = f" · {self.item}" if self.item else ""
         eta = f" · ETA {remaining / 60:.1f} min remaining" if remaining is not None else ""
-        self._console.print(
-            f"{self.stage}: {self.done:,}/{self.total:,}{label}"
-            f" · {elapsed / 60:.1f} min elapsed{eta}",
-            markup=False,
-        )
+        if self._console is not None:
+            self._console.print(
+                f"{self.stage}: {self.done:,}/{self.total:,}{label}"
+                f" · {elapsed / 60:.1f} min elapsed{eta}",
+                markup=False,
+            )
         self._last_time = now
         self._last_done = self.done
         if self._on_update is not None:
