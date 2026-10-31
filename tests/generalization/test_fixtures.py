@@ -340,7 +340,8 @@ def test_a_missing_heading_surface_fails() -> None:
 
 
 def test_an_overdue_review_fails() -> None:
-    violations = check_fixture_review_due(_real(), today=date(2027, 1, 1))
+    last_due = max(entry.review_by for entry in FIXTURE_PROVENANCE.values())
+    violations = check_fixture_review_due(_real(), today=date.fromordinal(last_due.toordinal() + 1))
     assert _rules(violations) == {"R15"}
     assert len(violations) == len(PROVIDER_NAMES)
     assert all("review overdue by" in v.detail for v in violations)
