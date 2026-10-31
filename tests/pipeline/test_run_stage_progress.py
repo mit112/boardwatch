@@ -11,8 +11,10 @@ import pytest
 import respx
 from rich.console import Console
 from sqlalchemy import Engine, func, select
+from typer.testing import CliRunner
 
 from boardwatch.cli import top_cmd
+from boardwatch.cli.app import app
 from boardwatch.cli.context import build_context
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility import preflight
@@ -223,3 +225,39 @@ def test_ranking_announces_corpus_size_and_completion(
     assert ranked.considered == 5
     assert [u.done for u in updates] == [0, 5, 5]
     assert all(u.total == 5 for u in updates)
+
+
+def test_top_is_silent_about_progress_while_run_opts_in(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catch reporters using the output console, or the runner dropping its opt-in."""
+    for mode in ("top", "run"):
+        root = tmp_path / mode
+        monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(root / "cfg"))
+        monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+        data_dir = root / "data"
+        _ready(data_dir)
+        _seed_slate(data_dir)
+        if mode == "top":
+            result = CliRunner().invoke(app, ["--data-dir", str(data_dir), "top"])
+            assert result.exit_code == 0, result.output
+            assert not any(
+                line.startswith(("extraction:", "eligibility:", "ranking:"))
+                for line in result.output.splitlines()
+            ), result.output
+            # Ordinary preflight messages still use the output console.
+            assert "extracting 5 new posting(s)" in result.output
+            assert "evaluating eligibility for 5 postings" in result.output
+        else:
+            monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_ok)
+            ctx = build_context(data_dir)
+            stream = io.StringIO()
+            summary = runner.run_pipeline(
+                ctx.engine, ctx.settings, console=Console(file=stream, width=200),
+                out_root=root / "apps", resume_path=ctx.settings.config_dir / "resume.yaml",
+                skip_scan=True,
+            )
+            assert summary.fatal is None
+            for stage in ("extraction", "eligibility", "ranking"):
+                assert f"{stage}: 0/5" in stream.getvalue()
+                assert f"{stage}: 5/5" in stream.getvalue()

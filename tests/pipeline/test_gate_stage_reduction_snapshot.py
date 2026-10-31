@@ -262,6 +262,8 @@ EXPECTED: dict[str, Any] = {
     ],
     "console_gate": [
         "gate",
+        "gate request items: 0/10 · 0.0 min elapsed",
+        "gate request items: 10/10 · 0.0 min elapsed · ETA 0.0 min remaining",
         "gate: 4 judged (2 eligible, 1 ineligible, 1 uncertain), 1 batch(es) failed open, 1 beyond the delivered slate",
         "  ! gate: batch 2/3 failed open: claude exited 1: simulated outage",
         "  ! gate: batch 3/3 partly failed open: 1 of 2 verdicts missing (labels 10); those leads were left unchanged, never dropped",

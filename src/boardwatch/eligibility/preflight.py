@@ -280,6 +280,7 @@ def run_eligibility(
     settings: Settings,
     console: Console | None = None,
     *,
+    progress_console: Console | None = None,
     run_id: int | None = None,
     workers: int | None = None,
     parallel_threshold: int = PARALLEL_THRESHOLD,
@@ -353,7 +354,7 @@ def run_eligibility(
         return stats
 
     console.print(f"evaluating eligibility for {len(pending)} postings…")
-    progress = StageProgress("eligibility", len(pending), console=console)
+    progress = StageProgress("eligibility", len(pending), console=progress_console)
     owns_run = run_id is None
     run_id = ensure_run(engine, run_id)
     stats.run_id = run_id

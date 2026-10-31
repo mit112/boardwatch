@@ -506,6 +506,7 @@ def rank_open_postings(
     include_applied: bool = False,
     only_new: bool = False,
     output_console: Console = console,
+    progress_console: Console | None = None,
     run_id: int | None = None,
     record_surfaced: bool = True,
     profile_already_refreshed: bool = False,
@@ -524,10 +525,11 @@ def rank_open_postings(
     `run_preflight` still prints the `taxonomy changed` line for a refresh it did not perform.
     """
     run_preflight(
-        engine, settings, output_console, profile_already_refreshed=profile_already_refreshed
+        engine, settings, output_console, profile_already_refreshed=profile_already_refreshed,
+        progress_console=progress_console,
     )
     stats = run_eligibility(
-        engine, settings, output_console, run_id=run_id
+        engine, settings, output_console, run_id=run_id, progress_console=progress_console
     )  # no-op on a null profile; before the check
     skill_taxonomy = load_taxonomy(settings.config_dir)
     version = skill_taxonomy.version
@@ -594,7 +596,7 @@ def rank_open_postings(
                 postings.c.status == "open",
             )
         ).all()
-        progress = StageProgress("ranking", len(rows), console=output_console)
+        progress = StageProgress("ranking", len(rows), console=progress_console)
         # The run computed the identity; reuse it rather than reload the catalog.
         versions = current_posting_versions(conn, None)
         verdicts = current_verdicts(

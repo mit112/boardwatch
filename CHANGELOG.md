@@ -8,6 +8,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Extraction, eligibility and ranking progress now require an explicit console opt-in from
+  the nightly runner, keeping standalone commands' existing output free of run progress (D-658).
+
 - Reviewed the SmartRecruiters and Workable fixture shapes against live boards and extended their review
   deadlines to 2027-01-28 (D-657).
 

@@ -2626,6 +2626,7 @@ def _run_pipeline_leased(
                 settings,
                 limit=rank_limit,
                 output_console=console,
+                progress_console=console,
                 run_id=run_id,
                 # The pipeline records its own dispositions AFTER the tailor loop
                 # (`_record_shortlist_dispositions`). Letting the ranker write `seen` here put the

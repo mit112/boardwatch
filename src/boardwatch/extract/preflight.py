@@ -66,6 +66,7 @@ def run_preflight(
     settings: Settings,
     console: Console | None = None,
     *,
+    progress_console: Console | None = None,
     profile_already_refreshed: bool = False,
     posting_id: int | None = None,
 ) -> PreflightStats:
@@ -104,7 +105,7 @@ def run_preflight(
             console.print(f"taxonomy changed — re-extracting {len(pending)} postings\u2026")
         else:
             console.print(f"extracting {len(pending)} new posting(s)\u2026")
-        progress = StageProgress("extraction", len(pending), console=console)
+        progress = StageProgress("extraction", len(pending), console=progress_console)
         for chunk_start in range(0, len(pending), BATCH_SIZE):
             chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
             with engine.begin() as conn:  # one commit per batch: resumable (D21)
