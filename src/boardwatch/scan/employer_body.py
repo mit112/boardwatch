@@ -16,7 +16,13 @@ from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.dereference import PostingTarget, parse_posting_target
 from boardwatch.lanes.quality import is_employer_body
-from boardwatch.providers.base import Provider, RefetchUnsupported, posting_refetcher
+from boardwatch.providers.base import (
+    PostingRefetcher,
+    Provider,
+    RefetchUnsupported,
+    posting_refetcher,
+    supports_employer_body_recovery,
+)
 from boardwatch.providers.registry import build_providers
 from boardwatch.store.body_revision import record_body_revision
 from boardwatch.store.db import write_connection
@@ -36,6 +42,15 @@ class RecoveryOutcome(StrEnum):
     EMPTY_OR_FOREIGN = "empty_or_foreign"
     BUDGET = "budget_exhausted"
     SUPERSEDED = "superseded"
+    UNRECOVERABLE_STUB = "unrecoverable_stub"
+
+
+class RecoveryCounts(Counter[RecoveryOutcome]):
+    """Typed outcomes plus the provider breakdown of stubs deliberately left unheld."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.unrecoverable_stubs: Counter[str] = Counter()
 
 
 class EmployerIdentityMismatch(ValueError):
@@ -67,26 +82,23 @@ class _RecoveryFetcher(Fetcher):
 
 
 def _read(fetcher: Fetcher, provider: Provider, target: PostingTarget) -> RawPosting | None:
-    try:
-        refetcher = posting_refetcher(provider)
-    except RefetchUnsupported:
-        # These providers inline bodies in one board read (hiring.cafe's exact-id selection).
-        # No multi-endpoint provider may enter this fallback and outrun the posting budget.
-        if provider.name not in {"lever", "workable"}:
-            raise
-        snapshot = provider.fetch_board(fetcher, BoardRequest(
-            provider=target.provider, slug=target.slug, url=provider.board_url(target.slug),
-        ))
-        if snapshot.status not in {"complete", "partial"}:
-            raise FetchFailure("employer board could not be read") from None
-        return next((raw for raw in snapshot.postings
-                     if raw.provider_posting_id == target.posting_ref), None)
-    return refetcher.fetch_posting(fetcher, target.slug, target.posting_ref)
+    if not supports_employer_body_recovery(provider):
+        raise RefetchUnsupported(f"no employer body recovery for {provider.name}")
+    if isinstance(provider, PostingRefetcher):
+        return posting_refetcher(provider).fetch_posting(fetcher, target.slug, target.posting_ref)
+    # The shared support predicate admits only the implemented one-board fallbacks here.
+    snapshot = provider.fetch_board(fetcher, BoardRequest(
+        provider=target.provider, slug=target.slug, url=provider.board_url(target.slug),
+    ))
+    if snapshot.status not in {"complete", "partial"}:
+        raise FetchFailure("employer board could not be read") from None
+    return next((raw for raw in snapshot.postings
+                 if raw.provider_posting_id == target.posting_ref), None)
 
 
 def recover_employer_bodies(
     engine: Engine, settings: Settings, run_id: int, *, spent: Mapping[str, int],
-) -> Counter[RecoveryOutcome]:
+) -> RecoveryCounts:
     """Retry oldest pending first on EVERY run, including when discovery lanes are disabled.
 
     Budget is per originating lane, using lane_posting_budget. `spent` is a conservative
@@ -94,10 +106,16 @@ def recover_employer_bodies(
     unsupported attempts consume a slot too. Retried rows rotate to the back of the queue;
     budget-deferred rows retain their age. No verdict is an input to recovery.
     """
-    counts: Counter[RecoveryOutcome] = Counter()
+    counts = RecoveryCounts()
     with write_connection(engine) as conn, conn.begin():
         sweep_bodies(conn, now=utcnow(), run_id=run_id)
-        pending = list(pending_employer_bodies(conn).values())
+        pending = list(pending_employer_bodies(
+            conn, unrecoverable=counts.unrecoverable_stubs,
+        ).values())
+        if counts.unrecoverable_stubs:
+            counts[RecoveryOutcome.UNRECOVERABLE_STUB] = sum(counts.unrecoverable_stubs.values())
+        # Support can disappear without a body revision; release those holds even with no work.
+        drain_quarantine(conn, now=utcnow())
         age = {int(row.posting_version_id): row.quarantined_at for row in conn.execute(
             select(quarantined_bodies).where(quarantined_bodies.c.reopened_at.is_(None))
         )}
@@ -182,12 +200,14 @@ def recover_employer_bodies(
     return counts
 
 
-def recovery_errors(counts: Counter[RecoveryOutcome]) -> list[str]:
+def recovery_errors(counts: RecoveryCounts) -> list[str]:
     """One counted run diagnostic; the successful revisions have immutable source rows."""
-    failures = {key: value for key, value in counts.items()
-                if key != RecoveryOutcome.RECOVERED and value}
+    failures = [
+        f"{key.value}={value}" for key, value in counts.items()
+        if key not in {RecoveryOutcome.RECOVERED, RecoveryOutcome.UNRECOVERABLE_STUB} and value
+    ]
+    failures.extend(f"unrecoverable_stub[{provider}]={value}"
+                    for provider, value in sorted(counts.unrecoverable_stubs.items()) if value)
     if not failures:
         return []
-    return ["employer body recovery: " + ", ".join(
-        f"{key.value}={value}" for key, value in failures.items()
-    )]
+    return ["employer body recovery: " + ", ".join(failures)]

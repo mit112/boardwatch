@@ -35371,10 +35371,14 @@ or a wrapper around the whole tail:* duplicates the clock or requires reindentin
 eligibility rule. The measured 144-, 53- and 525-character aggregator copies omitted requirements
 present in the employer JD. Eligibility rules and `rules.yaml` do not change.
 
-**Recovery trigger.** Lane/aggregator provenance, an evidenced employer URL, and either failure of
+**Recovery trigger (review ruling).** Only an aggregator's own stored text: job-apps' local
+`job_description.txt` for `jobright`/`indeed` acquisitions, or native Indeed's GraphQL description.
+Require an evidenced employer URL, an existing recovery path, and either failure of
 `lanes.quality.meets_body_floor` or normalized body length below the single `STUB_RECOVERY_CHARS`
-constant (1,000). URLs come from job-apps' `employer_url`, Indeed's `recruit.viewJobUrl`, or a stored
-URL readable by `parse_posting_target`; no employer/title inference. This threshold initiates
+constant (1,000). Exclude hiring.cafe and every native board provider: hiring.cafe obtains complete
+employer API bodies even though version lineage names its search URL. Lane-first company admission
+is not body provenance. URLs come from job-apps' `employer_url`, Indeed's `recruit.viewJobUrl`, or a
+stored URL readable by `parse_posting_target`; no employer/title inference. This threshold initiates
 recovery only and never supplies an eligibility verdict. Native employer source lineage matching
 the evidenced employer, posting reference and frozen body hash already satisfies the evidence bar.
 
@@ -35385,24 +35389,33 @@ gate send and gate apply withhold the copy. Current deterministic and judge verd
 `uncertain` (this store's unresolved eligibility value), overriding a prior `eligible`, with the
 existing eligibility-unconfirmed review flag. A copy stays open and reviewable. A verified employer
 replacement releases the hold; the existing preflight drain runs before deterministic selection.
-The scheduled recovery also drains after freezing replacements. Closed copies retain unresolved
-holds; a closure is not evidence of a complete JD.
+The scheduled recovery also drains after freezing replacements. **Hold only when a recovery path
+exists:** the detector and reader share one provider-support predicate, accepting a registered
+`fetch_posting` or the implemented exact-id board fallback for Lever/Workable. A parsable Oracle HCM
+URL alone cannot create a hold. Unsupported stubs retain their existing eligibility behavior and
+are counted as `unrecoverable_stub` by provider in every run's recovery diagnostics, even with no
+budget left. Existing holds whose provider loses recovery support are released through the same
+predicate, including when no recoverable work remains. Closed copies with a recovery path retain
+unresolved holds; a closure is not evidence of a complete JD.
 
 **Scheduled drain and budget.** Both pipeline lane paths run recovery on the serial writer thread
 after lane apply and before eligibility, including standing copies and runs with discovery lanes
 disabled. Retry oldest pending first; an attempted failure moves behind untouched pending work.
 Use the originating lane's existing `lane_posting_budget`, conservatively subtracting discovery
 work. An enabled discovery lane that failed without a tally reserves its full cap. Unsupported
-attempts and failures consume a slot; additional bootstrap/detail HTTP reads consume additional
-slots through the same fetcher. Exhaustion, refusal, unavailable reads, missing/foreign bodies,
-unsupported targets and identity mismatches are typed, counted outcomes, never permission to reuse
-an old clearance. Unresolved counts enter the run's existing error diagnostics; successful body
+stubs and excluded hiring.cafe/native bodies spend no recovery budget. Failed attempts (including
+a supported reader reporting unsupported) consume a slot; additional bootstrap/detail HTTP reads
+consume additional slots through the same fetcher. Exhaustion, refusal, unavailable reads,
+missing/foreign bodies, unsupported reads and identity mismatches are typed, counted outcomes,
+never permission to reuse an old clearance. Unresolved counts enter the run's existing error diagnostics; successful body
 revisions have independent immutable source rows. No new setting. No HTTP in a DB transaction.
 
 **Identity and provenance.** Reuse `PostingRefetcher`, with exact-reference board selection for
-Lever and Workable's body-inlined boards. Verify both returned provider reference and posting URL
-against the evidenced target before freezing. Reuse the existing `store.body_revision` writer
-rather than extracting a second writer from `apply_refetched`: it already revises a body without
+Lever and Workable's body-inlined boards. Verify both returned provider reference and posting URL's
+full identity (provider, board/slug and posting reference) against the evidenced target before
+freezing; another employer's same-reference posting cannot supply the body. Reuse the existing
+`store.body_revision` writer rather than extracting a second writer from `apply_refetched`: it
+already revises a body without
 re-keying a posting. Add source lineage and recompute identities atomically from the stored row.
 Keep its company, posting key, canonical job, structured metadata and evidence; local re-ingestion
 preserves a recovered body through the existing secondhand declaration and retains previously
@@ -35410,8 +35423,8 @@ observed job-apps employer evidence when a later local record omits it.
 
 **Limits and alternatives rejected.** Recovery follows discovery, so an exhausted lane budget can
 defer its oldest recovery until a later run has capacity. Employer sites without an existing
-supported posting read remain held and retryable; this change does not add providers. Applying
+supported posting read remain unheld and counted; this change does not add providers. Applying
 `apply_refetched` under an employer's different ID breaks legacy job-apps identities. Judging the
-stub, using its prior verdict on a failed read, or releasing merely because local text became
-longer violates missing evidence ⇒ abstain. Changing rules addresses the wrong gap. A new budget,
+recoverable stub, using its prior verdict on a failed read, or releasing merely because local text
+became longer violates missing evidence ⇒ abstain. Changing rules addresses the wrong gap. A new budget,
 provider scraper, hold table or eligibility engine version is unnecessary.

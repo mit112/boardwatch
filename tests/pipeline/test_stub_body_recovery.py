@@ -38,16 +38,18 @@ def stub(size: int) -> str:
     return text
 
 
-def seed(engine: Engine, body: str = "", *, evidence: bool = True) -> int:
+def seed(
+    engine: Engine, body: str = "", *, evidence: bool = True, source_url: str = "file:///fixture",
+) -> int:
     raw = RawPosting(
         provider_posting_id="jobapps-stable", title="Backend Engineer",
         url="https://jobright.ai/jobs/info/0123456789abcdef01234567",
         body_text=body or stub(525), locations=["Remote"],
-        raw_json={"jobapps": {"posting_id": "jobapps-stable", **(
+        raw_json={"jobapps": {"posting_id": "jobapps-stable", "primary_acquisition": "jobright", **(
             {"employer_url": EMPLOYER_URL} if evidence else {}
         )}},
     )
-    apply_board(engine, BoardSnapshot(status="partial", url="file:///fixture", postings=[raw]),
+    apply_board(engine, BoardSnapshot(status="partial", url=source_url, postings=[raw]),
                 1, insert_run(engine), scan_kind="lane", lane="jobapps")
     with engine.connect() as conn:
         return int(conn.execute(select(tables.postings.c.id).where(
@@ -60,7 +62,9 @@ def seed(engine: Engine, body: str = "", *, evidence: bool = True) -> int:
 def test_stub_is_held_before_deterministic_judging(
     engine: Engine, settings: Settings, size: int, origin: str,
 ) -> None:
-    seed(engine, stub(size), evidence=origin == "jobapps")
+    seed(engine, stub(size), evidence=origin == "jobapps", source_url=(
+        "https://www.indeed.com/jobs?q=backend" if origin == "indeed" else "file:///fixture"
+    ))
     with engine.begin() as conn:
         if origin == "indeed":
             conn.execute(update(tables.postings).values(
@@ -68,7 +72,9 @@ def test_stub_is_held_before_deterministic_judging(
             ))
         elif origin == "stored_url":
             conn.execute(update(tables.companies).values(source="lane"))
-            conn.execute(update(tables.postings).values(raw_json={}, url=EMPLOYER_URL))
+            conn.execute(update(tables.postings).values(
+                raw_json={"jobapps": {"primary_acquisition": "jobright"}}, url=EMPLOYER_URL,
+            ))
     stats = run_eligibility(engine, settings)
     assert stats.quarantined == 1
     assert stats.evaluated == 0
@@ -113,7 +119,9 @@ def test_prior_eligible_cannot_bypass_delivery_hold(
             label=str(pid), decision="eligible", reason="none", evidence="", confidence="high",
         )], versions=current_posting_versions(conn), facts=Facts(), policy=Policy(),
             catalog=load_rules(settings.config_dir))
-        conn.execute(update(tables.postings).values(raw_json={"jobapps": {"employer_url": EMPLOYER_URL}}))
+        conn.execute(update(tables.postings).values(raw_json={"jobapps": {
+            "primary_acquisition": "jobright", "employer_url": EMPLOYER_URL,
+        }}))
         vids = [v.posting_version_id for v in current_posting_versions(conn).values()]
         verdicts = current_verdicts(conn, vids, stats.profile_hash, stats.rules_hash)
         flags = current_requirement_flags(conn, vids, stats.profile_hash, stats.rules_hash)
@@ -198,7 +206,7 @@ def test_reingestion_keeps_jobapps_key_evidence_and_recovered_body(
     assert len(sources) == 2 and sources[-1].source_record_id == "123"
 
 
-@pytest.mark.parametrize("failure", ["timeout", "unsupported", "wrong_id", "budget"])
+@pytest.mark.parametrize("failure", ["timeout", "unsupported", "wrong_id", "wrong_employer", "budget"])
 def test_recovery_failure_is_counted_and_cannot_reuse_old_eligible(
     engine: Engine, settings: Settings, monkeypatch: pytest.MonkeyPatch, failure: str,
 ) -> None:
@@ -214,7 +222,9 @@ def test_recovery_failure_is_counted_and_cannot_reuse_old_eligible(
     stats = run_eligibility(engine, settings)
     url = EMPLOYER_URL
     with engine.begin() as conn:
-        conn.execute(update(tables.postings).values(raw_json={"jobapps": {"employer_url": url}}))
+        conn.execute(update(tables.postings).values(raw_json={"jobapps": {
+            "primary_acquisition": "jobright", "employer_url": url,
+        }}))
     monkeypatch.setattr(runner, "_fetch_lanes", lambda *args: ([], []))
 
     calls: list[str] = []
@@ -224,7 +234,9 @@ def test_recovery_failure_is_counted_and_cannot_reuse_old_eligible(
         if failure in {"timeout", "budget"}:
             raise FetchFailure("timeout")
         return RawPosting(provider_posting_id="wrong" if failure == "wrong_id" else ref,
-                          title="Backend Engineer", url=EMPLOYER_URL, locations=[], body_text=EMPLOYER_BODY, raw_json={})
+                          title="Backend Engineer", url=(EMPLOYER_URL.replace("acme", "other")
+                          if failure == "wrong_employer" else EMPLOYER_URL),
+                          locations=[], body_text=EMPLOYER_BODY, raw_json={})
 
     monkeypatch.setattr(GreenhouseProvider, "fetch_posting", fetch)
     if failure == "budget":
@@ -236,7 +248,9 @@ def test_recovery_failure_is_counted_and_cannot_reuse_old_eligible(
         with engine.begin() as conn:
             conn.execute(update(tables.postings).where(
                 tables.postings.c.provider_posting_id == "jobapps-stable"
-            ).values(raw_json={"jobapps": {"employer_url": EMPLOYER_URL.replace("123", "456")}}))
+            ).values(raw_json={"jobapps": {
+                "primary_acquisition": "jobright", "employer_url": EMPLOYER_URL.replace("123", "456"),
+            }}))
     from boardwatch.scan import employer_body
 
     if failure == "unsupported":
@@ -260,7 +274,8 @@ def test_recovery_failure_is_counted_and_cannot_reuse_old_eligible(
     assert len(errors) == 1, "every unresolved recovery must be counted"
     outcome = employer_body.RecoveryOutcome
     expected = {"timeout": outcome.UNAVAILABLE, "unsupported": outcome.UNSUPPORTED,
-                "wrong_id": outcome.WRONG_IDENTITY, "budget": outcome.BUDGET}[failure]
+                "wrong_id": outcome.WRONG_IDENTITY, "wrong_employer": outcome.WRONG_IDENTITY,
+                "budget": outcome.BUDGET}[failure]
     assert typed_counts[expected] == 1
     if failure == "budget":
         assert typed_counts[outcome.UNAVAILABLE] == 1
@@ -346,3 +361,85 @@ def test_each_employer_read_consumes_existing_lane_budget(
     monkeypatch.setattr(GreenhouseProvider, "fetch_posting", fetch)
     runner._run_lanes(engine, settings, insert_run(engine))
     assert len(reads) == 1
+
+
+@pytest.mark.parametrize("lane", ["hiringcafe", "jobapps"])
+def test_short_complete_hiringcafe_body_never_enters_recovery_budget(
+    engine: Engine, settings: Settings, monkeypatch: pytest.MonkeyPatch, lane: str,
+) -> None:
+    from boardwatch.providers.greenhouse import GreenhouseProvider
+    from boardwatch.scan.employer_body import recover_employer_bodies
+    from boardwatch.store.employer_body_queries import STUB_RECOVERY_CHARS
+
+    assert len(normalize_body(EMPLOYER_BODY)) < STUB_RECOVERY_CHARS
+    # hiring.cafe passes the employer API posting verbatim, but attributes the version to
+    # its search URL. Even a lane-first company does not make those bytes aggregator text.
+    with engine.begin() as conn:
+        conn.execute(update(tables.companies).values(source="lane"))
+    apply_board(engine, BoardSnapshot(
+        status="partial", url=("https://hiring.cafe/?searchState=fixture"
+                               if lane == "hiringcafe" else "file:///fixture"),
+        postings=[RawPosting(provider_posting_id="123", title="Backend Engineer",
+                             locations=[], url=EMPLOYER_URL, body_text=EMPLOYER_BODY,
+                             raw_json=({"id": 123} if lane == "hiringcafe" else {
+                                 "jobapps": {"primary_acquisition": "hiringcafe"},
+                             }))],
+    ), 1, insert_run(engine), scan_kind="lane", lane=lane)
+    with engine.connect() as conn:
+        assert not next(iter(current_posting_versions(conn).values())).employer_body_pending
+
+    reads: list[str] = []
+    monkeypatch.setattr(GreenhouseProvider, "fetch_posting",
+                        lambda self, fetcher, slug, ref: reads.append(ref))
+    counts = recover_employer_bodies(engine, settings, insert_run(engine), spent={})
+    assert counts == {}
+    assert reads == []
+    assert run_eligibility(engine, settings).quarantined == 0
+
+
+def test_oracle_stub_is_not_held_and_is_counted_by_provider(
+    engine: Engine, settings: Settings,
+) -> None:
+    from boardwatch.scan.employer_body import (
+        RecoveryOutcome,
+        recover_employer_bodies,
+        recovery_errors,
+    )
+
+    pid = seed(engine)
+    with engine.begin() as conn:
+        conn.execute(update(tables.postings).values(raw_json={"jobapps": {
+            "primary_acquisition": "jobright",
+            "employer_url": "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123",
+        }}))
+    counts = recover_employer_bodies(engine, settings, insert_run(engine), spent={
+        "jobapps": settings.lane_posting_budget,
+    })
+    with engine.connect() as conn:
+        assert not current_posting_versions(conn)[pid].employer_body_pending
+        assert conn.execute(select(tables.quarantined_bodies)).all() == []
+    assert recovery_errors(counts) == ["employer body recovery: unrecoverable_stub[oraclehcm]=1"]
+    assert counts[RecoveryOutcome.UNRECOVERABLE_STUB] == 1
+    assert run_eligibility(engine, settings).evaluated == 1
+
+
+def test_hold_drains_when_provider_loses_recovery_path(
+    engine: Engine, settings: Settings, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from boardwatch.providers.greenhouse import GreenhouseProvider
+    from boardwatch.scan.employer_body import (
+        RecoveryOutcome,
+        recover_employer_bodies,
+        recovery_errors,
+    )
+
+    pid = seed(engine)
+    assert run_eligibility(engine, settings).quarantined == 1
+    monkeypatch.delattr(GreenhouseProvider, "fetch_posting")
+    counts = recover_employer_bodies(engine, settings, insert_run(engine), spent={})
+    with engine.connect() as conn:
+        assert conn.execute(select(tables.quarantined_bodies.c.reopened_at)).scalar_one() is not None
+        assert not current_posting_versions(conn)[pid].employer_body_pending
+    assert recovery_errors(counts) == ["employer body recovery: unrecoverable_stub[greenhouse]=1"]
+    assert counts[RecoveryOutcome.UNRECOVERABLE_STUB] == 1
+    assert run_eligibility(engine, settings).evaluated == 1

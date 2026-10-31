@@ -1,16 +1,19 @@
 """D-659: provisional lane-copy recovery candidates, independent of verdicts."""
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import Connection, func, or_, select, tuple_
 
 from boardwatch.core.normalize import content_hash, normalize_body
 from boardwatch.lanes.dereference import PostingTarget, parse_posting_target
 from boardwatch.lanes.quality import is_employer_body, meets_body_floor
+from boardwatch.providers.base import supports_employer_body_recovery
 from boardwatch.providers.registry import build_providers
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
@@ -23,6 +26,25 @@ from boardwatch.store.tables import (
 
 STUB_RECOVERY_CHARS = 1_000
 EMPLOYER_BODY_PENDING = "employer_body_pending"
+
+
+def _aggregator_body_lane(data: dict[str, Any], source_url: str | None) -> str | None:
+    """Only local jobright/Indeed text and native Indeed's GraphQL description are suspect."""
+    if source_url is None:
+        return None
+    try:
+        source = urlsplit(source_url)
+    except ValueError:
+        return None
+    jobapps = data.get("jobapps")
+    if source.scheme == "file" and isinstance(jobapps, dict) and (
+        jobapps.get("primary_acquisition") in ("jobright", "indeed")
+    ):
+        return "jobapps"
+    host = source.hostname or ""
+    if isinstance(data.get("job"), dict) and (host == "indeed.com" or host.endswith(".indeed.com")):
+        return "indeed"
+    return None
 
 
 def evidenced_url(raw_json: Any, stored_url: str | None) -> str | None:
@@ -86,11 +108,13 @@ class EmployerBodyPending:
 def pending_employer_bodies(
     conn: Connection, version_ids: Sequence[int] | None = None, *,
     posting_id: int | None = None, open_only: bool = True,
+    unrecoverable: Counter[str] | None = None,
 ) -> dict[int, EmployerBodyPending]:
     """Version -> hold; read dynamically so an old ELIGIBLE or absent sweep cannot bypass it.
 
     Without ids, select current open copies for the scheduled drain. Explicit ids are chunked
     for read boundaries and may include closed/historical versions, like current_verdicts.
+    Optionally count unsupported stubs by provider for the run diagnostics, without holding them.
     """
     pv = posting_versions
     source = posting_version_sources
@@ -133,10 +157,22 @@ def pending_employer_bodies(
     else:
         batches = [stmt.where(pv.c.id.in_(chunk)) for chunk in id_chunks(list(version_ids))]
     out: dict[int, EmployerBodyPending] = {}
+    providers = build_providers()
     for batch in batches:
         for row in conn.execute(batch):
             data = row.raw_json if isinstance(row.raw_json, dict) else {}
             body = str(row.body_text)
+            lane = _aggregator_body_lane(data, row.source_url)
+            if lane is None and row.held and row.held_lane in {"jobapps", "indeed"}:
+                jobapps = data.get("jobapps")
+                if isinstance(jobapps, dict) and "primary_acquisition" in jobapps and (
+                    jobapps["primary_acquisition"] not in ("jobright", "indeed")
+                ):
+                    continue
+                # A hold survives missing metadata or a revision with unverified source lineage.
+                lane = str(row.held_lane)
+            if lane is None:
+                continue
             if (
                 not row.held and meets_body_floor(body)
                 and len(normalize_body(body)) >= STUB_RECOVERY_CHARS
@@ -148,12 +184,17 @@ def pending_employer_bodies(
             if verified_source(body, row.source_url, row.source_record_id, row.payload_hash, url):
                 continue
             if url is not None:
-                lane = (
-                    "jobapps" if "jobapps" in data else "indeed" if "job" in data
-                    else "hiringcafe" if "hit" in data else str(row.provider)
-                )
-                if isinstance(row.held_lane, str):
-                    lane = row.held_lane
+                try:
+                    target = parse_posting_target(url)
+                except ValueError:
+                    target = None
+                if target is None or not supports_employer_body_recovery(
+                    providers.get(target.provider)
+                ):
+                    if unrecoverable is not None:
+                        name = target.provider if target is not None else "unparseable_url"
+                        unrecoverable[name] += 1
+                    continue
                 out[int(row.id)] = EmployerBodyPending(
                     int(row.posting_id), int(row.id), url, row.captured_at, lane,
                 )

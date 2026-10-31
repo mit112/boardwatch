@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Scope employer JD holds to recoverable aggregator text (D-659).** Exclude hiring.cafe and
+  native board bodies. Stubs without an implemented employer recovery path remain unheld and
+  are counted by provider; existing holds drain when that support disappears.
+
 - Reviewed the SmartRecruiters and Workable fixture shapes against live boards and extended their review
   deadlines to 2027-01-28 (D-657).
 
