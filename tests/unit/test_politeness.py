@@ -1670,15 +1670,16 @@ def test_tls_is_offered_the_origin_name_not_the_address_connected_to(
     assert offered == ["tls.invalid"], offered
 
 
-def test_over_cap_retry_after_preserves_observed_status(tmp_path: Path) -> None:
+@pytest.mark.parametrize("status", [429, 503])
+def test_over_cap_retry_after_preserves_observed_status(tmp_path: Path, status: int) -> None:
     with respx.mock:
         respx.get("https://slow.example/x").mock(
-            return_value=httpx.Response(429, headers={"Retry-After": "3600"})
+            return_value=httpx.Response(status, headers={"Retry-After": "3600"})
         )
         with pytest.raises(FetchFailure) as caught:
             _fetcher(tmp_path).get("https://slow.example/x")
     assert caught.value.status_code is None
-    assert caught.value.observed_status == 429
+    assert caught.value.observed_status == status
 
 
 def test_transport_failure_has_no_observed_status(tmp_path: Path) -> None:
