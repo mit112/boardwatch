@@ -1253,10 +1253,16 @@ def test_guest_counts_reconcile_and_ignore_other_unknowns(tmp_path: Path) -> Non
 
     engine = _store(tmp_path)
     company = _company(engine, slug="guest-counts", watched=False)
-    ids = [_posting(engine, company, pid=str(i)) for i in range(5)]
+    ids = [_posting(engine, company, pid=str(i)) for i in range(7)]
     observations = dict(zip(ids[:4], [200, 404, 503, None], strict=True))
 
     def probe(posting_id: int, url: str) -> Liveness:
+        if posting_id == ids[4]:
+            return Liveness(posting_id, "alive", "refetch_ok", "HTTP 200",
+                            linkedin_guest=LinkedInGuestObservation(200))
+        if posting_id == ids[5]:
+            return Liveness(posting_id, "dead", "linkedin_closed", "closed card",
+                            linkedin_guest=LinkedInGuestObservation(200))
         if posting_id not in observations:
             return _error(posting_id, url)
         return Liveness(posting_id, "unknown", "refetch_error", "HTTP 404",
@@ -1264,7 +1270,7 @@ def test_guest_counts_reconcile_and_ignore_other_unknowns(tmp_path: Path) -> Non
 
     report = _sweep(engine, probe, linkedin_can_close=True)
     block = death_probe_to_dict(report)["linkedin_guest"]
-    assert block == {"attempted": 4, "http_200": 1, "http_404": 1,
+    assert block == {"attempted": 6, "http_200": 3, "http_404": 1,
                      "other_non_200": 1, "no_response": 1}
     assert sum(block[key] for key in ("http_200", "http_404", "other_non_200", "no_response")) == block["attempted"]
 
