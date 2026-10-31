@@ -8,6 +8,7 @@ from sqlalchemy import Engine, select, update
 
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import normalize_body
+from boardwatch.core.posting_identity import compute_identities
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.facts import Facts, Policy
@@ -17,6 +18,7 @@ from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.lanes.quality import MIN_BODY_LINES, meets_body_floor
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
+from boardwatch.store.identity_queries import load_identities, load_identity_inputs
 from boardwatch.store.queries import current_posting_versions, insert_run
 from tests.pipeline import test_body_quarantine_drain as fixtures
 
@@ -169,7 +171,10 @@ def test_next_run_recovers_standing_copy_and_judges_employer_jd(
     runner._run_lanes(engine, settings, insert_run(engine))
     with engine.connect() as conn:
         current = current_posting_versions(conn)[pid]
+        inputs, = load_identity_inputs(conn, [pid])
+        stored = load_identities(conn, [pid])[pid]
     assert current.body_text == EMPLOYER_BODY
+    assert set(stored) == set(compute_identities(inputs))
     assert calls == ["123"]
     stats = run_eligibility(engine, settings)
     assert stats.quarantined == 0
