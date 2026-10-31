@@ -46,6 +46,10 @@ from boardwatch.lanes.quality import (
     is_employer_body,
     require_employer_body,
 )
+from boardwatch.store.employer_body_queries import (
+    EMPLOYER_BODY_PENDING,
+    pending_employer_bodies,
+)
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
     body_precondition_checks,
@@ -185,6 +189,8 @@ def drain_quarantine(conn: Connection, *, now: datetime) -> int:
         select(
             quarantined_bodies.c.posting_version_id,
             posting_versions.c.body_text,
+            quarantined_bodies.c.markers_json,
+            quarantined_bodies.c.posting_id,
             newer.label("superseded"),
         )
         .join(
@@ -193,10 +199,16 @@ def drain_quarantine(conn: Connection, *, now: datetime) -> int:
         )
         .where(quarantined_bodies.c.reopened_at.is_(None))
     ).all()
+    pending = pending_employer_bodies(conn, open_only=False)
+    pending_postings = {item.posting_id for item in pending.values()}
     releasable = [
         int(row.posting_version_id)
         for row in held
-        if bool(row.superseded) or is_employer_body(str(row.body_text))
+        if (
+            int(row.posting_id) not in pending_postings
+            if EMPLOYER_BODY_PENDING in (row.markers_json or ())
+            else bool(row.superseded) or is_employer_body(str(row.body_text))
+        )
     ]
     if not releasable:
         return 0
@@ -290,7 +302,21 @@ def sweep_bodies(conn: Connection, *, now: datetime, run_id: int | None = None) 
     and a later catalog edit is what re-opens it — never an unrelated profile or rules change.
     """
     held = 0
+    pending = pending_employer_bodies(conn)
+    live = live_quarantine(conn)
+    for item in pending.values():
+        if EMPLOYER_BODY_PENDING not in live.get(item.posting_version_id, ()):
+            record_quarantine(
+                conn, posting_version_id=item.posting_version_id, posting_id=item.posting_id,
+                markers=[EMPLOYER_BODY_PENDING, item.employer_url, item.lane],
+                now=now, run_id=run_id,
+            )
+            if item.posting_version_id not in live:
+                held += 1
     for posting_version_id, posting_id, body_text in unchecked_current_versions(conn):
+        if posting_version_id in pending:
+            record_check(conn, posting_version_id, now=now)
+            continue
         try:
             require_employer_body(body_text)
         except ForeignBodyText as violation:
@@ -325,8 +351,19 @@ def withhold_foreign_versions(
     Failures are recorded, not merely dropped — the bucket has to be listable — and the caller
     keeps running: one refused body must not fail a whole gate invocation.
     """
+    pending = pending_employer_bodies(conn, [v.posting_version_id for v in versions.values()])
+    live = live_quarantine(conn)
     kept: dict[int, _V] = {}
     for posting_id, current in versions.items():
+        if current.posting_version_id in pending:
+            if EMPLOYER_BODY_PENDING not in live.get(current.posting_version_id, ()):
+                item = pending[current.posting_version_id]
+                record_quarantine(
+                    conn, posting_version_id=current.posting_version_id, posting_id=posting_id,
+                    markers=[EMPLOYER_BODY_PENDING, item.employer_url, item.lane],
+                    now=now, run_id=run_id,
+                )
+            continue
         try:
             require_employer_body(current.body_text)
         except ForeignBodyText as violation:

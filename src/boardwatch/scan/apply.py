@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, insert, select, update
+from sqlalchemy import Connection, Engine, func, insert, select, tuple_, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
@@ -38,6 +38,7 @@ from boardwatch.core.models import BoardSnapshot, RawPosting, SecondhandField
 from boardwatch.core.normalize import content_hash, normalize_title
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.db import write_connection
+from boardwatch.store.employer_body_queries import evidenced_url, verified_source
 from boardwatch.store.events import append_event
 from boardwatch.store.identity_queries import write_identities
 from boardwatch.store.sources import record_version_source
@@ -46,6 +47,7 @@ from boardwatch.store.tables import (
     companies,
     http_cache,
     jobs,
+    posting_version_sources,
     posting_versions,
     postings,
 )
@@ -224,9 +226,45 @@ def _apply_listed(
     company_name = str(
         conn.execute(select(companies.c.name).where(companies.c.id == company_id)).scalar_one()
     )
+    latest = posting_versions.alias("overwrite_newer")
+    recovered = {
+        int(r.posting_id) for r in conn.execute(
+            select(posting_versions.c.posting_id, posting_versions.c.body_text,
+                   postings.c.raw_json, postings.c.url,
+                   posting_version_sources.c.source_url, posting_version_sources.c.source_record_id,
+                   posting_version_sources.c.payload_hash)
+            .join(posting_version_sources,
+                  posting_version_sources.c.posting_version_id == posting_versions.c.id)
+            .join(postings, postings.c.id == posting_versions.c.posting_id)
+            .where(postings.c.company_id == company_id,
+                   postings.c.content_hash == posting_versions.c.content_hash,
+                   ~select(latest.c.id).where(
+                       latest.c.posting_id == posting_versions.c.posting_id,
+                       tuple_(latest.c.captured_at, latest.c.id)
+                       > tuple_(posting_versions.c.captured_at, posting_versions.c.id),
+                   ).exists())
+        ) if verified_source(
+            str(r.body_text), r.source_url, r.source_record_id, r.payload_hash,
+            evidenced_url(r.raw_json, r.url),
+        )
+    }
     for raw in raw_postings:
-        new_hash = content_hash(raw.body_text)
         row = existing.get(raw.provider_posting_id)
+        if row is not None and isinstance(row.raw_json, dict):
+            old = row.raw_json.get("jobapps")
+            incoming = raw.raw_json.get("jobapps")
+            if isinstance(old, dict) and isinstance(incoming, dict) and (
+                isinstance(old.get("employer_url"), str)
+                and not isinstance(incoming.get("employer_url"), str)
+            ):
+                raw = raw.model_copy(update={"raw_json": {
+                    **raw.raw_json, "jobapps": {**incoming, "employer_url": old["employer_url"]},
+                }})
+        if row is not None and int(row.id) in recovered and isinstance(raw.raw_json, dict) and any(
+            key in raw.raw_json for key in ("jobapps", "job", "hit")
+        ):
+            raw = raw.model_copy(update={"secondhand": raw.secondhand | {"body_text"}})
+        new_hash = content_hash(raw.body_text)
         if row is None:
             job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])  # type: ignore[index]
             fields = _inserted_fields(raw, now)

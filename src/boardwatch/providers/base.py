@@ -175,3 +175,10 @@ def posting_refetcher(provider: Provider) -> PostingRefetcher:
     if not isinstance(provider, PostingRefetcher):
         raise RefetchUnsupported(f"provider {provider.name!r} has no per-posting refetch")
     return provider
+
+
+def supports_employer_body_recovery(provider: Provider | None) -> bool:
+    """D-659 hold/read contract: per-posting refetch or the implemented one-board fallback."""
+    return provider is not None and (
+        callable(getattr(provider, "fetch_posting", None)) or provider.name in {"lever", "workable"}
+    )

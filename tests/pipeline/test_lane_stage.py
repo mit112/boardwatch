@@ -1459,6 +1459,15 @@ def test_a_clean_apply_with_a_broken_seed_drain_is_labelled_persistence_not_appl
 
 def _jobapps_tree(root: Path, *, count: int = 2) -> Path:
     """A minimal job-apps discovery tree, shaped as the live one is."""
+    from boardwatch.lanes.quality import MIN_BODY_LINES, meets_body_floor
+    from boardwatch.store.employer_body_queries import STUB_RECOVERY_CHARS
+
+    # This ingestion fixture represents complete JDs; D-659 separately exercises short-copy
+    # recovery with mocked employer reads. Derive its size from the live recovery threshold.
+    line = "Design and maintain backend services in Python.\n"
+    body = "Requirements\n" + line * max(MIN_BODY_LINES, STUB_RECOVERY_CHARS // len(line) + 2)
+    assert meets_body_floor(body)
+    assert len(" ".join(body.split())) >= STUB_RECOVERY_CHARS
     rule = "=" * 80
     marker = f"{rule}\nJOB DESCRIPTION\n{rule}"
     for index in range(count):
@@ -1482,7 +1491,7 @@ def _jobapps_tree(root: Path, *, count: int = 2) -> Path:
             encoding="utf-8",
         )
         (folder / "job_description.txt").write_text(
-            f"Company:  Acme\nFit:      40/100\n{marker}\n\nWe need a backend engineer.\n",
+            f"Company:  Acme\nFit:      40/100\n{marker}\n\n{body}",
             encoding="utf-8",
         )
     return root

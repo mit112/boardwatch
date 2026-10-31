@@ -23,6 +23,7 @@ from boardwatch.eligibility.final_gate import (
     gate_facts_key,
 )
 from boardwatch.eligibility.oracle import is_allowed_reason
+from boardwatch.store.employer_body_queries import pending_employer_bodies
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import (
     eligibility_evaluations,
@@ -100,8 +101,9 @@ def current_verdicts(
         return {}
     evals = current_evaluations_chunked(conn, posting_version_ids, profile_hash, rules_hash)
     version_to_posting = _posting_by_version(conn, posting_version_ids)
+    held = pending_employer_bodies(conn, posting_version_ids)
     return {
-        version_to_posting[vid]: (evals.get(vid) or (None, None))[1]
+        version_to_posting[vid]: "uncertain" if vid in held else (evals.get(vid) or (None, None))[1]
         for vid in posting_version_ids
         if vid in version_to_posting
     }
@@ -242,6 +244,8 @@ def current_requirement_flags(
         posting_id = version_to_posting.get(vid)
         if eval_id not in with_rows and posting_id is not None:
             out[posting_id] = RequirementFlags(no_requirement_rows=True)
+    for item in pending_employer_bodies(conn, posting_version_ids).values():
+        out[item.posting_id] = RequirementFlags(eligibility_unconfirmed=True)
     return out
 
 
@@ -483,6 +487,8 @@ def current_gate_verdicts(
         ):
             verdict = "uncertain"
         out[posting_id] = verdict
+    for item in pending_employer_bodies(conn, posting_version_ids).values():
+        out[item.posting_id] = "uncertain"
     return out
 
 
