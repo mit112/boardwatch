@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Reviewed the SmartRecruiters and Workable fixture shapes against live boards and extended their review
+  deadlines to 2027-01-28 (D-657).
+
 ### Added
 
 - **A degree stated as a bare qualification line is now read.** "Bachelor's degree in Computer

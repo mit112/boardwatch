@@ -137,13 +137,19 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "smartrecruiters": FixtureProvenance(
         captured=date(2026, 8, 1),
-        review_by=date(2026, 10, 30),
+        review_by=date(2027, 1, 28),
         readme_pin="sha256:ce749351be812b2358411a618226397c6971ec003a3ccfc8b162fea7c2eda3b8",
+        extensions=(
+            Extension(on=date(2026, 10, 30), reason="Live shape reviewed 2026-10-30"),
+        ),
     ),
     "workable": FixtureProvenance(
         captured=date(2026, 8, 1),
-        review_by=date(2026, 10, 30),
+        review_by=date(2027, 1, 28),
         readme_pin="sha256:7da2fa0bc2c002798ce0eee0843f3699bab3cef964b8d2fed727bd87cab6e008",
+        extensions=(
+            Extension(on=date(2026, 10, 30), reason="Live shape reviewed 2026-10-30"),
+        ),
     ),
     "oraclehcm": FixtureProvenance(
         captured=date(2026, 9, 6),
