@@ -980,6 +980,22 @@ def _apply_lanes(
     return reports, errors
 
 
+def _recover_lane_bodies(
+    engine: Engine, settings: Settings, run_id: int, reports: Sequence[LaneReport],
+) -> list[str]:
+    from boardwatch.scan.employer_body import recover_employer_bodies, recovery_errors
+
+    # If a discovery lane failed before returning its tally, reserve its entire cap.
+    spent = {name: settings.lane_posting_budget for name in settings.lanes_enabled
+             if name not in {"jobapps", "indeed"}}
+    for report in reports:
+        free = {"not_attemptable", "dangling_group_link", "unreadable_group"}
+        if report.name in {"jobapps", "indeed"}:
+            free.add("body_inline")
+        spent[report.name] = sum(value for name, value in report.counts.items() if name not in free)
+    return recovery_errors(recover_employer_bodies(engine, settings, run_id, spent=spent))
+
+
 def _run_lanes(
     engine: Engine, settings: Settings, run_id: int
 ) -> tuple[list[LaneReport], list[str]]:
@@ -992,7 +1008,8 @@ def _run_lanes(
     """
     fetches, errors = _fetch_lanes(engine, settings, run_id)
     reports, apply_errors = _apply_lanes(engine, run_id, fetches)
-    return reports, [*errors, *apply_errors]
+    recovery = _recover_lane_bodies(engine, settings, run_id, reports)
+    return reports, [*errors, *apply_errors, *recovery]
 
 
 def _fetch_lanes_stage(
@@ -2523,6 +2540,8 @@ def _run_pipeline_leased(
                 console.print("[bold]lanes[/bold]")
             lane_reports, lane_errors = _run_lanes(engine, settings, run_id)
             lane_elapsed = None
+        if not skip_scan:
+            lane_errors.extend(_recover_lane_bodies(engine, settings, run_id, lane_reports))
         summary.lanes.extend(
             replace(report, stage_elapsed_seconds=lane_elapsed) for report in lane_reports
         )

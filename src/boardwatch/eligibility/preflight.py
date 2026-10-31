@@ -346,7 +346,8 @@ def run_eligibility(
     )
     if withheld:
         console.print(
-            f"withheld {withheld} body(ies) from the rules: not the employer's own text"
+            f"withheld {withheld} body(ies) from the rules: "
+            "awaiting verified employer body evidence"
         )
     if not pending:
         return stats

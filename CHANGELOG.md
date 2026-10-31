@@ -13,6 +13,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Employer JD recovery for short lane copies (D-659).** Hold short or incomplete aggregator
+  copies with employer URL evidence out of eligibility, including prior clearances. Each run
+  retries pending copies within the existing lane posting budget, verifies the employer posting,
+  and freezes its JD without changing the stored copy's key. Local re-ingestion keeps recovered
+  bodies and employer evidence. Failed or deferred recovery stays unresolved and is counted.
+
 - **LinkedIn guest response counts in the death probe.** The run report counts HTTP 200, 404,
   other responses, and requests without a response; these counts do not change closing verdicts.
 

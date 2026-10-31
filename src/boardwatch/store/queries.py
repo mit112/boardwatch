@@ -911,6 +911,7 @@ class CurrentVersion:
     posting_id: int
     body_text: str
     captured_at: datetime
+    employer_body_pending: bool = False
 
 
 def canonical_job_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
@@ -1088,14 +1089,19 @@ def current_posting_versions(
         .where(_is_current_version())
     )
     def rows_of(selectable: Select[Any]) -> dict[int, CurrentVersion]:
+        from boardwatch.store.employer_body_queries import pending_employer_bodies
+
+        rows = conn.execute(selectable).all()
+        held = pending_employer_bodies(conn, [int(row.posting_version_id) for row in rows])
         return {
             int(row.posting_id): CurrentVersion(
                 posting_version_id=int(row.posting_version_id),
                 posting_id=int(row.posting_id),
                 body_text=str(row.body_text),
                 captured_at=row.captured_at,
+                employer_body_pending=int(row.posting_version_id) in held,
             )
-            for row in conn.execute(selectable).all()
+            for row in rows
         }
 
     if posting_ids is None:

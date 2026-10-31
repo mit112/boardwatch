@@ -86,6 +86,7 @@ def build_gate_request(
         # This function is pure and cannot record the refusal; `apply_gate_verdicts` and the
         # preflight sweep both do, so the bucket is never short.
         and is_employer_body(versions[posting.posting_id].body_text)
+        and not versions[posting.posting_id].employer_body_pending
     ]
     return build_label_request(rows, catalog, request_id=request_id, target_band=target_band)
 
