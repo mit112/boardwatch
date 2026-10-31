@@ -16,6 +16,11 @@ All notable changes to this project are documented here. The format follows
 - **LinkedIn guest response counts in the death probe.** The run report counts HTTP 200, 404,
   other responses, and requests without a response; these counts do not change closing verdicts.
 
+- **Run-tail timing in the log and summary (D-656).** Form sweep, funnel emission, queue sync,
+  soft detectors, morning emission, heartbeat and escalation each print their UTC end time
+  and elapsed seconds. The returned summary includes these durations; the funnel keeps its
+  existing pre-tail snapshot. A final UTC command-end line follows the CLI's summary and errors.
+
 - **A degree stated as a bare qualification line is now read.** "Bachelor's degree in Computer
   Science, Software Engineering, or a related field." under a Qualifications heading wrote no
   eligibility row, because every field-naming degree rule needed "required" (or similar) in the

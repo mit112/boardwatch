@@ -14,6 +14,7 @@ from rich.console import Console
 
 from boardwatch.cli._hints import print_next_step
 from boardwatch.cli.context import build_context
+from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT
 from boardwatch.pipeline.death_probe import build_listing_prober
@@ -301,4 +302,8 @@ def run(
     # exit status as a signal. Both are still counted, printed and persisted above.
     if summary.fatal is not None:
         console.print(f"run {summary.run_id} FAILED: {summary.fatal}", markup=False)
+    console.print(
+        f"run {summary.run_id} command end → {utcnow().isoformat()} UTC", markup=False
+    )
+    if summary.fatal is not None:
         raise typer.Exit(code=1)

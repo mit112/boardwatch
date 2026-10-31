@@ -1469,6 +1469,13 @@ def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
         "gate",
         "tailor",
         "finalize",
+        "form_sweep",
+        "funnel",
+        "queue_sync",
+        "soft_detectors",
+        "morning",
+        "heartbeat",
+        "escalation",
     ]
     assert all(stage.seconds >= 0 for stage in summary.stage_durations)
     total = sum(stage.seconds for stage in summary.stage_durations)
@@ -1483,8 +1490,8 @@ def test_the_funnel_accounts_for_the_whole_run_STAGE_BY_STAGE(  # noqa: N802
     # rather than compared with a tolerance nobody could justify.
     assert payload["stage_durations"] == [
         {"name": stage.name, "seconds": round(stage.seconds, 3)}
-        for stage in summary.stage_durations
-    ], "the artifact and the summary disagree about what the run cost"
+        for stage in summary.stage_durations[:9]
+    ], "D-343: the artifact retains the timing snapshot through finalize"
 
 
 # Long enough to dominate the rounding the funnel writer applies (3dp) and short enough not to

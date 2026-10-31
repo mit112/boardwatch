@@ -687,11 +687,17 @@ class _StageClock:
         self._last = perf_counter()
         self.durations: list[StageDuration] = []
 
-    def mark(self, name: str) -> None:
+    def mark(self, name: str, *, console: Console | None = None) -> None:
         """Close the stage that just ended. `name` names the work BEHIND this boundary."""
         now = perf_counter()
-        self.durations.append(StageDuration(name=name, seconds=now - self._last))
+        duration = StageDuration(name=name, seconds=now - self._last)
+        self.durations.append(duration)
         self._last = now
+        if console is not None:
+            console.print(
+                f"  tail {name} → {utcnow().isoformat()} UTC · {duration.seconds:.3f}s",
+                markup=False,
+            )
 
 
 def _lane_fetcher(settings: Settings) -> Fetcher:
@@ -3358,7 +3364,7 @@ def _run_pipeline_leased(
         # this returns None and the renderers say so, where an escaping exception would take
         # the whole funnel down with it through the except below.
         summary.board_coverage = _load_board_coverage(engine, run_id, console)
-        # LAST mark, and inside the `finally` so it fires on the crash and early-return paths
+        # Last FUNNEL mark, inside the `finally` so it fires on crash and early-return paths
         # too — those are exactly the runs whose cost breakdown is worth having. On a clean run
         # it covers `finish_run` and the coverage load above and nothing else: the late guards
         # sit BEFORE `clock.mark("tailor")` and are charged there. On an aborting run it also
@@ -3387,11 +3393,9 @@ def _run_pipeline_leased(
         # the next one. The two connections are sequential, never concurrent, so nothing here
         # contends with the queue for the store.
         #
-        # Still AFTER `clock.mark("finalize")` and after the durations are snapshotted, which
-        # leaves the sweep's network cost outside the stage clock exactly as it was before this
-        # moved. That is not an oversight to correct in this change: charging it to a stage now
-        # would make every run's timing incomparable with every run before it, and the sweep has
-        # its own budget (`form_question_fetch_budget`) as its cost control.
+        # D-656: the clock continues through the tail, logging each boundary. Keep the funnel's
+        # D-343 snapshot above unchanged; copy the complete durations to the summary only after
+        # escalation, so no tail cost leaks into the artifact's historical timing contract.
         try:
             with engine.connect() as conn:
                 summary.form_questions = _sweep_form_questions(
@@ -3417,6 +3421,7 @@ def _run_pipeline_leased(
                 f"{summary.form_questions.budget_refused} refused by budget",
                 markup=False,
             )
+        clock.mark("form_sweep", console=console)
         try:
             summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -3431,6 +3436,7 @@ def _run_pipeline_leased(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+        clock.mark("funnel", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
         # file the owner actually reads. The queue holds COPIES of what the run already
@@ -3477,6 +3483,7 @@ def _run_pipeline_leased(
             # Durable, like the funnel and morning handlers: this runs after `finish_run`,
             # so `summary.errors` alone never reaches `runs.errors_json` (D-287).
             append_run_error(engine, run_id, note)
+        clock.mark("queue_sync", console=console)
         # F4 intake-death detector. The heartbeat below fires on any clean outcome, so a
         # run that scans fine but finds NOTHING new — a dead fleet, a silent fetch
         # regression — pages nobody. This reads the per-run net-new count the scan already
@@ -3844,6 +3851,7 @@ def _run_pipeline_leased(
         # funnel for the original reason too: it links to `funnel-<run_id>.md` by NAME rather
         # than by the WrittenArtifact above, so it renders that link even when the funnel itself
         # failed to write (the name is deterministic from run_id either way).
+        clock.mark("soft_detectors", console=console)
         try:
             summary.morning = _emit_morning(engine, settings, summary, day_dir)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -3857,6 +3865,7 @@ def _run_pipeline_leased(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+        clock.mark("morning", console=console)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
         # and the external monitor still alerts. Gated on `fatal`, not on reaching a return —
@@ -3935,6 +3944,7 @@ def _run_pipeline_leased(
                     append_run_error(engine, run_id, heartbeat_alert)
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 console.print(f"  ! heartbeat not sent: {exc}", markup=False)
+        clock.mark("heartbeat", console=console)
         # Escalation, and it belongs HERE — below `_emit_morning` and below the heartbeat gate —
         # which is the one place in this block that is NOT a mistake. The rule the digest imposes
         # ("a soft alert belongs ABOVE `_emit_morning`") is about where an alert is RAISED. This
@@ -3977,6 +3987,8 @@ def _run_pipeline_leased(
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
+        clock.mark("escalation", console=console)
+        summary.stage_durations = list(clock.durations)
 
 
 def _finish_run_with_one_retry(
