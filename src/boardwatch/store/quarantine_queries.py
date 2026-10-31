@@ -199,7 +199,7 @@ def drain_quarantine(conn: Connection, *, now: datetime) -> int:
         )
         .where(quarantined_bodies.c.reopened_at.is_(None))
     ).all()
-    pending = pending_employer_bodies(conn, open_only=False)
+    pending = pending_employer_bodies(conn, open_only=False, held_only=True)
     pending_postings = {item.posting_id for item in pending.values()}
     releasable = [
         int(row.posting_version_id)

@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Bound employer JD recovery reads to aggregator candidates and active holds (D-659),
+  selecting candidate posting ids before indexed current-version lookups. The quarantine
+  drain checks only postings already held, including closed copies.
+
 - **Scope employer JD holds to recoverable aggregator text (D-659).** Exclude hiring.cafe and
   native board bodies. Stubs without an implemented employer recovery path remain unheld and
   are counted by provider; existing holds drain when that support disappears.

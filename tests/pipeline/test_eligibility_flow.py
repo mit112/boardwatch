@@ -305,12 +305,19 @@ def test_selection_is_one_query_and_does_not_scale_with_corpus(
     # anti-join scans it exactly once regardless of corpus size. Counting is the only
     # check that discriminates, because an N+1 also "runs eligibility".
     #
-    # THREE such reads since the lane-body precondition shipped (D-406), and the count is the
-    # point: the selection anti-join, the quarantine drain (bounded by the BUCKET), and the
-    # body sweep (bounded by the versions the current detector has not judged yet, which is the
-    # whole corpus once and nothing thereafter). None is per-posting, which is exactly what the
-    # equality asserts — an N+1 in any of the three shows up as 20 against 200, never 3 against 3.
-    assert small_scans == large_scans == 3
+    # FIVE reads after D-659; the count is the point. Each has a separate bound:
+    # 1. Selection anti-join: current open versions without a current-identity evaluation.
+    # 2. Quarantine drain: versions in the active BUCKET.
+    # 3. Drain recovery check: current versions of postings with an active employer-body hold,
+    #    including closed postings; candidate ids are materialized from the BUCKET first.
+    # 4. Body sweep: current open versions not checked by the current detector fingerprint
+    #    (the whole corpus once per detector change, then only new versions).
+    # 5. Stub detector: current open versions whose company provider is jobapps/indeed, whose
+    #    metadata carries jobapps/Indeed acquisition evidence (also on native companies), or
+    #    whose posting has an active employer-body hold. Materialize posting ids BEFORE
+    #    indexed current-version seeks; never walk the immutable version corpus.
+    # None is per-posting: an N+1 shows up as 20 against 200, never 5 against 5.
+    assert small_scans == large_scans == 5
 
 
 def test_a_fact_change_re_evaluates_and_updates_the_verdict(env: Path) -> None:

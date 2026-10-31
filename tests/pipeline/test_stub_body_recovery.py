@@ -4,7 +4,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import Engine, select, update
+from sqlalchemy import Engine, event, select, update
 
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.core.normalize import normalize_body
@@ -57,6 +57,47 @@ def seed(
         return int(conn.execute(select(tables.postings.c.id).where(
             tables.postings.c.provider_posting_id == "jobapps-stable"
         )).scalar_one())
+
+
+@pytest.mark.parametrize("phase", ["sweep", "drain"])
+def test_recovery_reads_only_relevant_current_bodies(engine: Engine, phase: str) -> None:
+    from boardwatch.core.clock import utcnow
+    from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
+
+    seed(engine)
+    # Lane acquisition can converge on a native provider company. Keep its jobapps
+    # evidence, but do not read every other body just because that company is lane-first.
+    with engine.begin() as conn:
+        conn.execute(update(tables.companies).values(source="lane"))
+    unrelated, _ = fixtures._seed(engine, "native", fixtures.CLEAN_BODY)
+    fixtures._append_version(engine, unrelated, fixtures.CLEAN_BODY + "Python APIs.\n")
+    reads = []
+
+    def record(conn, cursor, statement, params, context, executemany):  # noqa: ANN001, ANN202
+        if statement.lstrip().upper().startswith("SELECT") and " AS held_url" in statement:
+            reads.append((statement, params))
+
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        with engine.begin() as conn:
+            if phase == "sweep":
+                assert sweep_bodies(conn, now=utcnow()) == 1
+            else:
+                assert drain_quarantine(conn, now=utcnow()) == 0
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+    assert len(reads) == 1
+    statement, params = reads[0]
+    with engine.connect() as conn:
+        rows = conn.exec_driver_sql(statement, params).all()
+        plan = conn.exec_driver_sql("EXPLAIN QUERY PLAN " + statement, params).all()
+    assert len(rows) == (1 if phase == "sweep" else 0), "recovery read exceeded its candidate scope"
+    assert not any("SCAN posting_versions" in row[3] for row in plan), plan
+    # Filtering after a primary-key seek still visits the entire version corpus.
+    # Materialize the candidate ids before touching any immutable body bytes.
+    materialized = next((i for i, row in enumerate(plan) if "MATERIALIZE" in row[3]), None)
+    version_read = next(i for i, row in enumerate(plan) if "SEARCH posting_versions" in row[3])
+    assert materialized is not None and materialized < version_read, plan
 
 
 @pytest.mark.parametrize("origin", ["jobapps", "indeed", "stored_url"])

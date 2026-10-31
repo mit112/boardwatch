@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-from sqlalchemy import Connection, func, or_, select, tuple_
+from sqlalchemy import Connection, func, or_, select
 
 from boardwatch.core.normalize import content_hash, normalize_body
 from boardwatch.lanes.dereference import PostingTarget, parse_posting_target
@@ -109,27 +109,35 @@ def pending_employer_bodies(
     conn: Connection, version_ids: Sequence[int] | None = None, *,
     posting_id: int | None = None, open_only: bool = True,
     unrecoverable: Counter[str] | None = None,
+    held_only: bool = False,
 ) -> dict[int, EmployerBodyPending]:
     """Version -> hold; read dynamically so an old ELIGIBLE or absent sweep cannot bypass it.
 
     Without ids, select current open copies for the scheduled drain. Explicit ids are chunked
     for read boundaries and may include closed/historical versions, like current_verdicts.
     Optionally count unsupported stubs by provider for the run diagnostics, without holding them.
+    The drain uses held_only to visit just postings with an active employer-body hold.
     """
     pv = posting_versions
     source = posting_version_sources
     held_scope = (
-        quarantined_bodies.c.posting_id == pv.c.posting_id,
+        quarantined_bodies.c.posting_id == postings.c.id,
         quarantined_bodies.c.reopened_at.is_(None),
         func.json_extract(quarantined_bodies.c.markers_json, "$[0]") == EMPLOYER_BODY_PENDING,
     )
-    held = select(quarantined_bodies.c.posting_version_id).where(*held_scope).exists()
+    held = select(quarantined_bodies.c.posting_version_id).where(
+        *held_scope
+    ).correlate(postings).exists()
     held_url = select(func.json_extract(quarantined_bodies.c.markers_json, "$[1]")).where(
         *held_scope
-    ).order_by(quarantined_bodies.c.quarantined_at.desc()).limit(1).scalar_subquery()
+    ).order_by(quarantined_bodies.c.quarantined_at.desc()).limit(1).correlate(postings).scalar_subquery()
     held_lane = select(func.json_extract(quarantined_bodies.c.markers_json, "$[2]")).where(
         *held_scope
-    ).order_by(quarantined_bodies.c.quarantined_at.desc()).limit(1).scalar_subquery()
+    ).order_by(quarantined_bodies.c.quarantined_at.desc()).limit(1).correlate(postings).scalar_subquery()
+    candidate = or_(companies.c.provider.in_(("jobapps", "indeed")), held, *(
+        func.json_type(postings.c.raw_json, f"$.{key}") == "object"
+        for key in ("jobapps", "job")
+    ))
     stmt = (
         select(pv.c.id, pv.c.posting_id, pv.c.body_text, pv.c.captured_at,
                postings.c.raw_json, postings.c.url, companies.c.source, companies.c.provider,
@@ -138,21 +146,38 @@ def pending_employer_bodies(
         .join(postings, postings.c.id == pv.c.posting_id)
         .join(companies, companies.c.id == postings.c.company_id)
         .outerjoin(source, source.c.posting_version_id == pv.c.id)
-        .where(or_(companies.c.source == "lane", held, *(
-            func.json_type(postings.c.raw_json, f"$.{key}") == "object"
-            for key in ("jobapps", "job", "hit")
-        )))
     )
+    if held_only:
+        held_postings = select(quarantined_bodies.c.posting_id).where(
+            quarantined_bodies.c.reopened_at.is_(None),
+            func.json_extract(quarantined_bodies.c.markers_json, "$[0]") == EMPLOYER_BODY_PENDING,
+        ).distinct().subquery()
+        stmt = stmt.join(held_postings, held_postings.c.posting_id == postings.c.id)
+    elif version_ids is None and posting_id is None:
+        # DISTINCT prevents SQLite from flattening this scope and seeking a version for
+        # every posting before testing its acquisition evidence. Native-provider companies
+        # can also carry jobapps/Indeed copies, so provider alone is not a sufficient bound.
+        candidates = select(postings.c.id).join(
+            companies, companies.c.id == postings.c.company_id,
+        ).where(candidate)
+        if open_only:
+            candidates = candidates.where(postings.c.status == "open")
+        scoped = candidates.distinct().subquery()
+        stmt = stmt.join(scoped, scoped.c.id == postings.c.id)
+    else:
+        stmt = stmt.where(candidate)
     if posting_id is not None:
         stmt = stmt.where(postings.c.id == posting_id)
     if version_ids is None:
         newer = pv.alias("employer_body_newer")
         if open_only:
             stmt = stmt.where(postings.c.status == "open")
-        stmt = stmt.where(~select(newer.c.id).where(
-            newer.c.posting_id == pv.c.posting_id,
-            tuple_(newer.c.captured_at, newer.c.id) > tuple_(pv.c.captured_at, pv.c.id),
-        ).exists())
+        # Seek one current version through ix_posting_versions_posting_captured;
+        # do not scan the immutable version history to discard every superseded body.
+        latest = select(newer.c.id).where(
+            newer.c.posting_id == postings.c.id,
+        ).order_by(newer.c.captured_at.desc(), newer.c.id.desc()).limit(1).correlate(postings)
+        stmt = stmt.where(pv.c.id == latest.scalar_subquery())
         batches = [stmt]
     else:
         batches = [stmt.where(pv.c.id.in_(chunk)) for chunk in id_chunks(list(version_ids))]
