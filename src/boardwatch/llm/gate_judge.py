@@ -25,6 +25,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol, TypeVar
 
+from rich.console import Console
 from sqlalchemy import Connection, Engine
 
 from boardwatch.core.settings import Settings
@@ -46,6 +47,7 @@ from boardwatch.eligibility.read import (
     newest_gate_verdicts,
 )
 from boardwatch.llm.codex_gate import call_codex as _call_codex
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.store.queries import (
     CurrentVersion,
     current_posting_versions,
@@ -484,6 +486,7 @@ def run_gate_stage(
     *,
     run_id: int | None,
     shortlist_ranks: Mapping[int, int] | None = None,
+    console: Console | None = None,
 ) -> tuple[list[_T], GateStageResult]:
     """The whole stage: filter to leads that still need judging, judge them in batches,
     persist through the existing handshake, and hand back the slate minus anything this run
@@ -573,10 +576,12 @@ def run_gate_stage(
     seniority: list[str] = []
     errors: list[str] = []
     batches = _chunks(items, max(1, settings.gate.batch_size))
+    progress = StageProgress("gate request items", len(items), console=console)
     for index, batch in enumerate(batches):
         batch_verdicts, note, batch_seniority = _judge_batch(
             batch, judging_policy, settings, seniority_asked=seniority_asked
         )
+        progress.advance(len(batch))  # requests attempted, including failed-open batches
         # Derived rather than reported back out of the parser, which already guarantees the
         # arithmetic: no verdict names a label the batch did not carry and no label is answered
         # twice, so the shortfall IS the count of labels nobody answered. A failed batch
@@ -611,6 +616,7 @@ def run_gate_stage(
         errors=tuple(errors),
     )
     if not verdicts:
+        progress.finish()
         return leads, coverage
 
     with engine.begin() as write_conn:
@@ -621,6 +627,7 @@ def run_gate_stage(
             model=settings.gate.model,
             effort=gate_effort_key(settings.gate.effort), target_band=request["target_band"],
         )
+    progress.finish()
     eligible_count, uncertain_count = _tally_eligible_and_uncertain(verdicts, versions, catalog)
     excluded_ids = tuple(int(label) for label in result.demoted_labels)
     filtered = [p for p in leads if p.posting_id not in excluded_ids]
@@ -685,7 +692,8 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
 
 
 def run_gate_refresh(
-    engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None
+    engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None,
+    console: Console | None = None,
 ) -> GateRefreshResult:
     """T113: re-judge up to `gate.refresh_budget` of `leads` — the standing queue, in the order
     the caller wants them healed, released holds first (`_stale`) — whose gate reading is not
@@ -713,7 +721,7 @@ def run_gate_refresh(
     if stale is None:
         return GateRefreshResult()
     results, errors, _ = _send_in_batches(
-        engine, settings, stale, budget, run_id=run_id, name="gate refresh"
+        engine, settings, stale, budget, run_id=run_id, name="gate refresh", console=console
     )
     after = _stale(engine, settings, leads)
     return GateRefreshResult(
@@ -728,6 +736,7 @@ def run_gate_refresh(
 def _send_in_batches(
     engine: Engine, settings: Settings, stale: Sequence[_T], budget: int, *,
     run_id: int | None, name: str, breaker: int | None = None,
+    console: Console | None = None,
 ) -> tuple[list[GateStageResult], list[str], int]:
     """Walk `stale` through `run_gate_stage` ONE BATCH PER CALL until `budget` items were SENT —
     `run_gate_refresh`'s docstring says why each half of that matters. One result per call, and
@@ -743,6 +752,7 @@ def _send_in_batches(
     failed_in_a_row = 0
     results: list[GateStageResult] = []
     errors: list[str] = []
+    progress = StageProgress(name, min(len(stale), budget), console=console)
     while position < len(stale) and sent < budget:
         if breaker is not None and failed_in_a_row >= breaker:
             skipped = min(len(stale) - position, budget - sent)
@@ -750,17 +760,20 @@ def _send_in_batches(
                 f"{name}: stopped after {failed_in_a_row} consecutive failed-open batches; "
                 f"{skipped} item(s) not sent"
             )
+            progress.finish()
             return results, errors, skipped
         chunk = list(stale[position : position + min(size, budget - sent)])
         position += len(chunk)
-        _, result = run_gate_stage(engine, settings, chunk, run_id=run_id)
+        _, result = run_gate_stage(engine, settings, chunk, run_id=run_id, console=console)
         results.append(result)
         sent += result.sent
+        progress.advance(result.sent)  # run_gate_stage has committed before returning
         errors.extend(f"{name} batch {len(results)}: {note}" for note in result.errors)
         if result.failed_open_batches:
             failed_in_a_row += 1
         elif result.sent:
             failed_in_a_row = 0
+    progress.finish()
     return results, errors, 0
 
 
@@ -837,6 +850,7 @@ def _backlog(
 def run_gate_backlog(
     engine: Engine, settings: Settings, candidates: Sequence[tuple[int, int]], *,
     run_id: int | None,
+    console: Console | None = None,
 ) -> GateBacklogResult:
     """Judge up to `gate.backlog_budget` of `candidates` — `(posting_id, current
     posting_version_id)` for the in-field postings that ranked below the judged slate — that carry
@@ -858,7 +872,7 @@ def run_gate_backlog(
         return GateBacklogResult()
     results, errors, breaker_skipped = _send_in_batches(
         engine, settings, stale, budget, run_id=run_id, name="gate backlog",
-        breaker=BACKLOG_BREAKER,
+        breaker=BACKLOG_BREAKER, console=console,
     )
     return GateBacklogResult(
         candidates=len(stale),

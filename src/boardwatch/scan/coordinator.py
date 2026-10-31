@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from filelock import FileLock, Timeout
+from rich.console import Console
 from sqlalchemy import Engine, func, select
 
 from boardwatch.core.clock import utcnow
@@ -31,6 +32,7 @@ from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher, host_key
 from boardwatch.core.settings import Settings
 from boardwatch.notify.scan_health import degraded_scan_alert
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.apply import apply_board
@@ -329,6 +331,7 @@ def run_scan(
     provider: str | None = None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
+    console: Console | None = None,
 ) -> ScanSummary:
     """`on_run_started`, if given, fires with the run id right after it is minted (SP2) --
     INSIDE this lock, before any board is fetched. It exists so a caller can start work that
@@ -345,6 +348,7 @@ def run_scan(
             provider=provider,
             finish=finish,
             on_run_started=on_run_started,
+            console=console,
         )
 
 
@@ -358,6 +362,7 @@ def scan_under_lease(
     provider: str | None = None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
+    console: Console | None = None,
 ) -> ScanSummary:
     """`run_scan` without the acquisition, for a caller already inside `scan_lease`."""
     return _run_scan_locked(
@@ -369,6 +374,7 @@ def scan_under_lease(
         provider,
         finish,
         on_run_started,
+        console,
     )
 
 
@@ -381,6 +387,7 @@ def _run_scan_locked(
     provider: str | None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
+    console: Console | None = None,
 ) -> ScanSummary:
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
@@ -397,7 +404,7 @@ def _run_scan_locked(
     try:
         return _scan_body(
             engine, settings, fetcher, providers, company, provider,
-            summary, company_rows, active_run_id, finish,
+            summary, company_rows, active_run_id, finish, console,
         )
     except BaseException as exc:
         # The row exists from here on, and on an exception the caller never learns its id —
@@ -426,8 +433,12 @@ def _scan_body(
     company_rows: Sequence[Any],
     active_run_id: int,
     finish: bool,
+    console: Console | None = None,
 ) -> ScanSummary:
 
+    progress = StageProgress(
+        "scan", sum(row.provider in providers for row in company_rows), console=console
+    )
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:
         company_ids = [row.id for row in company_rows]
@@ -455,6 +466,7 @@ def _scan_body(
                 # under-counted runs.boards_attempted. The unknown-provider branch above
                 # deliberately records neither — a config error was never attempted.
                 summary.companies += 1
+                progress.advance(item=row.slug)
                 continue
             work.append(
                 (
@@ -627,6 +639,7 @@ def _scan_body(
                     # has rolled back, so no partial rows survive; the next board opens a fresh one.
                     summary.failed += 1
                     summary.errors.append(f"{row.slug}: apply failed: {exc!r}")
+                    progress.advance(item=row.slug)
                     continue
                 if result.empty_complete_guarded:
                     summary.empty_complete_guarded.append(row.slug)
@@ -643,6 +656,7 @@ def _scan_body(
                 else:
                     summary.failed += 1
                     summary.errors.append(f"{row.slug}: {snapshot.error}")
+                progress.advance(item=row.slug)
     except BaseException:
         pool.shutdown(wait=True, cancel_futures=True)
         raise
@@ -652,6 +666,7 @@ def _scan_body(
         # joins pool threads at exit; the fetch deadline is what bounds that.
         pool.shutdown(wait=False)
 
+    progress.finish()
     with engine.connect() as conn:
         summary.open_postings = int(
             conn.execute(

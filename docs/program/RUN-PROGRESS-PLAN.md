@@ -1,6 +1,6 @@
 # Run progress — say how much work a run has, how far along it is, and when it will finish
 
-**Status: plan, not built (2026-10-29, T286–T289).** Written after run 713, the first run on the owner's MacBook Air,
+**Status: T286 built (2026-10-30, D-658); T287–T289 planned.** Written after run 713, the first run on the owner's MacBook Air,
 ran 04:00 → ~23:00 and answered "how long, and how many résumés?" only through store queries, source reading and
 `top`. A user who is not the maintainer has none of those.
 

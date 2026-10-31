@@ -444,3 +444,10 @@ def test_on_run_started_fires_with_the_minted_id_before_any_board_is_fetched(
         summary = run_scan(engine, _settings(tmp_path), on_run_started=on_run_started)
 
     assert seen == [summary.run_id]
+
+
+def test_scan_without_console_emits_no_progress(
+    engine: Engine, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run_scan(engine, _settings(tmp_path))
+    assert capsys.readouterr().out == ""

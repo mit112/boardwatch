@@ -8,10 +8,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Extraction, eligibility and ranking progress now require an explicit console opt-in from
+  the nightly runner, keeping standalone commands' existing output free of run progress (D-658).
+
 - Reviewed the SmartRecruiters and Workable fixture shapes against live boards and extended their review
   deadlines to 2027-01-28 (D-657).
 
 ### Added
+
+- **Run-stage progress and remaining-time estimates.** Scan, lane fetches, extraction,
+  eligibility, probes, gate requests and tailoring announce their sizes and count completed
+  attempts at checkpoints. Ranking reports its corpus size and completion. Tailoring names
+  renderable and review-only totals; ETA uses only the current stage's measured pace (D-658).
 
 - **LinkedIn guest response counts in the death probe.** The run report counts HTTP 200, 404,
   other responses, and requests without a response; these counts do not change closing verdicts.

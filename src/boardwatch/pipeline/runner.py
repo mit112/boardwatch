@@ -108,6 +108,7 @@ from boardwatch.pipeline.funnel_writer import (
 )
 from boardwatch.pipeline.liveness import LivenessProber, asks_linkedin_guest, check_leads
 from boardwatch.pipeline.policy import run_policy_version
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.profile_bundle.paths import resolve_bundle_root
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.run import (
@@ -773,7 +774,7 @@ class _LaneFetch:
 
 
 def _fetch_lanes(
-    engine: Engine, settings: Settings, run_id: int
+    engine: Engine, settings: Settings, run_id: int, *, console: Console | None = None
 ) -> tuple[list[_LaneFetch], list[str]]:
     """Set the stage up and run every enabled lane's PACED NETWORK half. **Writes nothing.**
 
@@ -852,18 +853,22 @@ def _fetch_lanes(
     # Lanes are RESOLVED before anything is submitted, so an unregistered name is reported
     # without a worker ever being started for it, and the resolved order is the one
     # `lanes_enabled` declares.
+    progress = StageProgress("lanes fetched", len(settings.lanes_enabled), console=console)
     resolved: list[tuple[str, Lane]] = []
     for name in settings.lanes_enabled:
         factory = LANE_FACTORIES.get(name)
         if factory is None:
             registered = ", ".join(sorted(LANE_FACTORIES)) or "none"
             errors.append(f"lane {name}: not a registered lane (registered: {registered})")
+            progress.advance(item=name)
             continue
         try:
             resolved.append((name, factory(context)))
         except Exception as exc:  # noqa: BLE001 - additive breadth never fails the run
             errors.append(f"lane {name}: collection failed: {type(exc).__name__}: {exc}")
+            progress.advance(item=name)
     if not resolved:
+        progress.finish()
         return [], errors
 
     # PARALLEL fetch, and NOTHING ELSE. The apply half is `_apply_lanes`, on the CALLING thread.
@@ -894,6 +899,8 @@ def _fetch_lanes(
                 # Same message as the factory site above: a lane whose FETCH raised is reported
                 # and absent from `reports`, never present with zeros.
                 errors.append(f"lane {name}: collection failed: {type(exc).__name__}: {exc}")
+            progress.advance(item=name)
+    progress.finish()
 
     # Back into `lanes_enabled` order HERE, before anything is applied, rather than reordering
     # the reports afterwards. `as_completed` yields by completion, so applying in that order
@@ -981,7 +988,7 @@ def _apply_lanes(
 
 
 def _run_lanes(
-    engine: Engine, settings: Settings, run_id: int
+    engine: Engine, settings: Settings, run_id: int, *, console: Console | None = None
 ) -> tuple[list[LaneReport], list[str]]:
     """Run every enabled lane end to end — fetch them, then land them — on the CALLING thread.
 
@@ -990,13 +997,13 @@ def _run_lanes(
     `_fetch_lanes_stage` on the background thread and `_apply_lanes` at the join, so that the
     store keeps exactly one writer while the scan is running (T37).
     """
-    fetches, errors = _fetch_lanes(engine, settings, run_id)
+    fetches, errors = _fetch_lanes(engine, settings, run_id, console=console)
     reports, apply_errors = _apply_lanes(engine, run_id, fetches)
     return reports, [*errors, *apply_errors]
 
 
 def _fetch_lanes_stage(
-    engine: Engine, settings: Settings, run_id: int
+    engine: Engine, settings: Settings, run_id: int, *, console: Console | None = None
 ) -> tuple[list[_LaneFetch], list[str], float]:
     """Entry point for the lane stage's ONE background thread (SP2), started as soon as the
     run row exists so its network work overlaps the board scan instead of paying for both
@@ -1022,7 +1029,7 @@ def _fetch_lanes_stage(
     """
     started = perf_counter()
     try:
-        fetches, errors = _fetch_lanes(engine, settings, run_id)
+        fetches, errors = _fetch_lanes(engine, settings, run_id, console=console)
     except Exception as exc:  # noqa: BLE001 - the lane stage may never fail the run
         return [], [f"lanes: stage failed: {exc!r}"], perf_counter() - started
     return fetches, errors, perf_counter() - started
@@ -2330,7 +2337,7 @@ def _run_pipeline_leased(
             console.print("[bold]lanes[/bold]")
             lane_thread = Thread(
                 target=lambda: lane_stage_result.append(
-                    _fetch_lanes_stage(engine, settings, started_run_id)
+                    _fetch_lanes_stage(engine, settings, started_run_id, console=console)
                 ),
                 daemon=True,
             )
@@ -2339,7 +2346,7 @@ def _run_pipeline_leased(
         # Not wrapped, and under the lease `run_pipeline` already holds: a second acquisition of
         # `scan.lock` from this process would contend with that one (T133).
         scan_summary = scan_under_lease(
-            engine, settings, finish=False, on_run_started=_start_lane_stage
+            engine, settings, finish=False, on_run_started=_start_lane_stage, console=console
         )
         run_id = scan_summary.run_id
     else:
@@ -2521,7 +2528,7 @@ def _run_pipeline_leased(
         else:
             if settings.lanes_enabled:
                 console.print("[bold]lanes[/bold]")
-            lane_reports, lane_errors = _run_lanes(engine, settings, run_id)
+            lane_reports, lane_errors = _run_lanes(engine, settings, run_id, console=console)
             lane_elapsed = None
         summary.lanes.extend(
             replace(report, stage_elapsed_seconds=lane_elapsed) for report in lane_reports
@@ -2565,6 +2572,7 @@ def _run_pipeline_leased(
                     company_budget=settings.death_probe_company_budget,
                     ttl_hours=settings.death_probe_ttl_hours,
                     linkedin_can_close=asks_linkedin_guest(settings),
+                    console=console,
                 )
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 message = f"death probe: sweep failed ({type(exc).__name__}: {exc})"
@@ -2618,6 +2626,7 @@ def _run_pipeline_leased(
                 settings,
                 limit=rank_limit,
                 output_console=console,
+                progress_console=console,
                 run_id=run_id,
                 # The pipeline records its own dispositions AFTER the tailor loop
                 # (`_record_shortlist_dispositions`). Letting the ranker write `seen` here put the
@@ -2713,7 +2722,7 @@ def _run_pipeline_leased(
         dead_job_ids: set[int] = set()
         if liveness_prober is not None:
             results = check_leads(
-                engine, [p.posting_id for p in leads], prober=liveness_prober
+                engine, [p.posting_id for p in leads], prober=liveness_prober, console=console
             )
             summary.liveness_checked = len(results)
             summary.liveness_dead = sum(1 for r in results.values() if r.withholds)
@@ -2759,7 +2768,7 @@ def _run_pipeline_leased(
         if settings.gate.enabled:
             console.print("[bold]gate[/bold]")
         leads, gate_result = run_gate_stage(
-            engine, settings, leads, run_id=run_id, shortlist_ranks=shortlist_ranks
+            engine, settings, leads, run_id=run_id, shortlist_ranks=shortlist_ranks, console=console
         )
         # T63 — THE CUT, and it is the last line at which `leads` is the depth slate. Everything
         # below sees only the delivered slate: the lane split, projection, the tailor loop, the
@@ -2826,7 +2835,9 @@ def _run_pipeline_leased(
             try:
                 with engine.connect() as refresh_conn:
                     standing = _refresh_order(standing_queue_rows(refresh_conn))
-                refresh = run_gate_refresh(engine, settings, standing, run_id=run_id)
+                refresh = run_gate_refresh(
+                    engine, settings, standing, run_id=run_id, console=console
+                )
                 summary.gate_refresh_candidates = refresh.candidates
                 summary.gate_refresh_sent = refresh.sent
                 summary.gate_refresh_pending_after = refresh.pending_after
@@ -2861,6 +2872,19 @@ def _run_pipeline_leased(
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
         # passed; `projection_ctx` itself stays in scope for the loop below.
         console.print(f"[bold]tailor[/bold]{' (projected)' if projection_ctx is not None else ''}")
+        render_total = sum(
+            lane_of.get(p.posting_id, ("", None))[0] != REVIEW_DIR for p in leads
+        )
+        review_total = len(leads) - render_total
+        console.print(
+            f"tailor: {len(leads)} leads · {render_total} renderable · {review_total} review-only",
+            markup=False,
+        )
+        tailor_progress = StageProgress("tailor", render_total, console=console)
+        review_progress = (
+            StageProgress("review delivery", review_total, console=console)
+            if review_total else None
+        )
         # Enumerated so a run-scoped projection failure can name the leads it aborted on — this one
         # and every one behind it — rather than leaving them counted nowhere while the funnel stage
         # still claims it entered at the full shortlist. See `_abandon_unattempted`.
@@ -2886,6 +2910,8 @@ def _run_pipeline_leased(
                         run_id=run_id,
                     )
                 )
+                assert review_progress is not None
+                review_progress.advance(item=posting.company)
                 continue
             # The authored résumé and no lineage, unless this lead is projected below. Never a
             # FALLBACK: a projection that fails does not reach `run_tailor` at all (it `continue`s),
@@ -2930,6 +2956,7 @@ def _run_pipeline_leased(
                         # only the work that finished first — a stage that DOES NOT RECONCILE, and
                         # a fourth case outside the three §4.5 promises are exhaustive.
                         _abandon_unattempted(summary, leads[lead_index:])
+                        tailor_progress.advance(item=posting.company)
                         break
                     # Per-lead: counted, reported as a NON-fatal error, and the run continues.
                     summary.projection_outcomes[scope] += 1
@@ -2949,6 +2976,7 @@ def _run_pipeline_leased(
                     )
                     stage_errors.append(message)
                     summary.errors.append(message)
+                    tailor_progress.advance(item=posting.company)
                     continue
                 summary.projection_outcomes[ProjectionLeadOutcome.PROJECTED] += 1
                 lead_resume_path = projected.resume_path
@@ -2982,6 +3010,7 @@ def _run_pipeline_leased(
                 # `break`s below; the tailor stage's own behaviour on a fatal abort is unchanged
                 # from the authored path and is not this stage's balance to close.
                 _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
+                tailor_progress.advance(item=posting.company)
                 break
             except ResumeLoadError as exc:
                 # A malformed or genuinely-broken master résumé (P4 item 5b: a bad contact
@@ -2994,6 +3023,7 @@ def _run_pipeline_leased(
                 stage_errors.append(message)
                 summary.errors.append(message)
                 _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
+                tailor_progress.advance(item=posting.company)
                 break
             except PersonaError as exc:
                 # A malformed persona registry (bundled or {config_dir} override) is a
@@ -3005,6 +3035,7 @@ def _run_pipeline_leased(
                 stage_errors.append(message)
                 summary.errors.append(message)
                 _abandon_unattempted_if_projected(summary, projection_ctx, leads[lead_index + 1:])
+                tailor_progress.advance(item=posting.company)
                 break
             except LeadArtifactError as exc:
                 # Leave no empty folder behind: counting the deliverable by listing the dated
@@ -3024,6 +3055,7 @@ def _run_pipeline_leased(
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
+                tailor_progress.advance(item=posting.company)
                 continue
             except ResumeLineageMismatch as exc:
                 # An EXPLICIT arm, above the broad one, and it has to be: `run_tailor` raises this
@@ -3045,6 +3077,7 @@ def _run_pipeline_leased(
                 )
                 stage_errors.append(message)
                 summary.errors.append(message)
+                tailor_progress.advance(item=posting.company)
                 continue
             except Exception as exc:  # one lead failing is not the run failing (P1 item 5)
                 # Leave no empty folder behind: counting the deliverable by listing the dated
@@ -3055,6 +3088,7 @@ def _run_pipeline_leased(
                 message = f"tailor: posting {posting.posting_id}: {exc}"
                 stage_errors.append(message)
                 summary.errors.append(message)
+                tailor_progress.advance(item=posting.company)
                 continue
             if result.rewrites is not None:
                 summary.rewrite_rows.extend(result.rewrites)
@@ -3085,6 +3119,12 @@ def _run_pipeline_leased(
                 )
                 stage_errors.append(message)
                 summary.errors.append(message)
+
+            tailor_progress.advance(item=posting.company)
+
+        tailor_progress.finish()
+        if review_progress is not None:
+            review_progress.finish()
 
         # Every lead the ranker produced failed to render. Not "zero was provably right" —
         # zero was produced from a non-empty shortlist, which is a broken résumé path
@@ -3223,7 +3263,7 @@ def _run_pipeline_leased(
         if settings.gate.enabled and settings.gate.backlog_budget:
             try:
                 backlog = run_gate_backlog(
-                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id
+                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id, console=console
                 )
                 summary.gate_backlog_candidates = backlog.candidates
                 summary.gate_backlog_sent = backlog.sent

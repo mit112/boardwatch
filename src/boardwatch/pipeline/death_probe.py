@@ -126,6 +126,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import quote
 
+from rich.console import Console
 from sqlalchemy import ColumnElement, Engine, and_, case, func, or_, select, update
 
 from boardwatch.core.clock import utcnow
@@ -133,6 +134,7 @@ from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.pipeline.liveness import LivenessProber
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.reports.run_funnel import DeathProbeReport
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES
 from boardwatch.store.db import write_connection
@@ -347,6 +349,7 @@ def sweep_unwatched_deaths(
     company_budget: int,
     ttl_hours: int,
     linkedin_can_close: bool = False,
+    console: Console | None = None,
 ) -> DeathProbeReport:
     """Probe the unreachable-by-the-scanner class two ways and close the proven-dead postings.
 
@@ -482,6 +485,7 @@ def sweep_unwatched_deaths(
         ).all()
 
     asked_companies = due_companies[:company_budget] if listing_prober is not None else []
+    url_progress = StageProgress("death probe URLs", len(candidates), console=console)
 
     gone = unknown = alive = closed_by_url = strikes_cleared = 0
     linkedin_guest: dict[str, int] | None = None
@@ -535,9 +539,14 @@ def sweep_unwatched_deaths(
             write.execute(update(postings).where(postings.c.id == row.id).values(**values))
             if closing:
                 append_event(write, int(row.id), "closed", run_id)
+        url_progress.advance(item=str(row.id))
 
+    url_progress.finish()
     listing_absent = listing_present = listing_unknown = closed_by_listing = 0
     if listing_prober is not None:
+        listing_progress = StageProgress(
+            "death probe listings", len(asked_companies), console=console
+        )
         for company in asked_companies:
             listing = listing_prober(
                 int(company.id), str(company.provider), str(company.slug)
@@ -614,7 +623,9 @@ def sweep_unwatched_deaths(
                     )
                     if closing:
                         append_event(write, int(row.id), "closed", run_id)
+            listing_progress.advance(item=str(company.slug))
 
+        listing_progress.finish()
     return DeathProbeReport(
         due=int(counts.due),
         unprobeable=int(counts.unprobeable),

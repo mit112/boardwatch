@@ -343,10 +343,9 @@ def test_toggling_a_fact_back_restores_the_prior_verdict(env: Path) -> None:
 
 
 def _postings_shown(top_output: str) -> str:
-    # the rendered table rows, excluding the trailing hidden-count sentence (which itself
-    # contains a bare count that must not be mistaken for a posting id)
+    # Only rendered table cells: progress and hidden-count lines also contain bare numbers.
     return "\n".join(
-        line for line in top_output.splitlines() if "hidden as ineligible" not in line
+        line for line in top_output.splitlines() if line.lstrip().startswith("│")
     )
 
 

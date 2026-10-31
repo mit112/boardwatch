@@ -46,6 +46,7 @@ from boardwatch.eligibility.engine import (
 from boardwatch.eligibility.facts import Facts, Policy, parse_facts, parse_policy
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
 from boardwatch.store.queries import ensure_run, finish_run, get_profile
@@ -279,6 +280,7 @@ def run_eligibility(
     settings: Settings,
     console: Console | None = None,
     *,
+    progress_console: Console | None = None,
     run_id: int | None = None,
     workers: int | None = None,
     parallel_threshold: int = PARALLEL_THRESHOLD,
@@ -352,6 +354,7 @@ def run_eligibility(
         return stats
 
     console.print(f"evaluating eligibility for {len(pending)} postings…")
+    progress = StageProgress("eligibility", len(pending), console=progress_console)
     owns_run = run_id is None
     run_id = ensure_run(engine, run_id)
     stats.run_id = run_id
@@ -407,9 +410,11 @@ def run_eligibility(
                         run_id=run_id,
                     )
                     stats.evaluated += 1
+            progress.advance(len(chunk))  # parent-side, after the batch committed
     finally:
         if pool is not None:
             pool.shutdown()
+    progress.finish()
     if owns_run:
         # A run minted here spans only this stage, so it is complete the moment the last
         # batch commits. A run passed in belongs to the pipeline, which finishes it.
