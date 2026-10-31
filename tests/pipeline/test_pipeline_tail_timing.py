@@ -17,9 +17,9 @@ from boardwatch.store.db import get_engine
 from tests.pipeline.test_pipeline_run import _cli, _ready
 
 
-@pytest.mark.parametrize("queue_fails", [False, True], ids=["clean", "handled-failure"])
+@pytest.mark.parametrize("failure", [None, "queue_sync", "funnel", "morning"])
 def test_tail_boundaries_charge_the_work_before_them(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, queue_fails: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None
 ) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "cfg"))
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
@@ -45,8 +45,8 @@ def test_tail_boundaries_charge_the_work_before_them(
             nonlocal elapsed
             calls.append(name)
             elapsed += costs[name]
-            if name == "queue_sync" and queue_fails:
-                raise RuntimeError("injected queue failure")
+            if name == failure:
+                raise RuntimeError(f"injected {name} failure")
             result = operation(*args, **kwargs)
             if name == "funnel":
                 for path in (result.json_path, result.markdown_path):
@@ -76,19 +76,22 @@ def test_tail_boundaries_charge_the_work_before_them(
     )
 
     assert summary.fatal is None
-    assert calls == list(costs), "the original tail order and heartbeat gate must survive"
+    expected_costs = costs.copy()
+    if failure in {"funnel", "morning"}:
+        expected_costs["heartbeat"] = 0.0
+    assert calls == [name for name in costs if name != "heartbeat" or expected_costs[name]]
     actual = {stage.name: stage.seconds for stage in summary.stage_durations[-7:]}
-    assert actual == costs, "tail durations must include each operation's own cost"
+    assert actual == expected_costs, "tail durations must include each operation's own cost"
     cumulative = 0.0
     lines = output.getvalue().splitlines()
     timing_lines = [line.strip() for line in lines if line.strip().startswith("tail ")]
     expected_lines = []
-    for name, seconds in costs.items():
+    for name, seconds in expected_costs.items():
         cumulative += seconds
         end = epoch + timedelta(seconds=cumulative)
         expected_lines.append(f"tail {name} → {end.isoformat()} UTC · {seconds:.3f}s")
     assert timing_lines == expected_lines
-    assert artifacts, "guard: the real funnel writer must run"
+    assert bool(artifacts) == (failure != "funnel")
     for path, original in artifacts.items():
         assert path.read_bytes() == original, "the funnel was republished after the tail"
         if path.suffix == ".json":
@@ -97,8 +100,8 @@ def test_tail_boundaries_charge_the_work_before_them(
                 {"name": stage.name, "seconds": round(stage.seconds, 3)}
                 for stage in summary.stage_durations[:-7]
             ], "D-343: the funnel keeps the pre-tail snapshot"
-    if queue_fails:
-        assert any("injected queue failure" in error for error in summary.errors)
+    if failure:
+        assert any(f"injected {failure} failure" in error for error in summary.errors)
 
 
 @pytest.mark.parametrize("fatal", [None, "injected fatal"], ids=["clean", "fatal"])
