@@ -1033,16 +1033,28 @@ def _is_current_version() -> ColumnElement[bool]:
     return ~newer
 
 
-def current_posting_version_ids(conn: Connection, posting_ids: Sequence[int]) -> dict[int, int]:
-    """posting_id -> its newest posting_version id, ignoring status: `current_posting_versions`'
-    selection without `body_text`, for a caller that needs only the key. Chunked the same way."""
+def current_posting_version_ids(
+    conn: Connection, posting_ids: Sequence[int] | None = None
+) -> dict[int, int]:
+    """`current_posting_versions`' selection without `body_text`, for ID-only callers.
+
+    None sweeps every OPEN posting in one statement; explicit IDs ignore status and are chunked.
+    """
+    stmt = select(_pv.c.id, _pv.c.posting_id).where(_is_current_version())
+    if posting_ids is None:
+        return {
+            int(row.posting_id): int(row.id)
+            for row in conn.execute(
+                stmt.join(postings, _pv.c.posting_id == postings.c.id)
+                .where(postings.c.status == "open")
+            ).all()
+        }
     out: dict[int, int] = {}
     for chunk in id_chunks(list(posting_ids)):
         out.update({
             int(row.posting_id): int(row.id)
             for row in conn.execute(
-                select(_pv.c.id, _pv.c.posting_id)
-                .where(_pv.c.posting_id.in_(chunk), _is_current_version())
+                stmt.where(_pv.c.posting_id.in_(chunk))
             ).all()
         })
     return out
