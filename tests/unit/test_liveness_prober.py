@@ -686,3 +686,21 @@ def test_the_guest_endpoint_is_asked_exactly_when_the_linkedin_lane_is_on(
     from boardwatch.pipeline.liveness import asks_linkedin_guest  # noqa: PLC0415
 
     assert asks_linkedin_guest(_settings(tmp_path, lanes_enabled=lanes)) is asks
+
+
+@pytest.mark.parametrize("status", [200, 404, 503, None])
+@respx.mock
+def test_guest_observation_records_response_or_transport_failure(tmp_path: Path, status: int | None) -> None:
+    if status is None:
+        respx.get(LI_GUEST).mock(side_effect=httpx.ConnectError("HTTP 404"))
+    else:
+        respx.get(LI_GUEST).mock(return_value=httpx.Response(status, content=_li_body(closed=False)))
+    result = _li_prober(tmp_path)(42, LI_VIEW)
+    assert result.linkedin_guest is not None
+    assert result.linkedin_guest.status_code == status
+
+
+@respx.mock
+def test_lane_off_has_no_guest_observation(tmp_path: Path) -> None:
+    respx.get(LI_VIEW).mock(return_value=httpx.Response(200))
+    assert build_prober(_settings(tmp_path))(42, LI_VIEW).linkedin_guest is None
