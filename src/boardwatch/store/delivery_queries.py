@@ -68,6 +68,7 @@ from boardwatch.eligibility.read import (
     current_requirement_flags,
     current_verdicts,
 )
+from boardwatch.lanes.dereference import posting_requisition_key
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.role_gate import RoleVerdict, taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
@@ -79,9 +80,10 @@ from boardwatch.store.queries import (
     CurrentVersion,
     current_posting_versions,
     get_profile,
+    jobapps_employer_url,
     latest_revision_at,
 )
-from boardwatch.store.queue_state import reported_job_ids, skipped_job_ids
+from boardwatch.store.queue_state import manual_job_ids, reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND, lead_provenance
 from boardwatch.store.tables import (
     application_events,
@@ -371,6 +373,7 @@ def _delivered_select() -> Select[Any]:
             # query so both readers resolve the posting through one join.
             postings.c.closed_at,
             postings.c.url,
+            jobapps_employer_url().label("employer_url"),
             companies.c.name.label("company"),
             companies.c.provider,
             # T92. Read out of `raw_json` rather than a `postings` column, deliberately.
@@ -948,9 +951,10 @@ def delivered_cross_host_keys(
     return {key: tuple(ids) for key, ids in held.items()}, frozenset(delivered)
 
 
-def requisition_holder_urls(conn: Connection) -> tuple[dict[int, str], frozenset[int]]:
-    """posting id -> URL for every posting that holds its requisition (D-654); and every delivered
-    open posting id.
+def requisition_holder_urls(
+    conn: Connection,
+) -> tuple[dict[int, tuple[str | None, str | None]], frozenset[int]]:
+    """posting id -> (stored URL, employer evidence) for requisition holders; delivered open ids.
 
     The seed for the requisition-twin rule in `top_cmd`: a posting that has never been delivered is
     held when another posting of the SAME employer requisition (`lanes.dereference.requisition_key`)
@@ -963,29 +967,82 @@ def requisition_holder_urls(conn: Connection) -> tuple[dict[int, str], frozenset
     delivered open posting holds unless its job is reported, and applied or skipped ones still hold:
     the owner has already acted on that requisition. Every posting of a job carrying an
     application holds whatever its status, because applying again is redundant even after the copy
-    applied through closed. Keys are computed by the caller, which owns the URL reading.
+    applied through closed. The caller reads both URLs through `posting_requisition_key` (D-655).
 
     **The second value is the guard,** as in `delivered_cross_host_keys`: a delivered row is never
     held by this rule, so two delivered copies cannot hold each other and both vanish.
     """
     reported = reported_job_ids(conn)
-    holders: dict[int, str] = {}
+    holders: dict[int, tuple[str | None, str | None]] = {}
     delivered: set[int] = set()
     for row in conn.execute(
         _delivered_select().where(postings.c.status == "open", postings.c.job_id.is_not(None))
     ).all():
         posting_id = int(row.posting_id)
         delivered.add(posting_id)
-        if int(row.job_id) not in reported and row.url:
-            holders[posting_id] = str(row.url)
+        if int(row.job_id) not in reported:
+            holders[posting_id] = (row.url, row.employer_url)
     # Reached by the JOIN outward from `applications` the Applied page uses, never by binding a
     # job-id list (this module builds no `.in_()`). That join also returns jobs whose only attempt
     # was never submitted, so the rows are kept to `applied_job_ids`, the ranker's own test.
     applied = applied_job_ids(conn)
     for row in conn.execute(_applied_postings_select()).all():
-        if int(row.job_id) in applied and row.url:
-            holders[int(row.posting_id)] = str(row.url)
+        if int(row.job_id) in applied:
+            holders[int(row.posting_id)] = (row.url, row.employer_url)
     return holders, frozenset(delivered)
+
+
+def requisition_copy_posting_ids(conn: Connection) -> set[int]:
+    """Delivered copies deferred by employer requisition, across DISTINCT jobs (D-655).
+
+    Applied requisitions hold permanently, including closed or never-delivered postings.
+    Otherwise elect only among the queue's per-job representatives, after the lane-copy drain.
+    The job's first delivery wins, with representative posting id breaking ties. Read every
+    artifact for that date: a rebuild or a different sibling must not reset the job's priority.
+    A non-displayed sibling must never hold another job. Selection and verdicts reuse the queue.
+    Once a representative loses, defer every delivered sibling of its job: existing folders can
+    still name a historical posting after identity convergence.
+
+    Closed, skipped, reported, manual and ineligible leads neither hold nor get deferred.
+    Recomputed on every read, so releasing a holder restores its copy without changing the
+    built ledger, artifacts, verdicts or reopened_at. Consumers reuse the existing lane-copy
+    drain and count; this adds no bucket.
+    """
+    applied = applied_job_ids(conn)
+    withheld = (
+        set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
+    )
+    applied_keys = {
+        key
+        for row in conn.execute(_applied_postings_select()).all()
+        if int(row.job_id) in applied
+        if (key := posting_requisition_key(row.url, row.employer_url)) is not None
+    }
+    lane_copy = lane_copy_posting_ids(conn)
+    representatives = {
+        row.posting_id for row in delivered_unapplied(conn, skipped=withheld)
+        if not row.closed and row.verdict != "ineligible" and row.posting_id not in lane_copy
+    }
+    deliveries = _deliveries(conn)
+    first_delivery: dict[int, datetime] = {}
+    for row in deliveries:
+        if row.job_id is not None:
+            first_delivery.setdefault(int(row.job_id), row.delivered_at)
+    groups: dict[tuple[str, str, str], list[Row[Any]]] = {}
+    for row in _delivered_by_posting(deliveries).values():
+        if int(row.posting_id) not in representatives:
+            continue
+        key = posting_requisition_key(row.url, row.employer_url)
+        if key is not None:
+            groups.setdefault(key, []).append(row)
+    deferred_jobs: set[int] = set()
+    for key, rows in groups.items():
+        first = min(rows, key=lambda row: (first_delivery[int(row.job_id)], int(row.posting_id)))
+        deferred_jobs |= {
+            int(row.job_id) for row in rows
+            if key in applied_keys or int(row.job_id) != int(first.job_id)
+        }
+    return {int(row.posting_id) for row in deliveries if row.job_id in deferred_jobs}
 
 
 def lane_copy_posting_ids(conn: Connection) -> set[int]:
@@ -1033,6 +1090,9 @@ def lane_copy_posting_ids(conn: Connection) -> set[int]:
     reader auditing the drain folder, but that needs a `details.json` field and `DETAILS_SCHEMA` is
     versioned, so it is left for whoever wants it rather than carried unused here.
 
+    Exact requisition pairs yield to `requisition_copy_posting_ids` (D-655), whose earliest
+    delivery can be the lane copy. Combining contradictory preferences would hide both leads.
+
     **The ONE predicate for "is this standing lead a lane copy"** (T189b): the folder tree
     (`standing_queue_rows`, `_reconcile_locked`), the web page and `apply_lane_cohort` all test
     `posting_id in` this set, so the page, the drought detector and the folders cannot disagree.
@@ -1058,11 +1118,19 @@ def lane_copy_posting_ids(conn: Connection) -> set[int]:
     ).all()
     # Every holder is one of these rows: the seed reads this same select, join and filter.
     job_of = {int(row.posting_id): int(row.job_id) for row in rows}
+    requisition_of = {
+        int(row.posting_id): posting_requisition_key(row.url, row.employer_url) for row in rows
+    }
     out: set[int] = set()
     for row in rows:
         if str(row.provider) in PROVIDER_NAMES:
             continue
         holders = held.get(str(row.identity_key), ())
+        key = requisition_of[int(row.posting_id)]
+        if key is not None and any(requisition_of[holder] == key for holder in holders):
+            # Exact requisitions use D-655's earliest delivery, not board preference. Otherwise
+            # this rule could hide its survivor while the requisition rule hides the board.
+            continue
         if any(job_of[holder] != int(row.job_id) for holder in holders):
             out.add(int(row.posting_id))
     return out
@@ -1174,7 +1242,7 @@ def apply_lane_cohort(
     survives to today rather than what it shipped on the day.
     """
     cohort: dict[int, list[LanePlacement]] = {rid: [] for rid in run_ids}
-    lane_copy = lane_copy_posting_ids(conn)
+    lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
     for row in delivered_unapplied(conn, skipped=set()):
         if row.delivered_run_id not in run_ids:
             continue
@@ -1214,8 +1282,9 @@ def apply_lane_placements(
       (D-383). A run whose every lead has since come down would otherwise read as lane starvation,
       which is a claim about the location/role/requirement gates that the evidence does not
       support.
-    * a LANE COPY is excluded (T189b) because its folder sits in `_lane_copy/`: its employer-board
-      twin is the placeable lead, and counting both would credit one job to the lane twice.
+    * a LANE or REQUISITION COPY is excluded (T189b, D-655) because its folder sits in
+      `_lane_copy/`: its surviving twin is the placeable lead, and counting both would credit
+      one requisition to the lane twice.
 
     So a run with zero placeable leads reports `(0, 0)` and the detector abstains on it, rather
     than firing on a fault it cannot see. `skipped=set()` matches the two sibling functions above:
@@ -1493,6 +1562,7 @@ def _job_posting_select() -> Select[Any]:
         postings.c.status,
         postings.c.closed_at,
         postings.c.url,
+        jobapps_employer_url().label("employer_url"),
         companies.c.name.label("company"),
         companies.c.watched,
         ever_complete.c.company_id.is_not(None).label("board_ever_complete"),

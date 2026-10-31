@@ -113,6 +113,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Historical queue folders stay deferred with their requisition copy.** Deferral elects among
+  current representatives, then covers every delivered posting of each losing job, including
+  copies held by an applied requisition. Refreshes keep older sibling folders in `_lane_copy`,
+  consistent with the web queue. Employer URL evidence is read only for job-apps' own provider;
+  ranking avoids reading every other provider's raw JSON for this evidence (D-655).
+- **Standing requisition copies always elect a lead the queue can display.** Lane-drained postings
+  and historical siblings no longer hide another job's only visible copy. The election uses each
+  job's current queue representative, ordered by its first delivery in artifact history and then
+  representative posting id. Open and closed applied holders still defer every copy (D-655).
+
+- **Resolved jobright copies now match their employer requisition, and standing duplicates defer.**
+  The verified employer URL is retained as evidence on every ingestion, including records already
+  stored under a job-apps key; their stored URL and identity stay intact. Delivered copies on
+  different jobs keep the earliest delivery (posting id breaks ties), or all defer when the
+  requisition was applied to. Deferred copies return when their holder closes or leaves the
+  standing queue. Folders, web lists and apply-lane counts share the read-time rule and the
+  existing `_lane_copy` drain; built rows and dispositions are never reopened (D-655).
+
 - **A copy of a requisition you already have is no longer delivered.** A job-apps or Indeed copy
   carrying the employer's own URL, under a differently spelled company ("Amazon" / "Amazon.com"),
   and one Oracle requisition published on two career sites, were delivered as separate leads,

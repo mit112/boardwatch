@@ -195,3 +195,53 @@ def test_only_a_jobright_record_is_read_for_a_resolution(tmp_path: Path) -> None
     root = tmp_path / "queue"
     _record(root, acquisition="simplify")
     assert _unresolved(root, tmp_path) == [("jobapps", "cbre", "pst_cboe", False)]
+
+
+@pytest.mark.parametrize("stored", [False, True])
+def test_resolution_evidence_is_emitted_without_changing_stored_identity(
+    tmp_path: Path, stored: bool,
+) -> None:
+    """Moving evidence enrichment inside the new-identity guard loses stored copies' keys."""
+    root = tmp_path / "queue"
+    _record(root)
+    result, _ = _collect(root, tmp_path, stored_own={"pst_cboe"} if stored else ())
+    (posting,) = result.snapshots[0].snapshot.postings
+    assert posting.raw_json["jobapps"].get("employer_url") == WORKDAY_URL
+    assert posting.url == (JOBRIGHT_URL if stored else WORKDAY_URL)
+    assert _filed(result) == (
+        [("jobapps", "cbre", "pst_cboe", False)] if stored else [(*WORKDAY, True)]
+    )
+
+
+def test_repeat_ingestion_updates_and_keeps_resolution_evidence(tmp_path: Path) -> None:
+    """A lane refresh replaces raw_json: evidence must travel with every observation."""
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from boardwatch.scan.apply import apply_board  # noqa: PLC0415
+    from boardwatch.store.db import ensure_schema, get_engine  # noqa: PLC0415
+    from boardwatch.store.queries import insert_run, upsert_lane_company  # noqa: PLC0415
+    from boardwatch.store.tables import postings  # noqa: PLC0415
+
+    root = tmp_path / "queue"
+    _record(root, webloc=None, source=None)
+    engine = get_engine(tmp_path / "data")
+    ensure_schema(engine)
+    run_id = insert_run(engine)
+    result, _ = _collect(root, tmp_path)
+    with engine.begin() as conn:
+        company_id = upsert_lane_company(conn, provider="jobapps", slug="cbre", name="CBRE")
+    apply_board(engine, result.snapshots[0].snapshot, company_id, run_id, scan_kind="lane")
+    with engine.connect() as conn:
+        before = conn.execute(select(postings.c.id, postings.c.job_id, postings.c.url)).one()
+    folder = root / "Jobright" / "Cboe_Software_Engineer"
+    (folder / "jobright_source.url").write_text(JOBRIGHT_URL, encoding="utf-8")
+    for employer_url in (WORKDAY_URL, WORKDAY_URL + "&updated=1", WORKDAY_URL + "&updated=1"):
+        (folder / "1_apply.webloc").write_text(
+            _WEBLOC.format(url=employer_url), encoding="utf-8",
+        )
+        result, _ = _collect(root, tmp_path, stored_own={"pst_cboe"})
+        apply_board(engine, result.snapshots[0].snapshot, company_id, run_id, scan_kind="lane")
+        with engine.connect() as conn:
+            row = conn.execute(select(postings)).one()
+        assert row.raw_json["jobapps"].get("employer_url") == employer_url
+        assert (row.id, row.job_id, row.url) == tuple(before)

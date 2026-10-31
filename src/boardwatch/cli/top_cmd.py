@@ -36,7 +36,7 @@ from boardwatch.eligibility.preflight import engine_facts, run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
-from boardwatch.lanes.dereference import requisition_key
+from boardwatch.lanes.dereference import posting_requisition_key
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
@@ -80,7 +80,12 @@ from boardwatch.store.identity_queries import (
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
+from boardwatch.store.queries import (
+    body_is_empty,
+    current_posting_versions,
+    get_profile,
+    jobapps_employer_url,
+)
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.regroup import job_anchors
 from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
@@ -551,6 +556,7 @@ def rank_open_postings(
                 # The requisition-twin rule's input (D-654), read off the row the ranker already
                 # loads. Keyed only for the rows that reach the slate, inside the fill loop.
                 postings.c.url,
+                jobapps_employer_url().label("employer_url"),
                 postings.c.posted_at,
                 postings.c.locations_json,
                 postings.c.remote_policy,
@@ -647,8 +653,8 @@ def rank_open_postings(
     # posting_id -> CLUSTER key (T73), absent for a posting that cannot be keyed: no
     # `normalized_title`, or no location evidence at all. See CLUSTER_CAP_PER_KEY.
     cluster_keys: dict[int, tuple[int, str, str]] = {}
-    # posting_id -> URL, the requisition-twin rule's input (D-654).
-    posting_urls: dict[int, str] = {}
+    # posting_id -> (stored URL, employer evidence), read only on reaching the slate (D-655).
+    posting_urls: dict[int, tuple[str | None, str | None]] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
@@ -822,8 +828,7 @@ def rank_open_postings(
             cluster_keys[int(row.id)] = (
                 int(row.company_id), row.normalized_title, locations_key,
             )
-        if row.url:
-            posting_urls[int(row.id)] = str(row.url)
+        posting_urls[int(row.id)] = (row.url, row.employer_url)
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
@@ -991,7 +996,7 @@ def rank_open_postings(
     # then every row this run delivers (D-654).
     requisition_held_by: dict[tuple[str, str, str], list[int]] = {}
     for holder, holder_url in requisition_urls.items():
-        holder_key = requisition_key(holder_url)
+        holder_key = posting_requisition_key(*holder_url)
         if holder_key is not None:
             requisition_held_by.setdefault(holder_key, []).append(holder)
     hidden_slate_cap = 0
@@ -1100,7 +1105,7 @@ def rank_open_postings(
             # `limit`, so the slot refills; no `seen` is written, so the row ranks again once its
             # holder closes or is reported. A row that was itself delivered is never held.
             url = posting_urls.get(posting.posting_id)
-            requisition = requisition_key(url) if url is not None else None
+            requisition = posting_requisition_key(*url) if url is not None else None
             if (
                 requisition is not None
                 and posting.posting_id not in requisition_delivered

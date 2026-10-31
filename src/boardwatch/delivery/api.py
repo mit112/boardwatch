@@ -114,6 +114,7 @@ from boardwatch.store.delivery_queries import (
     lane_copy_posting_ids,
     lane_decision,
     queue_detail,
+    requisition_copy_posting_ids,
 )
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
@@ -300,10 +301,10 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     manual = manual_job_ids(conn)
     manual_rows = [row for row in every if not row.closed and row.job_id in manual]
     rest = [row for row in every if not row.closed and row.job_id not in manual]
-    # A lane copy is held in `_lane_copy` on disk (T189b), so it is not work on the page either.
+    # Lane and requisition copies share `_lane_copy` on disk (D-655) and leave both page lists.
     # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
     # tree asks, so the two cannot disagree about which leads it names.
-    lane_copy = lane_copy_posting_ids(conn)
+    lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
     open_rows = [row for row in rest if not _rejected(row)]
     kept = [row for row in open_rows if row.posting_id not in lane_copy]
     drained = len(rest) - len(open_rows)
@@ -724,7 +725,7 @@ def _counts(
         # unexplained remainder between the apply lane and the delivered set. They are also not
         # `ineligible` — nothing judged them, the employer took the requisition down.
         "closed": closed,
-        # A lead whose employer-board twin is standing (T189b): out of both lists because its
+        # A deferred lane or requisition copy (D-655): out of both lists because its
         # folder is in `_lane_copy`, and counted so the band still reconciles with the delivered
         # set.
         "lane_copy": lane_copy,
