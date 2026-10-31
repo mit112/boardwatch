@@ -5353,7 +5353,7 @@ _REQ_URL = "https://www.amazon.jobs/en/jobs/10567489/software-development-engine
 def _requisition(conn: Connection, *posting_ids: int) -> None:
     for posting_id in posting_ids:
         conn.execute(update(postings).where(postings.c.id == posting_id).values(
-            raw_json={"jobapps": {"employer_url": _REQ_URL}},
+            url=_REQ_URL,
         ))
 
 
@@ -5386,15 +5386,19 @@ def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
 
 
 @pytest.mark.parametrize("holder_status", ["open", "closed"])
+@pytest.mark.parametrize("standing_copies", [1, 2])
 def test_applied_requisition_holder_defeats_every_standing_copy(
-    engine: Engine, apps: Path, holder_status: str,
+    engine: Engine, apps: Path, holder_status: str, standing_copies: int,
 ) -> None:
     """An applied holder wins open or closed, even if it was delivered last."""
     with engine.begin() as conn:
         first, _ = _deliver(conn, apps, "first", delivered_at=NOW - timedelta(days=2))
-        second, _ = _deliver(conn, apps, "second", delivered_at=NOW - timedelta(days=1))
+        copies = [first]
+        if standing_copies == 2:
+            second, _ = _deliver(conn, apps, "second", delivered_at=NOW - timedelta(days=1))
+            copies.append(second)
         applied, _ = _deliver(conn, apps, "applied")
-        _requisition(conn, first, second, applied)
+        _requisition(conn, *copies, applied)
         mark_job_applied(conn, posting_id=applied, source="test")
         conn.execute(update(postings).where(postings.c.id == applied).values(status=holder_status))
     with engine.connect() as conn:
@@ -5438,8 +5442,8 @@ def test_requisition_deferral_reaches_every_consumer_without_store_writes(
     from boardwatch.store.tables import eligibility_evaluations, job_dispositions  # noqa: PLC0415
 
     with engine.begin() as conn:
-        holder, holder_job = _deliver(conn, apps, "holder", delivered_at=NOW - timedelta(days=1))
-        copy, copy_job = _deliver(conn, apps, "copy")
+        holder, holder_job = _deliver(conn, apps, "holder", delivered_at=NOW - timedelta(days=2))
+        copy, copy_job = _deliver(conn, apps, "copy", delivered_at=NOW - timedelta(days=1))
         for job in (holder_job, copy_job):
             record_disposition(
                 conn, job, disposition="built", reason="lead_built", policy_version="v1", now=NOW,
@@ -5447,7 +5451,8 @@ def test_requisition_deferral_reaches_every_consumer_without_store_writes(
     with engine.connect() as conn:
         sync_queue(conn, root=root, owner_name=OWNER)
     with engine.begin() as conn:
-        _requisition(conn, holder, copy)
+        current_copy, _ = _deliver(conn, apps, "current-copy", job_id=copy_job)
+        _requisition(conn, holder, copy, current_copy)
     tables = (postings, jobs, artifacts, job_dispositions, eligibility_evaluations)
     with engine.connect() as conn:
         before = [conn.execute(select(table).order_by(*table.primary_key.columns)).all() for table in tables]
@@ -5474,10 +5479,24 @@ def test_requisition_deferral_reaches_every_consumer_without_store_writes(
         after = [conn.execute(select(table).order_by(*table.primary_key.columns)).all() for table in tables]
         assert after == before
     # Refresh contains both reconcile and sync; the deferred folder must stay put.
-    queue.refresh_queue(engine, root=root, owner_name=OWNER)
-    before_files = _snapshot(root)
-    queue.refresh_queue(engine, root=root, owner_name=OWNER)
-    assert _snapshot(root) == before_files
+    for refresh in range(2):
+        drained, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+        assert (drained.failed, synced.failed) == (0, 0)
+        assert [_details(root / name)["posting_id"] for name in _folders(root)] == [holder]
+        deferred = _sole_folder(root / LANE_COPY_DIR)
+        assert _details(deferred)["posting_id"] == copy
+        with engine.connect() as conn:
+            ctx = ApiContext(
+                settings=load_settings(), out_root=apps.resolve(), queue_root=root.resolve(),
+                owner_name=OWNER, platform="darwin",
+            )
+            page = queue_payload(conn, ctx)
+            assert [r["posting_id"] for r in page["rows"] + page["review"]] == [holder]
+            assert page["counts"]["lane_copy"] == 1
+        if refresh == 0:
+            before_files = _snapshot(root)
+        else:
+            assert _snapshot(root) == before_files
 
 
 def test_exact_requisition_earliest_lane_copy_survives_board_preference(

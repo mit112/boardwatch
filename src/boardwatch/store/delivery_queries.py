@@ -80,6 +80,7 @@ from boardwatch.store.queries import (
     CurrentVersion,
     current_posting_versions,
     get_profile,
+    jobapps_employer_url,
     latest_revision_at,
 )
 from boardwatch.store.queue_state import manual_job_ids, reported_job_ids, skipped_job_ids
@@ -372,7 +373,7 @@ def _delivered_select() -> Select[Any]:
             # query so both readers resolve the posting through one join.
             postings.c.closed_at,
             postings.c.url,
-            func.json_extract(postings.c.raw_json, "$.jobapps.employer_url").label("employer_url"),
+            jobapps_employer_url().label("employer_url"),
             companies.c.name.label("company"),
             companies.c.provider,
             # T92. Read out of `raw_json` rather than a `postings` column, deliberately.
@@ -999,6 +1000,8 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
     The job's first delivery wins, with representative posting id breaking ties. Read every
     artifact for that date: a rebuild or a different sibling must not reset the job's priority.
     A non-displayed sibling must never hold another job. Selection and verdicts reuse the queue.
+    Once a representative loses, defer every delivered sibling of its job: existing folders can
+    still name a historical posting after identity convergence.
 
     Closed, skipped, reported, manual and ineligible leads neither hold nor get deferred.
     Recomputed on every read, so releasing a holder restores its copy without changing the
@@ -1032,14 +1035,14 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
         key = posting_requisition_key(row.url, row.employer_url)
         if key is not None:
             groups.setdefault(key, []).append(row)
-    deferred: set[int] = set()
+    deferred_jobs: set[int] = set()
     for key, rows in groups.items():
         first = min(rows, key=lambda row: (first_delivery[int(row.job_id)], int(row.posting_id)))
-        deferred |= {
-            int(row.posting_id) for row in rows
+        deferred_jobs |= {
+            int(row.job_id) for row in rows
             if key in applied_keys or int(row.job_id) != int(first.job_id)
         }
-    return deferred
+    return {int(row.posting_id) for row in deliveries if row.job_id in deferred_jobs}
 
 
 def lane_copy_posting_ids(conn: Connection) -> set[int]:
@@ -1559,7 +1562,7 @@ def _job_posting_select() -> Select[Any]:
         postings.c.status,
         postings.c.closed_at,
         postings.c.url,
-        func.json_extract(postings.c.raw_json, "$.jobapps.employer_url").label("employer_url"),
+        jobapps_employer_url().label("employer_url"),
         companies.c.name.label("company"),
         companies.c.watched,
         ever_complete.c.company_id.is_not(None).label("board_ever_complete"),

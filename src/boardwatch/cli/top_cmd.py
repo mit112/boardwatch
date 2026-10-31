@@ -17,7 +17,7 @@ from typing import cast
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import Connection, Engine, func, select
+from sqlalchemy import Connection, Engine, select
 
 from boardwatch.cli._hints import print_next_step
 from boardwatch.cli._profile_row import refuse_unusable_profile_row
@@ -80,7 +80,12 @@ from boardwatch.store.identity_queries import (
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queries import body_is_empty, current_posting_versions, get_profile
+from boardwatch.store.queries import (
+    body_is_empty,
+    current_posting_versions,
+    get_profile,
+    jobapps_employer_url,
+)
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.regroup import job_anchors
 from boardwatch.store.run_funnel_queries import posting_ids_judged_this_run
@@ -551,9 +556,7 @@ def rank_open_postings(
                 # The requisition-twin rule's input (D-654), read off the row the ranker already
                 # loads. Keyed only for the rows that reach the slate, inside the fill loop.
                 postings.c.url,
-                func.json_extract(postings.c.raw_json, "$.jobapps.employer_url").label(
-                    "employer_url"
-                ),
+                jobapps_employer_url().label("employer_url"),
                 postings.c.posted_at,
                 postings.c.locations_json,
                 postings.c.remote_policy,

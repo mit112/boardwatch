@@ -113,6 +113,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Historical queue folders stay deferred with their requisition copy.** Deferral elects among
+  current representatives, then covers every delivered posting of each losing job, including
+  copies held by an applied requisition. Refreshes keep older sibling folders in `_lane_copy`,
+  consistent with the web queue. Employer URL evidence is read only for job-apps' own provider;
+  ranking avoids reading every other provider's raw JSON for this evidence (D-655).
 - **Standing requisition copies always elect a lead the queue can display.** Lane-drained postings
   and historical siblings no longer hide another job's only visible copy. The election uses each
   job's current queue representative, ordered by its first delivery in artifact history and then

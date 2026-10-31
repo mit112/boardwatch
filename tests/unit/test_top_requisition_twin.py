@@ -455,3 +455,28 @@ def test_resolved_jobright_candidate_and_holders_use_employer_evidence(
                 raw_json={"jobapps": {"employer_url": invalid}},
             ))
         assert _visible(_rank(engine, data_dir)) == []
+
+
+@pytest.mark.parametrize("enriched", ["candidate", "delivered", "applied"])
+def test_non_jobapps_requisition_ignores_incidental_employer_evidence(
+    data_dir: Path, enriched: str,
+) -> None:
+    """An unguarded evidence read lets another provider's raw JSON hold a distinct job."""
+    url = WD.format(site="Global", req="R-785495")
+    other = WD.format(site="Global", req="R-785496")
+    engine, (copy, holder) = _seed(data_dir, [
+        ("copy", "greenhouse", "SW Engineer I", other if enriched == "candidate" else url),
+        ("holder", "greenhouse", "Software Engineer", url if enriched == "candidate" else other),
+    ])
+    evidenced = copy if enriched == "candidate" else holder
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == evidenced).values(
+            raw_json={"jobapps": {"employer_url": url}},
+        ))
+        if enriched == "applied":
+            mark_job_applied(conn, posting_id=holder, source="test")
+    if enriched != "applied":
+        _delivered(engine, holder)
+    results = _rank(engine, data_dir)
+    assert _visible(results) == [copy]
+    assert results.hidden_requisition_twin == 0

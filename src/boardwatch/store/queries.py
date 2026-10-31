@@ -88,6 +88,23 @@ def body_is_empty() -> ColumnElement[bool]:
     """
     return func.trim(postings.c.body_text, " \t\n\r\f\v") == ""
 
+
+def jobapps_employer_url() -> ColumnElement[Any]:
+    """Employer URL evidence for postings filed under job-apps' own identity (D-655).
+
+    Converged records already carry the employer URL in `postings.url`. SQLite's lazy CASE
+    keeps the corpus-wide ranker from reading `raw_json` for every other provider. Callers
+    already join `companies`; ranking and both holder reads must use the same guard.
+    """
+    return case(
+        (
+            companies.c.provider == "jobapps",
+            func.json_extract(postings.c.raw_json, "$.jobapps.employer_url"),
+        ),
+        else_=None,
+    )
+
+
 # The closed catalog of run outcomes (P0 item 4). Out-of-catalog is a failure, never a new
 # bucket, so the setter raises rather than writing an unknown string.
 RUN_RUNNING = "running"
