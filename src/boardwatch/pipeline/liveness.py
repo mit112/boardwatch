@@ -126,7 +126,8 @@ def build_prober(settings: Settings) -> LivenessProber:
                 verdict = verdict_for_linkedin_guest(
                     posting_id, exc.status_code, exc.body, redirected=exc.redirected
                 )
-            return replace(verdict, linkedin_guest=LinkedInGuestObservation(exc.status_code))
+            status = exc.observed_status if exc.observed_status is not None else exc.status_code
+            return replace(verdict, linkedin_guest=LinkedInGuestObservation(status))
         except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
             verdict = verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
             return replace(verdict, linkedin_guest=LinkedInGuestObservation(None))
