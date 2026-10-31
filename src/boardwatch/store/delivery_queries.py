@@ -995,9 +995,10 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
     """Delivered copies deferred by employer requisition, across DISTINCT jobs (D-655).
 
     Applied requisitions hold permanently, including closed or never-delivered postings.
-    Otherwise the earliest delivery wins, with posting id breaking ties. Read every artifact:
-    a later rebuild must not reset the first delivery, and another posting on the same job
-    must never hide its own lead. The current job verdict is the queue's own reading.
+    Otherwise elect only among the queue's per-job representatives, after the lane-copy drain.
+    The job's first delivery wins, with representative posting id breaking ties. Read every
+    artifact for that date: a rebuild or a different sibling must not reset the job's priority.
+    A non-displayed sibling must never hold another job. Selection and verdicts reuse the queue.
 
     Closed, skipped, reported, manual and ineligible leads neither hold nor get deferred.
     Recomputed on every read, so releasing a holder restores its copy without changing the
@@ -1006,8 +1007,7 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
     """
     applied = applied_job_ids(conn)
     withheld = (
-        set(applied) | set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
-        | set(manual_job_ids(conn)) | set(ineligible_job_ids(conn))
+        set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
     )
     applied_keys = {
         key
@@ -1015,18 +1015,26 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
         if int(row.job_id) in applied
         if (key := posting_requisition_key(row.url, row.employer_url)) is not None
     }
+    lane_copy = lane_copy_posting_ids(conn)
+    representatives = {
+        row.posting_id for row in delivered_unapplied(conn, skipped=withheld)
+        if not row.closed and row.verdict != "ineligible" and row.posting_id not in lane_copy
+    }
+    deliveries = _deliveries(conn)
+    first_delivery: dict[int, datetime] = {}
+    for row in deliveries:
+        if row.job_id is not None:
+            first_delivery.setdefault(int(row.job_id), row.delivered_at)
     groups: dict[tuple[str, str, str], list[Row[Any]]] = {}
-    for row in conn.execute(
-        _delivered_select().where(postings.c.status == "open", postings.c.job_id.is_not(None))
-    ).all():
-        if int(row.job_id) in withheld:
+    for row in _delivered_by_posting(deliveries).values():
+        if int(row.posting_id) not in representatives:
             continue
         key = posting_requisition_key(row.url, row.employer_url)
         if key is not None:
             groups.setdefault(key, []).append(row)
     deferred: set[int] = set()
     for key, rows in groups.items():
-        first = min(rows, key=lambda row: (row.delivered_at, int(row.posting_id)))
+        first = min(rows, key=lambda row: (first_delivery[int(row.job_id)], int(row.posting_id)))
         deferred |= {
             int(row.posting_id) for row in rows
             if key in applied_keys or int(row.job_id) != int(first.job_id)

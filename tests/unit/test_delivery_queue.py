@@ -5380,20 +5380,23 @@ def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
         ))
     for _ in range(2):
         with engine.connect() as conn:
-            assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [same_job]
+            assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [
+                copy if tied else same_job,
+            ]
 
 
+@pytest.mark.parametrize("holder_status", ["open", "closed"])
 def test_applied_requisition_holder_defeats_every_standing_copy(
-    engine: Engine, apps: Path,
+    engine: Engine, apps: Path, holder_status: str,
 ) -> None:
-    """An applied holder wins even after closing and even if it was delivered last."""
+    """An applied holder wins open or closed, even if it was delivered last."""
     with engine.begin() as conn:
         first, _ = _deliver(conn, apps, "first", delivered_at=NOW - timedelta(days=2))
         second, _ = _deliver(conn, apps, "second", delivered_at=NOW - timedelta(days=1))
         applied, _ = _deliver(conn, apps, "applied")
         _requisition(conn, first, second, applied)
         mark_job_applied(conn, posting_id=applied, source="test")
-        conn.execute(update(postings).where(postings.c.id == applied).values(status="closed"))
+        conn.execute(update(postings).where(postings.c.id == applied).values(status=holder_status))
     with engine.connect() as conn:
         assert queue.standing_queue_rows(conn) == []
 
@@ -5489,3 +5492,45 @@ def test_exact_requisition_earliest_lane_copy_survives_board_preference(
         _requisition(conn, lane, board)
     with engine.connect() as conn:
         assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [lane]
+
+
+@pytest.mark.parametrize("scenario", ["lane_drained", "historical_siblings"])
+def test_each_unapplied_requisition_keeps_one_visible_standing_lead(
+    engine: Engine, apps: Path, scenario: str,
+) -> None:
+    """A posting absent from the standing queue must never hold another job's lead."""
+    other_url = "https://www.amazon.jobs/en/jobs/10567490/software-development-engineer"
+    with engine.begin() as conn:
+        if scenario == "lane_drained":
+            lane, _ = _deliver(
+                conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(days=2),
+            )
+            board, _ = _deliver(
+                conn, apps, "board", url=other_url, delivered_at=NOW - timedelta(days=1),
+            )
+            copy, _ = _deliver(conn, apps, "copy")
+            _requisition(conn, lane, copy)
+            _cross_host(conn, lane, "shared")
+            _cross_host(conn, board, "shared")
+            _cross_host(conn, copy, "distinct")
+            requisitions = ({lane, copy}, {board})
+            expected = {copy, board}
+        else:
+            p1, job_a = _deliver(conn, apps, "p1", delivered_at=NOW - timedelta(days=3))
+            p2, job_b = _deliver(
+                conn, apps, "p2", url=other_url, delivered_at=NOW - timedelta(days=2),
+            )
+            p3, _ = _deliver(
+                conn, apps, "p3", job_id=job_a, url=other_url,
+                delivered_at=NOW - timedelta(days=1),
+            )
+            p4, _ = _deliver(conn, apps, "p4", job_id=job_b)
+            _requisition(conn, p1, p4)
+            requisitions = ({p1, p4}, {p2, p3})
+            expected = {p3, p4}
+    with engine.connect() as conn:
+        assert not applied_job_ids(conn), "premise: neither requisition has an applied holder"
+        visible = {row.posting_id for row in queue.standing_queue_rows(conn)}
+        for requisition in requisitions:
+            assert len(visible & requisition) == 1
+        assert visible == expected

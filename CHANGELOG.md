@@ -113,6 +113,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Standing requisition copies always elect a lead the queue can display.** Lane-drained postings
+  and historical siblings no longer hide another job's only visible copy. The election uses each
+  job's current queue representative, ordered by its first delivery in artifact history and then
+  representative posting id. Open and closed applied holders still defer every copy (D-655).
+
 - **Resolved jobright copies now match their employer requisition, and standing duplicates defer.**
   The verified employer URL is retained as evidence on every ingestion, including records already
   stored under a job-apps key; their stored URL and identity stay intact. Delivered copies on
