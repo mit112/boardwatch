@@ -63,7 +63,7 @@ from boardwatch.store.abstain_queries import count_requirement_dispositions
 from boardwatch.store.buried_queries import buried_good_leads
 from boardwatch.store.delivery_queries import apply_lane_cohort
 from boardwatch.store.queries import (
-    current_posting_versions,
+    current_posting_version_ids,
     get_profile,
     get_watched_companies,
     record_corpus_counts,
@@ -335,9 +335,9 @@ def collect_run_funnel(
             )
             # Same scope as `eligibility abstain`: the CURRENT evaluation of every OPEN
             # posting. Keeping the scopes identical is what lets the two be compared at all.
-            versions = current_posting_versions(conn, None)
+            versions = current_posting_version_ids(conn, None)
             evals = current_evaluations_chunked(
-                conn, [cv.posting_version_id for cv in versions.values()], *identity
+                conn, list(versions.values()), *identity
             )
             counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
             # `identity` came from `current_identity`, which only returns non-None when a

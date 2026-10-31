@@ -131,6 +131,10 @@ All notable changes to this project are documented here. The format follows
   standing queue. Folders, web lists and apply-lane counts share the read-time rule and the
   existing `_lane_copy` drain; built rows and dispositions are never reopened (D-655).
 
+- **Lower peak memory while collecting the run funnel.** The corpus-wide abstain read now
+  selects only current posting-version IDs instead of loading every open posting's frozen
+  job description. Counts and the bounded body reads needed by delivery-lane checks are unchanged.
+
 - **A copy of a requisition you already have is no longer delivered.** A job-apps or Indeed copy
   carrying the employer's own URL, under a differently spelled company ("Amazon" / "Amazon.com"),
   and one Oracle requisition published on two career sites, were delivered as separate leads,
