@@ -2566,11 +2566,19 @@ def _run_pipeline_leased(
                 summary.errors.append(message)
             else:
                 probe = summary.death_probe
+                guest = probe.linkedin_guest
+                guest_suffix = (
+                    f", linkedin guest: {guest['attempted']} attempted, "
+                    f"{guest['http_200']} HTTP 200, "
+                    f"{guest['http_404']} HTTP 404, {guest['other_non_200']} other non-200, "
+                    f"{guest['no_response']} no response"
+                    if guest is not None and guest["attempted"] > 0 else ""
+                )
                 console.print(
                     f"death probe: {probe.attempted} of {probe.due} due probed, "
                     f"{probe.gone} gone, {probe.unknown} unknown, "
                     f"{probe.closed_by_url} closed "
-                    f"({probe.budget_refused} refused by budget)"
+                    f"({probe.budget_refused} refused by budget){guest_suffix}"
                 )
                 console.print(
                     f"death probe listings: {probe.companies_attempted} of "

@@ -19,11 +19,13 @@ a funnel that reports the check as *unmeasured* rather than as zero dead (the D-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from urllib.parse import unquote, urlsplit
 
 from sqlalchemy import Engine, select
 
 from boardwatch.core.liveness import (
+    LinkedInGuestObservation,
     Liveness,
     verdict_for_failure,
     verdict_for_linkedin_guest,
@@ -119,16 +121,20 @@ def build_prober(settings: Settings) -> LivenessProber:
             result = fetcher.get(guest_url)
         except FetchFailure as exc:
             if exc.status_code is None:
-                return verdict_for_failure(posting_id, None, str(exc))
-            return verdict_for_linkedin_guest(
-                posting_id, exc.status_code, exc.body, redirected=exc.redirected
-            )
+                verdict = verdict_for_failure(posting_id, None, str(exc))
+            else:
+                verdict = verdict_for_linkedin_guest(
+                    posting_id, exc.status_code, exc.body, redirected=exc.redirected
+                )
+            return replace(verdict, linkedin_guest=LinkedInGuestObservation(exc.status_code))
         except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
-            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+            verdict = verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+            return replace(verdict, linkedin_guest=LinkedInGuestObservation(None))
         moved = bool(result.final_url) and urlsplit(result.final_url)[:3] != urlsplit(guest_url)[:3]
-        return verdict_for_linkedin_guest(
+        verdict = verdict_for_linkedin_guest(
             posting_id, result.status_code, result.content, redirected=moved
         )
+        return replace(verdict, linkedin_guest=LinkedInGuestObservation(result.status_code))
 
     def probe(posting_id: int, url: str) -> Liveness:
         cxs_url = cxs_job_url(url)

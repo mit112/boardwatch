@@ -484,8 +484,23 @@ def sweep_unwatched_deaths(
     asked_companies = due_companies[:company_budget] if listing_prober is not None else []
 
     gone = unknown = alive = closed_by_url = strikes_cleared = 0
+    linkedin_guest: dict[str, int] | None = None
     for row in candidates:
         result = prober(int(row.id), str(row.url))
+        if result.linkedin_guest is not None:
+            if linkedin_guest is None:
+                linkedin_guest = dict.fromkeys(
+                    ("attempted", "http_200", "http_404", "other_non_200", "no_response"), 0
+                )
+            status = result.linkedin_guest.status_code
+            if status is None:
+                bucket = "no_response"
+            elif status in (200, 404):
+                bucket = f"http_{status}"
+            else:
+                bucket = "other_non_200"
+            linkedin_guest["attempted"] += 1
+            linkedin_guest[bucket] += 1
         strikes = int(row.death_strikes)
         if result.signal in CLOSING_SIGNALS:
             gone += 1
@@ -617,6 +632,7 @@ def sweep_unwatched_deaths(
         listing_absent=listing_absent,
         listing_present=listing_present,
         listing_unknown=listing_unknown,
+        linkedin_guest=linkedin_guest,
     )
 
 

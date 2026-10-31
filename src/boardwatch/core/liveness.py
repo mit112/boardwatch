@@ -198,6 +198,13 @@ class ContradictoryLiveness(Exception):
 
 
 @dataclass(frozen=True)
+class LinkedInGuestObservation:
+    """A guest request was made; None means no HTTP response arrived."""
+
+    status_code: int | None
+
+
+@dataclass(frozen=True)
 class Liveness:
     """One posting's liveness at one instant. Carries no timestamp on purpose — a timestamp
     invites somebody to store it, and a stored liveness is the thing this module exists to
@@ -207,6 +214,7 @@ class Liveness:
     verdict: str
     signal: str
     detail: str = ""
+    linkedin_guest: LinkedInGuestObservation | None = None
 
     def __post_init__(self) -> None:
         if self.verdict not in VERDICTS:

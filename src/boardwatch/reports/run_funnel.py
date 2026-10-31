@@ -899,6 +899,7 @@ class DeathProbeReport:
     listing_absent: int
     listing_present: int
     listing_unknown: int
+    linkedin_guest: dict[str, int] | None = None
 
     @property
     def closed(self) -> int:
@@ -931,6 +932,7 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
             "listing_absent": None,
             "listing_present": None,
             "listing_unknown": None,
+            "linkedin_guest": None,
         }
     return {
         "instrumented": True,
@@ -953,6 +955,7 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
         "listing_absent": report.listing_absent,
         "listing_present": report.listing_present,
         "listing_unknown": report.listing_unknown,
+        "linkedin_guest": report.linkedin_guest,
     }
 
 

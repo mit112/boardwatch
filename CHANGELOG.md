@@ -13,6 +13,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **LinkedIn guest response counts in the death probe.** The run report counts HTTP 200, 404,
+  other responses, and requests without a response; these counts do not change closing verdicts.
+
 - **A degree stated as a bare qualification line is now read.** "Bachelor's degree in Computer
   Science, Software Engineering, or a related field." under a Qualifications heading wrote no
   eligibility row, because every field-naming degree rule needed "required" (or similar) in the

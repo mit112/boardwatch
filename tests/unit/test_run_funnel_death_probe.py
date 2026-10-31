@@ -126,6 +126,7 @@ def test_every_probe_bucket_reaches_the_artifact() -> None:
         "listing_absent": 8,
         "listing_present": 13,
         "listing_unknown": 2,
+        "linkedin_guest": None,
     }
 
 
@@ -154,6 +155,7 @@ def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: 
         "listing_absent": None,
         "listing_present": None,
         "listing_unknown": None,
+        "linkedin_guest": None,
     }
 
 

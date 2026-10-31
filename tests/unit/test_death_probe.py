@@ -1245,3 +1245,34 @@ def test_a_listing_row_asked_within_the_ttl_is_neither_struck_nor_stamped(
     # The board DID answer about both rows and listed neither, so both are counted absent. The
     # per-row TTL withholds the strike, not the observation.
     assert (report.listing_absent, report.closed_by_listing) == (2, 0)
+
+
+def test_guest_counts_reconcile_and_ignore_other_unknowns(tmp_path: Path) -> None:
+    from boardwatch.core.liveness import LinkedInGuestObservation  # noqa: PLC0415
+    from boardwatch.reports.run_funnel import death_probe_to_dict  # noqa: PLC0415
+
+    engine = _store(tmp_path)
+    company = _company(engine, slug="guest-counts", watched=False)
+    ids = [_posting(engine, company, pid=str(i)) for i in range(5)]
+    observations = dict(zip(ids[:4], [200, 404, 503, None], strict=True))
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        if posting_id not in observations:
+            return _error(posting_id, url)
+        return Liveness(posting_id, "unknown", "refetch_error", "HTTP 404",
+                        linkedin_guest=LinkedInGuestObservation(observations[posting_id]))
+
+    report = _sweep(engine, probe, linkedin_can_close=True)
+    block = death_probe_to_dict(report)["linkedin_guest"]
+    assert block == {"attempted": 4, "http_200": 1, "http_404": 1,
+                     "other_non_200": 1, "no_response": 1}
+    assert sum(block[key] for key in ("http_200", "http_404", "other_non_200", "no_response")) == block["attempted"]
+
+
+def test_missing_guest_measurement_serializes_null(tmp_path: Path) -> None:
+    from boardwatch.reports.run_funnel import death_probe_to_dict  # noqa: PLC0415
+
+    engine = _store(tmp_path)
+    _posting(engine, _company(engine, slug="no-guest", watched=False))
+    assert death_probe_to_dict(_sweep(engine, _error))["linkedin_guest"] is None
+    assert death_probe_to_dict(None)["linkedin_guest"] is None
