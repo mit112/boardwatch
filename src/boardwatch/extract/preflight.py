@@ -19,6 +19,7 @@ from sqlalchemy import Engine, select, update
 
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy, write_extraction
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.store.db import write_connection
 from boardwatch.store.tables import extractions, postings, profile
 
@@ -103,12 +104,15 @@ def run_preflight(
             console.print(f"taxonomy changed — re-extracting {len(pending)} postings\u2026")
         else:
             console.print(f"extracting {len(pending)} new posting(s)\u2026")
+        progress = StageProgress("extraction", len(pending), console=console)
         for chunk_start in range(0, len(pending), BATCH_SIZE):
             chunk = pending[chunk_start : chunk_start + BATCH_SIZE]
             with engine.begin() as conn:  # one commit per batch: resumable (D21)
                 for posting_id, body_hash, body_text in chunk:
                     if write_extraction(conn, taxonomy, posting_id, body_hash, body_text):
                         stats.postings_backfilled += 1
+            progress.advance(len(chunk))  # attempted rows, after the batch committed
+        progress.finish()
     return stats
 
 

@@ -22,6 +22,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from urllib.parse import unquote, urlsplit
 
+from rich.console import Console
 from sqlalchemy import Engine, select
 
 from boardwatch.core.liveness import (
@@ -38,6 +39,7 @@ from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.linkedin import LANE_NAME as LINKEDIN_LANE
 from boardwatch.lanes.linkedin import guest_posting_url
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.oraclehcm import details_url_for_page
 from boardwatch.providers.workday import cxs_job_url
 from boardwatch.store.tables import postings
@@ -167,6 +169,7 @@ def check_leads(
     posting_ids: Sequence[int],
     *,
     prober: LivenessProber,
+    console: Console | None = None,
 ) -> dict[int, Liveness]:
     """Probe each posting once, in the order given. Reads URLs; writes nothing, ever."""
     if not posting_ids:
@@ -185,11 +188,14 @@ def check_leads(
             ).all()
         }
     results: dict[int, Liveness] = {}
+    progress = StageProgress("shortlist probe", len(posting_ids), console=console)
     for posting_id in posting_ids:
         url = urls.get(posting_id, "")
         results[posting_id] = (
             prober(posting_id, url) if url else verdict_without_url(posting_id)
         )
+        progress.advance(item=str(posting_id))
+    progress.finish()
     return results
 
 

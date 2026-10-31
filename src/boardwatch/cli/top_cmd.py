@@ -37,6 +37,7 @@ from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
 from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.lanes.dereference import posting_requisition_key
+from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
@@ -593,6 +594,7 @@ def rank_open_postings(
                 postings.c.status == "open",
             )
         ).all()
+        progress = StageProgress("ranking", len(rows), console=output_console)
         # The run computed the identity; reuse it rather than reload the catalog.
         versions = current_posting_versions(conn, None)
         verdicts = current_verdicts(
@@ -1266,6 +1268,9 @@ def rank_open_postings(
     surfaced_job_ids = [j for j in surfaced_job_ids if j not in lane_copy_job_ids]
     if record_surfaced:
         _record_surfaced(engine, settings, surfaced_job_ids, now=now, run_id=run_id)
+    # Start/completion only: the ranker has several filtering passes, not one row loop.
+    progress.advance(len(rows))
+    progress.finish()
     return RankedResults(
         surfaced_job_ids=tuple(surfaced_job_ids),
         visible=visible,
