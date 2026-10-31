@@ -1282,3 +1282,26 @@ def test_missing_guest_measurement_serializes_null(tmp_path: Path) -> None:
     _posting(engine, _company(engine, slug="no-guest", watched=False))
     assert death_probe_to_dict(_sweep(engine, _error))["linkedin_guest"] is None
     assert death_probe_to_dict(None)["linkedin_guest"] is None
+
+
+def test_over_cap_guest_response_counts_as_other_non_200(tmp_path: Path) -> None:
+    import httpx  # noqa: PLC0415
+    import respx  # noqa: PLC0415
+
+    from boardwatch.core.settings import Settings  # noqa: PLC0415
+    from boardwatch.pipeline.liveness import build_prober  # noqa: PLC0415
+    from boardwatch.reports.run_funnel import death_probe_to_dict  # noqa: PLC0415
+
+    engine = _store(tmp_path)
+    company = _company(engine, slug="guest-cap", watched=False, provider="linkedin")
+    _posting(engine, company, pid="guest", url="https://www.linkedin.com/jobs/view/4458214586")
+    settings = Settings(data_dir=tmp_path, config_dir=tmp_path, lanes_enabled=("linkedin",))
+    with respx.mock:
+        respx.get("https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/4458214586").mock(
+            return_value=httpx.Response(429, headers={"Retry-After": "3600"})
+        )
+        report = _sweep(engine, build_prober(settings), linkedin_can_close=True)
+    block = death_probe_to_dict(report)["linkedin_guest"]
+    assert block["other_non_200"] == 1
+    assert block["no_response"] == 0
+    assert report.unknown == 1

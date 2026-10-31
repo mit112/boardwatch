@@ -64,12 +64,14 @@ class FetchFailure(Exception):
         message: str,
         status_code: int | None = None,
         *,
+        observed_status: int | None = None,
         redirected: bool = False,
         final_url: str = "",
         body: bytes = b"",
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.observed_status = observed_status
         self.redirected = redirected
         # The non-200 response's body, when one was read. Providers ignore it; the Workday
         # liveness probe cannot, because Workday answers an unposted requisition with a 403 whose
@@ -836,8 +838,8 @@ class Fetcher:
             if retry_after is not None and retry_after > RETRY_AFTER_CAP_SECONDS:
                 # Refused HERE rather than capped in `_wait`, so the over-cap value never
                 # reaches the retry machinery at all and no sleep of any length is taken for
-                # it. `status_code=None` is not a loss of information: it is the transport-
-                # level shape `providers.base.health_from_failure` already maps to
+                # it. `status_code=None` is the transport-level shape
+                # `providers.base.health_from_failure` already maps to
                 # `BoardHealth.UNREACHABLE`, which is precisely what this host is for the
                 # rest of the run. Reusing it keeps that catalog closed.
                 raise FetchFailure(
@@ -845,6 +847,7 @@ class Fetcher:
                     f"beyond the {RETRY_AFTER_CAP_SECONDS:g}s cap — treating the host as "
                     "unreachable for this run rather than holding its lock",
                     status_code=None,
+                    observed_status=response.status_code,
                     final_url=str(response.url),
                 )
             raise _RetryableStatus(response.status_code, retry_after)

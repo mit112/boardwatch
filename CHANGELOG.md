@@ -118,6 +118,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **LinkedIn guest counters record over-cap rate limits as responses.** A 429 or 503 with an
+  oversized Retry-After now counts as a non-200 response while preserving the existing outage verdict.
 - **Historical queue folders stay deferred with their requisition copy.** Deferral elects among
   current representatives, then covers every delivered posting of each losing job, including
   copies held by an applied requisition. Refreshes keep older sibling folders in `_lane_copy`,
