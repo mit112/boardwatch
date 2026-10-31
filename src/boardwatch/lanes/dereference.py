@@ -611,3 +611,19 @@ def requisition_key(url: str) -> tuple[str, str, str] | None:
     if target.provider in ("workday", "oraclehcm"):
         scope = scope.rsplit("/", 1)[0]
     return (target.provider, scope, target.posting_ref.lower())
+
+
+def posting_requisition_key(
+    url: str | None, employer_url: object = None,
+) -> tuple[str, str, str] | None:
+    """Read evidenced employer URL first, then stored URL; unreadable evidence costs no key.
+
+    `employer_url` is the optional job-apps resolver evidence, never a company/title inference.
+    JSON evidence of another type is absent evidence (D-655).
+    """
+    for candidate in (employer_url, url):
+        if isinstance(candidate, str):
+            key = requisition_key(candidate)
+            if key is not None:
+                return key
+    return None

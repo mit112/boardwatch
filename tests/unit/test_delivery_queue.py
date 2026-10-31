@@ -5345,3 +5345,147 @@ def test_a_closed_manual_lead_stuck_in_manual_is_not_rewritten(
 
     assert drained.failed == 1, "premise: reconcile refused the move into `_closed/`"
     assert _snapshot(root / MANUAL_DIR) == before
+
+
+_REQ_URL = "https://www.amazon.jobs/en/jobs/10567489/software-development-engineer"
+
+
+def _requisition(conn: Connection, *posting_ids: int) -> None:
+    for posting_id in posting_ids:
+        conn.execute(update(postings).where(postings.c.id == posting_id).values(
+            raw_json={"jobapps": {"employer_url": _REQ_URL}},
+        ))
+
+
+@pytest.mark.parametrize("tied", [False, True])
+def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
+    engine: Engine, apps: Path, tied: bool,
+) -> None:
+    """Latest delivery, unstable ties, or a job-keyed deferral would lose the survivor."""
+    with engine.begin() as conn:
+        first, job = _deliver(conn, apps, "first", delivered_at=NOW - timedelta(days=2))
+        copy, _ = _deliver(
+            conn, apps, "copy", delivered_at=NOW - timedelta(days=2 if tied else 1),
+        )
+        same_job, _ = _deliver(conn, apps, "same", job_id=job, delivered_at=NOW)
+        _requisition(conn, first, copy, same_job)
+        # Another build of the first posting must not replace its FIRST delivery date.
+        version = conn.execute(select(posting_versions.c.id).where(
+            posting_versions.c.posting_id == first,
+        )).scalar_one()
+        conn.execute(insert(artifacts).values(
+            posting_version_id=version, kind="resume_tailored", uri="/out/rebuilt.typ",
+            generator="boardwatch.tailor", media_type="text/x-typst", meta_json={},
+            created_at=NOW - timedelta(hours=1),
+        ))
+    for _ in range(2):
+        with engine.connect() as conn:
+            assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [same_job]
+
+
+def test_applied_requisition_holder_defeats_every_standing_copy(
+    engine: Engine, apps: Path,
+) -> None:
+    """An applied holder wins even after closing and even if it was delivered last."""
+    with engine.begin() as conn:
+        first, _ = _deliver(conn, apps, "first", delivered_at=NOW - timedelta(days=2))
+        second, _ = _deliver(conn, apps, "second", delivered_at=NOW - timedelta(days=1))
+        applied, _ = _deliver(conn, apps, "applied")
+        _requisition(conn, first, second, applied)
+        mark_job_applied(conn, posting_id=applied, source="test")
+        conn.execute(update(postings).where(postings.c.id == applied).values(status="closed"))
+    with engine.connect() as conn:
+        assert queue.standing_queue_rows(conn) == []
+
+
+@pytest.mark.parametrize("release", ["closed", "reported", "skipped", "manual", "ineligible"])
+def test_requisition_copy_returns_when_holder_stops_holding(
+    engine: Engine, apps: Path, release: str,
+) -> None:
+    """A stamped deferral or a holder that ignores drains would permanently lose the copy."""
+    with engine.begin() as conn:
+        holder, job = _deliver(conn, apps, "holder", delivered_at=NOW - timedelta(days=1))
+        copy, _ = _deliver(conn, apps, "copy")
+        _requisition(conn, holder, copy)
+    with engine.connect() as conn:
+        assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [holder]
+    with engine.begin() as conn:
+        if release == "closed":
+            conn.execute(update(postings).where(postings.c.id == holder).values(status="closed"))
+        elif release == "reported":
+            mark_job_reported(conn, job_id=job, at=NOW)
+        elif release == "skipped":
+            mark_job_skipped(conn, job_id=job, at=NOW)
+        elif release == "manual":
+            mark_job_manual(conn, job_id=job, at=NOW)
+        else:
+            _make_ineligible(conn, holder)
+    with engine.connect() as conn:
+        assert copy in [r.posting_id for r in queue.standing_queue_rows(conn)]
+
+
+@pytest.mark.parametrize("consumer", ["standing", "reconcile", "api", "cohort"])
+def test_requisition_deferral_reaches_every_consumer_without_store_writes(
+    engine: Engine, root: Path, apps: Path, consumer: str,
+) -> None:
+    """Omitting one consumer disagrees with folders; reopening a built row repeats delivery."""
+    from boardwatch.delivery.api import queue_payload  # noqa: PLC0415
+    from boardwatch.store.delivery_queries import apply_lane_cohort  # noqa: PLC0415
+    from boardwatch.store.ledger_queries import record_disposition  # noqa: PLC0415
+    from boardwatch.store.tables import eligibility_evaluations, job_dispositions  # noqa: PLC0415
+
+    with engine.begin() as conn:
+        holder, holder_job = _deliver(conn, apps, "holder", delivered_at=NOW - timedelta(days=1))
+        copy, copy_job = _deliver(conn, apps, "copy")
+        for job in (holder_job, copy_job):
+            record_disposition(
+                conn, job, disposition="built", reason="lead_built", policy_version="v1", now=NOW,
+            )
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    with engine.begin() as conn:
+        _requisition(conn, holder, copy)
+    tables = (postings, jobs, artifacts, job_dispositions, eligibility_evaluations)
+    with engine.connect() as conn:
+        before = [conn.execute(select(table).order_by(*table.primary_key.columns)).all() for table in tables]
+        if consumer == "standing":
+            assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [holder]
+        elif consumer == "reconcile":
+            drained = reconcile_queue(conn, root=root)
+            assert drained.to_lane_copy == 1
+            assert len(_folders(root / LANE_COPY_DIR)) == 1
+            assert _details(root / LANE_COPY_DIR / _folders(root / LANE_COPY_DIR)[0])["posting_id"] == copy
+        elif consumer == "api":
+            ctx = ApiContext(
+                settings=load_settings(), out_root=apps.resolve(), queue_root=root.resolve(),
+                owner_name=OWNER, platform="darwin",
+            )
+            page = queue_payload(conn, ctx)
+            assert [r["posting_id"] for r in page["rows"] + page["review"]] == [holder]
+            assert page["counts"]["lane_copy"] == 1
+        else:
+            run_ids = {r.delivered_run_id for r in delivered_unapplied(conn, skipped=set())
+                       if r.delivered_run_id is not None}
+            cohort = apply_lane_cohort(conn, run_ids=run_ids)
+            assert [p.posting_id for rows in cohort.values() for p in rows] == [holder]
+        after = [conn.execute(select(table).order_by(*table.primary_key.columns)).all() for table in tables]
+        assert after == before
+    # Refresh contains both reconcile and sync; the deferred folder must stay put.
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    before_files = _snapshot(root)
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert _snapshot(root) == before_files
+
+
+def test_exact_requisition_earliest_lane_copy_survives_board_preference(
+    engine: Engine, apps: Path,
+) -> None:
+    """Unioning the old board-preference drain with earliest-wins would hide BOTH copies."""
+    with engine.begin() as conn:
+        lane, _ = _deliver(conn, apps, "lane", provider="jobapps", delivered_at=NOW - timedelta(days=1))
+        board, _ = _deliver(conn, apps, "board", provider="greenhouse")
+        _cross_host(conn, lane, "one-group")
+        _cross_host(conn, board, "one-group")
+        _requisition(conn, lane, board)
+    with engine.connect() as conn:
+        assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [lane]

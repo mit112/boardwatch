@@ -90,6 +90,7 @@ from boardwatch.store.delivery_queries import (
     lane_copy_posting_ids,
     lane_decision,
     queue_detail,
+    requisition_copy_posting_ids,
     review_job_ids,
 )
 from boardwatch.store.queries import canonical_job_ids
@@ -357,13 +358,13 @@ def refresh_queue(
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     """Every lead the queue holds a folder for: delivered, unapplied, not skipped, reported or
-    moved to manual, not `ineligible`, and not a lane copy. `_sync_locked` files exactly these,
-    and T113's gate refresh re-judges from exactly these, so the population is defined once — why
+    moved to manual, not `ineligible`, and not a deferred lane or requisition copy. `_sync_locked`
+    files exactly these, and T113's gate refresh re-judges from exactly these — why
     each exclusion is there is `_sync_locked`'s comment."""
     withheld = (
         set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
     )
-    lane_copy = lane_copy_posting_ids(conn)
+    lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
     return [
         row
         for row in delivered_unapplied(conn, skipped=withheld)
@@ -1251,7 +1252,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
-    lane_copy = lane_copy_posting_ids(conn)
+    lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
     entries, unclassified = _index(root)
     # Refreshed before `_wanted_location` reads `entry.job_id`: a folder whose canonical job moved
     # would otherwise be filed against the identity it was written under rather than the one it
@@ -1423,8 +1424,7 @@ def _wanted_location(
         return MANUAL_DIR
     if entry.job_id in ineligible:
         return INELIGIBLE_DIR
-    # By the folder's POSTING, as `lane_copy_posting_ids` is keyed: a board posting sharing its
-    # lane twin's job is never a lane copy (T189b).
+    # Both copy deferrals are keyed by POSTING and exclude same-job pairs (T189b, D-655).
     if entry.posting_id in lane_copy:
         return LANE_COPY_DIR
     if entry.job_id in review:

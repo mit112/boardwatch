@@ -210,6 +210,8 @@ class _Record:
     # by `collect` only when the record is filed under it. The record's own `direct_url` stays
     # job-apps' value, so the provenance in `raw_json` is unchanged.
     resolved_url: str | None = None
+    # Verified resolver evidence, refreshed even for records already stored under job-apps.
+    employer_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -632,6 +634,7 @@ def _raw_posting(identity: _Identity, record: _Record, *, body_text: str) -> Raw
                 "primary_acquisition": record.primary_acquisition,
                 "cohort_date": record.cohort_date,
                 "schema_version": SUPPORTED_SCHEMA_VERSION,
+                **({"employer_url": record.employer_url} if record.employer_url else {}),
                 "canonical": {
                     "company": record.company,
                     "title": record.title,
@@ -789,16 +792,19 @@ class JobAppsLane:
                 if linkedin_ref is None
                 else linkedin_identity(record, linkedin_ref, stored)
             )
-            if record.posting_id in employer_postings and record.posting_id not in filed_own:
+            if record.posting_id in employer_postings:
                 url, target = employer_postings[record.posting_id]
-                record = replace(record, resolved_url=url)
-                identity = _Identity(
-                    target.provider,
-                    target.slug,
-                    target.posting_ref,
-                    CONVERGED_SECONDHAND | _LIVENESS_UNOBSERVED,
-                )
-                converged.add((identity.provider, identity.slug))
+                # Evidence refreshes even when the stored job-apps identity must stay put.
+                record = replace(record, employer_url=url)
+                if record.posting_id not in filed_own:
+                    record = replace(record, resolved_url=url)
+                    identity = _Identity(
+                        target.provider,
+                        target.slug,
+                        target.posting_ref,
+                        CONVERGED_SECONDHAND | _LIVENESS_UNOBSERVED,
+                    )
+                    converged.add((identity.provider, identity.slug))
             # A LinkedIn job is ONE job whatever company spelling filed it, so its slug is left
             # out of the key: two records naming one job id under two spellings are one posting.
             resolved = (

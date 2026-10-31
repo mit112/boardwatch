@@ -423,3 +423,35 @@ def test_an_attempt_never_submitted_does_not_hold_its_requisition(data_dir: Path
 
     assert _visible(results) == [copy]
     assert results.hidden_requisition_twin == 1
+
+
+@pytest.mark.parametrize("enriched", ["candidate", "delivered", "applied"])
+def test_resolved_jobright_candidate_and_holders_use_employer_evidence(
+    data_dir: Path, enriched: str,
+) -> None:
+    """Reading only postings.url misses either side of a jobright requisition match."""
+    url = WD.format(site="Global", req="R-785495")
+    jobright = "https://jobright.ai/jobs/info/6a95ed6fcabc9f6703e1b085"
+    engine, (copy, holder) = _seed(data_dir, [
+        ("copy", "jobapps", "SW Engineer I", jobright if enriched == "candidate" else url),
+        ("holder", "jobapps", "Software Engineer", url if enriched == "candidate" else jobright),
+    ])
+    evidenced = copy if enriched == "candidate" else holder
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == evidenced).values(
+            raw_json={"jobapps": {"employer_url": url}},
+        ))
+        if enriched == "applied":
+            mark_job_applied(conn, posting_id=holder, source="test")
+    if enriched != "applied":
+        _delivered(engine, holder)
+    assert _visible(_rank(engine, data_dir)) == []
+    # Bad evidence falls back to the stored employer URL. No title/company inference.
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == evidenced).values(url=url))
+    for invalid in ("https://[broken/", "https://unknown.invalid/no-key", None, 7, {}):
+        with engine.begin() as conn:
+            conn.execute(update(postings).where(postings.c.id == evidenced).values(
+                raw_json={"jobapps": {"employer_url": invalid}},
+            ))
+        assert _visible(_rank(engine, data_dir)) == []

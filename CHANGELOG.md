@@ -113,6 +113,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Resolved jobright copies now match their employer requisition, and standing duplicates defer.**
+  The verified employer URL is retained as evidence on every ingestion, including records already
+  stored under a job-apps key; their stored URL and identity stay intact. Delivered copies on
+  different jobs keep the earliest delivery (posting id breaks ties), or all defer when the
+  requisition was applied to. Deferred copies return when their holder closes or leaves the
+  standing queue. Folders, web lists and apply-lane counts share the read-time rule and the
+  existing `_lane_copy` drain; built rows and dispositions are never reopened (D-655).
+
 - **A copy of a requisition you already have is no longer delivered.** A job-apps or Indeed copy
   carrying the employer's own URL, under a differently spelled company ("Amazon" / "Amazon.com"),
   and one Oracle requisition published on two career sites, were delivered as separate leads,
