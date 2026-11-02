@@ -103,6 +103,14 @@ postings = Table(
     Index("ix_postings_status_posted_at", "status", "posted_at"),
     Index("ix_postings_content_hash", "content_hash"),
     Index("ix_postings_job_id", "job_id"),
+    # Answers the corpus-wide reads from the index, because reading one posting's row costs a disk
+    # page per posting: 100 s per statement at 830k open postings, however few columns it wants.
+    # The expression must stay textually equal to `queries.body_is_empty`, or it stops matching.
+    Index(
+        "ix_postings_corpus", "status", "company_id", "provider_posting_id",
+        text("(trim(body_text, char(32, 9, 10, 13, 12, 11)) = '')"),
+    ),
+    Index("ix_postings_id_status", "id", "status"),
     CheckConstraint(
         "remote_policy IN ('remote', 'hybrid', 'onsite', 'unknown')", name="remote_policy_enum"
     ),
@@ -477,7 +485,10 @@ posting_identities = Table(
     Column("created_at", DateTime, nullable=False),
     UniqueConstraint("posting_id", "kind", "algorithm_version"),
     CheckConstraint(f"kind IN ({_IDENTITY_KIND_LIST})", name="identity_kind_enum"),
-    Index("ix_posting_identities_key", "kind", "identity_key"),
+    # Carries the join's other two columns so the duplicate sweep reads no identity row at all.
+    Index(
+        "ix_posting_identities_key", "kind", "identity_key", "algorithm_version", "posting_id",
+    ),
 )
 
 # Both catalogs are closed, and both are enforced twice: typed at the write site

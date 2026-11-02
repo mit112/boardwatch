@@ -67,6 +67,10 @@ def _unsliced_slug(slug: ColumnElement[str]) -> ColumnElement[str]:
     return case((fragment_at > 0, func.substr(slug, 1, fragment_at - 1)), else_=slug)
 
 
+#: The strip set of `body_is_empty`, shared with the index that answers it.
+BODY_STRIP_SET = "char(32, 9, 10, 13, 12, 11)"
+
+
 def body_is_empty() -> ColumnElement[bool]:
     """SQL predicate: this open posting's JD body is empty once trimmed (a stub).
 
@@ -85,8 +89,25 @@ def body_is_empty() -> ColumnElement[bool]:
 
     The two-arg `trim` names the strip set explicitly — SQLite's one-arg `trim` removes spaces
     ONLY, so a body of tabs or newlines would otherwise read as non-empty.
+
+    Written with literals, not bound parameters, because SQLite only answers an expression from
+    `ix_postings_corpus` when the query's text matches the index's, and a parameter never does.
+    Without that index this predicate reads every open body in full (~200 s per statement on the
+    measured store). `char(32, 9, 10, 13, 12, 11)` is the same set: space, tab, LF, CR, FF, VT.
     """
-    return func.trim(postings.c.body_text, " \t\n\r\f\v") == ""
+    return func.trim(postings.c.body_text, literal_column(BODY_STRIP_SET)) == literal_column("''")
+
+
+def open_empty_body_posting_ids(conn: Connection) -> set[int]:
+    """Open postings whose body is empty, from `ix_postings_corpus` without reading a body.
+
+    The predicate is selected, not filtered on, because SQLite answers it from the index only there:
+    in a WHERE clause the same expression reads every open row (~190 s on the measured store).
+    """
+    rows = conn.execute(
+        select(postings.c.id, body_is_empty().label("empty")).where(postings.c.status == "open")
+    )
+    return {int(row.id) for row in rows if row.empty}
 
 
 def jobapps_employer_url() -> ColumnElement[Any]:
