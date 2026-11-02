@@ -105,8 +105,8 @@ class CorpusCounts:
 
 def _current_identity_evaluations(
     *, profile_hash: str, rules_hash: str, engine_kind: str, engine_version: str
-) -> Select[tuple[int, str, int | None]]:
-    """(posting_id, verdict, run_id) for each OPEN posting's CURRENT version's evaluation.
+) -> Select[tuple[int, int, str, int | None]]:
+    """(posting_id, company_id, verdict, run_id) for each OPEN posting's CURRENT evaluation.
 
     At most one row per open posting: `input_fingerprint` is unique per (posting version,
     profile, rules) and `uq_eligibility_deterministic` is unique per (input, engine_version)
@@ -127,6 +127,8 @@ def _current_identity_evaluations(
     return (
         select(
             postings.c.id.label("posting_id"),
+            # Carried here so a caller grouping by company reads no posting row (~150 s) to get it.
+            postings.c.company_id,
             eligibility_evaluations.c.verdict,
             eligibility_evaluations.c.run_id,
         )
@@ -843,11 +845,9 @@ def count_by_source(
         eligible_by_company = {
             int(row[0]): int(row[1])
             for row in conn.execute(
-                select(postings.c.company_id, func.count())
-                .select_from(judged)
-                .join(postings, postings.c.id == judged.c.posting_id)
+                select(judged.c.company_id, func.count())
                 .where(judged.c.verdict == "eligible")
-                .group_by(postings.c.company_id)
+                .group_by(judged.c.company_id)
             ).all()
         }
 

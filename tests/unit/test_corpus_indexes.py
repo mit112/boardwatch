@@ -16,6 +16,8 @@ from sqlalchemy import Connection, Engine, create_engine, event, func, insert, i
 from boardwatch.core.clock import utcnow
 from boardwatch.eligibility import read
 from boardwatch.eligibility.read import _REVERSE_MAP_SCAN_ABOVE, _posting_by_version
+from boardwatch.extract.preflight import _open_postings_missing_extraction
+from boardwatch.pipeline.death_probe import unreachable_by_the_scanner
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.queries import open_empty_body_posting_ids
 from boardwatch.store.run_funnel_queries import (
@@ -138,6 +140,27 @@ def test_the_duplicate_sweep_reads_no_row(tmp_path: Path) -> None:
         assert "INTEGER PRIMARY KEY" not in plan, plan
 
 
+def test_the_extraction_check_reads_no_row_or_body_until_one_is_due(tmp_path: Path) -> None:
+    """Nothing is due on an empty store, so its only statement is the check itself."""
+    engine = _engine(tmp_path)
+    plans = _plans_of(
+        engine, lambda _conn: _open_postings_missing_extraction(engine, "taxonomy-version")
+    )
+    assert plans
+    assert all("COVERING INDEX ix_postings_corpus" in plan for plan in plans), plans
+
+
+def test_the_death_sweep_seeks_unwatched_companies_instead_of_walking_open_postings(
+    tmp_path: Path,
+) -> None:
+    engine = _engine(tmp_path)
+    board = postings.join(companies, companies.c.id == postings.c.company_id)
+    stmt = select(postings.c.id).select_from(board).where(unreachable_by_the_scanner())
+    plans = _plans_of(engine, lambda conn: conn.execute(stmt).all())
+    assert plans
+    assert all("ix_postings_corpus (status=? AND company_id=?)" in plan for plan in plans), plans
+
+
 def test_the_scan_preflight_load_reads_no_row(tmp_path: Path) -> None:
     """The statement `scan/coordinator.py` issues before dispatch, inlined there."""
     stmt = select(postings.c.company_id, postings.c.provider_posting_id).where(
@@ -196,7 +219,7 @@ def test_a_migration_killed_part_way_finishes_on_retry(
     command.upgrade(cfg, BASE)
     statements = {
         "ix_postings_corpus": "CREATE INDEX ix_postings_corpus ON postings (status, company_id, "
-        "provider_posting_id, (trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''))",
+        "provider_posting_id, (trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''), content_hash)",
         "ix_postings_id_status": "CREATE INDEX ix_postings_id_status ON postings (id, status)",
         "DROP": "DROP INDEX ix_posting_identities_key",
     }

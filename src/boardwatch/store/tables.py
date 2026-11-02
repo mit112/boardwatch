@@ -108,7 +108,7 @@ postings = Table(
     # The expression must stay textually equal to `queries.body_is_empty`, or it stops matching.
     Index(
         "ix_postings_corpus", "status", "company_id", "provider_posting_id",
-        text("(trim(body_text, char(32, 9, 10, 13, 12, 11)) = '')"),
+        text("(trim(body_text, char(32, 9, 10, 13, 12, 11)) = '')"), "content_hash",
     ),
     Index("ix_postings_id_status", "id", "status"),
     CheckConstraint(

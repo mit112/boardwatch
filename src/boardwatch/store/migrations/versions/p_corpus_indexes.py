@@ -4,8 +4,8 @@ A posting's row averages 16.5 KB (`raw_json` and `body_text`), so a table page h
 and any statement over the open postings reads one page per posting whatever columns it wants:
 ~100 s at 830k open, ~200 s when it also reads the body. Three additive changes, no table rebuild:
 
-- `ix_postings_corpus` covers the per-company counts and the scan's open-id load, and carries the
-  empty-body expression so `body_is_empty` reads no body.
+- `ix_postings_corpus` covers the per-company counts, the scan's open-id load and the extraction
+  check's hash read, and carries the empty-body expression so `body_is_empty` reads no body.
 - `ix_postings_id_status` answers a join's "is this posting open?" without the row.
 - `ix_posting_identities_key` gains the two columns the duplicate sweep joins on. Its old columns
   are its prefix, so every reader of the old index is still served.
@@ -28,7 +28,7 @@ def upgrade() -> None:
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_postings_corpus ON postings "
         "(status, company_id, provider_posting_id, "
-        "(trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''))"
+        "(trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''), content_hash)"
     )
     op.execute("CREATE INDEX IF NOT EXISTS ix_postings_id_status ON postings (id, status)")
     op.execute("DROP INDEX IF EXISTS ix_posting_identities_key")
