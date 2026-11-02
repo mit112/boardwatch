@@ -5,6 +5,7 @@ drifts from the index's expression, or a read given a new column, returns the sa
 through a table scan, and on the real store costs 100-200 s per statement with every test green.
 """
 
+import sqlite3
 from collections.abc import Callable
 from pathlib import Path
 
@@ -30,6 +31,23 @@ from boardwatch.store.tables import companies, jobs, posting_versions, postings
 BASE = "p_board_scans_lane"
 HEAD = "p_corpus_indexes"
 MIGRATIONS = Path("src/boardwatch/store/migrations")
+
+
+def _expression_read() -> str:
+    """What this SQLite's EXPLAIN says about a read answered from an index EXPRESSION.
+
+    SQLite 3.46.0 says "USING INDEX" and 3.53.1 says "USING COVERING INDEX" for the same read, and
+    neither opens the row: over 831,691 open postings 3.46.0 took 1.0 s and 3.53.1 took 0.7 s, where
+    reading the bodies takes 100-200 s. A drifted `body_is_empty` leaves the stub counts reading
+    "USING INDEX ix_postings_corpus" too, so the strict text is demanded wherever SQLite can state
+    it. Asked of SQLite itself because the version where the wording changed was not measured.
+    """
+    db = sqlite3.connect(":memory:")
+    db.execute("CREATE TABLE t (a, b)")
+    db.execute("CREATE INDEX i ON t (a, (b = ''))")
+    plan = db.execute("EXPLAIN QUERY PLAN SELECT b = '' FROM t WHERE a = 1").fetchone()[3]
+    db.close()
+    return "COVERING INDEX ix_postings_corpus" if "COVERING" in plan else "INDEX ix_postings_corpus"
 
 
 def count_open_postings_by_company(conn: Connection) -> object:
@@ -77,10 +95,11 @@ def _plans_of(engine: Engine, issue: Callable[[Connection], object]) -> list[str
 
 def test_the_stub_counts_read_no_body(tmp_path: Path) -> None:
     engine = _engine(tmp_path)
+    expected = _expression_read()
     for count in (count_stub_postings, count_stub_postings_by_company, open_empty_body_posting_ids):
         plans = _plans_of(engine, count)
         assert plans, count
-        assert all("COVERING INDEX ix_postings_corpus" in plan for plan in plans), (count, plans)
+        assert all(expected in plan for plan in plans), (count, plans)
 
 
 def test_the_per_company_count_reads_no_row(tmp_path: Path) -> None:
