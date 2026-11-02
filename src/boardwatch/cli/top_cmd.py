@@ -82,10 +82,10 @@ from boardwatch.store.identity_queries import (
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import (
-    body_is_empty,
     current_posting_version_ids,
     get_profile,
     jobapps_employer_url,
+    open_empty_body_posting_ids,
 )
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.regroup import job_anchors
@@ -584,6 +584,11 @@ def rank_open_postings(
         if profile_row is None:
             raise NoProfileError
         profile = profile_view_from_row(profile_row)
+        # The zero-signal rule's third input, read from the index and never from `body_text`. A row
+        # with an empty body has an extraction row like any other (the preflight backfills
+        # unconditionally), so this is the only thing that separates "read the body, found
+        # nothing" from "there was no body".
+        empty_bodies = open_empty_body_posting_ids(conn)
         rows = conn.execute(
             select(
                 postings.c.id,
@@ -609,12 +614,6 @@ def rank_open_postings(
                 companies.c.provider,
                 companies.c.slug,
                 extractions.c.json.label("extraction_json"),
-                # The zero-signal rule's third input, computed in SQLite rather than by
-                # selecting `body_text` — the largest column in the schema, over every open
-                # posting. A row with an empty body has an extraction row like any other (the
-                # preflight backfills unconditionally), so this flag is the only thing that
-                # separates "read the body, found nothing" from "there was no body".
-                body_is_empty().label("body_empty"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
             .outerjoin(
@@ -781,7 +780,7 @@ def rank_open_postings(
         # boolean computed in SQLite by the same `select(...)`, so the emptiness check costs no
         # transfer of the body itself.
         zero_signal, zero_signal_reason = zero_signal_verdict(
-            role, row.extraction_json, body_empty=bool(row.body_empty),
+            role, row.extraction_json, body_empty=int(row.id) in empty_bodies,
             taxonomy_field=skill_taxonomy.field, role_field=declared_field(role_taxonomy),
         )
         tenant.observe(
@@ -839,7 +838,7 @@ def rank_open_postings(
         # same reason a span-less INELIGIBLE downgrades to ABSTAIN: the cost of not firing is a
         # duplicate slot, the cost of firing wrongly is a real lead nobody ever sees.
         #
-        # `body_empty` is the flag the select already computes for the zero-signal rule; reused
+        # `empty_bodies` is the set already read for the zero-signal rule; reused
         # rather than re-derived, and it is the precise condition — an empty `normalized_title`
         # (2 open postings) would collide the same way, so it is excluded too.
         # `content_hash != EMPTY_BODY_HASH` and NOT `not row.body_empty`, and the two are not the

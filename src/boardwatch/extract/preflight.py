@@ -21,6 +21,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy, write_extraction
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.store.db import write_connection
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import extractions, postings, profile
 
 BATCH_SIZE = 200
@@ -130,11 +131,21 @@ def _open_postings_missing_extraction(
         )
         .exists()
     )
-    query = select(postings.c.id, postings.c.content_hash, postings.c.body_text).where(
+    query = select(postings.c.id, postings.c.content_hash).where(
         postings.c.status == "open", ~current
     )
     if posting_id is not None:
         query = query.where(postings.c.id == posting_id)
+    # Two steps, so a body is read only for a posting that needs one: asking for `body_text` here
+    # would read every open posting's row to find the few thousand a run has to extract.
     with engine.connect() as conn:
-        rows = conn.execute(query.order_by(postings.c.id)).all()
-    return [(int(r.id), str(r.content_hash), str(r.body_text)) for r in rows]
+        due = sorted((int(r.id), str(r.content_hash)) for r in conn.execute(query))
+        bodies: dict[int, str] = {}
+        for chunk in id_chunks([post_id for post_id, _ in due]):
+            bodies.update(
+                (int(r.id), str(r.body_text))
+                for r in conn.execute(
+                    select(postings.c.id, postings.c.body_text).where(postings.c.id.in_(chunk))
+                )
+            )
+    return [(post_id, body_hash, bodies[post_id]) for post_id, body_hash in due]

@@ -105,8 +105,8 @@ class CorpusCounts:
 
 def _current_identity_evaluations(
     *, profile_hash: str, rules_hash: str, engine_kind: str, engine_version: str
-) -> Select[tuple[int, str, int | None]]:
-    """(posting_id, verdict, run_id) for each OPEN posting's CURRENT version's evaluation.
+) -> Select[tuple[int, int, str, int | None]]:
+    """(posting_id, company_id, verdict, run_id) for each OPEN posting's CURRENT evaluation.
 
     At most one row per open posting: `input_fingerprint` is unique per (posting version,
     profile, rules) and `uq_eligibility_deterministic` is unique per (input, engine_version)
@@ -127,6 +127,8 @@ def _current_identity_evaluations(
     return (
         select(
             postings.c.id.label("posting_id"),
+            # Carried here so a caller grouping by company reads no posting row (~150 s) to get it.
+            postings.c.company_id,
             eligibility_evaluations.c.verdict,
             eligibility_evaluations.c.run_id,
         )
@@ -164,14 +166,7 @@ def count_stub_postings(conn: Connection) -> int:
     `queries.body_is_empty` — shared with the ranking surfaces, which fail the zero-signal rule
     OPEN on exactly the postings this instrument counts, so the two can never disagree about
     which body is empty."""
-    return int(
-        conn.execute(
-            select(func.count())
-            .select_from(postings)
-            .where(postings.c.status == "open")
-            .where(body_is_empty())
-        ).scalar_one()
-    )
+    return sum(count_stub_postings_by_company(conn).values())
 
 
 def count_stub_postings_by_company(conn: Connection) -> dict[int, int]:
@@ -192,7 +187,7 @@ def count_stub_postings_by_company(conn: Connection) -> dict[int, int]:
         select(
             postings.c.company_id,
             func.sum(
-                case((func.trim(postings.c.body_text, " \t\n\r\f\v") == "", 1), else_=0)
+                case((body_is_empty(), 1), else_=0)
             ),
         )
         .where(postings.c.status == "open")
@@ -659,11 +654,23 @@ def _colliding_open_posting_ids(conn: Connection) -> list[int]:
     quietly stop happening, in the direction that looks like a healthy corpus.
     """
     kinds = [spec.name for spec in SUPPRESSING_KINDS]
-    grouped = (
-        select(
-            posting_identities.c.kind.label("kind"),
-            posting_identities.c.identity_key.label("identity_key"),
+    other = posting_identities.alias("other")
+    other_posting = postings.alias("other_posting")
+    colliding_keys = (
+        select(other.c.kind, other.c.identity_key)
+        .select_from(other.join(other_posting, other.c.posting_id == other_posting.c.id))
+        .where(
+            other_posting.c.status == "open",
+            other.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+            other.c.kind.in_(kinds),
         )
+        .group_by(other.c.kind, other.c.identity_key)
+        .having(func.count() >= 2)
+    )
+    # A row-value IN, not a join on the grouped keys: with no ANALYZE stats SQLite would walk every
+    # identity first and ask each about the group (241 s on the measured store, against 3.7).
+    stmt = (
+        select(distinct(posting_identities.c.posting_id))
         .select_from(
             posting_identities.join(postings, posting_identities.c.posting_id == postings.c.id)
         )
@@ -671,26 +678,9 @@ def _colliding_open_posting_ids(conn: Connection) -> list[int]:
             postings.c.status == "open",
             posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
             posting_identities.c.kind.in_(kinds),
-        )
-        .group_by(posting_identities.c.kind, posting_identities.c.identity_key)
-        .having(func.count() >= 2)
-        .subquery()
-    )
-    stmt = (
-        select(distinct(posting_identities.c.posting_id))
-        .select_from(
-            posting_identities.join(
-                postings, posting_identities.c.posting_id == postings.c.id
-            ).join(
-                grouped,
-                (posting_identities.c.kind == grouped.c.kind)
-                & (posting_identities.c.identity_key == grouped.c.identity_key),
-            )
-        )
-        .where(
-            postings.c.status == "open",
-            posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
-            posting_identities.c.kind.in_(kinds),
+            tuple_(posting_identities.c.kind, posting_identities.c.identity_key).in_(
+                colliding_keys
+            ),
         )
     )
     return [int(row[0]) for row in conn.execute(stmt).all()]
@@ -724,9 +714,10 @@ def sweep_duplicates(conn: Connection) -> DedupSweep:
     redundancy = _redundancy_by_kind(conn)
     colliding = _colliding_open_posting_ids(conn)
     rows = load_identity_inputs(conn, colliding)
+    company_by_posting = {r.posting_id: r.company_id for r in rows}
     by_company: dict[int, int] = {}
     for suppression in resolve_duplicates(rows, load_identities(conn, colliding)):
-        company_id = {r.posting_id: r.company_id for r in rows}[suppression.posting_id]
+        company_id = company_by_posting[suppression.posting_id]
         by_company[company_id] = by_company.get(company_id, 0) + 1
     return DedupSweep(
         complete=True,
@@ -855,11 +846,9 @@ def count_by_source(
         eligible_by_company = {
             int(row[0]): int(row[1])
             for row in conn.execute(
-                select(postings.c.company_id, func.count())
-                .select_from(judged)
-                .join(postings, postings.c.id == judged.c.posting_id)
+                select(judged.c.company_id, func.count())
                 .where(judged.c.verdict == "eligible")
-                .group_by(postings.c.company_id)
+                .group_by(judged.c.company_id)
             ).all()
         }
 

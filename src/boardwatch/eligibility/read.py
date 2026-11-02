@@ -62,12 +62,25 @@ def current_evaluations_chunked(
     return out
 
 
+#: Above this many ids the map scans `posting_versions`' smallest index once instead of asking per
+#: chunk. A chunk's lookups go through the primary key, whose row holds the whole body, at a disk
+#: page per version: ~95 s per call over the open corpus against about a second for the scan.
+_REVERSE_MAP_SCAN_ABOVE = 5000
+
+
 def _posting_by_version(conn: Connection, posting_version_ids: list[int]) -> dict[int, int]:
     """posting_version_id -> posting_id, chunked past the bound-parameter cap.
 
     Shared by both public reads below, which each need the same mapping to key their result
     by posting rather than by version.
     """
+    if len(posting_version_ids) > _REVERSE_MAP_SCAN_ABOVE:
+        wanted = set(posting_version_ids)
+        return {
+            int(row.id): int(row.posting_id)
+            for row in conn.execute(select(posting_versions.c.id, posting_versions.c.posting_id))
+            if row.id in wanted
+        }
     out: dict[int, int] = {}
     for chunk in id_chunks(posting_version_ids):
         rows = conn.execute(

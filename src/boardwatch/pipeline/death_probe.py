@@ -302,8 +302,16 @@ def unreachable_by_the_scanner() -> ColumnElement[bool]:
     covers the company, and 274 unwatched `source='user'` companies have it too. Naming the lane
     would have fixed the symptom for one acquirer and left the identical rows untouched under
     another.
+
+    The `IN` restates the join on purpose. Without it SQLite walks every open posting's row to find
+    the 5% under an unwatched company (~100 s, three times a sweep); with it, it seeks them.
     """
-    return and_(postings.c.status == "open", companies.c.watched.is_(False))
+    unwatched = companies.alias("unwatched")
+    return and_(
+        postings.c.status == "open",
+        companies.c.watched.is_(False),
+        postings.c.company_id.in_(select(unwatched.c.id).where(unwatched.c.watched.is_(False))),
+    )
 
 
 def _listing_signal(listing: Listing, provider_posting_id: str) -> str:

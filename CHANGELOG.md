@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Corpus-wide reads no longer walk every open posting's row.** A new migration adds covering indexes,
+  including one carrying the empty-body check, and the funnel, ranker, scan and death sweep read through
+  them. On an 830k-posting store the funnel fell from 1,963 s to 215 s, ranking from 958 s to 304 s and the
+  death sweep's SQL from 322 s to 16 s, with identical output. The migration runs once, on the next run,
+  and took about 7 minutes and 135 MB on that store (D-662).
+
 - **The eligibility judge no longer starts with the operator's plugins, hooks and instruction files.**
   One call's context fell from about 310,000 tokens to about 30,000 on the measured machine. A model
   alias pinned in the settings file's `env` is no longer honoured: pin the judge with a full model id
