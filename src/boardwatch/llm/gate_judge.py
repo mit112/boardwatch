@@ -165,11 +165,15 @@ def _call_claude(
     prompt: str, *, model: str, claude_config_dir: object, timeout_s: int,
     effort: str | None = None,
 ) -> str:
-    """One headless call. Exactly the argv the 2026-09-08 calibration harness proved works:
-    `claude -p --model <m> --tools "" --max-turns 1 --output-format json`, stdin `/dev/null`
+    """One headless call, on the argv the 2026-09-08 calibration harness proved works plus two
+    context flags: `claude -p --model <m> --tools "" --strict-mcp-config --setting-sources ""
+    --max-turns 1 --output-format json`, stdin `/dev/null`
     (never read — a batch prompt is a CLI arg, not stdin), `CLAUDE_CONFIG_DIR` from settings.
-    `--effort <level>` follows the model only when `gate.effort` is set; unset, the argv is
-    byte-identical to the calibrated one.
+    `--effort <level>` follows the model only when `gate.effort` is set. The two context flags keep
+    the operator's plugins, hooks and instruction files out of a judgment made from `jd_text` and
+    `facts` alone: without them one call carried ~310k tokens of context against ~30k. That reaches
+    the settings file's `env` too, so a model alias pinned there is not honoured: pin the judge with
+    a full model id in `gate.model`, or in the job's own environment, which is still inherited.
 
     Returns the raw stdout text. Raises on any failure the caller must fail open on
     (`FileNotFoundError` — binary missing; `subprocess.TimeoutExpired`; a non-zero exit,
@@ -183,8 +187,8 @@ def _call_claude(
         env["CLAUDE_CONFIG_DIR"] = str(claude_config_dir)
     effort_args = [] if effort is None else ["--effort", effort]
     result = subprocess.run(  # noqa: S603 - argv is a fixed shape, no shell, no user input in argv[0]
-        ["claude", "-p", "--model", model, *effort_args, "--tools", "", "--max-turns",
-         "1", "--output-format", "json", prompt],
+        ["claude", "-p", "--model", model, *effort_args, "--tools", "", "--strict-mcp-config",
+         "--setting-sources", "", "--max-turns", "1", "--output-format", "json", prompt],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,

@@ -473,11 +473,12 @@ def test_a_failed_batch_reports_no_seniority_answers_at_all(
     ("effort", "argv_before_prompt"),
     [
         pytest.param("medium", ["claude", "-p", "--model", "sonnet", "--effort", "medium",
-                                "--tools", "", "--max-turns", "1", "--output-format", "json"],
+                                "--tools", "", "--strict-mcp-config", "--setting-sources", "",
+                                "--max-turns", "1", "--output-format", "json"],
                      id="set: follows the model"),
-        pytest.param(None, ["claude", "-p", "--model", "sonnet", "--tools", "", "--max-turns",
-                            "1", "--output-format", "json"],
-                     id="unset: the calibrated argv, no flag"),
+        pytest.param(None, ["claude", "-p", "--model", "sonnet", "--tools", "", "--strict-mcp-config",
+                            "--setting-sources", "", "--max-turns", "1", "--output-format", "json"],
+                     id="unset: no effort flag"),
     ],
 )
 def test_the_gate_effort_reaches_the_claude_argv(
