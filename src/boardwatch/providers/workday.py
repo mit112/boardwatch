@@ -87,7 +87,12 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, detail_phase_stops, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    apply_listing_gate,
+    detail_phase_stops,
+    health_from_failure,
+)
 from boardwatch.rank.location_gate import resolve_countries
 
 _HOST_SUFFIX = ".myworkdayjobs.com"
@@ -811,6 +816,7 @@ class WorkdayProvider:
         unseen = [
             (pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids
         ]
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -866,6 +872,7 @@ class WorkdayProvider:
             board_reported_total=board_total,
             board_enumerated=len(listed_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
+            gated_listings=gated,
             board_total_censored=board_censored,
         )
 
@@ -965,6 +972,12 @@ def _collect(
         seen_paths.add(path)
         listed.append(row)
     return dropped
+
+
+def _listing_fields(item: tuple[str, dict[str, Any]]) -> tuple[str, str, list[str], str]:
+    pid, row = item
+    location = row.get("locationsText")
+    return pid, str(row.get("title") or "").strip(), [str(location)] if location else [], "unknown"
 
 
 def parse_posting(

@@ -4,6 +4,7 @@ Fixture titles are chosen by what the ranker's own vetoes say of them, so a clau
 move without these moving, but the gate cannot start rejecting what the ranker keeps.
 """
 
+import importlib
 import json
 from pathlib import Path
 
@@ -403,3 +404,21 @@ def test_an_audit_write_that_fails_costs_the_trace_and_not_the_scan(tmp_path: Pa
     _record_gated(Settings(data_dir=tmp_path, config_dir=tmp_path), summary, "s", "p", snap)
     assert summary.listing_gated == {"excluded_title": 1}
     assert [e.split(":")[0] for e in summary.errors] == ["listing gate audit"]
+
+
+@pytest.mark.parametrize(
+    ("name", "row"),
+    [
+        ("workday", ("1", {})),
+        ("oraclehcm", {"Id": "1"}),
+        ("eightfold", {"id": "1"}),
+        ("phenom", ("1", {})),
+        ("apple", {"positionId": "1"}),
+        ("smartrecruiters", {"id": "1"}),
+    ],
+)
+def test_a_listing_that_states_nothing_gives_the_gate_nothing_to_veto(
+    name: str, row: object
+) -> None:
+    fields = importlib.import_module(f"boardwatch.providers.{name}")._listing_fields(row)
+    assert fields == ("1", "", [], "unknown")

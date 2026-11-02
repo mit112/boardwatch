@@ -37,7 +37,8 @@ All notable changes to this project are documented here. The format follows
   ranker's title and location vetoes.** Such a posting costs no request and no detail budget, stores no row
   and never closes, and each scan judges it afresh, so a changed profile or taxonomy reaches it. Anything
   the listing cannot state keeps the posting. Gated postings are listed in `listing_gated.jsonl` and counted
-  in `board_scans.listing_gated`. SmartRecruiters only for now (D-663).
+  in `board_scans.listing_gated`. It covers SmartRecruiters, Workday, Oracle HCM, Eightfold, Phenom and Apple,
+  the providers whose listing carries no body (D-663).
 
 - **Run-stage progress and remaining-time estimates.** Scan, lane fetches, extraction,
   eligibility, probes, gate requests and tailoring announce their sizes and count completed

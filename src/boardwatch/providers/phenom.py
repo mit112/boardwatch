@@ -74,6 +74,7 @@ from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, Remo
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.providers.base import (
     BoardHealth,
+    apply_listing_gate,
     detail_phase_stops,
     employer_label_from_host,
     health_from_failure,
@@ -291,6 +292,7 @@ class PhenomProvider:
 
         budget = request.detail_budget
         unseen = [(pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids]
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -357,6 +359,7 @@ class PhenomProvider:
             # hide a listing shortfall (D-271).
             board_enumerated=len(listed_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
+            gated_listings=gated,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
@@ -379,6 +382,15 @@ class PhenomProvider:
         if rows is None:
             return BoardHealth.ERROR
         return BoardHealth.OK if rows else BoardHealth.EMPTY
+
+
+def _listing_fields(item: tuple[str, dict[str, Any]]) -> tuple[str, str, list[str], str]:
+    pid, row = item
+    # `multi_location` is the whole list. A lone label on such a row states only part of it.
+    locations = row.get("multi_location") or (
+        [] if row.get("isMultiLocation") else [row.get("cityStateCountry") or row.get("location")]
+    )
+    return pid, str(row.get("title") or "").strip(), [str(x) for x in locations if x], "unknown"
 
 
 def parse_posting(

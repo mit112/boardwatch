@@ -105,9 +105,20 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
-from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
+from boardwatch.core.models import (
+    BoardRequest,
+    BoardSnapshot,
+    GatedListing,
+    RawPosting,
+    RemotePolicy,
+)
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, detail_phase_stops, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    apply_listing_gate,
+    detail_phase_stops,
+    health_from_failure,
+)
 
 _HOST = "jobs.apple.com"
 _LOCALE = "en-us"
@@ -445,7 +456,7 @@ class AppleProvider:
                 "treating as partial so unseen postings are not closed"
             )
 
-        postings, detail_errors, deferred = self._fetch_details(fetcher, rows, request)
+        postings, detail_errors, deferred, gated = self._fetch_details(fetcher, rows, request)
         errors.extend(detail_errors)
 
         if errors:
@@ -466,11 +477,12 @@ class AppleProvider:
             board_reported_total=None,
             board_enumerated=len(listed_ids),
             detail_deferred=deferred,
+            gated_listings=gated,
         )
 
     def _fetch_details(
         self, fetcher: Fetcher, rows: list[dict[str, Any]], request: BoardRequest
-    ) -> tuple[list[RawPosting], list[str], int]:
+    ) -> tuple[list[RawPosting], list[str], int, tuple[GatedListing, ...]]:
         """The newly-fetched postings, the issues, and how many rows the budget deferred.
 
         One detail fetch per DISTINCT posting id, not per row: a multi-location requisition is
@@ -497,6 +509,7 @@ class AppleProvider:
             chosen.add(identifier)
             unseen.append(row)
 
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the budget slice rebinds `unseen`, so `detail_deferred` reflects what
         # the budget actually cut rather than the post-truncation length (D-271).
         unseen_before_truncation = len(unseen)
@@ -553,7 +566,7 @@ class AppleProvider:
             # FIRST, not appended: only the first three issues reach `BoardSnapshot.error`,
             # and "every detail fetch failed" is the one an operator has to see.
             errors.insert(0, f"all {len(unseen)} detail fetches failed")
-        return postings, errors, unseen_before_truncation - len(unseen)
+        return postings, errors, unseen_before_truncation - len(unseen), gated
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """Page 1 of the slug's filter. A missing or undecodable hydration blob is ERROR, never
@@ -577,6 +590,11 @@ class AppleProvider:
         if not isinstance(listed, list):
             return BoardHealth.ERROR
         return BoardHealth.OK if listed else BoardHealth.EMPTY
+
+
+def _listing_fields(row: dict[str, Any]) -> tuple[str, str, list[str], str]:
+    # One row states one of a requisition's locations; detail carries them all.
+    return str(row["positionId"]), str(row.get("postingTitle") or "").strip(), [], "unknown"
 
 
 def parse_posting(listed: dict[str, Any], detail: dict[str, Any]) -> RawPosting:

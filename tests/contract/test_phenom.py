@@ -437,3 +437,44 @@ def test_healthcheck_refused_widget_is_error(tmp_path: Path) -> None:
 
 def test_healthcheck_malformed_slug_is_error(tmp_path: Path) -> None:
     assert provider.healthcheck(_fetcher(tmp_path), "jobs.acme.test") == BoardHealth.ERROR
+
+
+def _listing_test_gate(title: str, locations: object, remote: str) -> str | None:
+    return "excluded_title" if title == "Senior Accountant" else None
+
+
+@pytest.mark.parametrize("armed", [True, False])
+@respx.mock
+def test_listing_gate_before_budget(tmp_path: Path, armed: bool) -> None:
+    payload = _fx_json("list_normal.json")
+    rows = payload["refineSearch"]["data"]["jobs"][:2]
+    rows[0]["title"] = "Senior Accountant"
+    payload["refineSearch"]["data"]["jobs"] = rows
+    payload["refineSearch"]["totalHits"] = 2
+    _mock_widgets(pages=[payload])
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=1 if armed else 2).model_copy(
+        update={"listing_gate": _listing_test_gate if armed else None}))
+    ids = [str(r["jobId"]) for r in rows]
+    assert (ids[0] in _detail_calls()) is not armed
+    assert ids[1] in _detail_calls()
+    assert snap.listed_ids == set(ids)
+    assert snap.status == "complete" and snap.detail_deferred == 0
+    assert list(snap.gated_listings) == ([(ids[0], "Senior Accountant", "excluded_title")] if armed else [])
+
+
+def test_listing_gate_reads_a_whole_location_list_and_never_part_of_one() -> None:
+    from boardwatch.providers.phenom import _listing_fields
+
+    row: dict[str, object] = {"title": "Engineer", "location": "Bengaluru, India", "isMultiLocation": True}
+    # The label alone states one location of several, so it must not veto the job.
+    assert _listing_fields(("id", row)) == ("id", "Engineer", [], "unknown")
+    row["multi_location"] = ["Bengaluru, India", "Austin, Texas, United States"]
+    assert _listing_fields(("id", row))[2] == ["Bengaluru, India", "Austin, Texas, United States"]
+    assert _listing_fields(("id", {"title": "E", "location": "Bengaluru, India"}))[2] == ["Bengaluru, India"]
+
+
+def test_listing_gate_prefers_the_location_the_stored_record_keeps() -> None:
+    from boardwatch.providers.phenom import _listing_fields
+
+    row = {"title": "E", "location": "London", "cityStateCountry": "London, Ohio, United States"}
+    assert _listing_fields(("id", row))[2] == [row["cityStateCountry"]]

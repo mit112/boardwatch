@@ -812,3 +812,38 @@ def test_healthcheck_a_page_with_no_boot_blob_is_error(tmp_path: Path) -> None:
 def test_healthcheck_other_http_errors_are_error(tmp_path: Path, status: int) -> None:
     respx.get(BOOT_URL).mock(return_value=httpx.Response(status))
     assert provider.healthcheck(_fetcher(tmp_path), SLUG) is BoardHealth.ERROR
+
+
+def _listing_test_gate(title: str, locations: object, remote: str) -> str | None:
+    return "excluded_title" if title == "Senior Accountant" else None
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+@pytest.mark.parametrize("armed", [True, False])
+@respx.mock
+def test_listing_gate_before_budget(tmp_path: Path, armed: bool) -> None:
+    payload = _fx("search_normal.json")
+    rows = payload["data"]["positions"][:2]
+    rows[0]["name"] = "Senior Accountant"
+    payload["data"]["positions"], payload["data"]["count"] = rows, 2
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=payload))
+    _mock_details(*rows)
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=1 if armed else 2).model_copy(
+        update={"listing_gate": _listing_test_gate if armed else None}))
+    ids = [str(r["id"]) for r in rows]
+    called = [str(call.request.url) for call in respx.calls]
+    assert (_detail_url(ids[0]) in called) is not armed
+    assert _detail_url(ids[1]) in called
+    assert snap.listed_ids == set(ids)
+    assert snap.status == "complete" and snap.detail_deferred == 0
+    assert list(snap.gated_listings) == ([(ids[0], "Senior Accountant", "excluded_title")] if armed else [])
+
+
+def test_listing_gate_reads_all_locations_and_scalar_fallback() -> None:
+    from boardwatch.providers.eightfold import _listing_fields
+
+    row = {"id": 1, "name": "Engineer", "locations": ["India", "USA"], "location": "Canada"}
+    assert _listing_fields(row) == ("1", "Engineer", ["India", "USA"], "unknown")
+    row["locations"] = []
+    assert _listing_fields(row) == ("1", "Engineer", ["Canada"], "unknown")
