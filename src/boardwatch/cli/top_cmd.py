@@ -902,8 +902,9 @@ def rank_open_postings(
     # marker on 2026-09-26, ~150 did, 126 of them ranked beyond 150; 37 of a 40-posting sample
     # were truly entry-level.
     # The body is the current version's, read only for an `in_field` row whose title carried no
-    # marker, and never held: loading every open body here peaked the run at 11.9 GB. A title naming one of the tier's `entry_marker_vetoes` ("intern",
-    # "co-op") earns tier 0 through no marker: an internship is not a new-grad role.
+    # marker, and never held: loading every open body here peaked the run at 11.9 GB. A title
+    # naming one of the tier's `entry_marker_vetoes` ("intern", "co-op") earns tier 0 through no
+    # marker: an internship is not a new-grad role.
     entry_first = target_band == "entry" and tier is not None and bool(
         tier.entry_markers or tier.entry_body_markers
     )
