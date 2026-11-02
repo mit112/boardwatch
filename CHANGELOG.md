@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Ranking no longer holds every open posting's body in memory.** It reads a body only for an
+  in-field posting whose title cannot decide its entry tier, and keeps only the answer. Peak memory
+  in ranking fell from 9.2 GB to 2.7 GB on an 830k-posting store with the same ranked output (D-660).
+
 - Extraction, eligibility and ranking progress now require an explicit console opt-in from
   the nightly runner, keeping standalone commands' existing output free of run progress (D-658).
 
