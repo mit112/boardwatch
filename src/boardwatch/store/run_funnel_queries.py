@@ -714,9 +714,10 @@ def sweep_duplicates(conn: Connection) -> DedupSweep:
     redundancy = _redundancy_by_kind(conn)
     colliding = _colliding_open_posting_ids(conn)
     rows = load_identity_inputs(conn, colliding)
+    company_by_posting = {r.posting_id: r.company_id for r in rows}
     by_company: dict[int, int] = {}
     for suppression in resolve_duplicates(rows, load_identities(conn, colliding)):
-        company_id = {r.posting_id: r.company_id for r in rows}[suppression.posting_id]
+        company_id = company_by_posting[suppression.posting_id]
         by_company[company_id] = by_company.get(company_id, 0) + 1
     return DedupSweep(
         complete=True,
