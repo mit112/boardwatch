@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, insert
+from sqlalchemy import Engine, event, insert
 
 from boardwatch.cli.top_cmd import RankedResults, rank_open_postings
 from boardwatch.core.clock import utcnow
@@ -362,3 +362,38 @@ def test_a_tier_zero_posting_the_judge_ruled_ineligible_is_still_hidden(tmp_path
     results: RankedResults = rank_open_postings(engine, _settings(tmp_path), limit=10, now=NOW)
     assert [p.posting_id for p in results.visible] == [swe_id]
     assert results.hidden_ineligible == 1
+
+
+def test_ranking_reads_only_the_bodies_its_title_cannot_decide(tmp_path: Path) -> None:
+    """Loading every open body peaked a real run at 11.9 GB and pushed 7 GB to swap, so the ranker
+    reads a body only for an `in_field` row with no title marker, and never sweeps them."""
+    titled, off_field = "Junior Software Engineer", "Member Experience"
+    posting_ids = _seed(
+        tmp_path, [BODY_MARKED, titled, off_field],
+        bodies={title: ENTRY_BODY for title in (BODY_MARKED, titled, off_field)},
+        target_band="entry",
+    )
+    engine = get_engine(tmp_path)
+    with engine.connect() as conn:
+        needed = current_posting_versions(conn, [posting_ids[BODY_MARKED]])[
+            posting_ids[BODY_MARKED]
+        ].posting_version_id
+    settings = _settings(tmp_path)
+    sweeps: list[str] = []
+    reads_by_version: list[object] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _record(_conn, _cursor, statement, parameters, _context, _many):  # type: ignore[no-untyped-def]
+        # The eligibility preflight reads the bodies of due postings under its own statements.
+        if "pv_current.body_text" in statement:
+            sweeps.append(statement)
+        if "body_text" in statement and "WHERE posting_versions.id IN" in statement:
+            reads_by_version.append(parameters)
+
+    results: RankedResults = rank_open_postings(engine, settings, limit=10, now=NOW)
+
+    assert sweeps == []
+    assert reads_by_version == [(needed,)]
+    # The answer the read exists for: the marked body still earns the entry tier.
+    assert results.visible[0].posting_id in {posting_ids[BODY_MARKED], posting_ids[titled]}
+    assert {p.posting_id: p.tier for p in results.visible}[posting_ids[BODY_MARKED]] == 0

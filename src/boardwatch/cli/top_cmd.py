@@ -9,7 +9,7 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import cast
@@ -83,7 +83,7 @@ from boardwatch.store.ledger_queries import live_dispositions, record_dispositio
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import (
     body_is_empty,
-    current_posting_versions,
+    current_posting_version_ids,
     get_profile,
     jobapps_employer_url,
 )
@@ -95,6 +95,7 @@ from boardwatch.store.tables import (
     extractions,
     posting_events,
     posting_identities,
+    posting_versions,
     postings,
 )
 
@@ -487,6 +488,37 @@ def _location_class_memo(
         memo[locations] = target.classify(locations)
     return memo[locations]
 
+def _entry_body_marked(
+    engine: Engine,
+    scored: Sequence[RankedPosting],
+    version_ids: Mapping[int, int],
+    tier: FieldTier,
+) -> set[int]:
+    """Postings whose current body earns the entry tier, for the rows whose title cannot decide it.
+
+    Bodies stream through one at a time and only the answer is kept. A version row is immutable,
+    so reading it by id on this later connection returns the body the ranker's snapshot named.
+    """
+    posting_by_version = {
+        version_ids[p.posting_id]: p.posting_id
+        for p in scored
+        if p.role == "in_field"
+        and p.posting_id in version_ids
+        and not tier.has_entry_veto(p.title)
+        and not tier.has_entry_marker(p.title)
+    }
+    marked: set[int] = set()
+    with engine.connect() as conn:
+        for chunk in id_chunks(sorted(posting_by_version)):
+            for row in conn.execute(
+                select(posting_versions.c.id, posting_versions.c.body_text)
+                .where(posting_versions.c.id.in_(chunk))
+            ):
+                if tier.has_entry_body_marker(row.body_text):
+                    marked.add(posting_by_version[row.id])
+    return marked
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -598,10 +630,10 @@ def rank_open_postings(
         ).all()
         progress = StageProgress("ranking", len(rows), console=progress_console)
         # The run computed the identity; reuse it rather than reload the catalog.
-        versions = current_posting_versions(conn, None)
+        version_ids = current_posting_version_ids(conn, None)
         verdicts = current_verdicts(
             conn,
-            [cv.posting_version_id for cv in versions.values()],
+            list(version_ids.values()),
             stats.profile_hash,
             stats.rules_hash,
         )
@@ -615,7 +647,7 @@ def rank_open_postings(
         facts = engine_facts(profile_row.eligibility_facts_json, settings.config_dir)
         gate_verdicts = current_gate_verdicts(
             conn,
-            [cv.posting_version_id for cv in versions.values()],
+            list(version_ids.values()),
             facts,
             load_rules(settings.config_dir),
             model=settings.gate.model,
@@ -869,12 +901,15 @@ def rank_open_postings(
     # years", "new grad", "early career"): of 3,481 visible `in_field` postings with no title
     # marker on 2026-09-26, ~150 did, 126 of them ranked beyond 150; 37 of a 40-posting sample
     # were truly entry-level.
-    # The body is the current version's, which `versions` above already holds for every open
-    # posting, so this reads nothing new; it is scanned only for an `in_field` row whose title
-    # carried no marker. A title naming one of the tier's `entry_marker_vetoes` ("intern",
+    # The body is the current version's, read only for an `in_field` row whose title carried no
+    # marker, and never held: loading every open body here peaked the run at 11.9 GB. A title naming one of the tier's `entry_marker_vetoes` ("intern",
     # "co-op") earns tier 0 through no marker: an internship is not a new-grad role.
     entry_first = target_band == "entry" and tier is not None and bool(
         tier.entry_markers or tier.entry_body_markers
+    )
+    entry_body_marked = (
+        _entry_body_marked(engine, scored, version_ids, cast(FieldTier, tier))
+        if entry_first else set()
     )
 
     def _rank_tier(posting: RankedPosting) -> int:
@@ -884,9 +919,9 @@ def rank_open_postings(
             and posting.role == "in_field"
             and not entry_tier.has_entry_veto(posting.title)
         ):
-            version = versions.get(posting.posting_id)
-            if entry_tier.has_entry_marker(posting.title) or (
-                version is not None and entry_tier.has_entry_body_marker(version.body_text)
+            if (
+                entry_tier.has_entry_marker(posting.title)
+                or posting.posting_id in entry_body_marked
             ):
                 return 0
         decided_eligible = (
@@ -1237,11 +1272,9 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
-            current_version = versions.get(posting.posting_id)
-            if posting.role == "in_field" and current_version is not None:
-                below_cutoff_in_field.append(
-                    (posting.posting_id, current_version.posting_version_id)
-                )
+            version_id = version_ids.get(posting.posting_id)
+            if posting.role == "in_field" and version_id is not None:
+                below_cutoff_in_field.append((posting.posting_id, version_id))
     # D-498 rule (a), and it sits HERE rather than inside the fill loop because the rule is not a
     # cap. A cap asks "has this key had its allowance?", which accumulates in slate order; this
     # asks "is the EMPLOYER's own copy of this job in front of the owner?", and on a slate ordered
