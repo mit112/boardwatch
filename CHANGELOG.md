@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The eligibility judge no longer starts with the operator's plugins, hooks and instruction files.**
+  One call's context fell from about 310,000 tokens to about 30,000 on the measured machine. A model
+  alias pinned in the settings file's `env` is no longer honoured: pin the judge with a full model id
+  in `gate.model` or in the job's environment (D-661).
+
 - **Ranking no longer holds every open posting's body in memory.** It reads a body only for an
   in-field posting whose title cannot decide its entry tier, and keeps only the answer. Peak memory
   in ranking fell from 9.2 GB to 2.7 GB on an 830k-posting store with the same ranked output (D-660).
