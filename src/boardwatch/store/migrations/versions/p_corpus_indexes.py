@@ -22,12 +22,16 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Idempotent, because each statement commits on its own under alembic's engine and the first takes
+    # minutes: a run killed mid-way leaves some of these built at the old revision, and the retry must
+    # finish the job rather than fail with "already exists" on every later command.
     op.execute(
-        "CREATE INDEX ix_postings_corpus ON postings (status, company_id, provider_posting_id, "
+        "CREATE INDEX IF NOT EXISTS ix_postings_corpus ON postings "
+        "(status, company_id, provider_posting_id, "
         "(trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''))"
     )
-    op.execute("CREATE INDEX ix_postings_id_status ON postings (id, status)")
-    op.execute("DROP INDEX ix_posting_identities_key")
+    op.execute("CREATE INDEX IF NOT EXISTS ix_postings_id_status ON postings (id, status)")
+    op.execute("DROP INDEX IF EXISTS ix_posting_identities_key")
     op.execute(
         "CREATE INDEX ix_posting_identities_key ON posting_identities "
         "(kind, identity_key, algorithm_version, posting_id)"
@@ -35,7 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("DROP INDEX ix_posting_identities_key")
+    op.execute("DROP INDEX IF EXISTS ix_posting_identities_key")
     op.execute("CREATE INDEX ix_posting_identities_key ON posting_identities (kind, identity_key)")
-    op.execute("DROP INDEX ix_postings_id_status")
-    op.execute("DROP INDEX ix_postings_corpus")
+    op.execute("DROP INDEX IF EXISTS ix_postings_id_status")
+    op.execute("DROP INDEX IF EXISTS ix_postings_corpus")

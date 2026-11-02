@@ -173,3 +173,42 @@ def test_the_migration_round_trips_and_keeps_every_row(tmp_path: Path) -> None:
         if index["name"] == "ix_posting_identities_key"
     ]
     assert columns == [["kind", "identity_key"]]
+
+
+@pytest.mark.parametrize(
+    "interrupted_after",
+    [
+        pytest.param(("ix_postings_corpus",), id="first index built"),
+        pytest.param(("ix_postings_corpus", "ix_postings_id_status"), id="both postings indexes"),
+        pytest.param(
+            ("ix_postings_corpus", "ix_postings_id_status", "DROP"), id="old identity index dropped"
+        ),
+    ],
+)
+def test_a_migration_killed_part_way_finishes_on_retry(
+    tmp_path: Path, interrupted_after: tuple[str, ...]
+) -> None:
+    """Each statement commits alone, so the state a killed run leaves is real, at the old revision."""
+    url = f"sqlite:///{tmp_path / 'm.db'}"
+    cfg = Config()
+    cfg.set_main_option("script_location", str(MIGRATIONS))
+    cfg.set_main_option("sqlalchemy.url", url)
+    command.upgrade(cfg, BASE)
+    statements = {
+        "ix_postings_corpus": "CREATE INDEX ix_postings_corpus ON postings (status, company_id, "
+        "provider_posting_id, (trim(body_text, char(32, 9, 10, 13, 12, 11)) = ''))",
+        "ix_postings_id_status": "CREATE INDEX ix_postings_id_status ON postings (id, status)",
+        "DROP": "DROP INDEX ix_posting_identities_key",
+    }
+    engine = create_engine(url)
+    with engine.begin() as conn:
+        for step in interrupted_after:
+            conn.execute(text(statements[step]))
+    engine.dispose()
+    command.upgrade(cfg, HEAD)
+    columns = [
+        index["column_names"]
+        for index in inspect(create_engine(url)).get_indexes("posting_identities")
+        if index["name"] == "ix_posting_identities_key"
+    ]
+    assert columns == [["kind", "identity_key", "algorithm_version", "posting_id"]]
