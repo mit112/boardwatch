@@ -43,7 +43,12 @@ from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
-from boardwatch.providers.base import BoardHealth, detail_phase_stops, health_from_failure
+from boardwatch.providers.base import (
+    BoardHealth,
+    apply_listing_gate,
+    detail_phase_stops,
+    health_from_failure,
+)
 
 _PAGE_LIMIT = 100  # server-side maximum; a larger request is silently clamped
 _BODY_SECTIONS = ("jobDescription", "qualifications", "additionalInformation")
@@ -131,6 +136,7 @@ class SmartRecruitersProvider:
 
         budget = request.detail_budget
         unseen = [e for e in listed if str(e.get("id")) not in request.known_posting_ids]
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -195,6 +201,7 @@ class SmartRecruitersProvider:
             # whose id-less rows the subtraction exists to expose (D-271).
             board_enumerated=len(listed_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
+            gated_listings=gated,
         )
 
     def fetch_posting(
@@ -258,6 +265,16 @@ def parse_posting(listed: dict[str, Any], detail: dict[str, Any]) -> RawPosting:
         updated_at=None,  # no update field observed on either endpoint
         body_text=_body_text(detail),
         raw_json={"listed": listed, "detail": detail},
+    )
+
+
+def _listing_fields(entry: dict[str, Any]) -> tuple[str, str, list[str], RemotePolicy]:
+    location = entry.get("location") or {}
+    return (
+        str(entry.get("id")),
+        str(entry.get("name") or "").strip(),
+        _locations(location),
+        _remote_policy(location),
     )
 
 

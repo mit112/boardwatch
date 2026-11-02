@@ -21,6 +21,7 @@ with `config show` — the file alone cannot tell a typo from success.
 | `scan_workers` | int, 1–32 | 4 | Boards fetched in parallel | next scan |
 | `board_deadline_seconds` | float, > 0 | 600.0 | Wall-clock seconds one board may take before it is recorded failed | next scan |
 | `detail_fetch_budget` | int, 1–10000 | 50 | Per-posting detail fetches per board per scan (providers whose list carries no body) | next scan |
+| `listing_gate` | bool | `false` | Skip the detail fetch of a posting whose listing already fails the ranker's title and location vetoes. Anything the listing cannot state keeps the posting (D-663) | next scan |
 | `validator_max_age_hours` | int, ≥ 1 | 24 | Hours after which a board's cached `ETag`/`Last-Modified` is dropped and the board refetched unconditionally | next scan |
 | `busy_timeout_ms` | int | 5000 | SQLite busy timeout in milliseconds | next command |
 

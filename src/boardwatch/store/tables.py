@@ -200,6 +200,7 @@ board_scans = Table(
     Column("board_reported_total", Integer, nullable=True),
     Column("board_enumerated", Integer, nullable=True),
     Column("detail_deferred", Integer, nullable=True),
+    Column("listing_gated", Integer, nullable=True),
     Column("board_total_censored", Integer, nullable=True),
     # Which subsystem wrote this row (D-285). A lane touching an already-watched board writes a
     # SECOND row for the same (company_id, run_id); coverage joins one BoardCoverage per row, so

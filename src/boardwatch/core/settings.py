@@ -192,6 +192,9 @@ class Settings(BaseModel):
     # posting because their list carries no bodies. Bounds a first scan of a large
     # board; exceeding it yields a partial snapshot, never a silent truncation.
     detail_fetch_budget: int = Field(default=50, ge=1, le=10000)
+    # Skip the detail fetch of a posting whose listing already fails the ranker's title and
+    # location vetoes (D-663). Off until an operator arms it: it decides what the corpus holds.
+    listing_gate: bool = False
     # Force periodic revalidation of watched boards: a cached conditional-request validator
     # (ETag / Last-Modified) older than this is dropped, so the next scan refetches
     # unconditionally instead of trusting a possibly-stale upstream ETag forever. Without it a
