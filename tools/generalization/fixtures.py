@@ -158,8 +158,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "workday": FixtureProvenance(
         captured=date(2026, 8, 4),
-        review_by=date(2026, 11, 2),
+        review_by=date(2027, 1, 31),
         readme_pin="sha256:5888d8e6e5129e9dc4ef6e1f7d4a607f9804f0fefd17b1e2785b30683e0f1f7f",
+        extensions=(
+            Extension(on=date(2026, 11, 2), reason="live shape re-checked (D-664)"),
+        ),
     ),
 }
 
