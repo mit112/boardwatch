@@ -97,6 +97,7 @@ from boardwatch.core.models import (
 from boardwatch.core.politeness import Fetcher, FetchFailure, FetchResult
 from boardwatch.providers.base import (
     BoardHealth,
+    apply_listing_gate,
     detail_phase_stops,
     employer_label_from_host,
     health_from_failure,
@@ -385,6 +386,7 @@ class EightfoldProvider:
             r for r in listed
             if r.get("id") is not None and str(r["id"]) not in request.known_posting_ids
         ]
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the detail-budget slice rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -457,6 +459,7 @@ class EightfoldProvider:
             # dedupe or close, and `total - board_enumerated` exists to expose exactly that.
             board_enumerated=len(listed_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
+            gated_listings=gated,
             throttle_retries=ledger.retries,
             throttle_exhausted=ledger.exhausted,
         )
@@ -550,6 +553,14 @@ class EightfoldProvider:
         if data is None or not isinstance(data.get("positions"), list):
             return BoardHealth.ERROR
         return BoardHealth.OK if data["positions"] else BoardHealth.EMPTY
+
+
+def _listing_fields(row: dict[str, Any]) -> tuple[str, str, list[str], str]:
+    locations = row.get("locations") or ([row["location"]] if row.get("location") else [])
+    return (
+        str(row["id"]), str(row.get("name") or "").strip(),
+        [str(x) for x in locations], "unknown",
+    )
 
 
 def parse_posting(host: str, listed: dict[str, Any], detail: dict[str, Any]) -> RawPosting:

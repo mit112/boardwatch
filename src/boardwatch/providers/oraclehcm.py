@@ -80,6 +80,7 @@ from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, Remo
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.providers.base import (
     BoardHealth,
+    apply_listing_gate,
     detail_phase_stops,
     employer_label_from_host,
     health_from_failure,
@@ -389,6 +390,7 @@ class OracleHCMProvider:
         unseen = [
             row for row in listed if str(row["Id"]) not in request.known_posting_ids
         ]
+        unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length.
         unseen_before_truncation = unseen
@@ -447,6 +449,7 @@ class OracleHCMProvider:
             # provider means exactly this by the column.
             board_enumerated=len(seen_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
+            gated_listings=gated,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
@@ -497,6 +500,18 @@ def _detail_item(content: bytes) -> dict[str, Any] | None:
     if not items:
         return {}
     return items[0] if isinstance(items[0], dict) else None
+
+
+def _listing_fields(row: dict[str, Any]) -> tuple[str, str, list[str], str]:
+    locations = [row.get("PrimaryLocation")]
+    locations += [
+        x.get("Name") if isinstance(x, dict) else x
+        for x in row.get("secondaryLocations") or []
+    ]
+    return (
+        str(row["Id"]), str(row.get("Title") or "").strip(),
+        [str(x) for x in locations if x], "unknown",
+    )
 
 
 def parse_posting(

@@ -809,3 +809,38 @@ def test_the_decoder_refuses_every_broken_shape() -> None:
     ):
         with pytest.raises(ValueError, match=message):
             hydration_data(content)
+
+
+def _listing_test_gate(title: str, locations: object, remote: str) -> str | None:
+    return "excluded_title" if title == "Senior Accountant" else None
+
+
+@pytest.mark.parametrize("armed", [True, False])
+@respx.mock
+def test_listing_gate_before_budget(tmp_path: Path, armed: bool) -> None:
+    blob = _fx("search_normal.json")
+    search = blob["loaderData"]["search"]
+    rows = search["searchResults"]
+    first = dict(rows[0], postingTitle="Senior Accountant")
+    duplicate = dict(first, locations=[{"name": "Elsewhere"}])
+    kept = next(r for r in rows if r["positionId"] != first["positionId"])
+    rows = [first, duplicate, kept]
+    search["searchResults"], search["totalRecords"] = rows, 3
+    _mock_search(1, blob)
+    _mock_details(*rows)
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=1 if armed else 2).model_copy(
+        update={"listing_gate": _listing_test_gate if armed else None}))
+    ids = [str(first["positionId"]), str(kept["positionId"])]
+    called = [str(call.request.url) for call in respx.calls]
+    assert (_detail_url(ids[0], first["transformedPostingTitle"]) in called) is not armed
+    assert _detail_url(ids[1], kept["transformedPostingTitle"]) in called
+    assert snap.listed_ids == set(ids)
+    assert snap.status == "complete" and snap.detail_deferred == 0
+    assert list(snap.gated_listings) == ([(ids[0], "Senior Accountant", "excluded_title")] if armed else [])
+
+
+def test_listing_gate_does_not_use_one_row_location() -> None:
+    from boardwatch.providers.apple import _listing_fields
+
+    row = {"positionId": "1", "postingTitle": "Engineer", "locations": [{"name": "India"}]}
+    assert _listing_fields(row) == ("1", "Engineer", [], "unknown")

@@ -723,3 +723,37 @@ def test_healthcheck_error_on_a_missing_requisition_list(tmp_path: Path) -> None
 
 def test_healthcheck_errors_on_a_malformed_slug_without_raising(tmp_path: Path) -> None:
     assert provider.healthcheck(_fetcher(tmp_path), "not-a-pair") == BoardHealth.ERROR
+
+
+def _listing_test_gate(title: str, locations: object, remote: str) -> str | None:
+    return "excluded_title" if title == "Senior Accountant" else None
+
+
+@pytest.mark.parametrize("armed", [True, False])
+@respx.mock
+def test_listing_gate_before_budget(tmp_path: Path, armed: bool) -> None:
+    payload = _fx_json("list_normal.json")
+    data = payload["items"][0]
+    rows = data["requisitionList"][:2]
+    rows[0]["Title"] = "Senior Accountant"
+    data["requisitionList"], data["TotalJobsCount"] = rows, 2
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    detail = _fx_json("detail_normal.json")
+    routes = [respx.get(_detail_url(str(r["Id"]))).mock(
+        return_value=httpx.Response(200, json=detail)) for r in rows]
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=1 if armed else 2).model_copy(
+        update={"listing_gate": _listing_test_gate if armed else None}))
+    ids = [str(r["Id"]) for r in rows]
+    assert routes[0].called is not armed
+    assert routes[1].called
+    assert snap.listed_ids == set(ids)
+    assert snap.status == "complete" and snap.detail_deferred == 0
+    assert list(snap.gated_listings) == ([(ids[0], "Senior Accountant", "excluded_title")] if armed else [])
+
+
+def test_listing_gate_reads_primary_and_all_secondary_locations() -> None:
+    from boardwatch.providers.oraclehcm import _listing_fields
+
+    row = {"Id": 1, "Title": "Engineer", "PrimaryLocation": "India",
+           "secondaryLocations": [{"Name": "USA"}, "Canada", {}, ""]}
+    assert _listing_fields(row) == ("1", "Engineer", ["India", "USA", "Canada"], "unknown")

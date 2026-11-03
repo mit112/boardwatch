@@ -1689,3 +1689,51 @@ def test_a_primary_that_names_a_place_keeps_the_locations_it_always_had() -> Non
     # moved no location class, so they join only where the country had to be added.
     detail = _country_detail("Austin, TX", "United States of America", ["Denver, CO"])
     assert _country_parse(detail) == ["Austin, TX"]
+
+
+def _listing_test_gate(title: str, locations: object, remote: str) -> str | None:
+    return "excluded_title" if title == "Senior Accountant" else None
+
+
+@pytest.mark.parametrize("armed", [True, False])
+@respx.mock
+def test_listing_gate_before_budget(tmp_path: Path, armed: bool) -> None:
+    payload = _fx("list_normal.json")
+    rows = payload["jobPostings"][:2]
+    rows[0]["title"] = "Senior Accountant"
+    payload["jobPostings"], payload["total"] = rows, 2
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    routes = [respx.get(_detail_url(r["externalPath"])).mock(
+        return_value=httpx.Response(200, json=_fx("detail_normal.json"))) for r in rows]
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=1 if armed else 2).model_copy(
+        update={"listing_gate": _listing_test_gate if armed else None}))
+    ids = [_posting_id(r["externalPath"]) for r in rows]
+    assert routes[0].called is not armed
+    assert routes[1].called
+    assert snap.listed_ids == set(ids)
+    assert snap.status == "complete" and snap.detail_deferred == 0
+    assert list(snap.gated_listings) == ([(ids[0], "Senior Accountant", "excluded_title")] if armed else [])
+
+
+@pytest.mark.parametrize("missing_title", [True, False])
+@respx.mock
+def test_listing_gate_keeps_missing_title_and_location_count(
+    tmp_path: Path, missing_title: bool
+) -> None:
+    from boardwatch.rank.heuristic import ProfileView
+    from boardwatch.rank.listing_gate import build_listing_gate
+
+    payload = _fx("list_normal.json")
+    row = payload["jobPostings"][0]
+    row["title"] = "" if missing_title else "Software Engineer"
+    row["locationsText"] = "Bengaluru, India" if missing_title else "2 Locations"
+    payload["jobPostings"], payload["total"] = [row], 1
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=payload))
+    route = respx.get(_detail_url(row["externalPath"])).mock(
+        return_value=httpx.Response(200, json=_fx("detail_normal.json")))
+    profile = ProfileView(skills=frozenset(), target_titles=(), exclude_titles=(), locations=(),
+                          remote_only=False, target_countries=("USA",))
+    gate = build_listing_gate(profile, None, "hard")
+    snap = provider.fetch_board(_fetcher(tmp_path), _request().model_copy(update={"listing_gate": gate}))
+    assert route.called
+    assert len(snap.postings) == 1 and not snap.gated_listings
