@@ -825,6 +825,11 @@ class LivenessCheck:
     dead: int | None
     unknown: int | None
     gone_after_redirect: int | None = None
+    # D-665: what `strike_from_shortlist` wrote. Not `dead` under another name: a watched row is
+    # dead and never struck, and a row inside its TTL is dead and not struck today.
+    struck: int | None = None
+    closed: int | None = None
+    strikes_cleared: int | None = None
 
     @property
     def instrumented(self) -> bool:
@@ -843,7 +848,8 @@ class DeathProbeReport:
 
     A SEPARATE section from `liveness`, not more keys inside it, because it is a different
     measurement over a different population with a different consequence. `liveness` probes the
-    SHORTLIST and writes nothing; this probes open postings under `companies.watched = 0` and
+    SHORTLIST and closes only through its strike counts (D-665); this probes open postings under
+    `companies.watched = 0` and
     CLOSES the ones proven gone twice. Sharing a block would invite a reader to add `checked`
     and `attempted` into one probe count, which would be two questions summed.
 
@@ -2917,6 +2923,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "alive": funnel.liveness.alive,
             # A subset of `unknown`; do not add it to the others when reconciling.
             "gone_after_redirect": funnel.liveness.gone_after_redirect,
+            "struck": funnel.liveness.struck,
+            "closed": funnel.liveness.closed,
+            "strikes_cleared": funnel.liveness.strikes_cleared,
         },
         # D-325. Its own section, NOT more keys under `liveness`: different population, and this
         # one WRITES. Summing the two probe counts would be summing two questions.
@@ -3728,9 +3737,13 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{live.gone_after_redirect if live.gone_after_redirect is not None else '—'} "
             "were gone-after-redirect"
         ),
+        f"- strikes: {'—' if live.struck is None else live.struck} struck, "
+        f"{'—' if live.closed is None else live.closed} closed, "
+        f"{'—' if live.strikes_cleared is None else live.strikes_cleared} cleared (D-665)",
         "",
-        "*Liveness is never cached and never writes to the store: a `dead` result withholds the "
-        "lead from this run only, and `postings.status` stays the scanner's. Only an explicit "
+        "*Liveness is never cached. A `dead` result withholds the lead from this run; on an "
+        "unwatched posting it also counts as a strike, and two strikes a TTL apart close it "
+        "(D-665). Only an explicit "
         "404/410 withholds, and only from the URL asked about; every other outcome — timeout, "
         "403, 5xx, no URL, and a 404 reached through a redirect — is served, because missing a "
         "real job costs more than one wasted résumé. A gone-after-redirect count that climbs "

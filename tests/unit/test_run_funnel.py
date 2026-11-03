@@ -841,7 +841,7 @@ def test_an_unprobed_liveness_check_reports_unmeasured_rather_than_zero_dead() -
 
     assert payload["liveness"] == {
         "instrumented": False, "checked": None, "dead": None, "unknown": None, "alive": None,
-        "gone_after_redirect": None,
+        "gone_after_redirect": None, "struck": None, "closed": None, "strikes_cleared": None,
     }
     section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
     assert "not instrumented" in section
@@ -858,7 +858,7 @@ def test_a_probed_liveness_check_reports_dead_and_unknown_separately() -> None:
     # so 10-2-3 is 5 and not 4. Adding it to the partition is the tempting mistake here.
     assert payload["liveness"] == {
         "instrumented": True, "checked": 10, "dead": 2, "unknown": 3, "alive": 5,
-        "gone_after_redirect": 1,
+        "gone_after_redirect": 1, "struck": None, "closed": None, "strikes_cleared": None,
     }
     section = funnel_to_markdown(report).split("## Liveness")[1].split("##")[0]
     assert "2 withheld as gone" in section

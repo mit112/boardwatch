@@ -121,7 +121,7 @@ withholding a POSITIVE observation is the one direction this may never take.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -130,6 +130,7 @@ from rich.console import Console
 from sqlalchemy import ColumnElement, Engine, and_, case, func, or_, select, update
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.liveness import Liveness
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
@@ -140,7 +141,7 @@ from boardwatch.scan.apply import CLOSE_AFTER_MISSES
 from boardwatch.store.db import write_connection
 from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
-from boardwatch.store.tables import companies, postings
+from boardwatch.store.tables import companies, postings, runs
 
 # The liveness signals permitted to strike a posting on the URL path, compared as catalog
 # members rather than re-derived from a status code: `core/liveness.py` owns what "gone" means,
@@ -655,7 +656,88 @@ def sweep_unwatched_deaths(
     )
 
 
+@dataclass(frozen=True)
+class ShortlistStrikes:
+    """What this run's shortlist probe did to `death_strikes` (D-665)."""
+
+    struck: int
+    closed: int
+    cleared: int
+
+
+def strike_from_shortlist(
+    engine: Engine,
+    results: Mapping[int, Liveness],
+    *,
+    run_id: int,
+    ttl_hours: int,
+) -> ShortlistStrikes:
+    """Count the shortlist probe's answers toward the same close the sweep earns (D-665).
+
+    A dead posting ranks high every day, so the shortlist asks about it every day, while the sweep
+    reaches 300 of about 42,000 due rows a run and most of these were last asked in September: 48
+    of run 751's 50 withheld postings were withheld again on 758, each holding a `gate.depth` slot.
+    The answer was thrown away. `check_leads` still writes nothing; this is the one place that
+    reads its results.
+
+    The evidence and every narrowing are the sweep's own: only `CLOSING_SIGNALS`, only
+    `watched = 0`, only the URL path (a listing-path row's URL answer is wrong, T89, and would
+    clear the strikes its listing earned), two strikes `ttl_hours` apart and in different runs. A
+    row the sweep stamped during this run is refused whatever the TTL says: a slow sweep can outlast
+    a short TTL. A positive answer clears on both sides of the TTL, as a present listing does.
+    `unknown` neither strikes nor stamps, so it cannot use up the sweep's turn at the row.
+    """
+    now = utcnow()
+    cutoff = now - timedelta(hours=ttl_hours)
+    struck = closed = cleared = 0
+    # T134: a read-then-write, so IMMEDIATE at BEGIN.
+    with write_connection(engine) as write, write.begin():
+        run_started_at = write.execute(
+            select(runs.c.started_at).where(runs.c.id == run_id)
+        ).scalar_one()
+        rows = write.execute(
+            select(
+                postings.c.id,
+                postings.c.death_strikes,
+                postings.c.last_death_probe_at,
+                _past_ttl(cutoff).label("past_ttl"),
+            )
+            .join_from(postings, companies, companies.c.id == postings.c.company_id)
+            .where(
+                postings.c.id.in_(list(results)),
+                postings.c.status == "open",
+                companies.c.watched.is_(False),
+                companies.c.provider.notin_(tuple(LISTING_ENDPOINTS)),
+            )
+        ).all()
+        for row in rows:
+            result = results[int(row.id)]
+            strikes = int(row.death_strikes)
+            if result.signal in CLOSING_SIGNALS:
+                stamped = row.last_death_probe_at
+                if not row.past_ttl or (stamped is not None and stamped >= run_started_at):
+                    continue
+                struck += 1
+                strikes += 1
+                values: dict[str, object] = {"death_strikes": strikes, "last_death_probe_at": now}
+                if strikes >= CLOSE_AFTER_MISSES:
+                    values.update(status="closed", closed_at=now)
+                    closed += 1
+                    append_event(write, int(row.id), "closed", run_id)
+            elif result.verdict == "alive":
+                cleared += 1 if strikes else 0
+                values = {"death_strikes": 0}
+                if row.past_ttl:
+                    values["last_death_probe_at"] = now
+            else:
+                continue
+            write.execute(update(postings).where(postings.c.id == row.id).values(**values))
+    return ShortlistStrikes(struck=struck, closed=closed, cleared=cleared)
+
+
 __all__ = [
+    "ShortlistStrikes",
+    "strike_from_shortlist",
     "CLOSING_SIGNALS",
     "LISTING_ENDPOINTS",
     "LISTING_SIGNALS",
