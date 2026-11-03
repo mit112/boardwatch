@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A dead posting on the shortlist now closes itself.** The probe that withholds a lead as gone also counts
+  as a strike toward the existing two-strike close, under the same rules as the death sweep: unwatched
+  postings only, never a listing-path provider, two strikes at least the TTL apart, and any live answer
+  clears. Previously these postings came back every day and held delivery slots. The funnel's `liveness`
+  block reports `struck`, `closed` and `strikes_cleared` (D-665).
+
 - **Corpus-wide reads no longer walk every open posting's row.** A new migration adds covering indexes,
   including one carrying the empty-body check, and the funnel, ranker, scan and death sweep read through
   them. On an 830k-posting store the funnel fell from 1,963 s to 215 s, ranking from 958 s to 304 s and the

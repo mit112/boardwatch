@@ -488,3 +488,68 @@ def test_a_blindness_alert_reaches_the_run_row(env: Path, tmp_path: Path) -> Non
     assert summary.fatal is None, summary.errors
     assert recorded.status == "ok"
     assert {lead.posting_id for lead in summary.tailored} == set(ids)
+
+
+def _budgeted_pipeline(data_dir: Path, out_root: Path, top_n: int, budget: int, prober):  # type: ignore[no-untyped-def]
+    settings = load_settings(data_dir=data_dir).model_copy(update={"death_probe_budget": budget})
+    return run_pipeline(
+        get_engine(data_dir),
+        settings,
+        console=Console(quiet=True),
+        out_root=out_root,
+        resume_path=settings.config_dir / "resume.yaml",
+        skip_scan=True,
+        top_n=top_n,
+        liveness_prober=prober,
+    )
+
+
+def _strikes(data_dir: Path, ids: list[int]) -> list[int]:
+    with get_engine(data_dir).connect() as conn:
+        rows = conn.execute(
+            select(tables.postings.c.id, tables.postings.c.death_strikes).where(
+                tables.postings.c.id.in_(ids)
+            )
+        ).all()
+    return [int(row.death_strikes) for row in sorted(rows, key=lambda row: row.id)]
+
+
+def test_the_shortlist_strikes_a_dead_lead_the_sweep_did_not_reach(
+    env: Path, tmp_path: Path
+) -> None:
+    """D-665. A sweep budget of 1 leaves one row to the shortlist; neither takes two strikes."""
+    ids = _ready(env, 2)
+    summary = _budgeted_pipeline(env, tmp_path / "apps", 2, 1, _prober(dead=set(ids)))
+
+    assert summary.fatal is None, summary.errors
+    assert summary.liveness_struck == 1
+    assert _strikes(env, ids) == [1, 1]
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["liveness"]["struck"] == 1
+    assert payload["liveness"]["closed"] == 0
+
+
+def test_a_zero_budget_closes_nothing_by_probe(env: Path, tmp_path: Path) -> None:
+    ids = _ready(env, 1)
+    summary = _budgeted_pipeline(env, tmp_path / "apps", 1, 0, _prober(dead=set(ids)))
+
+    assert summary.liveness_struck is None
+    assert _strikes(env, ids) == [0]
+    payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
+    assert payload["liveness"]["struck"] is None
+
+
+def test_a_strike_fault_costs_the_strikes_and_not_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def explode(*args: object, **kwargs: object) -> None:
+        raise OSError("disk")
+
+    monkeypatch.setattr(runner_module, "strike_from_shortlist", explode)
+    ids = _ready(env, 2)
+    summary = _pipeline(env, tmp_path / "apps", top_n=2, prober=_prober(dead={ids[0]}))
+
+    assert summary.fatal is None, summary.errors
+    assert [lead.posting_id for lead in summary.tailored] == [ids[1]]
+    assert summary.liveness_struck is None
+    assert any("strikes failed" in error for error in summary.errors)

@@ -28,8 +28,8 @@ writes nothing itself. The measured sensitivity is 6.7% (4 of 60 postings the sc
 closed), so the narrowing resolves a small fraction of D-314 and closes none of the rest.
 
 **`pipeline/liveness.py::check_leads` is untouched by that narrowing** — the shortlist probe
-still reads URLs and writes nothing, ever. One 404 against a lead withholds it from this run and
-from nothing else.
+still reads URLs and writes nothing, ever. One 404 against a lead withholds it from this run;
+`death_probe.strike_from_shortlist` then counts the answer under the same narrowings (D-665).
 
 **Fail-open is the whole design.** The cost of treating a dead posting as alive is one wasted
 résumé; the cost of treating a live posting as dead is a job the user never sees and cannot

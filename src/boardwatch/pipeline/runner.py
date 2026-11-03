@@ -98,7 +98,11 @@ from boardwatch.notify.heartbeat import send_heartbeat
 from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.notify.liveness_blind import check_liveness_blind
 from boardwatch.notify.scan_health import degraded_scan_alert, scan_outage_alert
-from boardwatch.pipeline.death_probe import ListingProber, sweep_unwatched_deaths
+from boardwatch.pipeline.death_probe import (
+    ListingProber,
+    strike_from_shortlist,
+    sweep_unwatched_deaths,
+)
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import (
     collect_run_funnel,
@@ -528,6 +532,10 @@ class PipelineSummary:
     # `liveness_dead` at 0 is the signature of the detector being disarmed rather than of a
     # healthy corpus.
     liveness_gone_after_redirect: int | None = None
+    # D-665. `None` when the strikes were not written, never 0.
+    liveness_struck: int | None = None
+    liveness_closed: int | None = None
+    liveness_strikes_cleared: int | None = None
     # The postings withheld as gone, kept by ID rather than by count so the cohort guard can
     # reconcile SETS. They are not tailor failures and not leads; they never entered the loop.
     dead_lead_ids: list[int] = field(default_factory=list)
@@ -2705,10 +2713,10 @@ def _run_pipeline_leased(
         # WHICH postings are leads. Here because the gate clause is "0 dead postings reaching the
         # lead list", and this is the last point at which a posting is still only a candidate.
         #
-        # Nothing is written. A `dead` result withholds the lead from THIS run and from the
-        # ledger write below; it does not close the posting, because `postings.status` belongs to
-        # the scanner's board-absence rule and one 404 must not be able to retire a live
-        # requisition permanently. Tomorrow's run asks again.
+        # A `dead` result withholds the lead from THIS run and from the ledger write below. It
+        # does not close the posting: one 404 must not be able to retire a live requisition.
+        # Tomorrow's run asks again, and `strike_from_shortlist` below counts the answer toward
+        # the sweep's two-strike close (D-665).
         leads = list(ranked.visible)
         # T72 — the ranker's own 1-based rank, captured HERE and not inside the gate stage.
         # `leads` is filtered by the liveness sweep below and cut to `top_n` above the lane
@@ -2732,6 +2740,28 @@ def _run_pipeline_leased(
             summary.liveness_gone_after_redirect = sum(
                 1 for r in results.values() if r.gone_but_redirected
             )
+            # The sweep's arm, for the same reason: budget 0 means this operator closes nothing
+            # by probe. Caught like the sweep: a fault here costs the strikes and nothing else.
+            if settings.death_probe_budget > 0 and results:
+                try:
+                    strikes = strike_from_shortlist(
+                        engine,
+                        results,
+                        run_id=run_id,
+                        ttl_hours=settings.death_probe_ttl_hours,
+                    )
+                except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                    message = f"liveness: strikes failed ({type(exc).__name__}: {exc})"
+                    stage_errors.append(message)
+                    summary.errors.append(message)
+                else:
+                    summary.liveness_struck = strikes.struck
+                    summary.liveness_closed = strikes.closed
+                    summary.liveness_strikes_cleared = strikes.cleared
+                    console.print(
+                        f"liveness strikes: {strikes.struck} struck, {strikes.closed} closed, "
+                        f"{strikes.cleared} cleared"
+                    )
             dead_ids = {pid for pid, r in results.items() if r.withholds}
             if dead_ids:
                 summary.dead_lead_ids.extend(sorted(dead_ids))
@@ -4199,6 +4229,9 @@ def _emit_funnel(
             dead=summary.liveness_dead,
             unknown=summary.liveness_unknown,
             gone_after_redirect=summary.liveness_gone_after_redirect,
+            struck=summary.liveness_struck,
+            closed=summary.liveness_closed,
+            strikes_cleared=summary.liveness_strikes_cleared,
         ),
         # D-325. `None` when the sweep did not run — never a block of zeros.
         death_probe=summary.death_probe,
