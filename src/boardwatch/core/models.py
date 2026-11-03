@@ -7,10 +7,11 @@ stable ordering — byte-equality is the cache contract.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from datetime import datetime
-from typing import Any, Literal, get_args
+from typing import Any, Literal, NamedTuple, get_args
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SnapshotStatus = Literal["complete", "partial", "failed", "unchanged"]
 RemotePolicy = Literal["remote", "hybrid", "onsite", "unknown"]
@@ -21,6 +22,18 @@ class ResponseValidators(BaseModel):
 
     etag: str | None = None
     last_modified: str | None = None
+
+
+#: (title, locations, remote policy) -> why a listing needs no detail fetch, or None to fetch it.
+ListingGate = Callable[[str, Sequence[str], str], str | None]
+
+
+class GatedListing(NamedTuple):
+    """A listed posting whose detail was not fetched: enough to audit the decision by reading it."""
+
+    provider_posting_id: str
+    title: str
+    reason: str
 
 
 class BoardRequest(BaseModel):
@@ -37,6 +50,9 @@ class BoardRequest(BaseModel):
     # Max secondary (per-posting) requests a multi-endpoint provider may make for this
     # board in this scan. Single-request providers ignore it. Also not part of the key.
     detail_budget: int = 50
+    # What the listing alone already rules out, when the operator armed it. A callable and not a
+    # verdict list because a posting's listing is only known once the provider has paged it.
+    listing_gate: ListingGate | None = Field(default=None, repr=False)
 
 
 # The structured fields an observation can declare it is NOT the record of truth for (D-414(a)).
@@ -191,6 +207,10 @@ class BoardSnapshot(BaseModel):
     # Listed but not materialised because detail_fetch_budget was exceeded. Typed here so the
     # number stops living only as English inside board_scans.error.
     detail_deferred: int | None = None
+    # Listed postings the request's `listing_gate` ruled out. They stay in `listed_ids`, so nothing
+    # closes, and nothing records them as seen: the next scan asks again, with whatever the profile
+    # and taxonomy say by then. That is this quarantine's drain (D-663).
+    gated_listings: tuple[GatedListing, ...] = ()
     # True when the provider's stated total was a censor value and board_reported_total came
     # from a second, uncapped path. A TYPED flag: never re-derive this by parsing a message.
     board_total_censored: bool | None = None

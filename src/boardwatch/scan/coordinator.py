@@ -13,7 +13,7 @@ import json
 import os
 import socket
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
@@ -24,17 +24,20 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 from rich.console import Console
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Connection, Engine, func, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
-from boardwatch.core.models import BoardRequest, BoardSnapshot
+from boardwatch.core.models import BoardRequest, BoardSnapshot, ListingGate
 from boardwatch.core.politeness import Fetcher, host_key
 from boardwatch.core.settings import Settings
 from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
+from boardwatch.rank.heuristic import profile_view_from_row
+from boardwatch.rank.listing_gate import build_listing_gate
+from boardwatch.rank.role_taxonomy import RoleTaxonomyError, load_role_taxonomy
 from boardwatch.scan.apply import apply_board
 from boardwatch.scan.workers import board_deadline_snapshot, fetch_board_job
 from boardwatch.store.db import ensure_schema
@@ -43,6 +46,7 @@ from boardwatch.store.queries import (
     RUN_OK,
     finalize_run,
     finish_run,
+    get_profile,
     get_validators,
     get_watched_companies,
     insert_run,
@@ -184,10 +188,52 @@ class ScanSummary:
     # FETCH wall clock per provider (D-330). Keyed by `BoardRequest.provider`, so a provider
     # that contributed no work is absent rather than present at zero.
     fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
+    #: Listings ruled out by the listing gate, by veto. Empty when the gate is not armed.
+    listing_gated: Counter[str] = field(default_factory=Counter)
     errors: list[str] = field(default_factory=list)
     # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
     # INSERT stays inside the scan lock (see pipeline/runner.py).
     run_id: int = 0
+
+
+def _armed_listing_gate(conn: Connection, settings: Settings) -> ListingGate | None:
+    """The gate for this scan, from today's profile and taxonomy, and a fresh audit file.
+
+    Built per scan, so a changed profile or taxonomy applies to every listing the next scan reads.
+    """
+    if not settings.listing_gate:
+        return None
+    row = get_profile(conn)
+    if row is None:
+        return None
+    try:
+        taxonomy = load_role_taxonomy(settings.config_dir)
+        _gated_audit_path(settings).write_text("")
+    except (RoleTaxonomyError, OSError, UnicodeError):
+        return None  # the ranker reports a broken taxonomy; fetching everything loses nothing
+    return build_listing_gate(
+        profile_view_from_row(row), taxonomy, settings.location_filter_mode
+    )
+
+
+def _gated_audit_path(settings: Settings) -> Path:
+    return settings.data_dir / "listing_gated.jsonl"
+
+
+def _record_gated(
+    settings: Settings, summary: ScanSummary, slug: str, provider: str, snapshot: BoardSnapshot
+) -> None:
+    """Keep what the gate ruled out readable: those postings have no row, so this is the trace."""
+    if not snapshot.gated_listings:
+        return
+    summary.listing_gated.update(listing.reason for listing in snapshot.gated_listings)
+    try:
+        with _gated_audit_path(settings).open("a") as audit:
+            for listing in snapshot.gated_listings:
+                row = {"provider": provider, "slug": slug, **listing._asdict()}
+                audit.write(json.dumps(row) + "\n")
+    except OSError as exc:  # the trace is lost, not the scan
+        summary.errors.append(f"listing gate audit: {exc}")
 
 
 def _returned(future: Future[BoardSnapshot]) -> BoardSnapshot | None:
@@ -441,6 +487,7 @@ def _scan_body(
     )
     work: list[tuple[Any, Provider, BoardRequest]] = []
     with engine.connect() as conn:
+        listing_gate = _armed_listing_gate(conn, settings)
         company_ids = [row.id for row in company_rows]
         grouped: dict[int, set[str]] = defaultdict(set)
         if company_ids:
@@ -479,6 +526,7 @@ def _scan_body(
                         ),
                         known_posting_ids=frozenset(grouped.get(row.id, ())),
                         detail_budget=settings.detail_fetch_budget,
+                        listing_gate=listing_gate,
                     ),
                 )
             )
@@ -621,6 +669,7 @@ def _scan_body(
                 # Accounted here, beside the fetch cost and for the same reason: the throttle
                 # cost the run its retries whether or not the apply then succeeded.
                 summary.throttle_retries += snapshot.throttle_retries or 0
+                _record_gated(settings, summary, row.slug, request.provider, snapshot)
                 if snapshot.throttle_exhausted:
                     summary.throttle_exhausted.append(row.slug)
                 cost = summary.fetch_cost.setdefault(request.provider, ProviderFetchCost())

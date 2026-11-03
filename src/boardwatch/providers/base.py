@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from enum import StrEnum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, TypeVar, runtime_checkable
 
-from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting
+from boardwatch.core.models import BoardRequest, BoardSnapshot, GatedListing, RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure
 
 
@@ -59,6 +59,37 @@ def board_clock_deferral(deferred: int) -> str:
         f"detail phase stopped before the board deadline: {deferred} unseen postings "
         "deferred to the next scan"
     )
+
+
+_Row = TypeVar("_Row")
+
+
+def apply_listing_gate(
+    request: BoardRequest,
+    unseen: list[_Row],
+    read: Callable[[_Row], tuple[str, str, Sequence[str], str]],
+) -> tuple[list[_Row], tuple[GatedListing, ...]]:
+    """Split unseen rows into those worth a detail fetch and those the listing already rules out.
+
+    Called before the detail budget is sliced, so a gated row never spends it. `read` gives a row's
+    (id, title, locations, remote policy) from the LISTING alone.
+    """
+    gate = request.listing_gate
+    if gate is None:
+        return unseen, ()
+    kept: list[_Row] = []
+    gated: list[GatedListing] = []
+    for row in unseen:
+        try:
+            posting_id, title, locations, remote_policy = read(row)
+            reason = gate(title, locations, remote_policy)
+        except (AttributeError, KeyError, TypeError, ValueError):
+            reason = None  # a listing the detail may still parse must not fail the whole board
+        if reason is None:
+            kept.append(row)
+        else:
+            gated.append(GatedListing(posting_id, title, reason))
+    return kept, tuple(gated)
 
 
 def detail_phase_stops(fetcher: Fetcher, *, kept: bool, left: int, errors: list[str]) -> bool:

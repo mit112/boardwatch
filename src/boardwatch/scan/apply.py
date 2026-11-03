@@ -706,6 +706,11 @@ def _scan_row(
             board_reported_total=None if snapshot is None else snapshot.board_reported_total,
             board_enumerated=None if snapshot is None else snapshot.board_enumerated,
             detail_deferred=None if snapshot is None else snapshot.detail_deferred,
+            listing_gated=(
+                None
+                if snapshot is None or snapshot.status == "failed"
+                else len(snapshot.gated_listings)
+            ),
             board_total_censored=(
                 None
                 if snapshot is None or snapshot.board_total_censored is None

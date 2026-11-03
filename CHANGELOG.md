@@ -33,6 +33,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`listing_gate`, off by default, skips the detail fetch of a posting whose listing already fails the
+  ranker's title and location vetoes.** Such a posting costs no request and no detail budget, stores no row
+  and never closes, and each scan judges it afresh, so a changed profile or taxonomy reaches it. Anything
+  the listing cannot state keeps the posting. Gated postings are listed in `listing_gated.jsonl` and counted
+  in `board_scans.listing_gated`. SmartRecruiters only for now (D-663).
+
 - **Run-stage progress and remaining-time estimates.** Scan, lane fetches, extraction,
   eligibility, probes, gate requests and tailoring announce their sizes and count completed
   attempts at checkpoints. Ranking reports its corpus size and completion. Tailoring names

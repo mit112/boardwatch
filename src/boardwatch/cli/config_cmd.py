@@ -132,6 +132,11 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
     "board_deadline_seconds": (
         float, "next scan", "wall-clock seconds one board may take before it is recorded failed"
     ),
+    "listing_gate": (
+        _str_to_bool,
+        "next scan",
+        "skip the detail fetch of a posting whose listing already fails the ranker's vetoes",
+    ),
     "detail_fetch_budget": (
         int, "next scan", "per-posting detail fetches per board per scan, 1–10000"
     ),
