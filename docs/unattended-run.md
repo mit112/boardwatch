@@ -57,6 +57,26 @@ What to expect from an unattended run:
   `boardwatch web`.
 - **The first scheduled run migrates the store to head** before doing anything, so any pending
   schema repair is applied automatically.
+- **Repeated dead-board alerts are grouped.** A board that returns 404 on this scan and its
+  previous two pipeline scans loses its individual error entry. One alert names the first ten
+  boards and counts the rest; the funnel lists all of them. Boards dead for only one or two
+  scans still get individual alerts. A successful scan resets the count. Lane captures and
+  standalone `scan` commands, including `--company` and `--provider` scans, neither count nor
+  reset it. Timeouts, 405s and other errors keep their individual alerts. Failed-board counts
+  stay the same. Old scan history has no typed dead signal, so the three-scan count starts after
+  this upgrade.
+- **Following an ATS move is opt-in.** Run `boardwatch config set follow_board_moves true` to
+  enable it. At the end of a run's scan-driven work, each board dead for three scans is unwatched
+  if the same handle is already watched on another provider. Otherwise, the run probes that
+  handle on Greenhouse, Lever, Ashby and Workable, excluding the old provider. An OK target is
+  watched with the old display name, then the old board is unwatched.
+  There are at most four candidate checks per dead board. If any candidate check errors, that
+  board's watches stay as they were and one alert explains why. A dead or empty target is not
+  a match. Each completed move or unwatch appears once in the morning report and funnel with
+  an exact undo command, including the data directory. Old postings stay in the store for the
+  existing death sweep; unwatching does not close them. With the setting off there are no move
+  probes or watch changes, and the funnel still lists the dead boards. `--no-scan` never follows
+  moves. `doctor` continues to suggest moves without changing watches.
 - **Liveness checking is on by default** — each run re-fetches shortlisted postings and withholds
   any that answers 404/410; pass `--no-check-liveness` to skip those per-posting re-fetches. Pass
   **`--project`** to render each lead from the career-profile bundle's projection instead of the

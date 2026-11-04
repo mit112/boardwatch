@@ -205,7 +205,9 @@ def _get(
     raise AssertionError("unreachable: the loop either returns or raises")
 
 
-def _failed(url: str, error: str, ledger: _ThrottleLedger | None = None) -> BoardSnapshot:
+def _failed(
+    url: str, error: str, ledger: _ThrottleLedger | None = None, *, dead: bool = False
+) -> BoardSnapshot:
     """A failed snapshot, still carrying the throttle counters.
 
     `failed` closes nothing, so the counters change no behaviour on this path — they are
@@ -214,7 +216,7 @@ def _failed(url: str, error: str, ledger: _ThrottleLedger | None = None) -> Boar
     failure.
     """
     return BoardSnapshot(
-        status="failed", postings=[], url=url, observed_validators=None, error=error,
+        status="failed", postings=[], url=url, observed_validators=None, error=error, dead=dead,
         throttle_retries=None if ledger is None else ledger.retries,
         throttle_exhausted=None if ledger is None else ledger.exhausted,
     )
@@ -352,7 +354,7 @@ class EightfoldProvider:
         try:
             boot = _get(fetcher, request.url, ledger, validators=request.validators)
         except FetchFailure as exc:
-            return _failed(request.url, str(exc), ledger)
+            return _failed(request.url, str(exc), ledger, dead=exc.status_code == 404)
         if boot.not_modified:
             return BoardSnapshot(
                 status="unchanged", postings=[], url=request.url,

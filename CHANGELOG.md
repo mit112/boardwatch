@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Repeated dead-board alerts are grouped, and runs can follow ATS moves.** After a board returns
+  404 on three consecutive pipeline scans, `run` replaces its per-board error with one grouped
+  alert and lists every such board in the funnel. Failure counts stay the same. Set
+  `follow_board_moves = true` to unwatch a dead board already covered on another provider, or
+  replace it with a same-handle board that probes OK. Each change appears in the morning report
+  and funnel with an undo command. The setting defaults to false and `--no-scan` never changes
+  watches. Existing scan history cannot prove a streak; counting starts after the upgrade (D-669).
+
 - **A company page with no form to find goes to Apply by hand.** A link carrying an `unresolved_url_markers` fragment
   leaves Link not resolved once its check finishes with no employer link. Tooltips no longer name the removed
   Jobs to explore list (D-668).

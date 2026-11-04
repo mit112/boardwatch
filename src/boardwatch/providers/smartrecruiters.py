@@ -54,9 +54,9 @@ _PAGE_LIMIT = 100  # server-side maximum; a larger request is silently clamped
 _BODY_SECTIONS = ("jobDescription", "qualifications", "additionalInformation")
 
 
-def _failed(url: str, error: str) -> BoardSnapshot:
+def _failed(url: str, error: str, *, dead: bool = False) -> BoardSnapshot:
     return BoardSnapshot(
-        status="failed", postings=[], url=url, observed_validators=None, error=error,
+        status="failed", postings=[], url=url, observed_validators=None, error=error, dead=dead,
     )
 
 
@@ -96,7 +96,7 @@ class SmartRecruitersProvider:
         try:
             result = fetcher.get(request.url, validators=request.validators)
         except FetchFailure as exc:
-            return _failed(request.url, str(exc))
+            return _failed(request.url, str(exc), dead=exc.status_code == 404)
         if result.not_modified:
             return BoardSnapshot(
                 status="unchanged", postings=[], url=request.url,

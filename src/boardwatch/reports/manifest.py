@@ -90,6 +90,7 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # would reject from the same fields, so it cannot change which postings become leads. In the
         # config hash it would also re-key every disposition (`policy_version`) for fetching less.
         "listing_gate",
+        "follow_board_moves",  # acquisition: changes watches, never eligibility policy
         "reap_stale_after_hours",  # run bookkeeping/liveness — never which postings become leads
         # Bounds how stale a board's cached validator may get before a forced unconditional
         # refetch. Throughput/liveness, same class as detail_fetch_budget/reap_stale_after_hours:
@@ -359,6 +360,7 @@ _ROUTING_IRRELEVANT: frozenset[str] = frozenset(
         "board_deadline_seconds",
         "detail_fetch_budget",
         "listing_gate",
+        "follow_board_moves",  # acquisition, like watching a board by hand
         "reap_stale_after_hours",
         "validator_max_age_hours",
         # Post-selection: who is told, not where a lead sits.

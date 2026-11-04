@@ -62,7 +62,8 @@ from boardwatch.tailor.coverage import CoverageReport, coverage_to_dict
 # reached only the console log nobody reads, the `runs.errors_json` column nobody queries,
 # and the funnel's `## Errors` section — which on run 131 put a real lane collapse at line
 # 1388 of a 116 KB file. Unattended, that is a channel with no receiver.
-ARTIFACT_VERSION = 3
+# v4 adds `board_moves`: completed watch changes with their exact undo commands (D-669).
+ARTIFACT_VERSION = 4
 
 # How many alert lines the MARKDOWN half prints before it stops and points at the funnel.
 # The count printed above the list is never capped, so a run with 40 alerts still says 40 —
@@ -115,6 +116,7 @@ class MorningArtifact:
     # stored, `list(...)` in the dict half. Empty is an honest "this run raised nothing", and the
     # renderer says so out loud rather than by omitting the section.
     errors: tuple[str, ...] = ()
+    board_moves: tuple[str, ...] = ()
     # The one problem that stopped the run, carried separately and never folded into `errors` —
     # the same separation `RunFunnel` keeps. Most runner paths that set `fatal` also append the
     # message to `errors`, but three do not: the zero-output guard, the cohort guard and the
@@ -131,6 +133,7 @@ def build_morning(
     leads: Sequence[MorningLead],
     board_coverage: BoardCoverageReport | None = None,
     errors: Sequence[str] = (),
+    board_moves: Sequence[str] = (),
     fatal: str | None = None,
 ) -> MorningArtifact:
     """Assemble the artifact from already-built lead rows. Pure: no engine, no clock, no I/O.
@@ -145,6 +148,7 @@ def build_morning(
         leads=ordered,
         board_coverage=board_coverage,
         errors=tuple(errors),
+        board_moves=tuple(board_moves),
         fatal=fatal,
     )
 
@@ -163,6 +167,7 @@ def morning_to_dict(artifact: MorningArtifact) -> dict[str, object]:
         # prints `len(errors)` whatever it goes on to show); they differ only in how many lines
         # a human is asked to read.
         "errors": list(artifact.errors),
+        "board_moves": list(artifact.board_moves),
         "board_coverage": board_coverage_to_dict(artifact.board_coverage),
         "leads": [
             {
@@ -280,6 +285,8 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
     # An alert under forty lead entries is not surfaced, it is buried — which is what the funnel
     # already does to it, at line 1388.
     lines += _alerts_markdown(artifact)
+    if artifact.board_moves:
+        lines += ["## Board moves", ""] + [f"- {move}" for move in artifact.board_moves] + [""]
     lines += [
         "## Discovery reach",
         "",

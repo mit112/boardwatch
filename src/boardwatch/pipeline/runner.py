@@ -157,6 +157,7 @@ from boardwatch.reports.run_funnel import (
 )
 from boardwatch.reports.tailor import ResumeLineageMismatch, default_compile_runner, run_tailor
 from boardwatch.scan.apply import apply_board
+from boardwatch.scan.board_moves import follow_board_moves
 from boardwatch.scan.coordinator import (
     ScanSummary,
     is_systemic_scan_outage,
@@ -455,6 +456,7 @@ class PipelineSummary:
     scan_postings_seen: int = 0
     scan_open_postings: int = 0
     scan_boards_failed: int = 0
+    board_moves: list[str] = field(default_factory=list)
     scan_boards_complete: int = 0
     # Net intake this run. Surfaced on the CLI summary line because "0 new across the whole
     # corpus" is the likeliest failure of a system left unattended for weeks: a provider that
@@ -3342,6 +3344,17 @@ def _run_pipeline_leased(
             summary.fatal = message
         raise
     finally:
+        # After all scan-driven work, before either artifact. No scan means no evidence and
+        # no watch changes; with the setting off this makes no migration probes at all.
+        if scan_summary is not None and settings.follow_board_moves and scan_summary.dead_boards:
+            try:
+                summary.board_moves, move_errors = follow_board_moves(
+                    engine, settings, scan_summary.dead_boards
+                )
+            except Exception as exc:  # setup failure must not prevent reports or change watches
+                move_errors = [f"board moves: {exc}"]
+            summary.errors.extend(move_errors)
+            stage_errors.extend(move_errors)
         # `status=failed` with `errors_json=[]` is a run that cannot say why it failed, and it
         # is the shape an unattended failure actually took: the reason lived only in the
         # console log. Four fatal paths reach here without ever touching `stage_errors` — the
@@ -4198,6 +4211,7 @@ def _emit_funnel(
             boards_partial=scan_summary.partial if scan_summary else 0,
             boards_unchanged=scan_summary.unchanged if scan_summary else 0,
             boards_failed=summary.scan_boards_failed,
+            dead_boards=tuple(b.label for b in scan_summary.dead_boards) if scan_summary else (),
             postings_seen=summary.scan_postings_seen,
             # Read off `summary`, not `scan_summary` directly: unlike `boards_partial`/
             # `boards_unchanged` above, the run log (`cli/run_cmd.py`) needs this too, and
@@ -4317,6 +4331,7 @@ def _emit_funnel(
             )
         ),
         errors=summary.errors,
+        board_moves=summary.board_moves,
         fatal=summary.fatal,
     )
     # Before the write, so a failure to render the artifact still leaves the volume alert its
@@ -4423,6 +4438,7 @@ def _emit_morning(
         # funnel reached nobody during an unattended fortnight. Passed rather than re-derived:
         # one writer, one list, so the two artifacts cannot drift about what this run raised.
         errors=summary.errors,
+        board_moves=summary.board_moves,
         fatal=summary.fatal,
     )
     return write_morning(artifact, day_dir)

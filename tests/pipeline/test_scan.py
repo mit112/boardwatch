@@ -195,10 +195,13 @@ def test_apply_failure_on_one_board_never_aborts_the_scan(
     _add_company(engine, "globex", case.name)
     real_apply = coordinator.apply_board
 
-    def flaky_apply(engine_: Engine, snapshot: Any, company_id: int, run_id: int) -> Any:
+    def flaky_apply(
+        engine_: Engine, snapshot: Any, company_id: int, run_id: int, *,
+        pipeline_scan: bool = False,
+    ) -> Any:
         if company_id == acme_id:
             raise RuntimeError("boom in apply")
-        return real_apply(engine_, snapshot, company_id, run_id)
+        return real_apply(engine_, snapshot, company_id, run_id, pipeline_scan=pipeline_scan)
 
     monkeypatch.setattr(coordinator, "apply_board", flaky_apply)
     with respx.mock:

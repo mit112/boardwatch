@@ -4,8 +4,9 @@ When a watched board goes DEAD/ERROR/EMPTY, the company has often not stopped hi
 its board to a different ATS (observed live: veeva workday->lever, purestorage workday->greenhouse,
 plaid lever->ashby, vercel ashby->greenhouse). A static watch cannot follow that move, so it sits
 at zero forever. This module probes the OTHER simple-slug providers for the same company handle and,
-if one answers OK, proposes the migration. It suggests only; a human re-points the watch (the same
-human-in-the-loop rule `companies discover`/`import` already follow).
+if one answers OK, proposes the migration. Doctor suggests only. The pipeline may apply a suggestion
+when `follow_board_moves` is enabled and three consecutive pipeline scans proved the board dead
+(D-669).
 
 Pure and network-free: `suggest_migrations` takes an injected `probe`, so the same logic serves
 `doctor`'s live probe and a unit test. It imports no store and no fetcher."""
@@ -92,5 +93,5 @@ def suggest_migrations(
         for cand in cands:
             if results.get(cand) is BoardHealth.OK:
                 suggestions.append(MigrationSuggestion(prov, slug, cand[0], cand[1]))
-                break  # first OK in target order is enough; a human reviews the suggestion
+                break  # first OK in target order is enough
     return suggestions

@@ -39,6 +39,7 @@ from boardwatch.rank.heuristic import profile_view_from_row
 from boardwatch.rank.listing_gate import build_listing_gate
 from boardwatch.rank.role_taxonomy import RoleTaxonomyError, load_role_taxonomy
 from boardwatch.scan.apply import apply_board
+from boardwatch.scan.board_moves import DeadBoard, dead_boards_alert, dead_for_three_scans
 from boardwatch.scan.workers import board_deadline_snapshot, fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
@@ -191,6 +192,7 @@ class ScanSummary:
     #: Listings ruled out by the listing gate, by veto. Empty when the gate is not armed.
     listing_gated: Counter[str] = field(default_factory=Counter)
     errors: list[str] = field(default_factory=list)
+    dead_boards: list[DeadBoard] = field(default_factory=list)
     # Set once the runs row exists. The pipeline reads it rather than minting its own, so the
     # INSERT stays inside the scan lock (see pipeline/runner.py).
     run_id: int = 0
@@ -567,6 +569,7 @@ def _scan_body(
     # counts its provider took; one whose thread has not ended when the scan has nothing else left
     # to wait on is recorded then, without them — waiting on it is the stall the cap exists to end.
     unrecorded: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, float]] = {}
+    dead_errors: dict[int, str] = {}
     try:
         queues = host_queues(work)
         busy: set[str] = set()
@@ -679,7 +682,9 @@ def _scan_body(
                 else:
                     cost.seconds += snapshot.fetch_seconds
                 try:
-                    result = apply_board(engine, snapshot, row.id, active_run_id)
+                    result = apply_board(
+                        engine, snapshot, row.id, active_run_id, pipeline_scan=not finish
+                    )
                 except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
                     # A single board's apply failing — a data quirk tripping a DB constraint, as a
                     # duplicate Workable shortcode did — must cost that board its reach and nothing
@@ -704,7 +709,10 @@ def _scan_body(
                     summary.unchanged += 1
                 else:
                     summary.failed += 1
-                    summary.errors.append(f"{row.slug}: {snapshot.error}")
+                    if not finish and snapshot.dead:
+                        dead_errors[row.id] = f"{row.slug}: {snapshot.error}"
+                    else:
+                        summary.errors.append(f"{row.slug}: {snapshot.error}")
                 progress.advance(item=row.slug)
     except BaseException:
         pool.shutdown(wait=True, cancel_futures=True)
@@ -717,11 +725,17 @@ def _scan_body(
 
     progress.finish()
     with engine.connect() as conn:
+        if not finish and dead_errors:
+            summary.dead_boards = dead_for_three_scans(conn, active_run_id)
         summary.open_postings = int(
             conn.execute(
                 select(func.count()).select_from(postings).where(postings.c.status == "open")
             ).scalar_one()
         )
+    collapsed = {board.company_id for board in summary.dead_boards}
+    summary.errors.extend(note for cid, note in dead_errors.items() if cid not in collapsed)
+    if summary.dead_boards:
+        summary.errors.append(dead_boards_alert(summary.dead_boards))
     outage = is_systemic_scan_outage(
         attempted=summary.companies,
         complete=summary.complete,
