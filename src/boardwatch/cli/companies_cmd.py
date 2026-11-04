@@ -22,11 +22,26 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes.admission import CompanyBudget
+from boardwatch.lanes.common_crawl import (
+    DEFAULT_PROVIDERS,
+    SURT_PROVIDERS,
+    CrawlCensus,
+    HttpCrawlSource,
+    ProbeResult,
+    crawl_header,
+    enumerate_slugs,
+    probe_candidates,
+)
 from boardwatch.lanes.github_lists import (
+    BoardCandidate,
+    Discovery,
+    RecordCensus,
     candidate_document,
     discover,
     fetch_listings,
     one_line,
+    ramp_order,
+    registry_yaml,
     select,
 )
 from boardwatch.lanes.grnh_seeds import GRNH_HOSTS, MAX_ATTEMPTS_CONSIDERED, SeedCoverage
@@ -34,8 +49,9 @@ from boardwatch.lanes.grnh_seeds import candidate_document as grnh_candidate_doc
 from boardwatch.lanes.grnh_seeds import resolve as grnh_resolve
 from boardwatch.lanes.grnh_seeds import without_known as grnh_without_known
 from boardwatch.providers.base import BoardHealth, Provider
-from boardwatch.providers.registry import PROVIDER_NAMES, derive_employer_name
+from boardwatch.providers.registry import PROVIDER_NAMES, build_providers, derive_employer_name
 from boardwatch.providers.workday import FacetBucket, FacetUnavailable, read_facet_catalog
+from boardwatch.rank.role_taxonomy import RoleTaxonomyError, load_role_taxonomy
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
@@ -663,6 +679,139 @@ def discover_(
         f"Wrote {len(selection.admitted)} candidate board(s) to {out} "
         f"({len(selection.already_known)} already stored, {len(selection.refused)} held back by "
         f"the cap of {cap}). Review it, then: boardwatch companies import {out}"
+    )
+
+
+@companies_app.command("discover-crawl")
+def discover_crawl(
+    ctx: typer.Context,
+    provider: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--provider",
+            help=f"Repeatable. One of {', '.join(sorted(set(SURT_PROVIDERS.values())))}; "
+            f"default {', '.join(DEFAULT_PROVIDERS)}.",
+        ),
+    ] = None,
+    us_only: bool = typer.Option(
+        False, "--us-only", help="Admit a board only for a posting located in the US."
+    ),
+    limit: int | None = typer.Option(
+        None, "--limit", min=1,
+        help="How many boards to admit (default: lane_new_companies_per_run).",
+    ),
+    collection: Annotated[
+        str | None,
+        typer.Option("--collection", help="Common Crawl collection id (default: the newest)."),
+    ] = None,
+    max_blocks: int = typer.Option(
+        80, "--max-blocks", min=0,
+        help="Index blocks to read per SURT prefix, in slug order; 0 reads them all.",
+    ),
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the candidate file here instead of stdout."),
+    ] = None,
+) -> None:
+    """Propose unwatched ATS boards found in the Common Crawl index, for review.
+
+    Enumerates board slugs from Common Crawl's static index files, drops every slug already in
+    `companies` (watched or not, any case), probes each remaining board through its real provider,
+    and admits one only if a posting passes the ranker's role gate for YOUR role taxonomy as
+    `in_field` (and, under `--us-only`, reads as located in the US; `unknown` does not count).
+
+    Writes a registry-format file and NOTHING ELSE: no store write, and nothing persisted while
+    it runs, so an interrupt loses only the run. Review it, then `companies import`. That human
+    review step is required.
+
+    **Drain.** A board dropped for having no qualifying posting today is stored nowhere;
+    re-running re-probes it, which is its re-entry path. A dead or failed probe is counted, not
+    raised. Probing stops once `--limit` boards are admitted, in slug order, so the unprobed
+    remainder is reported in the header.
+    """
+    app_ctx = build_context(ctx.obj, ensure=False)  # ensure=False: see `discover`
+    names = tuple(provider or DEFAULT_PROVIDERS)
+    unknown = sorted(set(names) - set(SURT_PROVIDERS.values()))
+    if unknown:
+        console.print(f"[red]unsupported --provider {', '.join(unknown)}[/red]")
+        raise typer.Exit(code=1)
+    try:
+        taxonomy = load_role_taxonomy(app_ctx.settings.config_dir)
+    except RoleTaxonomyError as exc:
+        console.print(f"[red]{escape(str(exc))}[/red]")
+        raise typer.Exit(code=1) from exc
+    if taxonomy is None:
+        # Without one the role gate abstains on every title, so every board would be dropped.
+        console.print("[red]no role taxonomy - run `boardwatch profile` first[/red]")
+        raise typer.Exit(code=1)
+    cap = app_ctx.settings.lane_new_companies_per_run if limit is None else limit
+
+    source = HttpCrawlSource()
+    collection = collection or source.newest_collection()
+    typer.echo(f"reading the {collection} index ...", err=True)
+    enumeration = enumerate_slugs(
+        source, collection, names, max_blocks=max_blocks or None
+    )
+    enumerated = sum(len(v) for v in enumeration.slugs.values())
+
+    has_companies = inspect(app_ctx.engine).has_table("companies")
+    queues: dict[str, list[str]] = {}
+    with app_ctx.engine.connect() as conn:
+        for name, slugs in enumeration.slugs.items():
+            queues[name] = [
+                s for s in slugs
+                if not has_companies or not company_exists(conn, provider=name, slug=s)
+            ]
+    known = enumerated - sum(len(v) for v in queues.values())
+
+    seen = 0
+
+    def progress(result: ProbeResult) -> None:
+        nonlocal seen
+        seen += 1
+        if result.outcome == "admitted" or seen % 25 == 0:
+            typer.echo(f"probed {seen} | last {result.provider}:{result.slug} {result.outcome}",
+                       err=True)
+
+    results = probe_candidates(
+        queues, {n: p for n, p in build_providers().items() if n in queues},
+        Fetcher(app_ctx.settings), taxonomy=taxonomy, us_only=us_only, cap=cap,
+        on_result=progress,
+    )
+    by_key = {(r.provider, r.slug): r for r in results}
+    admitted = {k: r for k, r in by_key.items() if r.outcome == "admitted"}
+    candidates = tuple(
+        BoardCandidate(
+            provider=p, slug=s, name=derive_employer_name(p, s) or s,
+            evidence_url=admitted[(p, s)].board_url, records=admitted[(p, s)].qualifying,
+        )
+        for p, s in ramp_order(admitted)
+    )
+    # Never known here: known slugs were dropped before the probe. `select` is the cap.
+    selection = select(
+        Discovery(census=RecordCensus(), candidates=candidates),
+        is_known=lambda _provider, _slug: False, budget=CompanyBudget(cap),
+    )
+    count = [r.outcome for r in results]
+    census = CrawlCensus(
+        enumerated=enumerated, already_known=known, probed=len(results),
+        dead=count.count("dead"), failed=count.count("failed"), empty=count.count("empty"),
+        no_qualifying=count.count("no_qualifying"), admitted=len(selection.admitted),
+        refused=len(selection.refused),
+    )
+    document = crawl_header(
+        selection, census, by_key, collection=collection, providers=names, us_only=us_only,
+        generated_on=utcnow().date(), enumeration=enumeration,
+    ) + registry_yaml(selection)
+    if out is None:
+        typer.echo(document, nl=False)
+        return
+    out.write_text(document, encoding="utf-8")
+    console.print(
+        f"Wrote {census.admitted} candidate board(s) to {out} (probed {census.probed}, "
+        f"{census.refused} held back by the cap of {cap}). Review it, then: "
+        f"boardwatch companies import {out}",
+        markup=False, highlight=False, soft_wrap=True,
     )
 
 
