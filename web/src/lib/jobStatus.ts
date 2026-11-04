@@ -382,7 +382,7 @@ export function whatToCheck(detail: QueueDetail): CheckItem[] {
       key: "seniority-body",
       tone: "warn",
       headline: REASON_PLAIN.seniority_judged_above_band.next,
-      body: `${REASON_PLAIN.seniority_judged_above_band.detail} The hold that would act on this is off, so the job is still in Jobs to explore.`,
+      body: `${REASON_PLAIN.seniority_judged_above_band.detail} The hold that would act on this is off, so the job is not held for review.`,
     });
   }
 

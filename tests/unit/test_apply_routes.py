@@ -62,6 +62,8 @@ no_employer_statuses = ["none", "aggregator"]
         # The marker means a company page embedding an ATS. On a fill host the form is right there.
         (1, "https://job-boards.greenhouse.io/acme/jobs/1?gh_jid=1", ApplyRoute.AUTO),
         (1, "https://acme.com/careers/1?gh_jid=9", ApplyRoute.UNRESOLVED),
+        # The check finished without finding the form behind the company page: only the owner can apply.
+        (NONE_LINK, "https://acme.com/careers/1?gh_jid=9", ApplyRoute.HAND),
         # A job board is unresolved until its check finishes with no employer link.
         (UNCHECKED, "https://www.linkedin.com/jobs/view/1", ApplyRoute.UNRESOLVED),
         (LIVE_LINK, "https://www.linkedin.com/jobs/view/1", ApplyRoute.UNRESOLVED),

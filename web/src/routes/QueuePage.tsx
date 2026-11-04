@@ -187,9 +187,8 @@ const decodeText = (raw: string | null): string | null => raw;
 const encodeText = (value: string): string => value;
 
 /*
- * `review` is a LANE, and the page now has a control for lanes (the three lists above the table),
- * so it is no longer a facet that can be switched on here. A stored or saved `review` facet — from
- * before that — decodes to nothing; `applyView` turns it into the Needs review list instead.
+ * `review` is a LANE, not a row facet, so it cannot be switched on here. A stored or saved `review`
+ * facet decodes to nothing, and `applyView` turns it into the Needs review filter instead.
  */
 type RowFacet = Exclude<QueueFacet, "review">;
 
@@ -1767,7 +1766,7 @@ export function QueuePage({
    * The view a saved view captures and restores: every filter, the facet, the list and the sort,
    * each in its session encoding. Restoring decodes through the same functions a reload uses, so a
    * view saved by an older bundle with a facet this one no longer knows drops that facet instead of
-   * applying it — and a view saved with the old `review` facet becomes the Needs review list.
+   * applying it — and a view saved with the old `review` facet turns on the Needs review filter.
    */
   const currentView: QueueView = {
     query,
@@ -2142,7 +2141,7 @@ export function QueuePage({
         )}
 
         {/* Under the controls, because it filters the lists they describe — and only where there
-            is a review list to filter. A reason is a lever on the Needs review list. */}
+            is a review job to filter. A reason narrows the Needs review section. */}
         {data.review.length === 0 && !reviewOnly ? null : (
           <div className="flex flex-wrap items-center gap-2">
           <ReasonChip
