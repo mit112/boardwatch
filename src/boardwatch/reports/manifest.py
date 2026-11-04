@@ -163,6 +163,10 @@ _CONFIG_IRRELEVANT: frozenset[str] = frozenset(
         # the verdict any posting receives. A lead beyond today's slate carries no disposition and
         # ranks again tomorrow. IN would stale every permanent disposition for a volume knob.
         "slate_ceiling",
+        # OUT on `slate_ceiling`'s reasoning: it reorders the ranking, so it changes WHEN a lead is
+        # delivered and never the verdict any posting receives. A lead it passes over carries no
+        # disposition and ranks again. IN would stale every permanent disposition, at 0.0 too.
+        "slate_direct_share",
     }
 )
 
@@ -340,6 +344,9 @@ _ROUTING_RELEVANT: frozenset[str] = frozenset(
         # `gate.depth`'s class: a ceiling above `--top` is also the RANK depth, so it changes how
         # much of the slate was judged, and `judge_verdict` is a `classify` input.
         "slate_ceiling",
+        # Decides which leads reach the judged slate, so two runs differing only here must not
+        # carry identical manifests. Beside `config_hash`, so a change reopens nothing.
+        "slate_direct_share",
     }
 )
 _ROUTING_IRRELEVANT: frozenset[str] = frozenset(

@@ -83,6 +83,23 @@ class ApplyRoutes:
             return ApplyRoute.HAND if finished else ApplyRoute.UNRESOLVED
         return ApplyRoute.HAND
 
+    def is_direct_auto(self, apply_url: str | None) -> bool:
+        """True only when the link itself goes straight to a form the fill tool handles.
+
+        Stricter than `route(...) == AUTO`, which also returns AUTO for a board's own native form
+        (`native_fill_hosts`) once its employer link check finished empty. Those are aggregator
+        leads, and the slate's direct share must not count them. No config, no link, a listed
+        aggregator host or an embedding marker all answer False, and no ledger is consulted.
+        """
+        config = self.config
+        host = _host(apply_url)
+        if config is None or apply_url is None or host is None:
+            return False
+        if _matches(host, config.unresolved_hosts) or not _matches(host, config.auto_hosts):
+            return False
+        lowered = apply_url.lower()
+        return not any(marker.lower() in lowered for marker in config.unresolved_url_markers)
+
 
 def _host(url: str | None) -> str | None:
     if url is None:

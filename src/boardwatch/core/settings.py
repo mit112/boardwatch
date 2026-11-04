@@ -427,6 +427,12 @@ class Settings(BaseModel):
     # changes nothing. SEAT COST: a ceiling above `gate.depth` is also the rank depth, so with the
     # gate armed the judge sees up to `slate_ceiling` leads per run, not `gate.depth`.
     slate_ceiling: int = Field(default=0, ge=0)
+    # The share of each ranked tier reserved for leads whose apply link goes straight to a form the
+    # owner's fill tool handles (`apply-routes.toml` `auto_hosts`, not an aggregator copy). `0.0` -
+    # the default - ranks by score alone, byte-for-byte. It only REORDERS within a tier, so a
+    # tier-3 direct lead never passes a tier-1 lead, and a shortage of direct leads leaves the
+    # slots to the rest. Without an `apply-routes.toml` it does nothing and says so.
+    slate_direct_share: float = Field(default=0.0, ge=0.0, le=1.0)
     weights: RankWeights = Field(default_factory=RankWeights)
     llm: LLMTier = Field(default_factory=LLMTier)
     notify: NotifyTier = Field(default_factory=NotifyTier)

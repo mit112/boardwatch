@@ -9,7 +9,7 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import cast
@@ -28,6 +28,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
+from boardwatch.delivery.apply_routes import ApplyRoutes, load_apply_routes
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.facts import ProfileRowInvalid
@@ -520,6 +521,47 @@ def _entry_body_marked(
     return marked
 
 
+def interleave_direct(
+    ranked: Sequence[RankedPosting],
+    is_direct: Callable[[RankedPosting], bool],
+    share: float,
+) -> list[RankedPosting]:
+    """Reserve `share` of each tier's positions for direct-apply leads, by REORDERING only.
+
+    Walks one tier at a time over a list already sorted by `(tier, -score)`. At position `p` of
+    a tier it takes the next direct lead while `direct_taken < share * (p + 1)` and direct leads
+    remain, and otherwise the best remaining lead of either kind. Each kind keeps its own order,
+    so a shortage of direct leads leaves the slots to the rest and no slot goes unused.
+
+    It never moves a lead across a tier (`runner._slate_size` reads tier 0-1 as a prefix of the
+    list) and never drops one, so every filter, counter and refill after it sees the same
+    postings: only their order differs. At `share <= 0` the input order is returned unchanged.
+    """
+    if share <= 0:
+        return list(ranked)
+    out: list[RankedPosting] = []
+    start = 0
+    while start < len(ranked):
+        stop = start
+        while stop < len(ranked) and ranked[stop].tier == ranked[start].tier:
+            stop += 1
+        # (index in the tier, lead): the index lets "best remaining" compare the two queues' heads.
+        direct = [(i, r) for i, r in enumerate(ranked[start:stop]) if is_direct(r)]
+        rest = [(i, r) for i, r in enumerate(ranked[start:stop]) if not is_direct(r)]
+        d = o = 0
+        for position in range(stop - start):
+            if d < len(direct) and (
+                d < share * (position + 1) or o >= len(rest) or direct[d][0] < rest[o][0]
+            ):
+                out.append(direct[d][1])
+                d += 1
+            else:
+                out.append(rest[o][1])
+                o += 1
+        start = stop
+    return out
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -964,6 +1006,33 @@ def rank_open_postings(
             continue
         eligible.append(posting)
 
+    # After the ineligible hide, so a hidden row takes no reserved position. Reorders WITHIN each
+    # tier only; every filter, counter and refill below is untouched. `postings.url` is the link
+    # the queue page routes by; `employer_url` is only requisition-twin evidence.
+    direct_routes: ApplyRoutes | None = None
+    if settings.slate_direct_share > 0:
+        routes = load_apply_routes(settings.config_dir)
+        if routes.configured:
+            direct_routes = routes
+            reordered = interleave_direct(
+                eligible,
+                lambda r: routes.is_direct_auto(posting_urls[r.posting_id][0]),
+                settings.slate_direct_share,
+            )
+            moved = sum(a is not b for a, b in zip(eligible, reordered, strict=True))
+            output_console.print(
+                f"slate_direct_share {settings.slate_direct_share:g}: {moved} of {len(eligible)} "
+                "positions moved",
+                markup=False,
+            )
+            eligible = reordered
+        else:
+            output_console.print(
+                f"slate_direct_share {settings.slate_direct_share:g} is inert: "
+                + (routes.problem or "no apply-routes.toml in the config directory"),
+                markup=False,
+            )
+
     # A second connection, deliberately. The function's existing `with engine.connect()`
     # block closes at `new_ids = ...`, well before scoring; every later line here runs with
     # no connection open, so reusing that `conn` raises ResourceClosedError. And the data
@@ -1313,6 +1382,17 @@ def rank_open_postings(
     # Start/completion only: the ranker has several filtering passes, not one row loop.
     progress.advance(len(rows))
     progress.finish()
+    if direct_routes is not None:
+        # The delivered reading, not the target: rows dropped in the loop above can leave it short
+        # of the setting, and the reserve has never been seen working until this line says so.
+        direct_shown = sum(
+            direct_routes.is_direct_auto(posting_urls[r.posting_id][0]) for r in visible
+        )
+        output_console.print(
+            f"slate_direct_share {settings.slate_direct_share:g}: {direct_shown} direct of "
+            f"{len(visible)} on the ranked slate",
+            markup=False,
+        )
     return RankedResults(
         surfaced_job_ids=tuple(surfaced_job_ids),
         visible=visible,
