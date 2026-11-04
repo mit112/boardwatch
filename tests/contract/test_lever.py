@@ -10,7 +10,7 @@ from boardwatch.core.models import BoardRequest, ResponseValidators
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
-from boardwatch.providers.lever import LeverProvider
+from boardwatch.providers.lever import LeverProvider, parse_posting
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "lever"
 BOARD_URL = "https://api.lever.co/v0/postings/acme?mode=json"
@@ -58,7 +58,7 @@ def test_complete_snapshot_parses_array_of_postings(tmp_path: Path) -> None:
         assert posting.provider_posting_id
         assert posting.title
         assert posting.url
-        assert posting.body_text  # joined from descriptionPlain + additionalPlain (no HTML path)
+        assert posting.body_text
     assert snapshot.observed_validators is not None
     assert snapshot.observed_validators.etag == headers["etag"]
 
@@ -84,6 +84,44 @@ def test_created_at_is_epoch_milliseconds_not_seconds(tmp_path: Path) -> None:
     assert dated, "fixture contract: >= 1 posting with createdAt"
     for posting in dated:
         assert posting.posted_at.year >= 2020
+
+
+def test_a_body_carries_the_lists_section_in_page_order() -> None:
+    body = parse_posting(
+        {
+            "id": "a",
+            "text": "Engineer",
+            "descriptionPlain": "About the role.",
+            "lists": [
+                {"text": "What We Require", "content": "<li>A US work permit.</li><li>SQL.</li>"},
+                {"text": "", "content": "<li>Unheaded item.</li>"},
+                {"text": "Empty section", "content": ""},
+            ],
+            "additionalPlain": "About the company.",
+        }
+    ).body_text
+    assert "<li>" not in body
+    positions = [
+        body.index(part)
+        for part in (
+            "About the role.",
+            "What We Require",
+            "A US work permit.",
+            "SQL.",
+            "Unheaded item.",
+            "Empty section",
+            "About the company.",
+        )
+    ]
+    assert positions == sorted(positions)
+
+
+@pytest.mark.parametrize("lists", [None, []])
+def test_a_posting_without_lists_keeps_its_body_byte_for_byte(lists: list[object] | None) -> None:
+    """The join must not move a hash, or a posting with no lists would log a false revision."""
+    raw = {"id": "a", "text": "Engineer", "descriptionPlain": "One.", "additionalPlain": "Two."}
+    assert parse_posting({**raw, "lists": lists}).body_text == "One.\n\nTwo."
+    assert parse_posting(raw).body_text == "One.\n\nTwo."
 
 
 @respx.mock

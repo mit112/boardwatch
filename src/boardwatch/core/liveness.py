@@ -66,8 +66,8 @@ apply to it.
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
 scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
 `body_text` **only from employer-authored description fields of a JSON payload** — one field for
-greenhouse (`content`), ashby (`descriptionHtml`), workable and workday; two joined for lever
-(`descriptionPlain` + `additionalPlain`); three for smartrecruiters (`jobDescription`,
+greenhouse (`content`), ashby (`descriptionHtml`), workable and workday; three joined for lever
+(`descriptionPlain`, `lists`, `additionalPlain`); three for smartrecruiters (`jobDescription`,
 `qualifications`, `additionalInformation`). No provider ever sees the rendered careers page, so
 page chrome — the "this posting is no longer accepting applications" banner a scraper would
 read — is structurally incapable of reaching that column.

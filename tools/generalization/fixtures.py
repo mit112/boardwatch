@@ -125,7 +125,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     "lever": FixtureProvenance(
         captured=date(2026, 6, 13),
         review_by=date(2026, 12, 11),
-        readme_pin="sha256:622d35d9b72fd239bd1f143ee18bb043df8d6b5f332a85ec61d008b1f129dc97",
+        readme_pin="sha256:d6be51c513da17df552f489df4b851a51e66559a3d133eb9b5a5e28b26ced8f6",
         extensions=(
             Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
         ),

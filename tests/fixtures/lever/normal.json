@@ -14,7 +14,17 @@
     "hostedUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000001",
     "applyUrl": "https://jobs.lever.co/acme/a1000000-0000-4000-8000-000000000001/apply",
     "descriptionPlain": "Build and operate the services that power the Acme platform. You will design backend systems, improve reliability, and collaborate across teams.",
-    "additionalPlain": "Compensation: $185,000 - $225,000 base, plus equity and benefits. Acme Corp is an equal opportunity employer."
+    "additionalPlain": "Compensation: $185,000 - $225,000 base, plus equity and benefits. Acme Corp is an equal opportunity employer.",
+    "lists": [
+      {
+        "text": "What We Require",
+        "content": "<li>Must be able to work on site at the Acme office.</li><li>Eligibility to obtain a security clearance.</li>"
+      },
+      {
+        "text": "What We Value",
+        "content": "<li>Experience with distributed systems.</li>"
+      }
+    ]
   },
   {
     "id": "a1000000-0000-4000-8000-000000000002",
