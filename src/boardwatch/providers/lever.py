@@ -1,8 +1,10 @@
 """Lever provider (§3.3, Appendix A live-verified 2026-06-10).
 
 api.lever.co/v0/postings/{slug}?mode=json returns a JSON ARRAY of postings
-(not an object). Bodies are plain text in descriptionPlain/additionalPlain —
-html_to_text() is NOT on this path. createdAt is epoch MILLISECONDS. Salary
+(not an object). A body is descriptionPlain, then each entry of `lists`, then
+additionalPlain, the order the posting page shows them. `lists` is where employers
+put requirements and qualifications, and its `content` is HTML, so only that part
+goes through html_to_text() (D-667). createdAt is epoch MILLISECONDS. Salary
 text may appear in additionalPlain and is NEVER mined (D19): Lever writes no
 salary_* columns. Dead board = 404 {"ok":false,"error":"Document not found"};
 empty-but-live = 200 [].
@@ -15,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from boardwatch.core.clock import to_naive_utc
+from boardwatch.core.html_text import html_to_text
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting, RemotePolicy
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.providers.base import BoardHealth, count_listed_ids, health_from_failure
@@ -120,7 +123,9 @@ def parse_posting(raw: dict[str, Any]) -> RawPosting:
     team = categories.get("team")
     department = str(team) if team else None
     body_text = "\n\n".join(
-        part for part in (raw.get("descriptionPlain"), raw.get("additionalPlain")) if part
+        part
+        for part in (raw.get("descriptionPlain"), *_list_sections(raw), raw.get("additionalPlain"))
+        if part
     )
     remote_policy: RemotePolicy = (
         "remote" if any("remote" in loc.casefold() for loc in locations) else "unknown"
@@ -137,6 +142,16 @@ def parse_posting(raw: dict[str, Any]) -> RawPosting:
         body_text=body_text,
         raw_json=raw,
     )
+
+
+def _list_sections(raw: dict[str, Any]) -> list[str]:
+    """Each `lists` entry as its heading, then its items as text."""
+    sections: list[str] = []
+    for entry in raw.get("lists") or []:
+        heading = str(entry.get("text") or "").strip()
+        items = html_to_text(str(entry.get("content") or ""))
+        sections.append("\n".join(part for part in (heading, items) if part))
+    return sections
 
 
 def _epoch_ms_to_naive_utc(value: Any) -> datetime | None:

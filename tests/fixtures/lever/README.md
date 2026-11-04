@@ -9,7 +9,7 @@ These fixtures use the **exact response shape** of the Lever public postings API
 session on **2026-06-13** from public boards only. The structure (a top-level JSON
 **array** of postings; per-posting `id`, `text`, `categories` (`location`, `team`,
 `commitment`, `allLocations`), `createdAt`/`updatedAt` as epoch **milliseconds**,
-`hostedUrl`, `applyUrl`, `descriptionPlain`, `additionalPlain`, `workplaceType`,
+`hostedUrl`, `applyUrl`, `descriptionPlain`, `lists`, `additionalPlain`, `workplaceType`,
 `country`) mirrors the live API.
 
 **All text is synthetic.** No real company copy, names, URLs, recruiter contacts, or

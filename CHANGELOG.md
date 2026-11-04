@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Lever postings now keep their requirements.** The stored job text left out Lever's `lists` section, which is
+  where employers put requirements and qualifications, so the rules, the judge and tailoring read partial text. In
+  a sample of 1,023 live postings, 94% had that section and average text grew from 3,566 to 5,789 characters.
+  Existing postings pick up the full text on their next scan, each as a new version, so expect a one-time rise in
+  revisions and re-evaluations on the first run, about 160 MB of new text in the store, and a few delivered Lever
+  jobs moving to review because their text changed after the résumé was built. Older versions and the evidence
+  quoted from them are untouched (D-667).
+
 - **The Jobs page lists jobs by how you apply to them.** The tabs are now Auto-apply, Apply by hand, Link not
   resolved, Not JD-gated and All jobs, replacing Jobs to explore and Needs review. Needs review is now a filter
   that works in every list. Jobs you moved to Apply by hand stay there. Without `apply-routes.toml`, only Apply
