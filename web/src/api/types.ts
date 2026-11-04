@@ -200,8 +200,6 @@ export interface QueueRow {
    * because a viewer older than the field omits it; read that as `hand`, the route with no promise.
    */
   apply_route?: ApplyRoute;
-  /** Whether the JD gate has read this job. `null` when there is no readable ledger: unknown. */
-  jd_gated?: boolean | null;
   /**
    * The final gate's BODY-seniority reading: `true` exactly when the judge read the job
    * description as describing a role above the target band.
@@ -379,7 +377,7 @@ export interface QueueResponse {
    */
   meta?: { reveal_supported: boolean };
   /** Whether routing is set up here. `problem` names a config or ledger that could not be read. */
-  apply_routes?: { configured: boolean; gate_tracked: boolean; problem: string | null };
+  apply_routes?: { configured: boolean; problem: string | null };
 }
 
 /**

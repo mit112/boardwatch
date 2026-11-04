@@ -42,7 +42,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const ROUTED = { configured: true, gate_tracked: true, problem: null };
+const ROUTED = { configured: true, problem: null };
 
 function routed(rows = [queueRow({ title: "AUTO-ROW", apply_route: "auto" })]) {
   return { ...queueResponse(rows, REVIEW), apply_routes: ROUTED };

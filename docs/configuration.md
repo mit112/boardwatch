@@ -260,6 +260,41 @@ The schemes themselves ship with boardwatch and name no companies — which comp
 is yours to declare, exactly like your board list. With no bindings file, every level token abstains,
 which is the honest default.
 
+## Apply routes
+
+`<config_dir>/apply-routes.toml` sorts the Jobs page by how each job gets applied to. It is optional and has no
+`config set` key: the lists describe your own fill tool, so the repository ships none of them. A misspelled key is
+reported on the page rather than ignored.
+
+```toml
+# Hosts whose forms your tool fills. A listed host also covers its subdomains.
+auto_hosts = ["jobs.ashbyhq.com", "job-boards.greenhouse.io"]
+# Hosts in front of the employer's form: job boards, aggregators, link shorteners.
+unresolved_hosts = ["linkedin.com", "indeed.com", "lnkd.in"]
+# URL fragments with the same meaning on any other host.
+unresolved_url_markers = ["gh_jid="]
+# The unresolved hosts with a fillable form of their own, used when no employer link exists.
+native_fill_hosts = ["linkedin.com"]
+# JSON files of link checks: {"<posting_id>": {"company_status": "..."}}.
+link_ledgers = ["/path/to/link_checks.json"]
+# The company_status values meaning the check finished and found no employer link.
+no_employer_statuses = ["none"]
+```
+
+| The apply link | List |
+|---|---|
+| On an `auto_hosts` host | Auto-apply |
+| On an `unresolved_hosts` host, with no finished check | Link not resolved |
+| On an `unresolved_hosts` host, check found no employer link | Auto-apply on a `native_fill_hosts` host, otherwise Apply by hand |
+| Carries an `unresolved_url_markers` fragment | Link not resolved |
+| Missing or unreadable | Link not resolved |
+| Anything else | Apply by hand |
+
+A job you moved to Apply by hand stays there whatever its link. An unreadable ledger leaves its jobs under Link not
+resolved, and the page names the file. Do not list a closed posting in `no_employer_statuses`: use a separate status
+and close the posting, or it will be offered as fillable. The file is read on every queue request, so edits apply on
+the next reload.
+
 ## Settings menu
 
 `boardwatch settings` is a read-only view of every opt-in feature (the `[llm]` and

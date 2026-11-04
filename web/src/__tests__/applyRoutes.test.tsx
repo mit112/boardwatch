@@ -30,27 +30,26 @@ import { App } from "../App";
 
 /* The owner's rulings, spelled out as rows: expected membership is written by hand per row. */
 const ROWS = [
-  queueRow({ title: "AUTO-UNGATED", apply_route: "auto", jd_gated: false }),
-  queueRow({ title: "AUTO-GATED", apply_route: "auto", jd_gated: true }),
-  queueRow({ title: "HAND-UNGATED", apply_route: "hand", jd_gated: false }),
-  queueRow({ title: "LINK-GATED", apply_route: "unresolved", jd_gated: true }),
+  queueRow({ title: "AUTO-UNGATED", apply_route: "auto" }),
+  queueRow({ title: "AUTO-GATED", apply_route: "auto" }),
+  queueRow({ title: "HAND-UNGATED", apply_route: "hand" }),
+  queueRow({ title: "LINK-GATED", apply_route: "unresolved" }),
 ];
 const REVIEW = [
   queueRow({
     title: "REVIEW-AUTO",
     apply_route: "auto",
-    jd_gated: false,
     review_reason: "unevaluated",
   }),
 ];
-const MOVED = [queueRow({ title: "MOVED", apply_route: "hand", jd_gated: false })];
+const MOVED = [queueRow({ title: "MOVED", apply_route: "hand" })];
 
-function response(routes: { configured: boolean; gate_tracked: boolean; problem: string | null }) {
+function response(routes: { configured: boolean; problem: string | null }) {
   const base = queueResponse(ROWS, REVIEW);
   return { ...base, manual: MOVED, apply_routes: routes };
 }
 
-const ON = { configured: true, gate_tracked: true, problem: null };
+const ON = { configured: true, problem: null };
 
 function listed(): string[] {
   const titles = ["AUTO-UNGATED", "AUTO-GATED", "HAND-UNGATED", "LINK-GATED", "REVIEW-AUTO", "MOVED"];
@@ -71,7 +70,6 @@ describe("the route lists", () => {
     ["Auto-apply", 3, ["AUTO-UNGATED", "AUTO-GATED", "REVIEW-AUTO"]],
     ["Apply by hand", 2, ["HAND-UNGATED", "MOVED"]],
     ["Link not resolved", 1, ["LINK-GATED"]],
-    ["Not JD-gated", 3, ["AUTO-UNGATED", "HAND-UNGATED", "REVIEW-AUTO"]],
     ["All jobs", 6, ["AUTO-UNGATED", "AUTO-GATED", "HAND-UNGATED", "LINK-GATED", "REVIEW-AUTO", "MOVED"]],
   ])("%s holds its %i jobs", async (label, count, titles) => {
     vi.mocked(getQueue).mockResolvedValue(response(ON));
@@ -123,16 +121,6 @@ describe("the route lists", () => {
     expect(screen.getAllByText("SAME-ROLE")).toHaveLength(1);
   });
 
-  it("never lists a job with an unknown gate state as not gated", async () => {
-    const unknown = [queueRow({ title: "UNKNOWN-GATE", apply_route: "hand", jd_gated: null })];
-    vi.mocked(getQueue).mockResolvedValue({ ...queueResponse(unknown), apply_routes: ON });
-    window.sessionStorage.setItem("boardwatch.queue.lens", "ungated");
-    render(<App />);
-
-    await screen.findByText("Showing 0 of 0 in Not JD-gated");
-    expect(screen.queryByText("UNKNOWN-GATE")).toBeNull();
-  });
-
   it("offers only the plain lists on a machine with no routing, the fresh-machine path", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse(ROWS, REVIEW));
     render(<App />);
@@ -140,24 +128,12 @@ describe("the route lists", () => {
 
     expect(screen.queryByRole("button", { name: /^Auto-apply/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /^Link not resolved/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: /^Not JD-gated/ })).toBeNull();
     expect(screen.getByRole("button", { name: /^Apply by hand/ })).toBeTruthy();
-  });
-
-  it("does not offer Not JD-gated when the ledger is unknown", async () => {
-    vi.mocked(getQueue).mockResolvedValue(
-      response({ configured: true, gate_tracked: false, problem: null }),
-    );
-    render(<App />);
-    await screen.findByText("MOVED");
-
-    expect(screen.queryByRole("button", { name: /^Not JD-gated/ })).toBeNull();
-    expect(screen.getByRole("button", { name: /^Auto-apply/ })).toBeTruthy();
   });
 
   it("says so out loud when a routing file could not be read", async () => {
     vi.mocked(getQueue).mockResolvedValue(
-      response({ configured: true, gate_tracked: false, problem: "links.json: broken" }),
+      response({ configured: true, problem: "links.json: broken" }),
     );
     render(<App />);
 

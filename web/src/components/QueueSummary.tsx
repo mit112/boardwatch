@@ -178,7 +178,7 @@ export function QueueSummary({
   );
 }
 
-export type Lens = "auto" | "hand" | "unresolved" | "ungated" | "all";
+export type Lens = "auto" | "hand" | "unresolved" | "all";
 
 export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
   {
@@ -198,12 +198,6 @@ export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
     label: "Link not resolved",
     blurb:
       "The link goes through a job board, aggregator or short link, and the check has not settled where it leads. Each job moves to Auto-apply or Apply by hand once it has.",
-  },
-  {
-    key: "ungated",
-    label: "Not JD-gated",
-    blurb:
-      "No JD gate verdict yet. These jobs also appear in the lists above; jobs you moved to Apply by hand are left out.",
   },
   {
     key: "all",
