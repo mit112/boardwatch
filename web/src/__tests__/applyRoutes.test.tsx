@@ -97,6 +97,18 @@ describe("the route lists", () => {
     expect(listed()).toEqual(["AUTO-UNGATED", "AUTO-GATED", "REVIEW-AUTO"]);
   });
 
+  it("keeps the review filter visible and resettable when no review job is left", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.reviewOnly", "1");
+    vi.mocked(getQueue).mockResolvedValue({ ...queueResponse(ROWS), apply_routes: ON });
+    render(<App />);
+
+    const chip = await screen.findByRole("button", { name: /^Needs review 0/ });
+    expect(chip.getAttribute("aria-pressed")).toBe("true");
+    expect(listed()).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+    expect(listed()).toEqual(["AUTO-UNGATED", "AUTO-GATED", "HAND-UNGATED", "LINK-GATED"]);
+  });
+
   it("does not fold a job under a similar one in another list", async () => {
     const twins = [
       queueRow({ title: "SAME-ROLE", company: "Twin Co", apply_route: "auto" }),

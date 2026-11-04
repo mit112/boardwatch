@@ -1554,10 +1554,14 @@ export function QueuePage({
   const moveSelected = useCallback((action: BulkAction) => {
     const spec = BULK[action];
     const moving = action !== "skip";
-    if (markedRows.length === 0) return;
-    const postingIds = markedRows.map((row) => row.posting_id);
-    const jobIds = markedRows.map((row) => row.job_id);
-    const byJob = new Map(markedRows.map((row) => [row.job_id, row.posting_id]));
+    // A job already moved is left out of a move: Undo reverses this batch, and must not take back
+    // a move the owner made earlier.
+    const acting =
+      action === "manual" ? markedRows.filter((row) => !manualIds.has(row.posting_id)) : markedRows;
+    if (acting.length === 0) return;
+    const postingIds = acting.map((row) => row.posting_id);
+    const jobIds = acting.map((row) => row.job_id);
+    const byJob = new Map(acting.map((row) => [row.job_id, row.posting_id]));
     const leaving = new Set(postingIds);
 
     /*
@@ -1669,7 +1673,7 @@ export function QueuePage({
           tone: "error",
         });
       });
-  }, [markedRows, selectable, clearSelection, selected, openLead, push, restore, refetch]);
+  }, [markedRows, manualIds, selectable, clearSelection, selected, openLead, push, restore, refetch]);
 
   /*
    * The one shortcut that is safe on `window`: it only moves focus. Everything that WRITES is
@@ -1823,6 +1827,7 @@ export function QueuePage({
     hideSimilar === "" ? null : "similar roles collapsed",
     facet === null ? null : FACET_LABELS[facet],
     reasonFacet === null ? null : REVIEW_REASON_LABELS[reasonFacet],
+    reviewOnly ? "jobs that need review" : null,
   ].filter((entry): entry is string => entry !== null);
   const resetFilters = () => {
     setQuery("");
@@ -1836,6 +1841,7 @@ export function QueuePage({
     setHideSimilar("");
     setFacet(null);
     setReasonFacet(null);
+    setReviewOnly(false);
     if (runFilter !== null) setRouteParams({ run: null });
   };
 
@@ -2034,7 +2040,11 @@ export function QueuePage({
           startLabel={session === null ? "Start applying" : "Continue applying"}
           canStart={navList.length > 0}
           scoped={
-            activeFilters.length - (facet === null ? 0 : 1) - (reasonFacet === null ? 0 : 1) > 0
+            activeFilters.length -
+              (facet === null ? 0 : 1) -
+              (reasonFacet === null ? 0 : 1) -
+              (reviewOnly ? 1 : 0) >
+            0
           }
         />
 
@@ -2136,7 +2146,7 @@ export function QueuePage({
 
         {/* Under the controls, because it filters the lists they describe — and only where there
             is a review list to filter. A reason is a lever on the Needs review list. */}
-        {data.review.length === 0 ? null : (
+        {data.review.length === 0 && !reviewOnly ? null : (
           <div className="flex flex-wrap items-center gap-2">
           <ReasonChip
             label="Needs review"

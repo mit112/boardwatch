@@ -123,6 +123,27 @@ describe("Apply by hand", () => {
     expect(vi.mocked(unmanualMany)).toHaveBeenCalledWith([a.job_id, c.job_id]);
   });
 
+  it("leaves a job already moved out of a mixed move, so Undo cannot take back the earlier move", async () => {
+    vi.mocked(getQueue)
+      .mockResolvedValueOnce(withManual([a, b], [c]))
+      .mockResolvedValueOnce(withManual([b], [a, c]))
+      .mockResolvedValueOnce(withManual([a, b], [c]));
+    vi.mocked(manualMany).mockResolvedValue({ manual: [a.job_id], failed: [] });
+    vi.mocked(unmanualMany).mockResolvedValue({ manual: [a.job_id], failed: [] });
+    render(<App />);
+    await settle();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select: Backend Engineer at Globex" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select: Field Technician at Acme Corp" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Move to manual 2 selected/ }));
+    await settle(COLLAPSE_MS);
+    expect(vi.mocked(manualMany)).toHaveBeenCalledWith([a.job_id]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await settle();
+    expect(vi.mocked(unmanualMany)).toHaveBeenCalledWith([a.job_id]);
+  });
+
   it("on the Apply by hand list the bar moves the selection back, and never offers Skip", async () => {
     vi.mocked(getQueue)
       .mockResolvedValueOnce(withManual([b], [a, c]))
