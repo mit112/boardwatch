@@ -304,7 +304,7 @@ def test_the_share_reorders_the_slate_and_the_funnel_still_reconciles(env: Path)
 
     full, full_out = _rank(env, 1.0, limit=2)
     assert {p.posting_id for p in full.visible} == {ids["dir1"], ids["dir2"]}
-    assert "2 direct in the first 2" in full_out
+    assert "2 direct of 2 on the ranked slate" in full_out
 
     half, _ = _rank(env, 0.5, limit=2)
     assert half.visible[0].posting_id in {ids["dir1"], ids["dir2"]}
@@ -314,6 +314,18 @@ def test_the_share_reorders_the_slate_and_the_funnel_still_reconciles(env: Path)
         assert ranked.considered == 4
         assert _reconciles(ranked)
         assert ranked.hidden_below_cutoff == 4 - len(ranked.visible)
+
+
+def test_an_unreadable_link_ledger_does_not_turn_the_share_off(env: Path) -> None:
+    """`is_direct_auto` reads no ledger, and a ledger mid-rewrite must not change the slate."""
+    ids = _seed(env)
+    (env.parent / "cfg").mkdir(exist_ok=True)
+    (env.parent / "cfg" / "apply-routes.toml").write_text(
+        _ROUTES_TOML + f'\nlink_ledgers = ["{env.parent / "cfg" / "missing.json"}"]\n'
+    )
+    ranked, out = _rank(env, 1.0, limit=2)
+    assert {p.posting_id for p in ranked.visible} == {ids["dir1"], ids["dir2"]}
+    assert "inert" not in out
 
 
 def test_without_apply_routes_the_share_is_inert_and_says_so(env: Path) -> None:
