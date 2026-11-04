@@ -63,7 +63,7 @@ function withManual(rows: typeof a[], manual: typeof a[]) {
     ...response,
     manual,
     counts: { ...response.counts, manual: manual.length },
-    apply_routes: { configured: true, gate_tracked: false, problem: null },
+    apply_routes: { configured: true, problem: null },
   };
 }
 

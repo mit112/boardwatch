@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 import tomllib
-from collections.abc import Collection, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -50,15 +50,12 @@ class ApplyRoutesConfig(BaseModel):
     link_ledgers: tuple[Path, ...] = ()
     # The `company_status` values meaning the check finished and found no employer link.
     no_employer_statuses: tuple[str, ...] = ()
-    # JSON file, `{"<posting_id>": {...}}`, with one entry per lead whose JD has been gated.
-    gate_ledger: Path | None = None
 
 
 @dataclass(frozen=True)
 class ApplyRoutes:
     config: ApplyRoutesConfig | None
     link_status: dict[int, str]
-    gated: frozenset[int] | None
     problem: str | None
 
     @property
@@ -85,10 +82,6 @@ class ApplyRoutes:
             return ApplyRoute.UNRESOLVED
         return ApplyRoute.HAND
 
-    def jd_gated(self, posting_id: int) -> bool | None:
-        """`None` when the ledger is absent or unreadable: unknown, never "not gated"."""
-        return None if self.gated is None else posting_id in self.gated
-
 
 def _host(url: str | None) -> str | None:
     if url is None:
@@ -110,22 +103,17 @@ def _read_ledger(path: Path) -> dict[str, object]:
     return loaded
 
 
-def _posting_ids(keys: Collection[str]) -> frozenset[int]:
-    return frozenset(int(key) for key in keys if key.isdecimal())
-
-
 def load_apply_routes(config_dir: Path) -> ApplyRoutes:
     """Read the config and its ledgers. Never raises: the queue must draw with routing broken.
 
     A failure lands in `problem` for the page to say out loud. An unreadable link ledger leaves its
-    leads UNRESOLVED and an unreadable gate ledger leaves `jd_gated` unknown, so neither failure can
-    read as a checked result.
+    leads UNRESOLVED, so a failure cannot read as a checked result.
     """
     path = config_dir / CONFIG_FILENAME
     try:
         raw = path.read_bytes()
     except FileNotFoundError:
-        return ApplyRoutes(config=None, link_status={}, gated=None, problem=None)
+        return ApplyRoutes(config=None, link_status={}, problem=None)
     except OSError as exc:
         return _unconfigured(f"{path}: {exc}")
     try:
@@ -145,19 +133,12 @@ def load_apply_routes(config_dir: Path) -> ApplyRoutes:
             status = entry.get("company_status") if isinstance(entry, dict) else None
             if key.isdecimal() and isinstance(status, str):
                 link_status[int(key)] = status
-    gated: frozenset[int] | None = None
-    if config.gate_ledger is not None:
-        try:
-            gated = _posting_ids(_read_ledger(config.gate_ledger).keys())
-        except (OSError, ValueError) as exc:
-            problems.append(f"{config.gate_ledger}: {exc}")
     return ApplyRoutes(
         config=config,
         link_status=link_status,
-        gated=gated,
         problem="; ".join(problems) or None,
     )
 
 
 def _unconfigured(problem: str) -> ApplyRoutes:
-    return ApplyRoutes(config=None, link_status={}, gated=None, problem=problem)
+    return ApplyRoutes(config=None, link_status={}, problem=problem)

@@ -538,7 +538,6 @@ export function QueuePage({
     ...(routing?.configured === true ? (["auto"] as const) : []),
     "hand",
     ...(routing?.configured === true ? (["unresolved"] as const) : []),
-    ...(routing?.gate_tracked === true ? (["ungated"] as const) : []),
     "all",
   ];
   const lens: Lens = lensPref !== null && availableLenses.includes(lensPref) ? lensPref : "all";
@@ -868,8 +867,7 @@ export function QueuePage({
 
   /* Applied BEFORE the "similar" fold, so a job is never folded under one listed in another list. */
   const inLens = useCallback(
-    (row: QueueRow) =>
-      lens === "all" || (lens === "ungated" ? row.jd_gated === false : routeOf(row) === lens),
+    (row: QueueRow) => lens === "all" || routeOf(row) === lens,
     [lens],
   );
 
@@ -912,7 +910,7 @@ export function QueuePage({
 
   /*
    * The jobs the owner moved out of both lanes to apply to themselves, listed under Apply by hand
-   * and All jobs and left out of Not JD-gated. The same
+   * and All jobs. The same
    * filters and verdict facet as the apply lane, in the server's order, and never folded — the
    * owner chose every one of these, so hiding one behind a "similar" fold would hide a decision.
    */
@@ -948,7 +946,7 @@ export function QueuePage({
   /*
    * Each list's count is the number of jobs IN THAT LIST matching the search, place and filters.
    * The three routes are disjoint, and a moved job is `hand` alone, which is the only reason "All
-   * jobs" may be their sum. Not JD-gated overlaps them and is never added in.
+   * jobs" may be their sum.
    */
   const lensCounts = useMemo<Record<Lens, number>>(() => {
     const lanes = [...filtered, ...filteredReview];
@@ -957,7 +955,6 @@ export function QueuePage({
       auto: routed("auto"),
       hand: routed("hand") + filteredManual.length,
       unresolved: routed("unresolved"),
-      ungated: lanes.filter((row) => row.jd_gated === false).length,
       all: lanes.length + filteredManual.length,
     };
   }, [filtered, filteredReview, filteredManual]);

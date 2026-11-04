@@ -286,6 +286,23 @@ with the profile and rules hashes that identify the evaluation it was computed u
 This is a flat snapshot, not a full audit trail; it does not support independent
 recomputation of verdicts.
 
+## The Jobs page
+
+`boardwatch web` lists each job once, by how you apply to it:
+
+| List | What is in it |
+|---|---|
+| **Auto-apply** | The apply link goes to a form your own fill tool handles. Also a job board with its own form, once a check finds the employer has no separate link. |
+| **Apply by hand** | Every other form, plus any job you moved here yourself. A moved job stays until you move it back. |
+| **Link not resolved** | The link goes through a job board, aggregator or short link, and nothing has settled where it leads. |
+| **All jobs** | All three together, with no job counted twice. |
+
+**Needs review** is a filter, not a list: it works inside any list and narrows to jobs a check could not settle.
+
+Boardwatch fills and submits nothing. It only sorts. What your tool can fill is yours to declare, so the sorting needs
+a config file, described in [apply routes](https://github.com/mit112/boardwatch/blob/main/docs/configuration.md#apply-routes).
+Without that file, every job is listed under Apply by hand.
+
 ## Configuration
 
 `boardwatch config show` prints every key, its value, and its default;

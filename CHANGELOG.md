@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
   revisions and re-evaluations on the first run, about 160 MB of new text in the store, and a few delivered Lever
   jobs moving to review because their text changed after the résumé was built. Older versions and the evidence
   quoted from them are untouched (D-667).
+- **The Jobs page no longer has a Not JD-gated list.** A second read of the job description is background work
+  for a fill tool, not a list to work through. The `jd_gated` field, `gate_tracked` and the `gate_ledger` key of
+  `apply-routes.toml` are gone with it, so remove that key from an existing file. The file is now documented in
+  `docs/configuration.md` and the Jobs page in the user guide (D-668).
 
 - **The Jobs page lists jobs by how you apply to them.** The tabs are now Auto-apply, Apply by hand, Link not
   resolved, Not JD-gated and All jobs, replacing Jobs to explore and Needs review. Needs review is now a filter

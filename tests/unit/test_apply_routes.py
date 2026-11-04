@@ -21,7 +21,6 @@ from boardwatch.store.queue_state import mark_job_manual
 from boardwatch.store.tables import postings
 from tests.unit.test_web_server import NOW, _deliver
 
-GATED, UNGATED = 11, 12
 NONE_LINK, AGGREGATOR_LINK, LIVE_LINK, UNCHECKED = 21, 22, 23, 24
 
 
@@ -37,9 +36,6 @@ def _configure(config_dir: Path, *, extra: str = "") -> None:
         ),
         encoding="utf-8",
     )
-    (config_dir / "gate.json").write_text(
-        json.dumps({str(GATED): {"verdict": "REVIEW"}}), encoding="utf-8"
-    )
     (config_dir / "apply-routes.toml").write_text(
         f"""
 auto_hosts = ["ashbyhq.com", "job-boards.greenhouse.io"]
@@ -48,7 +44,6 @@ unresolved_url_markers = ["gh_jid="]
 native_fill_hosts = ["linkedin.com"]
 link_ledgers = ["{config_dir / "links.json"}"]
 no_employer_statuses = ["none", "aggregator"]
-gate_ledger = "{config_dir / "gate.json"}"
 {extra}
 """,
         encoding="utf-8",
@@ -92,7 +87,6 @@ def test_no_file_is_unconfigured_and_routes_nothing_automatically(tmp_path: Path
     routes = load_apply_routes(tmp_path)
     assert (routes.configured, routes.problem) == (False, None)
     assert routes.route(posting_id=1, apply_url="https://jobs.ashbyhq.com/a/1") is ApplyRoute.HAND
-    assert routes.jd_gated(GATED) is None
 
 
 def test_a_misspelled_key_is_reported_rather_than_ignored(tmp_path: Path) -> None:
@@ -109,14 +103,6 @@ def test_an_unreadable_link_ledger_leaves_its_leads_unresolved_and_says_so(tmp_p
     assert "links.json" in (routes.problem or "")
     url = "https://www.linkedin.com/jobs/view/1"
     assert routes.route(posting_id=NONE_LINK, apply_url=url) is ApplyRoute.UNRESOLVED
-
-
-def test_an_unreadable_gate_ledger_is_unknown_never_not_gated(tmp_path: Path) -> None:
-    _configure(tmp_path)
-    (tmp_path / "gate.json").unlink()
-    routes = load_apply_routes(tmp_path)
-    assert "gate.json" in (routes.problem or "")
-    assert routes.jd_gated(UNGATED) is None
 
 
 @pytest.fixture()
@@ -154,19 +140,15 @@ def test_the_queue_serves_each_row_its_route_and_a_moved_lead_stays_by_hand(
     auto = _deliver_on(engine, "auto", "https://jobs.ashbyhq.com/a/1")
     moved = _deliver_on(engine, "moved", "https://jobs.ashbyhq.com/a/2", moved=True)
     _configure(config_dir)
-    gate = config_dir / "gate.json"
-    gate.write_text(json.dumps({str(moved): {"verdict": "ELIGIBLE"}}), encoding="utf-8")
 
     with engine.connect() as conn:
         payload = queue_payload(conn, ctx)
 
     assert [r["posting_id"] for r in payload["manual"]] == [moved]
     assert payload["manual"][0]["apply_route"] == "hand"
-    assert payload["manual"][0]["jd_gated"] is True
     row = next(r for r in payload["rows"] + payload["review"] if r["posting_id"] == auto)
     assert row["apply_route"] == "auto"
-    assert row["jd_gated"] is False
-    assert payload["apply_routes"] == {"configured": True, "gate_tracked": True, "problem": None}
+    assert payload["apply_routes"] == {"configured": True, "problem": None}
 
 
 def test_the_queue_without_the_file_serves_the_fresh_machine_default(
@@ -177,5 +159,5 @@ def test_the_queue_without_the_file_serves_the_fresh_machine_default(
     with engine.connect() as conn:
         payload = queue_payload(conn, ctx)
     row = next(r for r in payload["rows"] + payload["review"] if r["posting_id"] == posting)
-    assert (row["apply_route"], row["jd_gated"]) == ("hand", None)
-    assert payload["apply_routes"] == {"configured": False, "gate_tracked": False, "problem": None}
+    assert row["apply_route"] == "hand"
+    assert payload["apply_routes"] == {"configured": False, "problem": None}

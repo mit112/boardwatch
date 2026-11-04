@@ -201,7 +201,7 @@ Every control is calm, plain and large.
 
 ### Navigation
 - **Style:** text tabs in a row, 44px high. The active tab is Parchment with a 2px forest underline drawn inset and 600 weight; inactive tabs are Soft Ink and brighten on hover. A theme toggle sits at the end.
-- **Lens tabs** (Auto-apply, Apply by hand, Link not resolved, Not JD-gated, All jobs) are a group of `aria-pressed` buttons: the active one is a Forest fill, the others Paper with the card shadow. Each carries its count as part of its name.
+- **Lens tabs** (Auto-apply, Apply by hand, Link not resolved, All jobs) are a group of `aria-pressed` buttons: the active one is a Forest fill, the others Paper with the card shadow. Each carries its count as part of its name.
 
 ### Inputs / Fields
 - **Style:** Paper fill, 1px Control Edge border, 0.5rem radius, 44px high, 12px padding, Quiet Ink placeholder.

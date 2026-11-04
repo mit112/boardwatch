@@ -385,16 +385,10 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             served["apply_route"] = routes.route(
                 posting_id=served["posting_id"], apply_url=served["apply_url"]
             ).value
-            served["jd_gated"] = routes.jd_gated(served["posting_id"])
     # The owner's move outranks the URL, whatever host the link is on. It stays until moved back.
     for served in payload["manual"]:
         served["apply_route"] = ApplyRoute.HAND.value
-        served["jd_gated"] = routes.jd_gated(served["posting_id"])
-    payload["apply_routes"] = {
-        "configured": routes.configured,
-        "gate_tracked": routes.gated is not None,
-        "problem": routes.problem,
-    }
+    payload["apply_routes"] = {"configured": routes.configured, "problem": routes.problem}
     return payload
 
 
