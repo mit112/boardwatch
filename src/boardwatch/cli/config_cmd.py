@@ -137,6 +137,9 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "next scan",
         "skip the detail fetch of a posting whose listing already fails the ranker's vetoes",
     ),
+    "follow_board_moves": (
+        _str_to_bool, "next run", "follow ATS moves after three consecutive dead pipeline scans"
+    ),
     "detail_fetch_budget": (
         int, "next scan", "per-posting detail fetches per board per scan, 1–10000"
     ),

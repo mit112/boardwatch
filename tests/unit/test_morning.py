@@ -178,9 +178,9 @@ def test_the_artifact_version_is_bumped_for_each_new_top_level_block() -> None:
     adds the run-level `board_coverage` block — a new top-level section, not an additive key
     inside one. v3 adds the run-level `errors`/`fatal` pair and the `## Alerts` section, which
     is the same kind of addition and so moves the version the same way."""
-    assert ARTIFACT_VERSION == 3
+    assert ARTIFACT_VERSION == 4
     artifact = build_morning(run_id=1, funnel_name="funnel-1.md", leads=[lead()])
-    assert morning_to_dict(artifact)["artifact_version"] == 3
+    assert morning_to_dict(artifact)["artifact_version"] == 4
 
 
 def test_discovery_reach_renders_for_the_operator() -> None:

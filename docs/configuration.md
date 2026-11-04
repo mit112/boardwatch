@@ -47,6 +47,7 @@ the two death-probe budgets.
 | Key | Type / Range | Default | What it controls | Takes effect |
 |---|---|---|---|---|
 | `reap_stale_after_hours` | int, ≥ 1 | 24 | Age at which an unfinished run row is treated as crashed | next run |
+| `follow_board_moves` | bool | `false` | After three consecutive pipeline scans return a board-level 404, follow a same-handle board on another provider if it probes OK, or unwatch the dead board if that handle is already watched elsewhere. Each change carries an undo command in both reports | next run with scan |
 | `death_probe_budget` | int, ≥ 0 | 50 | Liveness probes per run against postings no board scan enumerates (0 disarms it) | next run |
 | `death_probe_company_budget` | int, ≥ 0 | 100 | List-endpoint reads per run, one per company, for providers that publish a whole board (Ashby, Greenhouse, Lever); 0 disarms that half | next run |
 | `death_probe_ttl_hours` | int, ≥ 1 | 24 | Hours before such a posting may be probed again | next run |

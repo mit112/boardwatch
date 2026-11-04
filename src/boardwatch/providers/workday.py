@@ -315,9 +315,9 @@ def _postings_list(content: bytes) -> list[dict[str, Any]] | None:
     return [row for row in payload["jobPostings"] if isinstance(row, dict)]
 
 
-def _failed(url: str, error: str) -> BoardSnapshot:
+def _failed(url: str, error: str, *, dead: bool = False) -> BoardSnapshot:
     return BoardSnapshot(
-        status="failed", postings=[], url=url, observed_validators=None, error=error,
+        status="failed", postings=[], url=url, observed_validators=None, error=error, dead=dead,
     )
 
 
@@ -732,7 +732,7 @@ class WorkdayProvider:
                 )
             except FetchFailure as exc:
                 if page_index == 0:
-                    return _failed(request.url, str(exc))
+                    return _failed(request.url, str(exc), dead=exc.status_code == 404)
                 errors.append(f"page at offset {offset}: {exc}")
                 capped = False
                 break

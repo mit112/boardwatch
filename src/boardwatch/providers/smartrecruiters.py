@@ -96,6 +96,8 @@ class SmartRecruitersProvider:
         try:
             result = fetcher.get(request.url, validators=request.validators)
         except FetchFailure as exc:
+            # No `dead`: an unknown organization answers 200 and empty here, so a 404 is CDN or WAF
+            # trouble (`healthcheck`), and it must never count toward a board having moved.
             return _failed(request.url, str(exc))
         if result.not_modified:
             return BoardSnapshot(

@@ -21,6 +21,8 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "Settings.board_deadline_seconds": 600.0,
     "Settings.detail_fetch_budget": 50,
     "Settings.listing_gate": False,
+    # Acquisition is opt-in: leave the user's watch list alone until explicitly enabled.
+    "Settings.follow_board_moves": False,
     # A revalidation bound, not a preference: after this many hours a board's cached ETag/
     # Last-Modified is dropped and refetched unconditionally, so a permanently-stale upstream
     # validator cannot freeze a board forever. 24 is neutral — one day caps the silent-staleness
@@ -200,6 +202,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.board_deadline_seconds": "operational",
     "Settings.detail_fetch_budget": "operational",
     "Settings.listing_gate": "operational",
+    "Settings.follow_board_moves": "capability",
     "Settings.validator_max_age_hours": "operational",
     "Settings.recency_half_life_days": "preference",
     "Settings.seen_ttl_days": "preference",

@@ -303,6 +303,7 @@ def collect_run_funnel(
     # T185. `None` means the ranker did not run, and the section says so.
     tenant_assumptions: TenantAssumptionReport | None = None,
     errors: list[str],
+    board_moves: Sequence[str] = (),
     fatal: str | None,
 ) -> RunFunnel:
     """Read every count this run's funnel needs, then hand them to the pure builder.
@@ -536,5 +537,6 @@ def collect_run_funnel(
         provenance=execution_provenance,
         tenant_assumptions=tenant_assumptions,
         errors=errors,
+        board_moves=board_moves,
         fatal=fatal,
     )

@@ -1775,6 +1775,7 @@ class ScanContext:
     boards_partial: int = 0
     boards_unchanged: int = 0
     boards_failed: int = 0
+    dead_boards: tuple[str, ...] = ()
     postings_seen: int = 0
     # T39. A SUBSET of `boards_complete`, not a fifth partition member: `apply_board`'s guard
     # (`_empty_complete_is_evidence_of_nothing`) still counts the board `complete`, it only
@@ -1852,6 +1853,7 @@ class RunFunnel:
     abstain: AbstainReport
     unattributed_evaluations: int
     errors: tuple[str, ...] = ()
+    board_moves: tuple[str, ...] = ()
     fatal: str | None = None
     # D-274. `None` means the coverage load FAILED, not that coverage is zero — a run whose
     # boards were all unreadable still produces a real report (every board `unscanned`,
@@ -2145,6 +2147,7 @@ def build_run_funnel(
     # T185. Omitted means NOT MEASURED, and the section says so.
     tenant_assumptions: TenantAssumptionReport | None = None,
     errors: Sequence[str] = (),
+    board_moves: Sequence[str] = (),
     fatal: str | None = None,
 ) -> RunFunnel:
     """Assemble the funnel from counts. Pure: no engine, no clock, no filesystem."""
@@ -2710,6 +2713,7 @@ def build_run_funnel(
         abstain=abstain,
         unattributed_evaluations=unattributed_evaluations,
         errors=tuple(errors),
+        board_moves=tuple(board_moves),
         fatal=fatal,
         board_coverage=board_coverage,
         lanes=tuple(lanes),
@@ -2885,6 +2889,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         "reconciles": funnel.reconciles,
         "fatal": funnel.fatal,
         "errors": list(funnel.errors),
+        "board_moves": list(funnel.board_moves),
         "manifest": {
             "code_fingerprint": funnel.manifest.code_fingerprint,
             "config_hash": funnel.manifest.config_hash,
@@ -2993,6 +2998,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
             "boards_partial": funnel.scan.boards_partial,
             "boards_unchanged": funnel.scan.boards_unchanged,
             "boards_failed": funnel.scan.boards_failed,
+            "dead_boards": list(funnel.scan.dead_boards),
             # `None` on a `--no-scan` run: nothing was attempted, so there is no identity to
             # check, and 0 == 0 would report a pass the run never earned.
             "boards_reconciled": funnel.scan.boards_reconciled,
@@ -3417,6 +3423,10 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
     ]
     if funnel.scan.ran:
+        if funnel.scan.dead_boards:
+            lines += ["Boards dead for 3+ pipeline scans:", ""]
+            lines += [f"- {board}" for board in funnel.scan.dead_boards]
+            lines.append("")
         lines.append(
             f"{funnel.scan.boards_attempted} boards attempted · "
             f"{funnel.scan.boards_complete} complete · {funnel.scan.boards_partial} partial · "
@@ -3942,6 +3952,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "is never folded into this run's counts and never reported as 0.",
     ]
 
+    if funnel.board_moves:
+        lines += ["", "## Board moves", ""] + [f"- {move}" for move in funnel.board_moves]
     if funnel.errors:
         lines += ["", "## Errors", ""] + [f"- {err}" for err in funnel.errors]
 

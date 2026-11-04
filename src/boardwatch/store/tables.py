@@ -195,6 +195,8 @@ board_scans = Table(
     Column("status", Text, nullable=False),
     Column("postings_listed", Integer, nullable=False, default=0),
     Column("error", Text, nullable=True),
+    Column("dead", Boolean, nullable=False, server_default="0"),
+    Column("pipeline_scan", Boolean, nullable=False, server_default="0"),
     # Coverage instrument (D-271). Nullable: NULL means the board stated no total, which is
     # not the same claim as zero.
     Column("board_reported_total", Integer, nullable=True),

@@ -189,6 +189,9 @@ class BoardSnapshot(BaseModel):
     url: str  # echoed from the request (cache key)
     observed_validators: ResponseValidators | None = None
     error: str | None = None
+    # Board-level dead response, classified by the provider from a typed fetch failure.
+    # Detail failures, timeouts and parser errors are never evidence a board moved.
+    dead: bool = False
     # The FULL live board inventory when a provider fetched only a subset of details
     # (SmartRecruiters skips known postings). _process_missing prefers this; single-
     # request providers leave it empty and it falls back to the applied postings.

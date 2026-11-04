@@ -90,7 +90,7 @@ class GreenhouseProvider:
         except FetchFailure as exc:
             return BoardSnapshot(
                 status="failed", postings=[], url=request.url,
-                observed_validators=None, error=str(exc),
+                observed_validators=None, error=str(exc), dead=exc.status_code == 404,
             )
         if result.not_modified:
             return BoardSnapshot(

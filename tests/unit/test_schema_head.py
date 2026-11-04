@@ -20,4 +20,4 @@ def test_head_is_the_board_scans_lane_revision() -> None:
     # T186 B1 added `p_target_countries` (the `target_countries` profile column) on top of it,
     # and T199 `p_board_scans_lane` (the lane that wrote a `board_scans` row) on top of that,
     # and T291 `p_corpus_indexes` (the corpus-wide reads, from indexes) on top of that.
-    assert schema_revision() == "p_listing_gated"
+    assert schema_revision() == "p_dead_boards"

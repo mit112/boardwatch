@@ -74,6 +74,7 @@ def apply_board(
     run_id: int,
     scan_kind: str = "board",
     lane: str | None = None,
+    pipeline_scan: bool = False,
 ) -> ApplyResult:
     """Apply one board snapshot. `scan_kind` says which subsystem produced it (D-285), and `lane`
     which lane, when one did (T199).
@@ -100,12 +101,14 @@ def apply_board(
             _scan_row(
                 conn, run_id, company_id, started_at, "failed", 0, snapshot.error,
                 snapshot=snapshot, scan_kind=scan_kind, lane=lane,
+                pipeline_scan=pipeline_scan,
             )
             return ApplyResult(status="failed")
         if snapshot.status == "unchanged":
             _scan_row(
                 conn, run_id, company_id, started_at, "unchanged", 0, None,
                 scan_kind=scan_kind, lane=lane,
+                pipeline_scan=pipeline_scan,
             )
             return ApplyResult(status="unchanged")
         result = _apply_listed(conn, snapshot.postings, company_id, run_id, snapshot.url)
@@ -147,7 +150,7 @@ def apply_board(
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
             len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
-            lane=lane,
+            lane=lane, pipeline_scan=pipeline_scan,
         )
         return result
 
@@ -690,6 +693,7 @@ def _scan_row(
     snapshot: BoardSnapshot | None = None,
     scan_kind: str = "board",
     lane: str | None = None,
+    pipeline_scan: bool = False,
 ) -> None:
     conn.execute(
         insert(board_scans).values(
@@ -700,6 +704,8 @@ def _scan_row(
             status=status,
             postings_listed=listed,
             error=error,
+            dead=snapshot is not None and snapshot.status == "failed" and snapshot.dead,
+            pipeline_scan=pipeline_scan,
             scan_kind=scan_kind,
             lane=lane,
             # NULL, not 0, when there is no snapshot: a failed board's coverage is undefined.
