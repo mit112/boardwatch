@@ -31,6 +31,7 @@ with `config show` — the file alone cannot tell a typo from success.
 |---|---|---|---|---|
 | `seen_ttl_days` | int, ≥ 1 | 7 | Days a surfaced-but-unbuilt lead stays suppressed | next top/run |
 | `slate_ceiling` | int, ≥ 0 | 0 (exactly `--top`) | Most leads one run may deliver. The slate grows past `--top` only by tier 0–1 leads (entry-marked software titles for an entry-band profile, and decided-eligible software leads); above `gate.depth` the gate judges up to this many leads per run | next run |
+| `slate_direct_share` | float, 0.0–1.0 | 0.0 (off) | Share of each rank tier held for leads whose link goes straight to a form your fill tool handles (`auto_hosts` in `apply-routes.toml`). It only reorders within a tier: a shortage leaves the slots to other leads, and no verdict changes. Inert without `apply-routes.toml`. | next run |
 | `location_filter_mode` | `soft` \| `hard` | `soft` | `soft` ranks by location only; `hard` vetoes a mismatch | next top |
 | `zero_skill_coverage_prior` | float, [0, 1] | 0.50 | Score given when a posting lists no detectable skills | next top |
 | `recency_half_life_days` | float | 14.0 | Days at which the recency score halves | next top |

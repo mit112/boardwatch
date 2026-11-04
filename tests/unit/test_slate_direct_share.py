@@ -344,12 +344,13 @@ def test_at_zero_the_routes_file_is_never_read(env: Path, monkeypatch: pytest.Mo
     assert len(ranked.visible) == 2
 
 
-def test_the_share_does_not_move_config_hash_so_no_disposition_goes_stale() -> None:
+def test_the_share_does_not_move_config_hash_so_no_disposition_goes_stale(tmp_path: Path) -> None:
     """`policy_version` derives from `config_hash`: IN would stale every permanent disposition."""
     from boardwatch.core.settings import Settings
     from boardwatch.reports.manifest import config_hash, routing_hash
 
-    off = Settings(slate_direct_share=0.0)
-    on = Settings(slate_direct_share=0.5)
+    dirs = {"data_dir": tmp_path / "data", "config_dir": tmp_path / "cfg"}
+    off = Settings(**dirs, slate_direct_share=0.0)
+    on = Settings(**dirs, slate_direct_share=0.5)
     assert config_hash(off) == config_hash(on)
     assert routing_hash(off) != routing_hash(on)
