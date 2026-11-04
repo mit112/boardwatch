@@ -136,3 +136,51 @@ degradation-watching as well. Presence-gated, and a failed post never fails the 
 Everything the `scan` schedule notes — environment variables, running as the same user that ran
 `init`, and running the command once by hand first — applies here too. See
 [scheduling](scheduling.md) for those mechanics.
+## Deliver newly found jobs during the day
+
+Keep the full nightly run. For an extra pass around 10:00 and 16:00, run these commands in order:
+
+```sh
+boardwatch scan --provider greenhouse --provider ashby --provider lever --provider workable
+boardwatch run --no-scan --project --top 40 --fresh-hours 8
+```
+
+`scan --provider` can be repeated. It scans the union once under one run row; boards outside that
+union keep their absence counts. A single `--provider` works as before.
+
+`--fresh-hours` takes an integer of at least 1 and requires `--no-scan`. It uses when boardwatch
+first found a posting, including the cutoff, rather than its publication date or latest revision.
+The filter runs before ranking and the slate limit. It covers recent postings from any source,
+not just the providers named by the preceding scan. Already handled jobs stay suppressed.
+
+A fresh pass keeps eligibility, shortlist liveness, the gate on its slate, tailoring, queue sync,
+and the funnel and morning files. It skips lane discovery, the death sweep, standing-queue gate
+refresh, gate backlog, and the application-form sweep, which covers the standing queue. Skipped
+work is unmeasured, not zero. Nightly volume and history alarms do not run; faults on the fresh
+slate still reach the usual alerts. With no fresh open postings, it prints `no fresh postings`
+and exits 0. It never sends the success heartbeat, even if `BOARDWATCH_HEARTBEAT_URL` is set.
+
+`--project` still needs an approved career-profile bundle when there are postings to process.
+Leave it out to use the authored résumé. Omitting `--fresh-hours` keeps the full run behavior.
+
+For launchd, put the pair in an executable local wrapper so delivery starts only after the scan
+succeeds. Use the same account, config, data and queue as the nightly job:
+
+```sh
+#!/bin/sh
+set -eu
+BW=/absolute/path/to/boardwatch
+"$BW" scan --provider greenhouse --provider ashby --provider lever --provider workable
+exec "$BW" run --no-scan --project --top 40 --fresh-hours 8
+```
+
+Use a separate launchd job based on the example above, with label `com.boardwatch.intraday`, its
+own log, and `ProgramArguments` pointing to the wrapper. Replace `StartCalendarInterval` with:
+
+```xml
+<key>StartCalendarInterval</key>
+<array>
+  <dict><key>Hour</key><integer>10</integer><key>Minute</key><integer>0</integer></dict>
+  <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>0</integer></dict>
+</array>
+```

@@ -376,7 +376,7 @@ def run_scan(
     fetcher: Fetcher | None = None,
     providers: dict[str, Provider] | None = None,
     company: str | None = None,
-    provider: str | None = None,
+    provider: str | Sequence[str] | None = None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
@@ -407,7 +407,7 @@ def scan_under_lease(
     fetcher: Fetcher | None = None,
     providers: dict[str, Provider] | None = None,
     company: str | None = None,
-    provider: str | None = None,
+    provider: str | Sequence[str] | None = None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
@@ -432,7 +432,7 @@ def _run_scan_locked(
     fetcher: Fetcher,
     providers: dict[str, Provider],
     company: str | None,
-    provider: str | None,
+    provider: str | Sequence[str] | None,
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
@@ -445,7 +445,10 @@ def _run_scan_locked(
     # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
     # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
     # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
-    active_run_id = insert_run(engine)
+    active_run_id = (
+        insert_run(engine, incremental=True)
+        if company is not None or provider is not None else insert_run(engine)
+    )
     summary.run_id = active_run_id
     if on_run_started is not None:
         on_run_started(active_run_id)
@@ -476,7 +479,7 @@ def _scan_body(
     fetcher: Fetcher,
     providers: dict[str, Provider],
     company: str | None,
-    provider: str | None,
+    provider: str | Sequence[str] | None,
     summary: ScanSummary,
     company_rows: Sequence[Any],
     active_run_id: int,

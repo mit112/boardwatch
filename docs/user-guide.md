@@ -135,6 +135,11 @@ Schedule `run` once a day and it becomes an unattended driver: see
 for launchd, cron and systemd recipes, the heartbeat URL, and what a normal day's exit code
 means.
 
+For an extra same-day delivery, repeat `scan --provider` for the boards you want, then use
+`run --no-scan --fresh-hours 8`. The hours must be an integer of at least 1. Only postings first
+found within that window enter ranking. A fresh pass skips nightly maintenance and volume alarms
+and never sends the nightly success heartbeat. See the [same-day scheduling recipe](unattended-run.md#deliver-newly-found-jobs-during-the-day).
+
 ## Eligibility audit
 
 Ranking tells you how well a posting fits. The eligibility audit tells you whether you

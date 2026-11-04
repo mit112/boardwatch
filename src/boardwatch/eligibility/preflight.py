@@ -28,6 +28,7 @@ import os
 from collections.abc import Mapping
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -49,7 +50,12 @@ from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.store.quarantine_queries import drain_quarantine, sweep_bodies
-from boardwatch.store.queries import ensure_run, finish_run, get_profile
+from boardwatch.store.queries import (
+    ensure_run,
+    finish_run,
+    first_seen_since_clause,
+    get_profile,
+)
 from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
@@ -84,7 +90,10 @@ class EligibilityStats:
     released: int = 0
 
 
-def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[int, int, str]]:
+def _pending(
+    engine: Engine, profile_hash: str, rules_hash: str,
+    first_seen_since: datetime | None = None,
+) -> list[tuple[int, int, str]]:
     """Current versions of OPEN postings with no evaluation for the CURRENT input identity.
 
     ONE query, an anti-join, mirroring extract/preflight.py:63-81. The `newer` correlated
@@ -136,6 +145,8 @@ def _pending(engine: Engine, profile_hash: str, rules_hash: str) -> list[tuple[i
         .where(postings.c.status == "open", ~newer, ~evaluated, ~quarantined)
         .order_by(posting_versions.c.id)
     )
+    if first_seen_since is not None:
+        stmt = stmt.where(first_seen_since_clause(first_seen_since))
     with engine.connect() as conn:
         return [
             (int(row.id), int(row.posting_id), str(row.body_text))
@@ -284,6 +295,7 @@ def run_eligibility(
     run_id: int | None = None,
     workers: int | None = None,
     parallel_threshold: int = PARALLEL_THRESHOLD,
+    first_seen_since: datetime | None = None,
 ) -> EligibilityStats:
     """Judge every posting pending under the current profile+rules identity.
 
@@ -320,7 +332,7 @@ def run_eligibility(
     now = utcnow()
     with engine.begin() as conn:
         released = drain_quarantine(conn, now=now)
-        withheld = sweep_bodies(conn, now=now, run_id=run_id)
+        withheld = sweep_bodies(conn, now=now, run_id=run_id, first_seen_since=first_seen_since)
 
     with engine.connect() as conn:
         profile_row = get_profile(conn)
@@ -339,7 +351,7 @@ def run_eligibility(
     fields = declared_fields()
     profile_hash, rules_hash = _identity_hashes(facts, policy, catalog, fields)
 
-    pending = _pending(engine, profile_hash, rules_hash)
+    pending = _pending(engine, profile_hash, rules_hash, first_seen_since)
     stats = EligibilityStats(
         profile_hash=profile_hash,
         rules_hash=rules_hash,

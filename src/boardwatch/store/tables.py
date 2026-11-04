@@ -276,6 +276,8 @@ runs = Table(
     Column("id", Integer, primary_key=True),
     Column("started_at", DateTime, nullable=False),
     Column("finished_at", DateTime, nullable=True),
+    # D-670: scoped scans and fresh delivery do not belong in nightly history windows.
+    Column("incremental", Boolean, nullable=False, server_default="0"),
     Column("boards_attempted", Integer, nullable=False, default=0),
     Column("boards_complete", Integer, nullable=True),
     # The rest of ScanSummary's four-way split (D-341). Nullable and NOT defaulted to 0: NULL

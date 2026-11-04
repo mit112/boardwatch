@@ -488,3 +488,13 @@ def test_the_message_says_CURRENTLY_CLASSIFY_not_reached(engine: Engine) -> None
     assert alert is not None
     assert "currently classify into the blind-apply queue" in alert
     assert "reached the blind-apply queue" not in alert
+
+
+def test_incremental_delivery_does_not_hide_a_nightly_apply_lane_drought(engine: Engine) -> None:
+    from tests.pipeline.test_incremental_run_history import _mark
+
+    for _ in range(3):
+        _run(engine, review_lane=2)
+    extra = _run(engine, apply_lane=2)
+    _mark(engine, extra)
+    assert check_apply_lane_drought(engine, window=3, min_placeable=1) is not None

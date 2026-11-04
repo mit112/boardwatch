@@ -765,7 +765,9 @@ def _counts(
 
 def _last_finished_run(conn: Connection) -> Row[Any] | None:
     return conn.execute(
-        select(runs).where(runs.c.finished_at.is_not(None)).order_by(runs.c.id.desc()).limit(1)
+        select(runs).where(
+            runs.c.finished_at.is_not(None), runs.c.incremental.is_(False)
+        ).order_by(runs.c.id.desc()).limit(1)
     ).one_or_none()
 
 

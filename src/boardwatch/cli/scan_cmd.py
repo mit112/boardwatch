@@ -16,7 +16,9 @@ console = Console()
 def scan(
     ctx: typer.Context,
     company: str | None = typer.Option(None, "--company", help="Scan only this company slug."),
-    provider: str | None = typer.Option(None, "--provider", help="Scan only this provider."),
+    provider: list[str] | None = typer.Option(  # noqa: B008
+        None, "--provider", help="Scan only these providers. Repeat for more than one."
+    ),
 ) -> None:
     """Fetch every watched board and record new, changed and closed postings."""
     app_ctx = build_context(ctx.obj, ensure=False)  # run_scan migrates inside the lock

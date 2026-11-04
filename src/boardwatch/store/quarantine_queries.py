@@ -47,6 +47,7 @@ from boardwatch.lanes.quality import (
     require_employer_body,
 )
 from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.queries import first_seen_since_clause
 from boardwatch.store.tables import (
     body_precondition_checks,
     posting_versions,
@@ -220,7 +221,9 @@ def drain_quarantine(conn: Connection, *, now: datetime) -> int:
     return released
 
 
-def unchecked_current_versions(conn: Connection) -> list[tuple[int, int, str]]:
+def unchecked_current_versions(
+    conn: Connection, *, first_seen_since: datetime | None = None
+) -> list[tuple[int, int, str]]:
     """`(posting_version_id, posting_id, body_text)` for every current body the CURRENT
     detector has not judged yet.
 
@@ -258,7 +261,11 @@ def unchecked_current_versions(conn: Connection) -> list[tuple[int, int, str]]:
             posting_versions.c.id, posting_versions.c.posting_id, posting_versions.c.body_text
         )
         .join(postings, posting_versions.c.posting_id == postings.c.id)
-        .where(postings.c.status == "open", ~newer, ~checked)
+        .where(
+            postings.c.status == "open", ~newer, ~checked,
+            *([first_seen_since_clause(first_seen_since)]
+              if first_seen_since is not None else []),
+        )
         .order_by(posting_versions.c.id)
     ).all()
     return [(int(r.id), int(r.posting_id), str(r.body_text)) for r in rows]
@@ -282,7 +289,10 @@ def record_check(conn: Connection, posting_version_id: int, *, now: datetime) ->
     )
 
 
-def sweep_bodies(conn: Connection, *, now: datetime, run_id: int | None = None) -> int:
+def sweep_bodies(
+    conn: Connection, *, now: datetime, run_id: int | None = None,
+    first_seen_since: datetime | None = None,
+) -> int:
     """Judge every unchecked current body; quarantine the foreign ones. Returns how many were
     newly held.
 
@@ -290,7 +300,9 @@ def sweep_bodies(conn: Connection, *, now: datetime, run_id: int | None = None) 
     and a later catalog edit is what re-opens it — never an unrelated profile or rules change.
     """
     held = 0
-    for posting_version_id, posting_id, body_text in unchecked_current_versions(conn):
+    for posting_version_id, posting_id, body_text in unchecked_current_versions(
+        conn, first_seen_since=first_seen_since
+    ):
         try:
             require_employer_body(body_text)
         except ForeignBodyText as violation:

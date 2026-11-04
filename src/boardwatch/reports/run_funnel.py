@@ -1056,6 +1056,7 @@ class GateCounters:
     #: can be told from an armed refresh that found nothing stale. `refresh_pending_after` is
     #: RE-READ from the store after the refresh committed, never derived from what it sent. The
     #: three counts are `None` when an armed refresh raised — unmeasured, never zero.
+    maintenance_skipped: bool = False
     refresh_budget: int = 0
     refresh_candidates: int | None = 0
     refresh_sent: int | None = 0
@@ -1130,6 +1131,7 @@ def gate_to_dict(gate: GateCounters | None) -> dict[str, object]:
         "seniority_unreadable": gate.seniority_unreadable,
         "seniority_skipped": gate.seniority_skipped,
         "readings_absent": gate.readings_absent,
+        **({"maintenance_skipped": True} if gate.maintenance_skipped else {}),
         "refresh_budget": gate.refresh_budget,
         "refresh_candidates": gate.refresh_candidates if armed else None,
         "refresh_sent": gate.refresh_sent if armed else None,
@@ -1188,7 +1190,9 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         "",
         # T113. The pending count is the one to watch: staying high run over run means the budget
         # cannot keep up with the re-keys.
-        "standing-queue refresh not armed (`gate.refresh_budget = 0`)"
+        "standing-queue refresh not run (fresh delivery); unmeasured"
+        if gate.maintenance_skipped
+        else "standing-queue refresh not armed (`gate.refresh_budget = 0`)"
         if not gate.refresh_budget
         else "standing-queue refresh FAILED and measured nothing — see this run's errors"
         if gate.refresh_candidates is None
@@ -1196,7 +1200,9 @@ def _gate_lines(gate: GateCounters | None) -> tuple[str, ...]:
         f"· {gate.refresh_sent} sent (budget {gate.refresh_budget}) · "
         f"{gate.refresh_pending_after} still stale after",
         "",
-        "backlog not armed (`gate.backlog_budget = 0`)"
+        "backlog not run (fresh delivery); unmeasured"
+        if gate.maintenance_skipped
+        else "backlog not armed (`gate.backlog_budget = 0`)"
         if not gate.backlog_budget
         else "backlog FAILED and measured nothing — see this run's errors"
         if gate.backlog_candidates is None
@@ -1874,6 +1880,7 @@ class RunFunnel:
     # export-control hard stop appears for some requisitions, so a zeroed section would say the
     # delivered slate had been checked.
     form_questions: FormQuestionSweep | None = None
+    fresh_hours: int | None = None
     # T42. `None` means the gate was NOT armed this run (`settings.gate.enabled` False) —
     # not the same as an armed run that judged nothing, the same omission direction
     # `death_probe` above uses.
@@ -2882,6 +2889,7 @@ def _stage_json(stage: Stage) -> dict[str, object]:
 def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
     """The machine-readable half. Every stage keeps its drops; nothing is pre-summed away."""
     return {
+        **({"fresh_hours": funnel.fresh_hours} if funnel.fresh_hours is not None else {}),
         "artifact_version": ARTIFACT_VERSION,
         "run_id": funnel.run_id,
         "started_at": funnel.started_at.isoformat() if funnel.started_at else None,
@@ -3377,6 +3385,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         f"- **finished:** {funnel.finished_at.isoformat() if funnel.finished_at else '—'}",
         f"- **reconciliation:** {verdict}",
     ]
+    if funnel.fresh_hours is not None:
+        lines.append(f"- **fresh delivery:** first seen within {funnel.fresh_hours} hours")
     if funnel.fatal:
         lines.append(f"- **FATAL:** {funnel.fatal}")
     m = funnel.manifest
