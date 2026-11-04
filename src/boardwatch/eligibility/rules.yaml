@@ -1914,9 +1914,9 @@ families:
           - "\\bor\\s+(?:at\\s+least\\s+)?(?:\\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten)\\s*\\+?\\s*(?:years?|yrs?)(?!\\w)"
           - "\\bor\\s+(?:be\\s+)?(?:currently\\s+)?(?:pursuing|enrolled|working\\s+toward|completing|in\\s+progress)"
           - "\\b(?:students|candidates|applicants|holders|majors)\\b|encouraged\\s+to\\s+apply"
-          # A higher level named in the same sentence ("... and a PhD in Physics", Codex r2): this
-          # bar is the bachelor's floor of a list item, and a conjoined higher bar is not its own.
-          - "master|doctora|ph\\.?\\s?d\\.?|(?:graduate|advanced)\\s+degree"
+          # A higher degree stands this floor down unless directly offered after `or`,
+          # with an optional article. Any other higher mention still stands it down (D-672).
+          - '(?:(?<!\bor)(?<!\ba)(?<!\ban)(?<!\s)\s+(?:an?\s+)?|(?<![\w\s])an?\s+|(?<!\s))(?:master|doctora|ph\.?\s?d\.?|(?:graduate|advanced)\s+degree)'
         hedged_by_tail: [*degree_hedges]
         hedged_as: bachelor_in_field_listed_preferred
         suppressed_by_unit: [*degree_hedges]
