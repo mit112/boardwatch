@@ -363,6 +363,15 @@ def candidate_document(
     the owner reviews this file away from the terminal that produced it, so what it excluded has
     to travel with it.
     """
+    return _header(selection, census, generated_on, repos) + registry_yaml(selection)
+
+
+def registry_yaml(selection: Selection) -> str:
+    """The `companies:` body of a candidate file, with no header.
+
+    Public so a second discovery source writes the SAME registry format behind its own header
+    instead of keeping a second writer.
+    """
     payload = {
         "companies": [
             {"name": c.name, "provider": c.provider, "slug": c.slug, "tags": []}
@@ -373,7 +382,7 @@ def candidate_document(
     # named `no`, `123` or `~` survives the round trip through `safe_load`. `allow_unicode` keeps
     # an accented employer name legible instead of escaped; the parsed value is the same either way.
     body: str = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True)
-    return _header(selection, census, generated_on, repos) + body
+    return body
 
 
 def _header(
