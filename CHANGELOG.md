@@ -195,6 +195,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Shortlist dispositions no longer fail when another writer commits during their reads.** The
+  pipeline takes the SQLite write lock before reading and waits for other writers at transaction start.
 - **LinkedIn guest counters record over-cap rate limits as responses.** A 429 or 503 with an
   oversized Retry-After now counts as a non-200 response while preserving the existing outage verdict.
 - **Historical queue folders stay deferred with their requisition copy.** Deferral elects among

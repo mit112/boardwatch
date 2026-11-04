@@ -168,7 +168,7 @@ from boardwatch.scan.coordinator import (
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.buried_queries import BuriedLeads
 from boardwatch.store.coverage_queries import load_board_coverage
-from boardwatch.store.db import ensure_schema
+from boardwatch.store.db import ensure_schema, write_connection
 from boardwatch.store.delivery_queries import (
     QueueRow,
     form_question_hits,
@@ -2117,7 +2117,8 @@ def _record_shortlist_dispositions(
         return
     built_ids = {lead.posting_id for lead in summary.tailored}
     now = utcnow()
-    with engine.begin() as conn:
+    # The policy and ledger reads must not precede a DEFERRED write-lock upgrade.
+    with write_connection(engine) as conn, conn.begin():
         stamp = run_policy_version(conn, settings)
         anchors = job_anchors(conn, posting_ids)
         decided_jobs: set[int] = set()

@@ -6,6 +6,7 @@ that aborts is still closed out rather than left dangling for `doctor` to call s
 """
 
 import json
+import sqlite3
 from datetime import timedelta
 from pathlib import Path
 from time import perf_counter, sleep
@@ -16,7 +17,8 @@ import respx
 from filelock import FileLock
 from gh_fixtures import gh_jobs
 from rich.console import Console
-from sqlalchemy import func, insert, select
+from sqlalchemy import Connection, func, insert, select
+from sqlalchemy.exc import OperationalError
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -28,7 +30,7 @@ from boardwatch.scan.coordinator import ScanLockHeldError, run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
-from boardwatch.store.queries import RUN_FAILED
+from boardwatch.store.queries import RUN_FAILED, insert_run
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.conftest import write_test_resume_template
 
@@ -111,6 +113,67 @@ def _seed_posting(data_dir: Path, *, slug: str = "acme2") -> int:
             )
         )
     return posting_id
+
+
+def test_shortlist_dispositions_serialize_a_competing_commit(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An existing disposition can be updated while another engine tries to write."""
+    import boardwatch.pipeline.runner as runner_mod
+
+    posting_id = _seed_posting(env)
+    engine = get_engine(env, busy_timeout_ms=0)
+    competitor = get_engine(env, busy_timeout_ms=0)
+    run_id = insert_run(engine)
+    now = utcnow()
+    with engine.begin() as conn:
+        job_id = int(conn.execute(select(tables.postings.c.job_id)).scalar_one())
+        built_job = int(
+            conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
+        )
+        record_disposition(
+            conn, job_id, disposition="seen", reason="surfaced",
+            expires_at=now + timedelta(days=7), now=now,
+        )
+        record_disposition(
+            conn, built_job, disposition="built", reason="lead_built",
+            policy_version="prior", now=now,
+        )
+
+    real_anchors = runner_mod.job_anchors
+    competing_commit = False
+
+    def anchors_with_competitor(conn: Connection, posting_ids: list[int]) -> dict[int, int]:
+        nonlocal competing_commit
+        anchors = real_anchors(conn, posting_ids)
+        try:
+            with competitor.begin() as other:
+                other.execute(insert(tables.jobs).values(created_at=now))
+            competing_commit = True
+        except OperationalError as exc:
+            assert isinstance(exc.orig, sqlite3.OperationalError)
+            assert exc.orig.sqlite_errorcode == sqlite3.SQLITE_BUSY
+        return anchors
+
+    monkeypatch.setattr(runner_mod, "job_anchors", anchors_with_competitor)
+    summary = runner_mod.PipelineSummary(run_id=run_id, unshippable_ids=[posting_id])
+    runner_mod._record_shortlist_dispositions(
+        engine, load_settings(data_dir=env), summary, run_id,
+        surfaced_job_ids=[job_id, built_job], stage_completed=True,
+    )
+    assert not competing_commit
+    with competitor.begin() as conn:
+        conn.execute(insert(tables.jobs).values(created_at=now))
+    with engine.connect() as conn:
+        rows = conn.execute(select(tables.job_dispositions)).all()
+    by_job = {row.job_id: row for row in rows}
+    assert set(by_job) == {job_id, built_job}
+    assert (by_job[job_id].disposition, by_job[job_id].reason) == (
+        "skipped", "unshippable_artifact"
+    )
+    assert by_job[job_id].first_decided_at == now
+    assert by_job[job_id].run_id == run_id
+    assert (by_job[built_job].disposition, by_job[built_job].reason) == ("built", "lead_built")
 
 
 def _add_live_board(data_dir: Path) -> None:
