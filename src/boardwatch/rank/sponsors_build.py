@@ -20,7 +20,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
-from xml.etree.ElementTree import ParseError, iterparse
+from xml.etree.ElementTree import Element, ParseError, iterparse
 
 from boardwatch.rank.sponsors import (
     FORMAT_VERSION,
@@ -139,7 +139,12 @@ def iter_rows(path: Path) -> Iterator[dict[str, str]]:
             strings = _shared_strings(archive)
             header: dict[int, str] | None = None
             with archive.open(_SHEET) as handle:
-                for _, element in iterparse(handle):
+                sheet_data: Element | None = None
+                for event, element in iterparse(handle, events=("start", "end")):
+                    if event == "start":
+                        if element.tag == _NS + "sheetData":
+                            sheet_data = element
+                        continue
                     if element.tag != _NS + "row":
                         continue
                     cells: dict[int, str] = {}
@@ -153,7 +158,10 @@ def iter_rows(path: Path) -> Iterator[dict[str, str]]:
                         cells[position] = (
                             strings[int(value.text)] if cell.get("t") == "s" else value.text
                         )
-                    element.clear()
+                    # Detach the row, not just empty it: a cleared row stays a child of
+                    # `sheetData`, and these files carry about 800k trailing blank rows.
+                    if sheet_data is not None:
+                        sheet_data.clear()
                     if not cells:
                         continue
                     if header is None:
