@@ -425,6 +425,23 @@ def test_the_two_admitted_aggregators_are_ingested(tmp_path, acquisition):
     assert len(_postings(_collect(root, tmp_path))) == 1
 
 
+def test_handshake_posting_is_ingested_with_its_local_jd(tmp_path: Path) -> None:
+    root = tmp_path / "queue"
+    url = "https://app.joinhandshake.com/jobs/12345678"
+    _write(root, "Other", "a", acquisition="handshake", direct_url=url)
+
+    result = _collect(root, tmp_path)
+
+    assert result.tally.counts["not_attemptable"] == 0
+    (snapshot,) = result.snapshots
+    assert (snapshot.provider, snapshot.slug) == ("jobapps", "acme")
+    (posting,) = snapshot.snapshot.postings
+    assert posting.provider_posting_id == "pst_a"
+    assert posting.url == url
+    assert posting.body_text == _BODY
+    assert posting.raw_json["jobapps"]["primary_acquisition"] == "handshake"
+
+
 def test_the_promoted_queue_is_read_as_a_second_root(tmp_path):
     """job-apps MOVES a folder out of the discovery tree when it promotes it, so a posting used
     to become invisible to boardwatch at exactly the moment it became one the owner was working

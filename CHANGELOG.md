@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Import Handshake jobs captured by job-apps.** The job-apps lane accepts `handshake` records
+  with their saved job description and posting link instead of counting them as not attemptable.
+  They use the existing eligibility and liveness checks; their application route is by hand (D-676).
+
 - **Find more ATS boards, keep direct-apply leads on the slate, and see H-1B filing history.**
   `companies discover-crawl` proposes unwatched boards from the Common Crawl index for review before
   `companies import` (D-673). `slate_direct_share`, off by default, holds a share of each rank tier for

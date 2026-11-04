@@ -56,6 +56,7 @@ no_employer_statuses = ["none", "aggregator"]
         (1, "https://jobs.ashbyhq.com/acme/1", ApplyRoute.AUTO),
         (1, "https://job-boards.greenhouse.io/embed/job_app?for=acme&token=1", ApplyRoute.AUTO),
         (1, "https://acme.wd5.myworkdayjobs.com/x/job/1", ApplyRoute.HAND),
+        (1, "https://app.joinhandshake.com/jobs/12345678", ApplyRoute.HAND),
         # A host only counts as itself or its own subdomain, never by resembling one.
         (1, "https://notashbyhq.com/x", ApplyRoute.HAND),
         (1, "https://evil.example/?u=https://jobs.ashbyhq.com/acme/1", ApplyRoute.HAND),

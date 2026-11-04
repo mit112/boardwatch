@@ -150,6 +150,8 @@ _DIRECT_APPLY_SOURCES = frozenset(
         # enumeration (D-314), so they retire only via the death probe or the zero-signal veto.
         "indeed",
         "jobright",
+        # A posting-specific /jobs/<id> page; the authenticated scraper already saved the JD.
+        "handshake",
     }
 )
 _DIRECT_APPLY_SUFFIX = "_api"
