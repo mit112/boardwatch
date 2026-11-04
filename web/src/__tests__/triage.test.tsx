@@ -39,7 +39,7 @@ import { getAnswers, getDetail, getQueue, markApplied } from "../api/client";
 import { App } from "../App";
 
 function grid(): HTMLElement {
-  return screen.getByRole("grid", { name: "Jobs to explore" });
+  return screen.getByRole("grid", { name: "No check held these back" });
 }
 
 function dataRows(): HTMLElement[] {

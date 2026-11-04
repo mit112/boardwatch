@@ -38,7 +38,7 @@ import { App } from "../App";
 const COLLAPSE_MS = 200;
 
 function dataRows(): HTMLElement[] {
-  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  return within(screen.getByRole("grid", { name: "No check held these back" }))
     .getAllByRole("row")
     .filter((element) => element.hasAttribute("data-row-id"));
 }
@@ -46,7 +46,7 @@ function dataRows(): HTMLElement[] {
 /** A row by its title. The writes are keys on the focused ROW — `a`, `s`, `r` — and the buttons for
  *  them live in the workspace, so a row is what a keystroke is aimed at. */
 function rowOf(title: string): HTMLElement {
-  const row = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  const row = within(screen.getByRole("grid", { name: "No check held these back" }))
     .getByText(title)
     .closest('[role="row"]');
   if (row === null) throw new Error(`no row for ${title}`);

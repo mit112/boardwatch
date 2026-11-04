@@ -277,7 +277,7 @@ describe("the write path", () => {
   });
 
   function rowElement(): HTMLElement {
-    const found = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+    const found = within(screen.getByRole("grid", { name: "No check held these back" }))
       .getAllByRole("row")
       .find((element) => element.hasAttribute("data-row-id"));
     if (found === undefined) throw new Error("no data row");
@@ -337,7 +337,7 @@ describe("the write path", () => {
     expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, future);
     // Optimistic: the ROW shows it before any refetch, and the lead has NOT left the queue —
     // a follow-up is a note, not a disposition.
-    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
+    const queue = screen.getByRole("grid", { name: "No check held these back" });
     expect(within(queue).getAllByText(`follow-up ${future}`).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -347,7 +347,7 @@ describe("the write path", () => {
     expect(vi.mocked(clearFollowUp)).toHaveBeenCalledWith(row.posting_id);
     // The exact chip text, not `/follow-up/`: the grid's own sort control is called "follow-up".
     expect(
-      within(screen.getByRole("grid", { name: "Jobs to explore" })).queryByText(`follow-up ${future}`),
+      within(screen.getByRole("grid", { name: "No check held these back" })).queryByText(`follow-up ${future}`),
     ).toBeNull();
   });
 
@@ -368,7 +368,7 @@ describe("the write path", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(
-      within(screen.getByRole("grid", { name: "Jobs to explore" })).getAllByText(`follow-up ${future}`)
+      within(screen.getByRole("grid", { name: "No check held these back" })).getAllByText(`follow-up ${future}`)
         .length,
     ).toBeGreaterThan(0);
 
@@ -377,7 +377,7 @@ describe("the write path", () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     expect(
-      within(screen.getByRole("grid", { name: "Jobs to explore" })).queryByText(`follow-up ${future}`),
+      within(screen.getByRole("grid", { name: "No check held these back" })).queryByText(`follow-up ${future}`),
     ).toBeNull();
     expect(screen.getByText("400 from /api/queue/1/followup")).toBeTruthy();
   });
@@ -398,7 +398,7 @@ describe("the write path", () => {
     });
 
     expect(vi.mocked(setFollowUp)).toHaveBeenCalledWith(row.posting_id, sent);
-    const queue = within(screen.getByRole("grid", { name: "Jobs to explore" }));
+    const queue = within(screen.getByRole("grid", { name: "No check held these back" }));
     expect(queue.getAllByText(`follow-up ${stored}`).length).toBeGreaterThan(0);
     expect(queue.queryByText(`follow-up ${sent}`)).toBeNull();
     // The toast names the stored date too: a confirmation that reads back the value the store
@@ -424,7 +424,7 @@ describe("the write path", () => {
     });
 
     expect(
-      within(screen.getByRole("grid", { name: "Jobs to explore" })).getAllByText(`follow-up ${sent}`).length,
+      within(screen.getByRole("grid", { name: "No check held these back" })).getAllByText(`follow-up ${sent}`).length,
     ).toBeGreaterThan(0);
   });
 
@@ -515,7 +515,7 @@ describe("the write path", () => {
     });
 
     const rowFor = (title: string): HTMLElement => {
-      const found = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+      const found = within(screen.getByRole("grid", { name: "No check held these back" }))
         .getAllByRole("row")
         .find((element) => element.textContent?.includes(title) === true);
       if (found === undefined) throw new Error(`no row for ${title}`);
@@ -580,7 +580,7 @@ describe("the follow-up due facet", () => {
     const { applyLane, reviewLane } = lanes();
     vi.mocked(getQueue).mockResolvedValue(queueResponse(applyLane, reviewLane));
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // One due row in the apply lane and one in the review lane; the cell reads the apply lane's
     // figure, exactly as `eligible` and the `judge_*` cells do.
@@ -591,13 +591,13 @@ describe("the follow-up due facet", () => {
     const { applyLane, reviewLane } = lanes();
     vi.mocked(getQueue).mockResolvedValue(queueResponse(applyLane, reviewLane));
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // Turning the facet on shows BOTH lists, so the due review job is on screen without a step.
     fireEvent.click(screen.getByRole("button", { name: /^follow-up due 1 —/i }));
 
     // The APPLY lane: the due one survives, the pinned-but-not-due and the unpinned do not.
-    const queue = within(screen.getByRole("grid", { name: "Jobs to explore" }));
+    const queue = within(screen.getByRole("grid", { name: "No check held these back" }));
     expect(queue.queryByText("APPLY-DUE")).not.toBeNull();
     expect(queue.queryByText("APPLY-LATER")).toBeNull();
     expect(queue.queryByText("APPLY-NONE")).toBeNull();

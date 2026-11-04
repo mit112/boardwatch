@@ -35567,4 +35567,6 @@ Rejected from the listing but kept on stored data: 0 on workday, oraclehcm, eigh
 
 **Scope.** Auto-apply stays deferred in this repository. This labels a lead and fills nothing. The lanes, `_review` and the folder tree do not change.
 
+**The page.** The tabs are Auto-apply, Apply by hand, Link not resolved, Not JD-gated and All jobs, default All jobs. The three routes are disjoint. Not JD-gated overlaps them and leaves out moved jobs, because triage has already read those. Needs review stops being a list and becomes a filter inside every list, on Mit's ruling.
+
 **Alternatives rejected.** Using `provider`: it says where a posting was found, and a lane copy's form is elsewhere. Settings fields: four registration sites for lists that are one person's tool. Importing `ats_scan`: a dependency from the generalized repository on a personal one. Known cost: the host list now also exists beside `AUTO_APPLY_READY`, so a newly proven board needs both edits.

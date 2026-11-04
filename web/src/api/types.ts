@@ -196,6 +196,13 @@ export interface QueueRow {
    */
   review_reason: ReviewReason | null;
   /**
+   * How this job gets applied to, from its apply URL and the owner's `apply-routes.toml`. Optional
+   * because a viewer older than the field omits it; read that as `hand`, the route with no promise.
+   */
+  apply_route?: ApplyRoute;
+  /** Whether the JD gate has read this job. `null` when there is no readable ledger: unknown. */
+  jd_gated?: boolean | null;
+  /**
    * The final gate's BODY-seniority reading: `true` exactly when the judge read the job
    * description as describing a role above the target band.
    *
@@ -340,6 +347,8 @@ export interface QueueCounts {
   last_run_finished: string | null;
 }
 
+export type ApplyRoute = "auto" | "hand" | "unresolved";
+
 export interface QueueResponse {
   /**
    * The APPLY lane: exactly what the top level of `~/boardwatch-queue` holds, and therefore a
@@ -369,6 +378,8 @@ export interface QueueResponse {
    * route to the folder.
    */
   meta?: { reveal_supported: boolean };
+  /** Whether routing is set up here. `problem` names a config or ledger that could not be read. */
+  apply_routes?: { configured: boolean; gate_tracked: boolean; problem: string | null };
 }
 
 /**

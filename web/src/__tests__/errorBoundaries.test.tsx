@@ -82,7 +82,7 @@ describe("render containment", () => {
 
     // FIRST, because this is the claim the reproduction is about: removing this one boundary took
     // the apply list from 408 rows to 0. The COUNT is the assertion, not the grid's presence.
-    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
+    const grid = await screen.findByRole("grid", { name: "No check held these back" });
     expect(dataRows(grid)).toHaveLength(apply.length);
     expect(screen.getByText("The review list could not be drawn.")).toBeTruthy();
     // And the failure was contained BELOW the route, so the view's own card never appeared.
@@ -119,11 +119,11 @@ describe("render containment", () => {
     vi.mocked(getDetail).mockResolvedValue(detail);
 
     render(<App />);
-    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
+    const grid = await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(first(dataRows(grid)));
 
     expect(await screen.findByText("This job could not be drawn.")).toBeTruthy();
-    expect(dataRows(screen.getByRole("grid", { name: "Jobs to explore" }))).toHaveLength(apply.length);
+    expect(dataRows(screen.getByRole("grid", { name: "No check held these back" }))).toHaveLength(apply.length);
     expect(screen.queryByText("This view could not be drawn.")).toBeNull();
   });
 

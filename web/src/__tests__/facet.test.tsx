@@ -75,7 +75,7 @@ afterEach(() => {
 describe("verdict facet", () => {
   it("filters BOTH lanes to eligible, keeping the eligible review lead", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     // Both lists on one page, so the eligible review job is visible BEFORE the facet narrows it.
     fireEvent.click(screen.getByRole("button", { name: /^All jobs/ }));
     const review = screen.getByRole("grid", { name: "Needs review" });
@@ -85,7 +85,7 @@ describe("verdict facet", () => {
     fireEvent.click(screen.getByRole("button", { name: /^eligible 2 —/i }));
 
     // Apply lane: only eligible remains.
-    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
+    const queue = screen.getByRole("grid", { name: "No check held these back" });
     expect(hasRow(queue, "APPLY-ELIGIBLE")).toBe(true);
     expect(hasRow(queue, "APPLY-UNCERTAIN")).toBe(false);
     // Review lane: the eligible lead is STILL shown; the uncertain one is gone. This is the
@@ -97,7 +97,7 @@ describe("verdict facet", () => {
 
   it("leaves the uncertain band count intact after clicking eligible", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     // The uncertain cell reads 3 up front, and the accessible name carries the number.
     expect(screen.getByRole("button", { name: /^uncertain 3 —/i })).toBeTruthy();
 
@@ -113,13 +113,13 @@ describe("verdict facet", () => {
 
   it("clears the facet from the Reset filters control", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(screen.getByRole("button", { name: /^eligible 2 —/i }));
-    expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "APPLY-UNCERTAIN")).toBe(false);
+    expect(hasRow(screen.getByRole("grid", { name: "No check held these back" }), "APPLY-UNCERTAIN")).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
 
-    expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "APPLY-UNCERTAIN")).toBe(true);
+    expect(hasRow(screen.getByRole("grid", { name: "No check held these back" }), "APPLY-UNCERTAIN")).toBe(true);
     expect(
       screen.getByRole("button", { name: /^eligible 2 —/i }).getAttribute("aria-pressed"),
     ).toBe("false");
@@ -127,33 +127,32 @@ describe("verdict facet", () => {
 
   it("REVIEW shows the review list alone and hides the apply list", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(screen.getByRole("button", { name: /^review 2 —/i }));
 
     // Apply queue gone entirely; this fails if REVIEW is treated as a verdict filter.
-    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "No check held these back" })).toBeNull();
     expect(screen.queryByText("APPLY-ELIGIBLE")).toBeNull();
     // Whole review lane shown — both verdicts, since REVIEW selects the lane, not a verdict.
     const review = screen.getByRole("grid", { name: "Needs review" });
     expect(hasRow(review, "REVIEW-ELIGIBLE")).toBe(true);
     expect(hasRow(review, "REVIEW-UNCERTAIN")).toBe(true);
-    // "Showing X of Y" re-scoped to the review list (2 of 2) and says so, not the apply list (5).
-    expect(screen.getByText("Showing 2 of 2 in Needs review")).toBeTruthy();
+    expect(screen.getByText(/^Showing 2 of \d+ in All jobs$/)).toBeTruthy();
   });
 
-  it("choosing Jobs to explore restores the apply list after REVIEW", async () => {
+  it("a second click on REVIEW restores the apply list", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(screen.getByRole("button", { name: /^review 2 —/i }));
     expect(
       screen.getByRole("button", { name: /^review 2 —/i }).getAttribute("aria-pressed"),
     ).toBe("true");
-    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "No check held these back" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Jobs to explore/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^review 2 —/i }));
 
-    expect(screen.getByRole("grid", { name: "Jobs to explore" })).toBeTruthy();
+    expect(screen.getByRole("grid", { name: "No check held these back" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /^review 2 —/i }).getAttribute("aria-pressed"),
     ).toBe("false");

@@ -53,14 +53,14 @@ async function settle(ms = 0): Promise<void> {
 
 /** The apply list's rows, in the order they are on screen. */
 function visibleTitles(): string[] {
-  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  return within(screen.getByRole("grid", { name: "No check held these back" }))
     .getAllByRole("row")
     .filter((row) => row.hasAttribute("data-row-id"))
     .map((row) => within(row).getByText(/Engineer|Analyst/).textContent ?? "");
 }
 
 function rowOf(title: string): HTMLElement {
-  const row = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  const row = within(screen.getByRole("grid", { name: "No check held these back" }))
     .getByText(title)
     .closest('[role="row"]');
   if (row === null) throw new Error(`no row for ${title}`);
@@ -513,7 +513,7 @@ describe("the apply session", () => {
     screen.getByText(/Could not record the application for Alpha Co/);
   });
 
-  it("ends gracefully at the last job in the list, offering the other list when it has work", async () => {
+  it("walks on from the apply lane into the review jobs of the same list", async () => {
     const review = [queueRow({ company: "Held Co", title: "Held Engineer", review_reason: "unevaluated" })];
     await mount([queueRow({ company: "Only Co", title: "Only Engineer" })], review);
     fireEvent.click(screen.getByRole("button", { name: /Start applying/ }));
@@ -522,13 +522,6 @@ describe("the apply session", () => {
     fireEvent.click(screen.getByRole("button", { name: "Record application" }));
     await settle(COLLAPSE_MS);
 
-    screen.getByRole("heading", { name: "That was the last job in this list." });
-    // Two equal choices: carry on in the other list, or stop here.
-    screen.getByRole("button", { name: "Look at jobs that need review (1)" });
-    screen.getByRole("button", { name: "Finish for now" });
-
-    fireEvent.click(screen.getByRole("button", { name: "Look at jobs that need review (1)" }));
-    await settle();
     expect(openTitle()).toBe("Held Engineer");
   });
 

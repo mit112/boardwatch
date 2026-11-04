@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
- * Apply by hand: a fourth list, a bulk move into it from Jobs to explore, a bulk move back out,
+ * Apply by hand: a list, a bulk move into it, a bulk move back out,
  * and ONE write with ONE undo each way. A move lands the rows in ANOTHER list, so the page
  * re-reads the queue after the write — `getQueue` is mocked per call below to play the server.
  */
@@ -58,8 +58,13 @@ const b = queueRow({ company: "Initech", title: "Data Analyst" });
 const c = queueRow({ company: "Acme Corp", title: "Field Technician" });
 
 function withManual(rows: typeof a[], manual: typeof a[]) {
-  const response = queueResponse(rows);
-  return { ...response, manual, counts: { ...response.counts, manual: manual.length } };
+  const response = queueResponse(rows.map((row) => ({ ...row, apply_route: "auto" as const })));
+  return {
+    ...response,
+    manual,
+    counts: { ...response.counts, manual: manual.length },
+    apply_routes: { configured: true, gate_tracked: false, problem: null },
+  };
 }
 
 beforeEach(() => {
@@ -78,12 +83,12 @@ describe("Apply by hand", () => {
     render(<App />);
     await settle();
 
-    expect(titlesIn("Jobs to explore")).toEqual(["Backend Engineer", "Data Analyst"]);
+    expect(titlesIn("No check held these back")).toEqual(["Backend Engineer", "Data Analyst"]);
     expect(lensTab("Apply by hand").getAttribute("aria-label")).toBe("Apply by hand 1");
 
     fireEvent.click(lensTab("Apply by hand"));
-    expect(titlesIn("Apply by hand")).toEqual(["Field Technician"]);
-    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
+    expect(titlesIn("Moved here by you")).toEqual(["Field Technician"]);
+    expect(screen.queryByRole("grid", { name: "No check held these back" })).toBeNull();
   });
 
   it("moves a selection in ONE call, re-reads the queue, and undoes in ONE call", async () => {
@@ -105,12 +110,12 @@ describe("Apply by hand", () => {
     expect(vi.mocked(manualMany)).toHaveBeenCalledWith([a.job_id, c.job_id]);
     // Never a skip: the two are different dimensions on the server.
     expect(vi.mocked(skipMany)).not.toHaveBeenCalled();
-    expect(titlesIn("Jobs to explore")).toEqual(["Data Analyst"]);
+    expect(titlesIn("No check held these back")).toEqual(["Data Analyst"]);
     expect(screen.getByText("Moved to Apply by hand: 2")).toBeTruthy();
 
     // The rows are in the other list, without a reload.
     fireEvent.click(lensTab("Apply by hand"));
-    expect(titlesIn("Apply by hand")).toEqual(["Backend Engineer", "Field Technician"]);
+    expect(titlesIn("Moved here by you")).toEqual(["Backend Engineer", "Field Technician"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
     await settle();
@@ -135,7 +140,7 @@ describe("Apply by hand", () => {
     await settle(COLLAPSE_MS);
 
     expect(vi.mocked(unmanualMany)).toHaveBeenCalledWith([a.job_id]);
-    expect(titlesIn("Apply by hand")).toEqual(["Field Technician"]);
+    expect(titlesIn("Moved here by you")).toEqual(["Field Technician"]);
 
     // The undo is the inverse: back into Apply by hand, in one call.
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -150,7 +155,7 @@ describe("Apply by hand", () => {
     await settle();
 
     fireEvent.click(lensTab("Apply by hand"));
-    const row = within(screen.getByRole("grid", { name: "Apply by hand" }))
+    const row = within(screen.getByRole("grid", { name: "Moved here by you" }))
       .getAllByRole("row")
       .find((candidate) => within(candidate).queryAllByText("Backend Engineer").length > 0);
     if (row === undefined) throw new Error("the manual row is not listed");

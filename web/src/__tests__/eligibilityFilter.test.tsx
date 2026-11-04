@@ -51,7 +51,7 @@ afterEach(() => {
 describe("the apply-first filter", () => {
   it("requires both affirmative verdicts and no known warnings, and composes with search", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(screen.getByRole("button", { name: /^All jobs/ }));
     fireEvent.change(screen.getByRole("combobox", { name: "Eligibility" }), {
       target: { value: "eligible" },
@@ -78,7 +78,7 @@ describe("the apply-first filter", () => {
 
   it("remembers the choice after remounting and resets it with the other filters", async () => {
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.change(screen.getByRole("combobox", { name: "Eligibility" }), {
       target: { value: "eligible" },
     });
@@ -89,7 +89,7 @@ describe("the apply-first filter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     view.unmount();
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     expect(screen.getByRole<HTMLSelectElement>("combobox", { name: "Eligibility" }).value).toBe("eligible");
     expect(screen.queryByText("RULES-ONLY")).toBeNull();

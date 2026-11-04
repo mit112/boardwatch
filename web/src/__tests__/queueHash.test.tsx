@@ -49,7 +49,7 @@ function detailFor(row: QueueRow): QueueDetail {
 }
 
 function queueTitles(): string[] {
-  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  return within(screen.getByRole("grid", { name: "No check held these back" }))
     .getAllByRole("row")
     .filter((row) => row.hasAttribute("data-row-id"))
     .map((row) => within(row).getByText(/RUN-/).textContent ?? "");
@@ -87,7 +87,7 @@ describe("#/queue?run=&lead=", () => {
   it("opens the named lead and filters both lanes to the named run", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // The lead the URL names is open, fetched by id — not merely highlighted. Awaited: the
     // detail fetch is an effect keyed on `selected`, which lands a render after the grid does,
@@ -104,7 +104,7 @@ describe("#/queue?run=&lead=", () => {
   it("clears `lead` on close and keeps `run`", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(await screen.findByRole("button", { name: /close/i }));
 
@@ -115,7 +115,7 @@ describe("#/queue?run=&lead=", () => {
 
   it("writes `lead` into the hash when a row is opened", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(screen.getByText("RUN-4-LEAD"));
 
@@ -125,7 +125,7 @@ describe("#/queue?run=&lead=", () => {
   it("ignores and clears a lead id that is not on the page", async () => {
     window.history.replaceState(null, "", "/#/queue?lead=999999");
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // No pane, no fetch for a lead that is not here, and the stale key is dropped from the URL.
     expect(vi.mocked(getDetail)).not.toHaveBeenCalledWith(999999);
@@ -135,7 +135,7 @@ describe("#/queue?run=&lead=", () => {
   it("drops the run filter from the Show all runs control", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5");
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     expect(queueTitles()).toHaveLength(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Show all runs" }));
@@ -149,7 +149,7 @@ describe("working state across a tab switch", () => {
   it("carries the run filter and the open lead back from the Runs tab", async () => {
     window.history.replaceState(null, "", "/#/queue?run=5&lead=61310");
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     /*
      * The `hashchange` a real browser fires off each of these navigations, dispatched explicitly:
@@ -167,24 +167,22 @@ describe("working state across a tab switch", () => {
     // Both keys are back: the round trip is a navigation, not a reset. The page re-mounts and
     // re-fetches, so the list is awaited rather than read out of the click's own turn.
     expect(window.location.hash).toBe("#/queue?run=5&lead=61310");
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     expect(queueTitles()).toEqual(["RUN-5-LEAD", "RUN-5-OTHER"]);
   });
 
 
   it("restores the search, the ranking-score floor, the list and the reason facet", async () => {
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.change(screen.getByLabelText("Search"), { target: { value: "RUN-5" } });
     fireEvent.change(screen.getByLabelText("Minimum ranking score"), { target: { value: "3" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 1 —/ }));
     view.unmount();
 
     render(<App />);
-    // The reason facet is what says "loaded": it lives on the Needs review list, which is the one
-    // the remount has to land on.
+    // The reason facet is what says "loaded".
     await screen.findByRole("button", { name: /^not evaluated 1 —/ });
 
     expect(screen.getByLabelText("Search")).toHaveProperty("value", "RUN-5");
@@ -196,7 +194,7 @@ describe("working state across a tab switch", () => {
 
   it("restores the sort", async () => {
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.change(screen.getByRole("combobox", { name: "Sort by" }), {
       target: { value: "company:asc" },
@@ -204,7 +202,7 @@ describe("working state across a tab switch", () => {
     view.unmount();
 
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // What the reader is told: the control still reads the choice they made. The row order alone
     // could be matched by the default rank order, so it would prove nothing.

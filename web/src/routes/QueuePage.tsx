@@ -21,6 +21,7 @@ import {
 import type {
   Answers,
   AppliedHistoryResponse,
+  ApplyRoute,
   FollowUpResponse,
   QueueCounts,
   QueueDetail,
@@ -166,6 +167,7 @@ const QUEUE_KEYS = {
   query: "boardwatch.queue.query",
   location: "boardwatch.queue.location",
   lens: "boardwatch.queue.lens",
+  reviewOnly: "boardwatch.queue.reviewOnly",
   minScore: "boardwatch.queue.minScore",
   board: "boardwatch.queue.board",
   mode: "boardwatch.queue.mode",
@@ -196,9 +198,18 @@ const decodeFacet = (raw: string | null): RowFacet | null =>
     ? (raw as RowFacet)
     : null;
 
+const SECTION_CLEAR = "No check held these back";
+const SECTION_MOVED = "Moved here by you";
+
+/* A row from a viewer older than the field reads as `hand`, the route with no promise. */
+const routeOf = (row: QueueRow): ApplyRoute => row.apply_route ?? "hand";
+
 const LENS_KEYS = LENSES.map((entry) => entry.key) as readonly string[];
-const decodeLens = (raw: string | null): Lens | null =>
-  raw !== null && LENS_KEYS.includes(raw) ? (raw as Lens) : null;
+const decodeLens = (raw: string | null): Lens | null => {
+  // A session or saved view from before the route lists; the two lane lists have no successor list.
+  if (raw === "manual") return "hand";
+  return raw !== null && LENS_KEYS.includes(raw) ? (raw as Lens) : null;
+};
 const encodeLens = (value: Lens): string => value;
 const encodeFacet = (value: RowFacet | null): string => value ?? "";
 
@@ -395,18 +406,23 @@ export function QueuePage({
   const [marked, setMarked] = useState<ReadonlySet<number>>(() => new Set());
 
   /*
-   * Which list the page is showing: the jobs to explore (the apply lane), the jobs that need a
-   * review (the review lane), or both. A view of data the server already splits, not a new
-   * classification — and a plain list switch, where the review lane used to be a section folded
-   * shut under the apply table. The default is the apply lane while it has anything in it and the
-   * review lane when it is empty (see `lens` below), so the page never opens on an empty list with
-   * the work one click away.
+   * Which list the page is showing: how each job gets applied to, or every job. A view of what
+   * the server serves, and independent of the review lane, which is a section inside each list.
+   * The default is All jobs, so the page never opens on an empty list with the work one click away.
    */
   const [lensPref, setLensPref] = useSessionState<Lens | null>(
     QUEUE_KEYS.lens,
     null,
     decodeLens,
     (value) => value ?? "",
+  );
+
+  /* Needs review is a filter across the lists now: which lists a job is in does not depend on it. */
+  const [reviewOnly, setReviewOnly] = useSessionState(
+    QUEUE_KEYS.reviewOnly,
+    false,
+    (raw) => raw === "1",
+    (value) => (value ? "1" : ""),
   );
 
   const [query, setQuery] = useSessionState(QUEUE_KEYS.query, "", decodeText, encodeText);
@@ -516,8 +532,16 @@ export function QueuePage({
       (row) => row.posting_id === selected,
     );
 
-  const lens: Lens =
-    lensPref ?? (data !== null && data.rows.length === 0 && data.review.length > 0 ? "review" : "explore");
+  const routing = data?.apply_routes;
+  /* Without routing every job is `hand`, so the lists that only routing can fill are not offered. */
+  const availableLenses: readonly Lens[] = [
+    ...(routing?.configured === true ? (["auto"] as const) : []),
+    "hand",
+    ...(routing?.configured === true ? (["unresolved"] as const) : []),
+    ...(routing?.gate_tracked === true ? (["ungated"] as const) : []),
+    "all",
+  ];
+  const lens: Lens = lensPref !== null && availableLenses.includes(lensPref) ? lensPref : "all";
 
   const knownIds = useRef<Set<number>>(new Set());
 
@@ -842,12 +866,20 @@ export function QueuePage({
 
   const filtered = useMemo(() => (data?.rows ?? []).filter(passesFilters), [data, passesFilters]);
 
+  /* Applied BEFORE the "similar" fold, so a job is never folded under one listed in another list. */
+  const inLens = useCallback(
+    (row: QueueRow) =>
+      lens === "all" || (lens === "ungated" ? row.jd_gated === false : routeOf(row) === lens),
+    [lens],
+  );
+
   const sortedApply = useMemo(() => {
     // The verdict facets narrow it; `null` shows all.
-    const base =
-      facet === null ? filtered : filtered.filter((row) => matchesFacet(row, facet, newIds));
+    const base = (
+      facet === null ? filtered : filtered.filter((row) => matchesFacet(row, facet, newIds))
+    ).filter(inLens);
     return sortRows(base, sort, rankOf);
-  }, [filtered, facet, newIds, sort, rankOf]);
+  }, [filtered, facet, newIds, sort, rankOf, inLens]);
   /* Counted BEFORE the fold, so a folded group's one visible row still says how many it stands
      for. Folding last keeps the best-placed lead of each group, in whatever order is sorting. */
   const similarApply = useMemo(() => similarGroups(sortedApply), [sortedApply]);
@@ -869,16 +901,18 @@ export function QueuePage({
       facet === null
         ? filteredReview
         : filteredReview.filter((row) => matchesFacet(row, facet, newIds));
-    const base =
+    const base = (
       reasonFacet === null
         ? byVerdict
-        : byVerdict.filter((row) => row.review_reason === reasonFacet);
+        : byVerdict.filter((row) => row.review_reason === reasonFacet)
+    ).filter(inLens);
     return sortRows(base, sort, reviewRankOf);
-  }, [filteredReview, facet, reasonFacet, newIds, sort, reviewRankOf]);
+  }, [filteredReview, facet, reasonFacet, newIds, sort, reviewRankOf, inLens]);
   const similarReview = useMemo(() => similarGroups(sortedReview), [sortedReview]);
 
   /*
-   * Apply by hand: the jobs the owner moved out of both lanes to apply to themselves. The same
+   * The jobs the owner moved out of both lanes to apply to themselves, listed under Apply by hand
+   * and All jobs and left out of Not JD-gated. The same
    * filters and verdict facet as the apply lane, in the server's order, and never folded — the
    * owner chose every one of these, so hiding one behind a "similar" fold would hide a decision.
    */
@@ -887,12 +921,13 @@ export function QueuePage({
     [data, passesFilters],
   );
   const visibleManual = useMemo(() => {
+    if (lens !== "hand" && lens !== "all") return [];
     const base =
       facet === null
         ? filteredManual
         : filteredManual.filter((row) => matchesFacet(row, facet, newIds));
     return sortRows(base, sort, () => 0);
-  }, [filteredManual, facet, newIds, sort]);
+  }, [filteredManual, facet, newIds, sort, lens]);
   const visibleReview = useMemo(
     () => (hideSimilar === "" ? sortedReview : firstOfEachGroup(sortedReview)),
     [sortedReview, hideSimilar],
@@ -904,30 +939,28 @@ export function QueuePage({
    * current list, filters, sort and fold — never a re-ranked or re-derived order, and never a job
    * outside the list on screen.
    */
+  const reviewFilterOn = reviewOnly || reasonFacet !== null;
   const navList = useMemo<QueueRow[]>(
-    () =>
-      lens === "explore"
-        ? visible
-        : lens === "review"
-          ? visibleReview
-          : lens === "manual"
-            ? visibleManual
-            : [...visible, ...visibleReview],
-    [lens, visible, visibleReview, visibleManual],
+    () => (reviewFilterOn ? visibleReview : [...visible, ...visibleReview, ...visibleManual]),
+    [reviewFilterOn, visible, visibleReview, visibleManual],
   );
 
   /*
-   * Each list's count is the number of jobs IN THAT LIST matching the search, place and filters —
-   * never a sum across lists that could overlap. The two lanes are disjoint by construction (a job
-   * is in the apply lane or the review lane, never both), which is the only reason "All jobs" may
-   * be their sum.
+   * Each list's count is the number of jobs IN THAT LIST matching the search, place and filters.
+   * The three routes are disjoint, and a moved job is `hand` alone, which is the only reason "All
+   * jobs" may be their sum. Not JD-gated overlaps them and is never added in.
    */
-  const lensCounts: Record<Lens, number> = {
-    explore: filtered.length,
-    review: filteredReview.length,
-    all: filtered.length + filteredReview.length,
-    manual: filteredManual.length,
-  };
+  const lensCounts = useMemo<Record<Lens, number>>(() => {
+    const lanes = [...filtered, ...filteredReview];
+    const routed = (route: ApplyRoute) => lanes.filter((row) => routeOf(row) === route).length;
+    return {
+      auto: routed("auto"),
+      hand: routed("hand") + filteredManual.length,
+      unresolved: routed("unresolved"),
+      ungated: lanes.filter((row) => row.jd_gated === false).length,
+      all: lanes.length + filteredManual.length,
+    };
+  }, [filtered, filteredReview, filteredManual]);
 
   /*
    * THE APPLICATION HISTORY, for the summary's "recorded today / past 7 days". Read once, with a
@@ -1431,8 +1464,15 @@ export function QueuePage({
    * rows the reader can see, rather than a count that includes leads behind a filter they have
    * since turned on.
    */
-  /* The list the selection lives in: Apply by hand has its own, every other list the apply lane's. */
-  const selectable = lens === "manual" ? visibleManual : visible;
+  /* What can be selected: the apply lane's jobs and the moved ones. A review job is held for a look. */
+  const selectable = useMemo(
+    () => (reviewFilterOn ? [] : [...visible, ...visibleManual]),
+    [reviewFilterOn, visible, visibleManual],
+  );
+  const manualIds = useMemo(
+    () => new Set((data?.manual ?? []).map((row) => row.posting_id)),
+    [data],
+  );
   const markedRows = useMemo(
     () => selectable.filter((row) => marked.has(row.posting_id)),
     [selectable, marked],
@@ -1697,9 +1737,9 @@ export function QueuePage({
     (next: ReviewReason) => {
       const clearing = reasonFacet === next;
       setReasonFacet(clearing ? null : next);
-      // A reason belongs to the review lane, so choosing one shows that lane: a filter whose entire
-      // result is on a list that is not on screen would look like an empty page.
-      if (!clearing) setLensPref("review");
+      // A reason narrows to review jobs across the routes, so choosing one shows every route: a
+      // filter whose entire result is on a list that is not on screen would look like an empty page.
+      if (!clearing) setLensPref("all");
     },
     [reasonFacet, setReasonFacet, setLensPref],
   );
@@ -1708,9 +1748,9 @@ export function QueuePage({
   const toggleFacet = useCallback(
     (next: QueueFacet) => {
       if (next === "review") {
-        // A lane, not a row predicate: it is the Needs review list.
+        // A lane, not a row predicate, so it hides the sections instead of filtering their rows.
         setFacet(null);
-        setLensPref(lens === "review" ? "explore" : "review");
+        setReviewOnly(!reviewOnly);
         return;
       }
       const clearing = facet === next;
@@ -1719,7 +1759,7 @@ export function QueuePage({
       // counts jobs across them, and a list that held back half of those would disagree with it.
       if (!clearing) setLensPref("all");
     },
-    [facet, lens, setFacet, setLensPref],
+    [facet, reviewOnly, setFacet, setLensPref, setReviewOnly],
   );
 
   /*
@@ -1742,6 +1782,7 @@ export function QueuePage({
     reason: encodeReason(reasonFacet),
     sort: encodeSort(sort),
     lens: encodeLens(lens),
+    reviewOnly: reviewOnly ? "1" : "",
   };
   const applyView = (view: QueueView) => {
     setQuery(view["query"] ?? "");
@@ -1756,9 +1797,8 @@ export function QueuePage({
     setFacet(decodeFacet(view["facet"] ?? null));
     const reason = decodeReason(view["reason"] ?? null);
     setReasonFacet(reason);
-    setLensPref(
-      reason !== null || view["facet"] === "review" ? "review" : decodeLens(view["lens"] ?? null),
-    );
+    setReviewOnly(view["reviewOnly"] === "1" || view["facet"] === "review" || view["lens"] === "review");
+    setLensPref(reason !== null ? "all" : decodeLens(view["lens"] ?? null));
     setSort(parseSortState(view["sort"] ?? null) ?? { key: "rank", direction: "asc" });
   };
 
@@ -1806,14 +1846,10 @@ export function QueuePage({
       : "Reset the filters above, or loosen one of them.";
 
   const lensLabel = LENSES.find((entry) => entry.key === lens)?.label ?? "Jobs";
+  /* Before the filters, so "Showing X of Y" can say how much a filter is hiding. */
   const laneTotal =
-    lens === "explore"
-      ? data?.rows.length ?? 0
-      : lens === "review"
-        ? data?.review.length ?? 0
-        : lens === "manual"
-          ? data?.manual?.length ?? 0
-          : (data?.rows.length ?? 0) + (data?.review.length ?? 0);
+    [...(data?.rows ?? []), ...(data?.review ?? [])].filter(inLens).length +
+    (lens === "hand" || lens === "all" ? (data?.manual?.length ?? 0) : 0);
 
   /* Jobs due or new across BOTH lists, after the filters — the figures the summary prints. */
   const bothFiltered = useMemo(() => [...filtered, ...filteredReview], [filtered, filteredReview]);
@@ -1842,14 +1878,6 @@ export function QueuePage({
     setSession(null);
     setSessionEnd(null);
   }, [setSession]);
-
-  /* What "keep going" means at the end of a LIST: the other list, when it has anything in it. */
-  const otherList =
-    lens === "explore" && visibleReview.length > 0
-      ? { label: `Look at jobs that need review (${visibleReview.length.toLocaleString()})`, lens: "review" as const, first: visibleReview[0] }
-      : lens === "review" && visible.length > 0
-        ? { label: `Back to jobs to explore (${visible.length.toLocaleString()})`, lens: "explore" as const, first: visible[0] }
-        : null;
 
   /* The neighbours IN THE VISIBLE ORDER, for the workspace's previous and next buttons. */
   const navIndex = selected === null ? -1 : navList.findIndex((row) => row.posting_id === selected);
@@ -1915,10 +1943,10 @@ export function QueuePage({
     );
   }
 
-  const showExplore = lens === "explore" || lens === "all";
-  const showReview = lens === "review" || lens === "all";
-  const showManual = lens === "manual";
   const manualRows = data.manual ?? [];
+  const showExplore = !reviewFilterOn && visible.length > 0;
+  const showReview = visibleReview.length > 0;
+  const showManual = !reviewFilterOn && visibleManual.length > 0;
   const bothEmpty =
     data.rows.length === 0 && data.review.length === 0 && manualRows.length === 0;
 
@@ -1931,7 +1959,7 @@ export function QueuePage({
     return (
       <QueueTable
         label={
-          kind === "explore" ? "Jobs to explore" : kind === "review" ? "Needs review" : "Apply by hand"
+          kind === "explore" ? SECTION_CLEAR : kind === "review" ? "Needs review" : SECTION_MOVED
         }
         rows={rows}
         /* The bulk selection is the apply list's — and Apply by hand's, so a block can be moved
@@ -2021,7 +2049,13 @@ export function QueuePage({
           />
         )}
 
-        <LensTabs lens={lens} onLens={setLens} counts={lensCounts} />
+        <LensTabs lens={lens} onLens={setLens} counts={lensCounts} available={availableLenses} />
+        {routing?.problem == null ? null : (
+          <p role="alert" className="max-w-[72ch] text-sm text-fg-2">
+            Some jobs may be in the wrong list, because a routing file could not be read:{" "}
+            {routing.problem}
+          </p>
+        )}
 
         <QueueToolbar
           query={query}
@@ -2076,7 +2110,9 @@ export function QueuePage({
           onUnmanualSelected={() => {
             moveSelected("unmanual");
           }}
-          bulkFromManual={lens === "manual"}
+          bulkFromManual={
+            markedRows.length > 0 && markedRows.every((row) => manualIds.has(row.posting_id))
+          }
           onClearSelection={clearSelection}
         />
 
@@ -2100,7 +2136,16 @@ export function QueuePage({
 
         {/* Under the controls, because it filters the lists they describe — and only where there
             is a review list to filter. A reason is a lever on the Needs review list. */}
-        {data.review.length === 0 || !showReview ? null : (
+        {data.review.length === 0 ? null : (
+          <div className="flex flex-wrap items-center gap-2">
+          <ReasonChip
+            label="Needs review"
+            count={data.review.length}
+            active={reviewOnly}
+            onToggle={() => {
+              toggleFacet("review");
+            }}
+          />
           <div
             role="group"
             aria-label="Filter by review reason"
@@ -2118,6 +2163,7 @@ export function QueuePage({
                 }}
               />
             ))}
+          </div>
           </div>
         )}
 
@@ -2149,27 +2195,10 @@ export function QueuePage({
         <SessionDone
           kind={sessionEnd}
           count={session?.count ?? 0}
-          keepGoingLabel={
-            sessionEnd === "batch"
-              ? navList.length > 0
-                ? "Keep going"
-                : (otherList?.label ?? null)
-              : (otherList?.label ?? null)
-          }
+          keepGoingLabel={sessionEnd === "batch" && navList.length > 0 ? "Keep going" : null}
           onKeepGoing={() => {
-            if (sessionEnd === "batch" && navList.length > 0) {
-              if (session !== null) setSession({ ...session, batch: null });
-              startSession();
-              return;
-            }
-            if (otherList === null) return;
             if (session !== null) setSession({ ...session, batch: null });
-            setLens(otherList.lens);
-            setSessionEnd(null);
-            if (otherList.first !== undefined) {
-              setActiveId(otherList.first.posting_id);
-              openAndFocus(otherList.first.posting_id);
-            }
+            startSession();
           }}
           onFinish={endSession}
         />
@@ -2185,93 +2214,58 @@ export function QueuePage({
             </p>
           ) : (
             <>
+              {navList.length === 0 ? (
+                <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
+                  No job in this list matches. {emptyHint}
+                </p>
+              ) : null}
+
               {showExplore ? (
-                data.rows.length === 0 ? (
-                  <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
-                    No jobs to explore right now.
-                    {data.review.length === 0
-                      ? ""
-                      : " Every delivered job is in Needs review — that is how the list was split, not an empty run."}
-                  </p>
-                ) : (
-                  <section aria-labelledby="explore-heading">
-                    <h2
-                      id="explore-heading"
-                      className={lens === "all" ? "mb-2 text-base text-fg" : "sr-only"}
-                    >
-                      Jobs to explore
-                    </h2>
-                    {table("explore")}
-                  </section>
-                )
+                <section aria-labelledby="explore-heading">
+                  <h2 id="explore-heading" className="mb-2 text-base text-fg">
+                    {SECTION_CLEAR}
+                  </h2>
+                  {table("explore")}
+                </section>
               ) : null}
 
               {showReview ? (
-                data.review.length === 0 ? (
-                  lens === "review" ? (
-                    <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
-                      Nothing needs review right now.
-                    </p>
-                  ) : null
-                ) : (
-                  /*
-                   * Contained SEPARATELY from the apply list: the review reasons are exactly the
-                   * shape that blanked this page once, and a failure here must not cost the reader
-                   * the list they can act on.
-                   */
-                  <div className={lens === "all" ? "mt-8" : undefined}>
-                    <ErrorBoundary
-                      title="The review list could not be drawn."
-                      hint="The other list is unaffected and still works. These jobs are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
-                      action="Draw the review list again"
-                      resetKeys={[data]}
-                    >
-                      <section aria-labelledby="review-heading">
-                        <h2
-                          id="review-heading"
-                          className={lens === "all" ? "mb-1 text-base text-fg" : "sr-only"}
-                        >
-                          Needs review
-                        </h2>
-                        <p className="mb-2 max-w-[72ch] text-sm text-fg-2">
-                          {reviewLaneSentence(data.review)} Same split as the{" "}
-                          <code className="font-mono text-fg-3">_review</code> folder.
-                        </p>
-                        {visibleReview.length === 0 ? (
-                          <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
-                            No job in this list matches. There are{" "}
-                            {data.review.length.toLocaleString()} in it.
-                          </p>
-                        ) : (
-                          table("review")
-                        )}
-                      </section>
-                    </ErrorBoundary>
-                  </div>
-                )
+                /*
+                 * Contained SEPARATELY from the apply list: the review reasons are exactly the
+                 * shape that blanked this page once, and a failure here must not cost the reader
+                 * the list they can act on.
+                 */
+                <div className={showExplore ? "mt-8" : undefined}>
+                  <ErrorBoundary
+                    title="The review list could not be drawn."
+                    hint="The other list is unaffected and still works. These jobs are on disk too, in the queue directory's `_review` folder, so nothing about them is lost."
+                    action="Draw the review list again"
+                    resetKeys={[data]}
+                  >
+                    <section aria-labelledby="review-heading">
+                      <h2 id="review-heading" className="mb-1 text-base text-fg">
+                        Needs review
+                      </h2>
+                      <p className="mb-2 max-w-[72ch] text-sm text-fg-2">
+                        {reviewLaneSentence(data.review)} Same split as the{" "}
+                        <code className="font-mono text-fg-3">_review</code> folder.
+                      </p>
+                      {table("review")}
+                    </section>
+                  </ErrorBoundary>
+                </div>
               ) : null}
 
               {showManual ? (
-                manualRows.length === 0 ? (
-                  <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
-                    Nothing is set aside to apply by hand. Select jobs in Jobs to explore and
-                    choose Move to manual.
-                  </p>
-                ) : (
-                  <section aria-labelledby="manual-heading">
-                    <h2 id="manual-heading" className="sr-only">
-                      Apply by hand
-                    </h2>
-                    {visibleManual.length === 0 ? (
-                      <p className="rounded-md bg-surface p-6 text-sm text-fg-2 shadow-card">
-                        No job in this list matches. There are{" "}
-                        {manualRows.length.toLocaleString()} in it.
-                      </p>
-                    ) : (
-                      table("manual")
-                    )}
-                  </section>
-                )
+                <section
+                  aria-labelledby="manual-heading"
+                  className={showExplore || showReview ? "mt-8" : undefined}
+                >
+                  <h2 id="manual-heading" className="mb-2 text-base text-fg">
+                    {SECTION_MOVED}
+                  </h2>
+                  {table("manual")}
+                </section>
               ) : null}
             </>
           )}
@@ -2444,7 +2438,7 @@ export function QueuePage({
             counts={bandCounts}
             newSince={newTotal}
             reviewNote={`${reviewLaneSentence(data.review)} Click to show only this list.`}
-            activeFacet={facet === null && lens === "review" ? "review" : facet}
+            activeFacet={facet === null && reviewOnly ? "review" : facet}
             onToggleFacet={toggleFacet}
           />
         </div>

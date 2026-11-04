@@ -39,7 +39,7 @@ import { App } from "../App";
 const COLLAPSE_MS = 200;
 
 function grid(): HTMLElement {
-  return screen.getByRole("grid", { name: "Jobs to explore" });
+  return screen.getByRole("grid", { name: "No check held these back" });
 }
 
 function dataRows(): HTMLElement[] {

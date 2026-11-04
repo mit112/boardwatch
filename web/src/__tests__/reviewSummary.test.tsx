@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { REASON_PLAIN } from "../lib/jobStatus";
@@ -92,8 +92,7 @@ describe("the generated review sentence", () => {
   it("reaches the page, replacing the two hand-written reasons", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], rows));
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     expect(
       screen.getByText(/6 held for a look: 3 not evaluated, 2 role unconfirmed, 1 outside the US/),
@@ -107,7 +106,7 @@ describe("the generated review sentence", () => {
   it("generates the band's review tooltip from the same counts", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], rows));
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     const note = screen.getByTitle(/held for a look/i);
     expect(note.getAttribute("title") ?? "").toContain(

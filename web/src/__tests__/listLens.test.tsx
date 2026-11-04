@@ -4,13 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { queueResponse, queueRow } from "../test/rows";
 
 /*
- * Which list the page opens on: Jobs to explore (the apply lane), Needs review (the review lane),
- * or All jobs.
- *
- * Jobs to explore is right while there is an apply list to work down. It is wrong when that list
- * is EMPTY: the page would open on "nothing here" with the work one click away, every day the
- * engine version moves. So the default follows the work, and a stored choice outranks it — the
- * reader who picked a list did so on purpose, and it survives a tab round trip and a reload.
+ * Which list the page opens on: All jobs, unless a stored choice names a list this machine offers.
  */
 
 vi.mock("../api/client", () => ({
@@ -48,65 +42,72 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const ROUTED = { configured: true, gate_tracked: true, problem: null };
+
+function routed(rows = [queueRow({ title: "AUTO-ROW", apply_route: "auto" })]) {
+  return { ...queueResponse(rows, REVIEW), apply_routes: ROUTED };
+}
+
 describe("which list the page opens on", () => {
-  it("opens on Needs review when the apply list is empty", async () => {
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([], REVIEW));
+  it("opens on All jobs, with both lanes as sections", async () => {
+    vi.mocked(getQueue).mockResolvedValue(routed());
     render(<App />);
 
-    // No click: the rows must be on screen as the page settles.
     expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
+    expect(screen.getByRole("grid", { name: "No check held these back" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^All jobs/ }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("honours a stored list", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "auto");
+    vi.mocked(getQueue).mockResolvedValue(routed());
+    render(<App />);
+
+    expect(await screen.findByRole("grid", { name: "No check held these back" })).toBeTruthy();
+    expect(screen.queryByRole("grid", { name: "Needs review" })).toBeNull();
+  });
+
+  it("carries a stored Apply by hand from before the route lists", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "manual");
+    vi.mocked(getQueue).mockResolvedValue(routed());
+    render(<App />);
+
+    await screen.findByRole("grid", { name: "Needs review" });
     expect(
-      screen.getByRole("button", { name: /^Needs review/ }).getAttribute("aria-pressed"),
+      screen.getByRole("button", { name: /^Apply by hand/ }).getAttribute("aria-pressed"),
     ).toBe("true");
-  });
-
-  it("opens on Jobs to explore when it has rows, leaving the review list one click away", async () => {
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
-    render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-
-    expect(screen.queryByRole("grid", { name: "Needs review" })).toBeNull();
-    // Not hidden: the list's button carries its count, scoped by its own name.
-    expect(screen.getByRole("button", { name: /^Needs review 2$/ })).toBeTruthy();
-  });
-
-  it("lets a stored choice beat the empty-list default", async () => {
-    window.sessionStorage.setItem("boardwatch.queue.lens", "explore");
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([], REVIEW));
-    render(<App />);
-    await screen.findByText("No jobs to explore right now.", { exact: false });
-
-    // The reader chose it on purpose; the default must not move them under their own hands.
-    expect(screen.queryByRole("grid", { name: "Needs review" })).toBeNull();
-  });
-
-  it("shows both lists under a stored All jobs", async () => {
-    window.sessionStorage.setItem("boardwatch.queue.lens", "all");
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
-    render(<App />);
-
-    expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
-    expect(screen.getByRole("grid", { name: "Jobs to explore" })).toBeTruthy();
   });
 
   it("ignores a stored list this bundle does not know, instead of showing nothing", async () => {
     window.sessionStorage.setItem("boardwatch.queue.lens", "a_list_from_a_newer_bundle");
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
+    vi.mocked(getQueue).mockResolvedValue(routed());
     render(<App />);
 
-    expect(await screen.findByRole("grid", { name: "Jobs to explore" })).toBeTruthy();
+    expect(await screen.findByRole("grid", { name: "No check held these back" })).toBeTruthy();
+  });
+
+  it("falls back to All jobs when a stored list is not offered on this machine", async () => {
+    window.sessionStorage.setItem("boardwatch.queue.lens", "auto");
+    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow({ title: "PLAIN" })]));
+    render(<App />);
+
+    expect(await screen.findByRole("grid", { name: "No check held these back" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^All jobs/ }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("records the choice, so the next mount honours it", async () => {
-    vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], REVIEW));
+    vi.mocked(getQueue).mockResolvedValue(routed());
     const view = render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
-    expect(window.sessionStorage.getItem("boardwatch.queue.lens")).toBe("review");
+    fireEvent.click(screen.getByRole("button", { name: /^Auto-apply/ }));
+    expect(window.sessionStorage.getItem("boardwatch.queue.lens")).toBe("auto");
     view.unmount();
 
     render(<App />);
-    expect(await screen.findByRole("grid", { name: "Needs review" })).toBeTruthy();
+    await screen.findByRole("grid", { name: "No check held these back" });
+    expect(
+      screen.getByRole("button", { name: /^Auto-apply/ }).getAttribute("aria-pressed"),
+    ).toBe("true");
   });
 });
