@@ -286,7 +286,8 @@ no_employer_statuses = ["none"]
 | On an `auto_hosts` host | Auto-apply |
 | On an `unresolved_hosts` host, with no finished check | Link not resolved |
 | On an `unresolved_hosts` host, check found no employer link | Auto-apply on a `native_fill_hosts` host, otherwise Apply by hand |
-| Carries an `unresolved_url_markers` fragment | Link not resolved |
+| Carries an `unresolved_url_markers` fragment, with no finished check | Link not resolved |
+| Carries an `unresolved_url_markers` fragment, check found no employer link | Apply by hand |
 | Missing or unreadable | Link not resolved |
 | Anything else | Apply by hand |
 

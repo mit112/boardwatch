@@ -74,7 +74,7 @@ function BulkBar({
           type="button"
           onClick={onUnmanual}
           aria-label={`Move back ${count.toLocaleString()} selected ${count === 1 ? "job" : "jobs"}`}
-          title="Return every selected job to Jobs to explore or Needs review. One write, undoable from the toast."
+          title="Return every selected job to the list its apply link belongs in. One write, undoable from the toast."
           className={button}
         >
           Move back {count.toLocaleString()}

@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A company page with no form to find goes to Apply by hand.** A link carrying an `unresolved_url_markers` fragment
+  leaves Link not resolved once its check finishes with no employer link. Tooltips no longer name the removed
+  Jobs to explore list (D-668).
+
 - **Lever postings now keep their requirements.** The stored job text left out Lever's `lists` section, which is
   where employers put requirements and qualifications, so the rules, the judge and tailoring read partial text. In
   a sample of 1,023 live postings, 94% had that section and average text grew from 3,566 to 5,789 characters.

@@ -79,7 +79,8 @@ class ApplyRoutes:
             return ApplyRoute.AUTO
         lowered = apply_url.lower()
         if any(marker.lower() in lowered for marker in config.unresolved_url_markers):
-            return ApplyRoute.UNRESOLVED
+            finished = self.link_status.get(posting_id) in config.no_employer_statuses
+            return ApplyRoute.HAND if finished else ApplyRoute.UNRESOLVED
         return ApplyRoute.HAND
 
 
