@@ -632,6 +632,12 @@ AND are entailed by the profile, and renders. Anything else falls back to the st
 résumé for `--posting` under `--scorer`, to `--out`. Needs an approved projection
 declaration; approval is granted on a terminal and used durably.""",
     ),
+    "sponsors build": Entry(
+        ("writes files",),
+        """Builds `sponsors.json` in the config directory from US DOL LCA disclosure `.xlsx` files,
+streaming them. Counts only H-1B rows with status exactly `Certified`. Opens no store. A record
+means an employer was seen filing; no record never means it does not sponsor.""",
+    ),
     # ---- the profile bundle (files under --bundle; no store) --------------------------------
     "profile-bundle init": Entry(
         ("writes files",),

@@ -29,6 +29,7 @@ from boardwatch.cli.scan_cmd import scan as _scan
 from boardwatch.cli.seeds_cmd import seeds as _seeds
 from boardwatch.cli.settings_cmd import settings_app
 from boardwatch.cli.show_cmd import show as _show
+from boardwatch.cli.sponsors_cmd import sponsors_app
 from boardwatch.cli.stats_cmd import stats as _stats
 from boardwatch.cli.tailor_cmd import tailor_app
 from boardwatch.cli.top_cmd import top as _top
@@ -107,6 +108,7 @@ app.command("seeds", rich_help_panel=ADVANCED)(_seeds)
 app.add_typer(identities_app, name="identities", rich_help_panel=ADVANCED)
 app.add_typer(postings_app, name="postings", rich_help_panel=ADVANCED)
 app.add_typer(ledger_app, name="ledger", rich_help_panel=ADVANCED)
+app.add_typer(sponsors_app, name="sponsors", rich_help_panel=ADVANCED)
 app.command("verify", rich_help_panel=ADVANCED)(_verify)
 app.add_typer(profile_bundle_app, name="profile-bundle", rich_help_panel=ADVANCED)
 app.add_typer(resume_app, name="resume", rich_help_panel=ADVANCED)
