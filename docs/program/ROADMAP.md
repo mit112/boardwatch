@@ -45,6 +45,8 @@ profile or the résumé gate no longer restarts anything. The frozen-day count r
 
 ## What is deliberately NOT on the path
 
+- **Overnight form filling.** Deferred. The existing unattended agent runs over untrusted pages with secrets reachable, and stopping at Submit does not prevent a leak, so it needs a sandbox first.
+- **Reading job-search email for application outcomes.** Deferred. If built, it is opt-in. The unsolved part is matching an email to the exact job id.
 - **More eligibility-engine batches.** Batches 7–10 changed 880 verdicts and none of those postings was ever delivered;
   the slate cap binds (D-532), and every batch restarted the 14 days. Parked: T239, T240, T241c, T242, T244, T249 (D-598).
 - **Discovery / coverage work** (new lanes, boards, LinkedIn tracks): the slate cap binds (D-532); read
