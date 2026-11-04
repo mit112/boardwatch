@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Find more ATS boards, keep direct-apply leads on the slate, and see H-1B filing history.**
+  `companies discover-crawl` proposes unwatched boards from the Common Crawl index for review before
+  `companies import` (D-673). `slate_direct_share`, off by default, holds a share of each rank tier for
+  leads whose link goes straight to a form your fill tool handles (D-674). `sponsors build` turns public
+  DOL LCA files into a local index: for a profile that needs sponsorship, it breaks near-ties and shows
+  an `H-1B filer` badge, and it never changes a verdict (D-675).
+
 - **Repeated dead-board alerts are grouped, and runs can follow ATS moves.** After a board returns
   404 on three consecutive pipeline scans, `run` replaces its per-board error with one grouped
   alert and lists every such board in the funnel. Failure counts stay the same. Set
