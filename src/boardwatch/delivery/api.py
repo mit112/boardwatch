@@ -82,6 +82,7 @@ from boardwatch.delivery.answers import (
     AnswersPanel,
     load_answers,
 )
+from boardwatch.delivery.apply_routes import ApplyRoute, load_apply_routes
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
@@ -327,7 +328,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     apply_rows = sorted((r for r in kept if lanes[r.posting_id] == ""), key=rank_key)
     review_rows = sorted((r for r in kept if lanes[r.posting_id] != ""), key=rank_key)
     manual_rows.sort(key=rank_key)
-    return {
+    payload: dict[str, Any] = {
         "rows": [
             _row_json(
                 row,
@@ -377,6 +378,24 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
     }
+    # Read per request like the rest of this payload: job-apps rewrites these ledgers during a pass.
+    routes = load_apply_routes(ctx.settings.config_dir)
+    for lane in ("rows", "review"):
+        for served in payload[lane]:
+            served["apply_route"] = routes.route(
+                posting_id=served["posting_id"], apply_url=served["apply_url"]
+            ).value
+            served["jd_gated"] = routes.jd_gated(served["posting_id"])
+    # The owner's move outranks the URL, whatever host the link is on. It stays until moved back.
+    for served in payload["manual"]:
+        served["apply_route"] = ApplyRoute.HAND.value
+        served["jd_gated"] = routes.jd_gated(served["posting_id"])
+    payload["apply_routes"] = {
+        "configured": routes.configured,
+        "gate_tracked": routes.gated is not None,
+        "problem": routes.problem,
+    }
+    return payload
 
 
 def _rejected(row: QueueRow) -> bool:

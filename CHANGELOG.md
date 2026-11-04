@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The queue API says how each job gets applied to.** Every row carries `apply_route` (`auto`, `hand` or
+  `unresolved`) and `jd_gated`, read from an optional `apply-routes.toml` in the config directory and the
+  ledgers it names. Without the file, every job is `hand` and `jd_gated` is unknown. This is a label only and
+  fills nothing (D-666).
+
 - **A dead posting on the shortlist now closes itself.** The probe that withholds a lead as gone also counts
   as a strike toward the existing two-strike close, under the same rules as the death sweep: unwatched
   postings only, never a listing-path provider, two strikes at least the TTL apart, and any live answer
