@@ -9,7 +9,7 @@ in-process top path the perf smoke benchmarks (§6.3-7).
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import cast
@@ -28,6 +28,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import LedgerRow
 from boardwatch.core.posting_identity import normalized_locations
 from boardwatch.core.settings import Settings
+from boardwatch.delivery.apply_routes import load_apply_routes
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.eligibility.facts import ProfileRowInvalid
@@ -520,6 +521,47 @@ def _entry_body_marked(
     return marked
 
 
+def interleave_direct(
+    ranked: Sequence[RankedPosting],
+    is_direct: Callable[[RankedPosting], bool],
+    share: float,
+) -> list[RankedPosting]:
+    """Reserve `share` of each tier's positions for direct-apply leads, by REORDERING only.
+
+    Walks one tier at a time over a list already sorted by `(tier, -score)`. At position `p` of
+    a tier it takes the next direct lead while `direct_taken < share * (p + 1)` and direct leads
+    remain, and otherwise the best remaining lead of either kind. Each kind keeps its own order,
+    so a shortage of direct leads leaves the slots to the rest and no slot goes unused.
+
+    It never moves a lead across a tier (`runner._slate_size` reads tier 0-1 as a prefix of the
+    list) and never drops one, so every filter, counter and refill after it sees the same
+    postings: only their order differs. At `share <= 0` the input order is returned unchanged.
+    """
+    if share <= 0:
+        return list(ranked)
+    out: list[RankedPosting] = []
+    start = 0
+    while start < len(ranked):
+        stop = start
+        while stop < len(ranked) and ranked[stop].tier == ranked[start].tier:
+            stop += 1
+        # (index in the tier, lead): the index lets "best remaining" compare the two queues' heads.
+        direct = [(i, r) for i, r in enumerate(ranked[start:stop]) if is_direct(r)]
+        rest = [(i, r) for i, r in enumerate(ranked[start:stop]) if not is_direct(r)]
+        d = o = 0
+        for position in range(stop - start):
+            if d < len(direct) and (
+                d < share * (position + 1) or o >= len(rest) or direct[d][0] < rest[o][0]
+            ):
+                out.append(direct[d][1])
+                d += 1
+            else:
+                out.append(rest[o][1])
+                o += 1
+        start = stop
+    return out
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -942,6 +984,31 @@ def rank_open_postings(
 
     scored = [replace(r, tier=_rank_tier(r)) for r in scored]
     scored.sort(key=lambda r: (r.tier, -r.score.total))
+    if settings.slate_direct_share > 0:
+        # Reorders WITHIN each tier only; every filter, counter and refill below is untouched.
+        # `postings.url` is the link the queue page routes by (`apply_url`), so it is the one
+        # tested here; `employer_url` is only requisition-twin evidence and is not the link.
+        routes = load_apply_routes(settings.config_dir)
+        if routes.problem is not None or not routes.configured:
+            output_console.print(
+                f"slate_direct_share {settings.slate_direct_share:g} is inert: "
+                + (routes.problem or "no apply-routes.toml in the config directory")
+            )
+        else:
+            reordered = interleave_direct(
+                scored,
+                lambda r: routes.is_direct_auto(posting_urls[r.posting_id][0]),
+                settings.slate_direct_share,
+            )
+            moved = sum(a is not b for a, b in zip(scored, reordered, strict=True))
+            direct_in_limit = sum(
+                routes.is_direct_auto(posting_urls[r.posting_id][0]) for r in reordered[:limit]
+            )
+            output_console.print(
+                f"slate_direct_share {settings.slate_direct_share:g}: {moved} of {len(scored)} "
+                f"positions moved; {direct_in_limit} direct in the first {limit}"
+            )
+            scored = reordered
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
     # rows instead of losing an eligible posting that ranks just below an ineligible one. An
     # unevaluated posting (verdict None) is never hidden (D-P2-10). The hidden count spans the

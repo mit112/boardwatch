@@ -72,6 +72,9 @@ _CONFIG_RELEVANT: frozenset[str] = frozenset(
         # derived from `config_hash`, so changing the TTL marks every permanent disposition
         # stale. Harmless by design — stale is reported, never auto-reopened (design §2.4).
         "seen_ttl_days",
+        # Which leads fill the slate: the direct share reorders each tier, so it changes which
+        # postings reach the delivered list on a given run.
+        "slate_direct_share",
     }
 )
 _CONFIG_IRRELEVANT: frozenset[str] = frozenset(

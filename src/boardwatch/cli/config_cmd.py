@@ -251,6 +251,13 @@ _SCALAR_KEYS: dict[str, tuple[Callable[[str], Any], str, str]] = {
         "leads); above gate.depth the gate judges up to this many leads per run (seat cost), "
         "≥0 (0 = exactly --top)",
     ),
+    "slate_direct_share": (
+        float,
+        "next run",
+        "share of each ranked tier given to leads whose apply link goes straight to a form "
+        "the fill tool handles (apply-routes.toml auto_hosts); reorders within a tier only, "
+        "[0,1] (0 = rank by score alone)",
+    ),
 }
 _WEIGHT_KEYS = {"skill_coverage", "title_match", "recency", "location_fit"}
 

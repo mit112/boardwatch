@@ -117,6 +117,10 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     # is the ranker's tier rule, already profile-driven — it encodes no view about roles,
     # seniority, geography or field.
     "Settings.slate_ceiling": 0,
+    # 0.0 ranks by score alone, byte-for-byte. Neutral by construction: it names no host, role,
+    # seniority, geography or field - which links count as direct is the owner's own
+    # `apply-routes.toml`, and without one the setting does nothing.
+    "Settings.slate_direct_share": 0.0,
     "Settings.weights": {
         "skill_coverage": 0.5,
         "title_match": 0.25,
@@ -227,6 +231,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "Settings.death_probe_ttl_hours": "operational",
     "Settings.form_question_fetch_budget": "operational",
     "Settings.slate_ceiling": "operational",
+    "Settings.slate_direct_share": "operational",
     "Settings.weights": "preference",
     "Settings.llm": "capability",
     "RankWeights.skill_coverage": "preference",
