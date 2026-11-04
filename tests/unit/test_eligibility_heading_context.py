@@ -238,7 +238,8 @@ INLINE_TWINS: list[tuple[str, str]] = [
 # body above, both scopes, in order. Recorded against the UNCHANGED splitter.
 # D-651: moved by the 17 corpus bodies it added, not by split_units, which reproduces d06c2bacea4c
 # over the previous corpus unchanged.
-SPLIT_UNITS_DIGEST = "1c53c5012ad04279c11c0cfc177139251edd70bb73f68b6d584e84deb424d0d0"
+# D-672: moved by its added corpus bodies; `src/` changes only `rules.yaml`, not `split_units`.
+SPLIT_UNITS_DIGEST = "085608f5d6e227aae3a768a5edd7bf5665e16b7daddc4353fa853607b0736dc2"
 
 
 @pytest.fixture(scope="module")

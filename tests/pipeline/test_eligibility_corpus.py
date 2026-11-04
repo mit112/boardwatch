@@ -5,6 +5,11 @@ verdict and requirement rows were captured from proto.evaluate and cross-checked
 EQUAL to the production evaluate at generation time (AC4). Regenerate with
 scratchpad/gen_corpus.py; do NOT hand-edit.
 
+D-672 cases m1290-m1303 and m1306-m1310 cover higher degrees offered as alternatives,
+other higher-degree mentions, and mixed alternatives. A higher mention stands the
+bachelor bar down unless directly preceded by `or` and an optional article. m1291 and
+m1293-m1296 were revised; m1288-m1289 are unchanged. Expectations are hand-written from the rule.
+
 SEVENTEEN rows were ADDED and ONE RE-BASELINED 2026-10-28 for D-651, the bare list-item degree bar
 (`bachelor_in_field_listed` and its carried preference). m1273-m1275 and m1281-m1282 are the bar itself (met,
 coordinated, `or above`, no degree, an unrelated field), m1277 its Preferred-heading carry and m1280 its
@@ -1648,6 +1653,25 @@ CASES: list[tuple] = [
     ('m1287:D-651 Codex r1 `Nice to haves:` is no recognised hedge heading, and the bar still only abstains', "Nice to haves:\n- Bachelor's degree in Computer Science.", {'highest_degree': 'none'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', [['degree:bachelor_in_field_listed', 'required', 'unknown']]),
     ('m1288:D-651 Codex r2 a conjoined higher level stands the bare bar down', "Minimum Qualifications:\n- Bachelor's degree in Computer Science and a PhD in Computer Science.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
     ('m1289:D-651 Codex r2 the bare row joins no exclusive group, so a doctorate bar in the next item still rejects', "Minimum Qualifications:\n- Bachelor's degree in Computer Science.\n- A PhD is required.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'ineligible', [['degree:bachelor_in_field_listed', 'required', 'met'], ['degree:doctorate_required', 'required', 'unmet']]),
+    ('m1290:D-672 or a Masters degree after the field keeps the bachelor bar', "Minimum Qualifications:\n- Bachelor's degree in Computer Science or a Master's degree in Computer Science.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1291:D-672 or Masters without an article keeps the bachelor bar', "Bachelor's degree in Computer Science or Master's degree in Computer Science.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1292:D-672 or PhD keeps the bachelor bar', "Bachelor's degree in Computer Science or PhD in Computer Science.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1293:D-672 and a Masters stands the bachelor bar down', "Bachelor's degree in CS and a Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1294:D-672 and a Masters or PhD stands the bachelor bar down', "Bachelor's degree in CS and a Master's or PhD in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1295:D-672 a separate Masters preference stands the bachelor bar down', "Bachelor's degree in CS; Master's degree preferred", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:degree_preferred', 'preferred', 'met']]),
+    ('m1296:D-672 CONTROL an earlier or does not waive a conjoined PhD', "Bachelor's degree in CS or a Master's degree in CS and a PhD in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1297:D-672 and/or alternative', "Bachelor's degree in Computer Science and/or a Master's degree in Computer Science.", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1298:D-672 plus', "Bachelor's degree in CS plus a Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1299:D-672 with', "Bachelor's degree in CS with a Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1300:D-672 as well as', "Bachelor's degree in CS as well as a Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1301:D-672 along with', "Bachelor's degree in CS along with a Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1302:D-672 comma', "Bachelor's degree in CS, Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1303:D-672 semicolon', "Bachelor's degree in CS; Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
+    ('m1306:D-672 advanced preference', "Bachelor's in CS; advanced degree preferred", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:degree_preferred', 'preferred', 'met']]),
+    ('m1307:D-672 or an advanced degree', "Bachelor's degree in CS or an advanced degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1308:D-672 uppercase OR', "Bachelor's degree in CS OR PhD in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1309:D-672 alternative with extra whitespace', "Bachelor's degree in CS or  a  Master's degree in CS", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'eligible', [['degree:bachelor_in_field_listed', 'required', 'met']]),
+    ('m1310:D-672 parenthesized article', "Bachelor's degree in CS (a Master's degree in CS)", {'highest_degree': 'bachelor', 'field_of_study': 'computer_science'}, {'work_auth': 'blocker', 'experience_years': 'blocker', 'clearance': 'blocker', 'degree': 'blocker'}, 'uncertain', []),
 ]
 
 
@@ -1667,4 +1691,4 @@ def test_corpus_case(catalog, label, body, facts, policy, verdict, rows) -> None
 
 
 def test_the_corpus_is_complete() -> None:
-    assert len(CASES) == 1288
+    assert len(CASES) == 1307

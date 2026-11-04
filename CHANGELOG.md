@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A higher degree offered with `or` keeps the listed bachelor's qualification.** A bachelor's
+  holder in the named field now meets "Bachelor's degree in Computer Science or a Master's
+  degree in Computer Science." A higher degree still stands the bare bachelor rule down unless
+  directly preceded by `or` and an optional article. Any other higher mention stands it down,
+  including a preference after a semicolon.
+  This rules change invalidates cached eligibility inputs (D-672).
+
 - **Repeated dead-board alerts are grouped, and runs can follow ATS moves.** After a board returns
   404 on three consecutive pipeline scans, `run` replaces its per-board error with one grouped
   alert and lists every such board in the funnel. Failure counts stay the same. Set
