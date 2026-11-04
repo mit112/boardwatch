@@ -582,7 +582,9 @@ def _active_sponsor_index(
     index = load_sponsor_index(settings.config_dir)
     if index.problem is not None:
         if (settings.config_dir / SPONSORS_FILENAME).exists():
-            output_console.print(f"sponsor history tie-break is inert: {index.problem}")
+            output_console.print(
+                f"sponsor history tie-break is inert: {index.problem}", markup=False
+            )
         return None
     return index if index.records else None
 
