@@ -152,10 +152,11 @@ Every command whose entry says `reads store` or `writes store` opens the SQLite 
 `(default context: applies pending schema migrations first)` on a command's effect line is the
 only thing that says it migrates UP FRONT; a command without that note either migrates later
 (`scan` and `run`, inside the scan lock) or not at all (`doctor`, `coverage`, `seeds`,
-`companies discover`, `companies discover-grnh`, `web`). `show`, `stats` and `export` backfill
-extractions and eligibility verdicts on the way to their readout. `top` records what it surfaced,
-which is the part `--no-record` skips. `doctor` writes board health. So there is no boardwatch
-command that inspects a store and leaves it byte-identical, except the ones marked `pure`.
+`companies discover`, `companies discover-grnh`, `companies discover-crawl`, `web`). `show`,
+`stats` and `export` backfill extractions and eligibility verdicts on the way to their readout.
+`top` records what it surfaced, which is the part `--no-record` skips. `doctor` writes board
+health. So there is no boardwatch command that inspects a store and leaves it byte-identical,
+except the ones marked `pure`.
 
 To look at a store the person must keep pristine — a live store another process is writing, or
 one a newer boardwatch owns — do not run a command against it. Read the file yourself:
@@ -400,6 +401,14 @@ nothing by itself: review, then `companies import`.""",
         """Proposes Greenhouse boards from stored `grnh.se` seeds, for review; `--out` writes the
 proposal. It reaches the network: resolving a `grnh.se` short link means fetching it. Opens the
 store without migrating (no migration). Watches nothing by itself.""",
+    ),
+    "companies discover-crawl": Entry(
+        ("network", "reads store", "writes files"),
+        """Proposes unwatched Greenhouse and Ashby boards (`--provider` adds Workable and
+SmartRecruiters) from the Common Crawl index, each probed through its real provider and kept only
+if a posting passes your role gate; `--out` writes the proposal. Slow: one request a second to
+Common Crawl and one worker per provider host. Opens the store without migrating (no migration).
+Watches nothing by itself: review, then `companies import`.""",
     ),
     "companies unscanned": Entry(
         ("reads store", "writes files"),
