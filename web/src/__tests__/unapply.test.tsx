@@ -38,7 +38,7 @@ import { App } from "../App";
 const COLLAPSE_MS = 200;
 
 function dataRows(): HTMLElement[] {
-  return within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  return within(screen.getByRole("grid", { name: "No check held these back" }))
     .getAllByRole("row")
     .filter((element) => element.hasAttribute("data-row-id"));
 }
@@ -64,7 +64,7 @@ async function applyFirstRow() {
   await act(async () => {
     await vi.advanceTimersByTimeAsync(0);
   });
-  const row = within(screen.getByRole("grid", { name: "Jobs to explore" }))
+  const row = within(screen.getByRole("grid", { name: "No check held these back" }))
     .getByText("Backend Engineer")
     .closest('[role="row"]');
   if (row === null) throw new Error("no row for the first job");

@@ -68,9 +68,7 @@ afterEach(() => {
 describe("the reason facet", () => {
   it("offers one chip per reason present, in count order, with its count", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    // A reason is a lever on the Needs review list, so the chips live there.
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     const chips = within(screen.getByRole("group", { name: /review reason/i })).getAllByRole(
       "button",
@@ -83,21 +81,19 @@ describe("the reason facet", () => {
 
   it("filters the review list to that reason and takes the apply lane off the page", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
 
     // Selecting a reason shows the list it filters, or the page would look empty.
     expect(reviewTitles()).toEqual(["UNEVAL-A", "UNEVAL-B", "UNEVAL-C"]);
-    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "No check held these back" })).toBeNull();
     expect(screen.queryByText("APPLY-ONE")).toBeNull();
   });
 
   it("composes with the verdict facet", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
     fireEvent.click(screen.getByRole("button", { name: /^eligible 2 —/i }));
@@ -108,8 +104,7 @@ describe("the reason facet", () => {
 
   it("leaves the band's counts alone, so the next chip is still clickable", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
 
@@ -123,8 +118,7 @@ describe("the reason facet", () => {
 
   it("clears on a second click, showing every held job again", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(screen.getByRole("button", { name: /^not evaluated 3 —/ }));
     expect(reviewTitles()).toHaveLength(3);
 
@@ -136,7 +130,7 @@ describe("the reason facet", () => {
   it("offers no chips when the review lane is empty", async () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse([queueRow()], []));
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
     fireEvent.click(screen.getByRole("button", { name: /^All jobs/ }));
 
     expect(screen.queryByRole("group", { name: /review reason/i })).toBeNull();

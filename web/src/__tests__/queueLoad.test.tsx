@@ -69,7 +69,7 @@ describe("QueuePage load", () => {
 
     render(<App />);
 
-    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
+    const grid = await screen.findByRole("grid", { name: "No check held these back" });
     expect(dataRows(grid)).toHaveLength(apply.length);
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -83,7 +83,7 @@ describe("QueuePage load", () => {
     // card never appears.
     const alert = await screen.findByRole("alert");
     expect(within(alert).getByText("503 from /api/queue")).toBeTruthy();
-    expect(screen.queryByRole("grid", { name: "Jobs to explore" })).toBeNull();
+    expect(screen.queryByRole("grid", { name: "No check held these back" })).toBeNull();
   });
 });
 
@@ -103,7 +103,7 @@ describe("QueuePage background poll", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(0);
     });
-    expect(dataRows(screen.getByRole("grid", { name: "Jobs to explore" }))).toHaveLength(2);
+    expect(dataRows(screen.getByRole("grid", { name: "No check held these back" }))).toHaveLength(2);
 
     // First poll: one unseen posting surfaces the quiet "1 new" indicator.
     await act(async () => {

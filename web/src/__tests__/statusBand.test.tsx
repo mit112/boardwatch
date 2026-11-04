@@ -9,7 +9,7 @@ import { queueResponse, queueRow } from "../test/rows";
  * The readout counted ONE lane, so the day the apply lane emptied and every delivered lead landed
  * in review the page said "Showing 0 of 0" directly above 149 listed leads — the single most
  * load-bearing sentence on the page contradicting the list under it. It now names the list it
- * counts ("… in Needs review"), and counts exactly the rows that list shows: a count that does not
+ * counts ("… in All jobs"), and counts exactly the rows that list shows: a count that does not
  * say which population it is over invites adding it to another one.
  */
 
@@ -61,20 +61,20 @@ describe("the status readout", () => {
     render(<App />);
 
     // The apply list is empty, so the page opens on the list that has the work — and says so.
-    expect(await screen.findByText("Showing 3 of 3 in Needs review")).toBeTruthy();
+    expect(await screen.findByText("Showing 3 of 3 in All jobs")).toBeTruthy();
   });
 
   it("narrows with the text filter", async () => {
     vi.mocked(getQueue).mockResolvedValue(emptyApplyLane());
     render(<App />);
-    await screen.findByText("Showing 3 of 3 in Needs review");
+    await screen.findByText("Showing 3 of 3 in All jobs");
 
     fireEvent.change(screen.getByLabelText("Search"), {
       target: { value: "ALPHA" },
     });
 
     // The denominator is the page's whole population, so the reader can see how much was hidden.
-    expect(screen.getByText("Showing 1 of 3 in Needs review")).toBeTruthy();
+    expect(screen.getByText("Showing 1 of 3 in All jobs")).toBeTruthy();
   });
 
   it("counts each list on its own, and both together only under All jobs", async () => {
@@ -86,12 +86,9 @@ describe("the status readout", () => {
     );
     render(<App />);
 
-    // Jobs to explore holds two; the review job is NOT folded into that number.
-    expect(await screen.findByText("Showing 2 of 2 in Jobs to explore")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^Needs review/ }));
-    expect(screen.getByText("Showing 1 of 1 in Needs review")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: /^All jobs/ }));
-    expect(screen.getByText("Showing 3 of 3 in All jobs")).toBeTruthy();
+    expect(await screen.findByText("Showing 3 of 3 in All jobs")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^review 1 —/ }));
+    expect(screen.getByText("Showing 1 of 3 in All jobs")).toBeTruthy();
   });
 });
 
@@ -103,7 +100,7 @@ describe("the closed cell", () => {
       counts: { ...response.counts, closed: 12 },
     });
     render(<App />);
-    await screen.findByText("Showing 3 of 3 in Needs review");
+    await screen.findByText("Showing 3 of 3 in All jobs");
 
     const cell = screen.getByTitle(/took the posting down/i);
     expect(cell.textContent).toBe("12");
@@ -118,7 +115,7 @@ describe("the lane-copy cell", () => {
       counts: { ...response.counts, lane_copy: 3 },
     });
     render(<App />);
-    await screen.findByText("Showing 3 of 3 in Needs review");
+    await screen.findByText("Showing 3 of 3 in All jobs");
 
     const cell = screen.getByTitle(/employer-board twin/i);
     expect(cell.textContent).toBe("3");

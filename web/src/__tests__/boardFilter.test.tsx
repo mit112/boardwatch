@@ -56,7 +56,7 @@ afterEach(() => {
 describe("the job board filter", () => {
   it("lists each board with its count and narrows both lanes", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     const select = screen.getByLabelText("Job board");
     expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
@@ -66,11 +66,11 @@ describe("the job board filter", () => {
     ]);
 
     fireEvent.change(select, { target: { value: "workday" } });
-    expect(titles("Jobs to explore")).toEqual(["APPLY-WD"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-WD"]);
     expect(titles("Needs review")).toEqual(["REVIEW-WD"]);
 
     fireEvent.change(select, { target: { value: "" } });
-    expect(titles("Jobs to explore")).toEqual(["APPLY-WD", "APPLY-LI"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-WD", "APPLY-LI"]);
   });
 
   it("hides thin-JD and unverifiable rows, and filters by work mode", async () => {
@@ -85,19 +85,19 @@ describe("the job board filter", () => {
       ),
     );
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
-    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL", "APPLY-THIN", "APPLY-GONE"]);
+    await screen.findByRole("grid", { name: "No check held these back" });
+    expect(titles("No check held these back")).toEqual(["APPLY-FULL", "APPLY-THIN", "APPLY-GONE"]);
 
     fireEvent.click(screen.getByLabelText("Hide very short descriptions"));
-    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL", "APPLY-GONE"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-FULL", "APPLY-GONE"]);
     fireEvent.click(screen.getByLabelText("Hide postings I can’t verify are open"));
-    expect(titles("Jobs to explore")).toEqual(["APPLY-FULL"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-FULL"]);
     fireEvent.click(screen.getByLabelText("Hide very short descriptions"));
     fireEvent.click(screen.getByLabelText("Hide postings I can’t verify are open"));
 
     fireEvent.change(screen.getByLabelText("Work arrangement"), { target: { value: "onsite" } });
-    expect(titles("Jobs to explore")).toEqual(["APPLY-THIN"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-THIN"]);
     fireEvent.change(screen.getByLabelText("Work arrangement"), { target: { value: "(not stated)" } });
-    expect(titles("Jobs to explore")).toEqual(["APPLY-GONE"]);
+    expect(titles("No check held these back")).toEqual(["APPLY-GONE"]);
   });
 });

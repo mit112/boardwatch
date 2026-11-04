@@ -85,13 +85,13 @@ describe("new since last visit", () => {
     window.localStorage.setItem(WATERMARK_KEY, "430");
 
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // Two apply-list jobs (runs 431, 432) and one review job (run 432): the count is across BOTH
     // lists, and clicking it shows both, so the number and the list cannot disagree.
     fireEvent.click(screen.getByRole("button", { name: /^new since last visit 3 —/i }));
 
-    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
+    const queue = screen.getByRole("grid", { name: "No check held these back" });
     expect(hasRow(queue, "FRESH-431")).toBe(true);
     expect(hasRow(queue, "FRESH-432")).toBe(true);
     // The two that must NOT be in the set: one delivered at the watermark (strictly greater, not
@@ -104,7 +104,7 @@ describe("new since last visit", () => {
 
   it("marks NOTHING new on a first visit, with no watermark stored", async () => {
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // Zero, not five. An absent watermark read as `0` reports every lead in the payload.
     expect(screen.getByRole("button", { name: /^new since last visit 0 —/i })).toBeTruthy();
@@ -114,7 +114,7 @@ describe("new since last visit", () => {
     window.localStorage.setItem(WATERMARK_KEY, "430");
 
     render(<App />);
-    await screen.findByRole("grid", { name: "Jobs to explore" });
+    await screen.findByRole("grid", { name: "No check held these back" });
 
     // 432 — the highest `delivered_run_id` in either lane. And the set was computed first: the
     // cell still reads 3, which it could not if the watermark had advanced before the comparison.
@@ -163,7 +163,7 @@ describe("new since last visit", () => {
     // Still 2, and still the SAME two: the set did not recompute against the advanced watermark.
     expect(screen.getByRole("button", { name: /^new since last visit 2 —/i })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /^new since last visit 2 —/i }));
-    const queue = screen.getByRole("grid", { name: "Jobs to explore" });
+    const queue = screen.getByRole("grid", { name: "No check held these back" });
     expect(hasRow(queue, "FRESH-431")).toBe(true);
     expect(hasRow(queue, "FRESH-432")).toBe(true);
     expect(hasRow(queue, "NEWEST-433")).toBe(false);
@@ -184,10 +184,10 @@ describe("new since last visit", () => {
     });
     try {
       render(<App />);
-      await screen.findByRole("grid", { name: "Jobs to explore" });
+      await screen.findByRole("grid", { name: "No check held these back" });
 
       // The page drew, and nothing is new — the honest answer when there is no way to know.
-      expect(hasRow(screen.getByRole("grid", { name: "Jobs to explore" }), "FRESH-432")).toBe(true);
+      expect(hasRow(screen.getByRole("grid", { name: "No check held these back" }), "FRESH-432")).toBe(true);
       expect(screen.getByRole("button", { name: /^new since last visit 0 —/i })).toBeTruthy();
     } finally {
       Object.defineProperty(window, "localStorage", { configurable: true, value: real });

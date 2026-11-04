@@ -178,37 +178,43 @@ export function QueueSummary({
   );
 }
 
-export type Lens = "explore" | "review" | "all" | "manual";
+export type Lens = "auto" | "hand" | "unresolved" | "ungated" | "all";
 
 export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
   {
-    key: "explore",
-    label: "Jobs to explore",
+    key: "auto",
+    label: "Auto-apply",
     blurb:
-      "A résumé is prepared and no check held these back. That is not the same as verified — open a job to see what to check before you apply.",
+      "The apply link goes to a form your fill tool handles, or to a job board's own form when the employer has no link of its own.",
   },
   {
-    key: "review",
-    label: "Needs review",
+    key: "hand",
+    label: "Apply by hand",
     blurb:
-      "Each of these has something the automatic checks couldn’t settle. Read what to check first; many are still worth applying to.",
+      "The form needs you: an account, a manual form or a site the fill tool does not handle. Jobs you moved here stay until you move them back.",
+  },
+  {
+    key: "unresolved",
+    label: "Link not resolved",
+    blurb:
+      "The link goes through a job board, aggregator or short link, and the check has not settled where it leads. Each job moves to Auto-apply or Apply by hand once it has.",
+  },
+  {
+    key: "ungated",
+    label: "Not JD-gated",
+    blurb:
+      "No JD gate verdict yet. These jobs also appear in the lists above; jobs you moved to Apply by hand are left out.",
   },
   {
     key: "all",
     label: "All jobs",
     blurb:
-      "Jobs to explore and Needs review together, with no job counted twice. Filtered-out, closed, skipped, already-applied and Apply by hand jobs are not included.",
-  },
-  {
-    key: "manual",
-    label: "Apply by hand",
-    blurb:
-      "Jobs you moved here to apply to yourself — they need an account or a manual form. They stay out of Jobs to explore until you move them back.",
+      "Auto-apply, Apply by hand and Link not resolved together, with no job counted twice. Filtered-out, closed, skipped and already-applied jobs are not included.",
   },
 ];
 
 /*
- * The four lists, as a group of toggle buttons. Each count is the number of jobs IN THAT LIST
+ * The lists, as a group of toggle buttons. Each count is the number of jobs IN THAT LIST
  * that match the current search, place and work arrangement — never a sum across lists that could
  * overlap — and the sentence under the buttons says what the selected list is and what "All"
  * leaves out. A tab-panel pattern would promise arrow-key semantics the buttons do not have, so
@@ -218,16 +224,18 @@ export function LensTabs({
   lens,
   onLens,
   counts,
+  available,
 }: {
   lens: Lens;
   onLens: (lens: Lens) => void;
   counts: Record<Lens, number>;
+  available: readonly Lens[];
 }) {
   const current = LENSES.find((entry) => entry.key === lens) ?? LENSES[0];
   return (
     <div className="flex flex-col gap-2">
       <div role="group" aria-label="Which jobs to list" className="flex flex-wrap gap-2">
-        {LENSES.map((entry) => {
+        {LENSES.filter((entry) => available.includes(entry.key)).map((entry) => {
           const active = entry.key === lens;
           return (
             <button

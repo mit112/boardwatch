@@ -55,7 +55,7 @@ describe("sorting by job board", () => {
     vi.mocked(getQueue).mockResolvedValue(queueResponse(rows));
     render(<App />);
 
-    const grid = await screen.findByRole("grid", { name: "Jobs to explore" });
+    const grid = await screen.findByRole("grid", { name: "No check held these back" });
     // Delivered order: the ranker's, which interleaves the two boards.
     expect(dataRows(grid).map((row) => row.textContent)).toEqual([
       expect.stringContaining("Alpha Engineer"),
