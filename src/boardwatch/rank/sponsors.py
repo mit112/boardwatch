@@ -24,6 +24,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from boardwatch.eligibility.facts import Facts
+
 SPONSORS_FILENAME = "sponsors.json"
 EXCLUSIONS_FILENAME = "sponsor-exclusions.txt"
 FORMAT_VERSION = 1
@@ -109,6 +111,16 @@ class SponsorIndex:
         if len(key) < MIN_KEY_LENGTH or key in self.exclusions:
             return None
         return self.records.get(key)
+
+
+def facts_need_sponsorship(facts: Facts) -> bool:
+    """True only when the stored fact says so. Absent (None) and False are both inactive.
+
+    A read of the declared bit and nothing else: no inference from `status`, so a profile that
+    never answered the question never turns this signal on.
+    """
+    work_auth = facts.work_authorization
+    return work_auth is not None and work_auth.needs_sponsorship is True
 
 
 def load_sponsor_index(config_dir: Path) -> SponsorIndex:
