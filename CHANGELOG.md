@@ -15,6 +15,10 @@ All notable changes to this project are documented here. The format follows
   replace it with a same-handle board that probes OK. Each change appears in the morning report
   and funnel with an undo command. The setting defaults to false and `--no-scan` never changes
   watches. Existing scan history cannot prove a streak; counting starts after the upgrade (D-669).
+- **Deliver newly found jobs during the day.** Repeat `scan --provider` to scan several providers in one pass,
+  then run `run --no-scan --fresh-hours N` to rank only postings first seen within that many hours. Fresh
+  passes skip nightly maintenance and volume alarms, keep delivery and its fault checks, and never ping
+  the nightly success monitor. Their rows and filtered scans stay out of nightly history windows (D-670).
 
 - **A company page with no form to find goes to Apply by hand.** A link carrying an `unresolved_url_markers` fragment
   leaves Link not resolved once its check finishes with no employer link. Tooltips no longer name the removed

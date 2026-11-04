@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 from sqlalchemy import Connection as SAConnection
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
@@ -185,7 +185,9 @@ from boardwatch.store.queries import (
     current_posting_versions,
     ensure_run,
     finish_run,
+    first_seen_since_clause,
     get_profile,
+    insert_run,
     posting_slugs,
     reap_stale_runs,
     upsert_lane_company,
@@ -209,7 +211,7 @@ from boardwatch.store.seed_queries import (
     record_seeds,
     unresolved_seeds,
 )
-from boardwatch.store.tables import companies, postings
+from boardwatch.store.tables import companies, postings, runs
 from boardwatch.tailor.coverage import CoverageReport
 from boardwatch.tailor.load import ResumeLoadError
 from boardwatch.tailor.persona import PersonaError
@@ -453,6 +455,8 @@ class PipelineSummary:
     """
 
     run_id: int
+    fresh_hours: int | None = None
+    no_fresh_postings: bool = False
     scan_postings_seen: int = 0
     scan_open_postings: int = 0
     scan_boards_failed: int = 0
@@ -746,7 +750,7 @@ def _lane_fetcher(settings: Settings) -> Fetcher:
     return Fetcher(settings, user_agent=_LANE_USER_AGENT)
 
 
-def _rotation_index(run_id: int) -> int:
+def _rotation_index(engine: Engine, run_id: int) -> int:
     """This run's position in the hub-net rotation. **The run's OWN id, not its date.**
 
     It was the persisted UTC date ordinal, and a calendar stride is wrong here in two ways that
@@ -764,7 +768,14 @@ def _rotation_index(run_id: int) -> int:
     off the run row, which is the reproducibility the old docstring actually argued for; the
     date was never the load-bearing part.
     """
-    return run_id
+    # D-670: a scoped pass searches no lane cells, so it consumes no rotation slot.
+    with engine.connect() as conn:
+        skipped = conn.execute(
+            select(func.count()).select_from(runs).where(
+                runs.c.id <= run_id, runs.c.incremental.is_(True)
+            )
+        ).scalar_one()
+    return run_id - int(skipped)
 
 
 @dataclass(frozen=True)
@@ -853,7 +864,7 @@ def _fetch_lanes(
     context = LaneContext(
         settings=settings,
         facets=facets,
-        rotation_index=_rotation_index(run_id),
+        rotation_index=_rotation_index(engine, run_id),
         watched_companies=watched_companies,
         target_countries=target_countries,
         pending_seeds=pending_seeds,
@@ -2195,6 +2206,7 @@ def run_pipeline(
     out_root: Path,
     resume_path: Path,
     skip_scan: bool = False,
+    fresh_hours: int | None = None,
     project: bool = False,
     liveness_prober: LivenessProber | None = None,
     listing_prober: ListingProber | None = None,
@@ -2212,6 +2224,8 @@ def run_pipeline(
     # fetching (an early return never joins it). Deliberate: since T37 that thread fetches only
     # and writes nothing to the store, so nothing it does needs the lease, and joining it or
     # extending the lease for it would spend the wall clock SP2 bought back.
+    if fresh_hours is not None and (not skip_scan or fresh_hours < 1):
+        raise ValueError("fresh_hours requires skip_scan and an integer >= 1")
     with scan_lease(settings):
         return _run_pipeline_leased(
             engine,
@@ -2221,6 +2235,7 @@ def run_pipeline(
             out_root=out_root,
             resume_path=resume_path,
             skip_scan=skip_scan,
+            fresh_hours=fresh_hours,
             project=project,
             liveness_prober=liveness_prober,
             listing_prober=listing_prober,
@@ -2238,6 +2253,7 @@ def _run_pipeline_leased(
     out_root: Path,
     resume_path: Path,
     skip_scan: bool = False,
+    fresh_hours: int | None = None,
     project: bool = False,
     liveness_prober: LivenessProber | None = None,
     listing_prober: ListingProber | None = None,
@@ -2340,11 +2356,13 @@ def _run_pipeline_leased(
     if not skip_scan:
         console.print("[bold]scan[/bold]")
 
+        lane_console = console
+
         def _start_lane_stage(started_run_id: int) -> None:
             nonlocal lane_thread
             if not settings.lanes_enabled:
                 return
-            console.print("[bold]lanes[/bold]")
+            lane_console.print("[bold]lanes[/bold]")
             lane_thread = Thread(
                 target=lambda: lane_stage_result.append(
                     _fetch_lanes_stage(engine, settings, started_run_id, console=console)
@@ -2361,10 +2379,14 @@ def _run_pipeline_leased(
         run_id = scan_summary.run_id
     else:
         ensure_schema(engine)
-        run_id = ensure_run(engine, None)
+        run_id = (
+            insert_run(engine, incremental=True)
+            if fresh_hours is not None else ensure_run(engine, None)
+        )
     clock.mark("scan")
 
-    summary = PipelineSummary(run_id=run_id)
+    summary = PipelineSummary(run_id=run_id, fresh_hours=fresh_hours)
+    first_seen_since = utcnow() - timedelta(hours=fresh_hours) if fresh_hours is not None else None
     # Computed before the try so the finally can write the funnel artifact into it even when
     # the run aborts partway — a crashed run is exactly when its funnel is worth having.
     day_dir = out_root / utcnow().date().isoformat()
@@ -2373,6 +2395,23 @@ def _run_pipeline_leased(
     # Ctrl-C during the multi-minute tailor loop is the likeliest way to hit this.
     stage_errors: list[str] = []
     try:
+        if first_seen_since is not None:
+            summary.gate_refresh_candidates = summary.gate_refresh_sent = None
+            summary.gate_refresh_pending_after = None
+            summary.gate_backlog_candidates = summary.gate_backlog_sent = None
+            summary.gate_backlog_judged = summary.gate_backlog_eligible = None
+            summary.gate_backlog_ineligible = summary.gate_backlog_uncertain = None
+            summary.gate_backlog_failed_open = summary.gate_backlog_breaker_skipped = None
+            with engine.connect() as conn:
+                summary.no_fresh_postings = conn.execute(
+                    select(postings.c.id).where(
+                        postings.c.status == "open", first_seen_since_clause(first_seen_since)
+                    ).limit(1)
+                ).first() is None
+            if summary.no_fresh_postings:
+                console = Console(quiet=True)
+        if summary.no_fresh_postings:
+            return summary
         # T164. Ahead of even T137's capture: a stale `profile.taxonomy_version` refreshes
         # `skills_json` inside the ranker's own preflight (`extract/preflight.py:run_preflight`),
         # further down this same try. Doing that refresh HERE first, and passing its result
@@ -2525,7 +2564,9 @@ def _run_pipeline_leased(
         lane_reports: list[LaneReport]
         lane_errors: list[str]
         lane_elapsed: float | None
-        if not skip_scan:
+        if fresh_hours is not None:
+            lane_reports, lane_errors, lane_elapsed = [], [], None
+        elif not skip_scan:
             if lane_thread is not None:
                 lane_thread.join()
                 lane_fetches, fetch_errors, fetch_elapsed = lane_stage_result[0]
@@ -2571,7 +2612,7 @@ def _run_pipeline_leased(
         # so a sweep that dies costs the run its extra reach and nothing else. The report stays
         # `None` on failure — honest as "unmeasured", and deliberately understating any probes
         # that did land before the fault, because each posting commits in its own transaction.
-        if liveness_prober is not None and settings.death_probe_budget > 0:
+        if fresh_hours is None and liveness_prober is not None and settings.death_probe_budget > 0:
             try:
                 summary.death_probe = sweep_unwatched_deaths(
                     engine,
@@ -2648,6 +2689,7 @@ def _run_pipeline_leased(
                 # T164: the refresh above may already have fired; this keeps `run_preflight`'s
                 # "taxonomy changed" line truthful, and `run_preflight` still re-checks it.
                 profile_already_refreshed=profile_taxonomy_refreshed,
+                first_seen_since=first_seen_since,
             )
         except NoProfileError:
             # Not a crash: a fresh install has no profile yet. The run is real and produced
@@ -2863,7 +2905,7 @@ def _run_pipeline_leased(
         # Guarded as the queue sync is: it repairs COPIES of past deliveries, so a fault here must
         # cost the refresh and nothing else. Unguarded, anything it raised would reach the outer
         # handler BEFORE the tailor loop and turn one bad standing row into a fatal, empty day.
-        if settings.gate.enabled and settings.gate.refresh_budget:
+        if fresh_hours is None and settings.gate.enabled and settings.gate.refresh_budget:
             try:
                 with engine.connect() as refresh_conn:
                     standing = _refresh_order(standing_queue_rows(refresh_conn))
@@ -3193,7 +3235,9 @@ def _run_pipeline_leased(
             # Filled in here, not at the initial population above: liveness (which produces
             # `dead_lead_ids`) runs after that point. `ShortlistCounts` is frozen.
             summary.shortlist = replace(summary.shortlist, dead_this_run=dead_this_run)
-        if summary.fatal is None and not summary.tailored:
+        # A bounded fresh slice may legitimately lose every candidate to normal filters.
+        # Cohort and render/filesystem failures remain fatal on both paths.
+        if summary.fatal is None and not summary.tailored and fresh_hours is None:
             # T131. INTERSECTED with `judged`, because the denominator counts only postings whose
             # deterministic evaluation THIS run wrote: a lead the gate excluded on a verdict
             # computed in a prior run is not in it, and subtracting the raw count would underflow
@@ -3267,6 +3311,12 @@ def _run_pipeline_leased(
         # reason the ranker is called with `record_surfaced=False`. Nothing between the two
         # positions reads `job_dispositions`: the two guards take values off `ranked`/`summary`
         # and `folders_reconcile` counts `artifacts` rows against folders on disk.
+        # D-670: a fresh pass must not hide a lead that failed to build. The nightly run retries it.
+        fresh_failed_job_ids: set[int] = set()
+        if fresh_hours is not None:
+            fresh_failed = {*summary.tailor_failed_ids, *summary.projection_failed_ids}
+            with engine.connect() as anchor_conn:
+                fresh_failed_job_ids = set(job_anchors(anchor_conn, sorted(fresh_failed)).values())
         _record_shortlist_dispositions(
             engine,
             settings,
@@ -3280,7 +3330,9 @@ def _run_pipeline_leased(
             surfaced_job_ids=tuple(
                 job_id
                 for job_id in ranked.surfaced_job_ids
-                if job_id not in dead_job_ids and job_id not in beyond_slate_job_ids
+                if job_id not in dead_job_ids
+                and job_id not in beyond_slate_job_ids
+                and job_id not in fresh_failed_job_ids
             ),
             stage_completed=summary.fatal is None,
         )
@@ -3292,7 +3344,7 @@ def _run_pipeline_leased(
         # spend the day's tailoring on leads nobody receives today. After the refresh, so a lead
         # the refresh just judged is current and not re-sent. Charged to the tailor stage's
         # clock. Guarded as the refresh is: a fault costs the backlog and nothing else.
-        if settings.gate.enabled and settings.gate.backlog_budget:
+        if fresh_hours is None and settings.gate.enabled and settings.gate.backlog_budget:
             try:
                 backlog = run_gate_backlog(
                     engine, settings, ranked.below_cutoff_in_field, run_id=run_id, console=console
@@ -3483,7 +3535,7 @@ def _run_pipeline_leased(
             with engine.connect() as conn:
                 summary.form_questions = _sweep_form_questions(
                     conn, settings, console, form_fetcher, summary
-                )
+                ) if fresh_hours is None else None
         except Exception as exc:  # noqa: BLE001 - a mute section beats a lost funnel
             # ONLY reachable for a connection this could not open or close: the sweep itself
             # already catches its own failures and returns `None`. Guarded all the same, and
@@ -3576,7 +3628,7 @@ def _run_pipeline_leased(
         # switch. Recorded on `summary.errors` (reprinted by `run_cmd`) and, because
         # `finish_run` has already committed, made durable through `append_run_error`.
         try:
-            intake_alert = check_intake_death(engine)
+            intake_alert = check_intake_death(engine) if fresh_hours is None else None
             if intake_alert is not None:
                 console.print(f"  ! {intake_alert}", markup=False)
                 summary.errors.append(intake_alert)
@@ -3635,7 +3687,7 @@ def _run_pipeline_leased(
         # (net-new > 0). Fires only when the last clean runs each judged a candidate yet
         # delivered zero — a quiet day and an eligibility collapse both abstain. Non-fatal.
         try:
-            drought = check_delivery_drought(engine)
+            drought = check_delivery_drought(engine) if fresh_hours is None else None
             if drought is not None:
                 console.print(f"  ! {drought}", markup=False)
                 summary.errors.append(drought)
@@ -3658,7 +3710,7 @@ def _run_pipeline_leased(
         # Above `_emit_morning` like every soft alert here — below it the alert still fires, is
         # still recorded, and is invisible in the one artifact an unattended owner reads.
         try:
-            lane_alert = check_apply_lane_drought(engine)
+            lane_alert = check_apply_lane_drought(engine) if fresh_hours is None else None
             if lane_alert is not None:
                 console.print(f"  ! {lane_alert}", markup=False)
                 summary.errors.append(lane_alert)
@@ -3684,7 +3736,9 @@ def _run_pipeline_leased(
         # first 4. A frequency argument for silence expires with the population it was measured
         # on, so re-read the firing rate before re-using it.
         try:
-            volume_alert = check_apply_lane_volume(summary.apply_lane)
+            volume_alert = (
+                check_apply_lane_volume(summary.apply_lane) if fresh_hours is None else None
+            )
             if volume_alert is not None:
                 console.print(f"  ! {volume_alert}", markup=False)
                 summary.errors.append(volume_alert)
@@ -3702,7 +3756,10 @@ def _run_pipeline_leased(
         # never delivered. Reads the population the funnel read. Non-fatal. Above `_emit_morning`
         # like every soft alert here.
         try:
-            buried_alert = check_buried_good_lead(engine, summary.buried, run_id=run_id)
+            buried_alert = (
+                check_buried_good_lead(engine, summary.buried, run_id=run_id)
+                if fresh_hours is None else None
+            )
             if buried_alert is not None:
                 console.print(f"  ! {buried_alert}", markup=False)
                 summary.errors.append(buried_alert)
@@ -3748,7 +3805,7 @@ def _run_pipeline_leased(
         # `finish_run` has already committed, and `append_run_error` cannot touch status or
         # finished_at.
         try:
-            corpus_alert = check_corpus_regression(engine)
+            corpus_alert = check_corpus_regression(engine) if fresh_hours is None else None
             if corpus_alert is not None:
                 console.print(f"  ! {corpus_alert}", markup=False)
                 summary.errors.append(corpus_alert)
@@ -4014,7 +4071,8 @@ def _run_pipeline_leased(
         # This is the cheapest possible statement of the switch's own premise: the monitor is
         # told a run succeeded only when the run said so somewhere that outlives the process.
         if (
-            summary.fatal is None
+            fresh_hours is None
+            and summary.fatal is None
             and summary.funnel is not None
             and summary.morning is not None
             and summary.terminal_status_persisted
@@ -4273,6 +4331,7 @@ def _emit_funnel(
                 seniority_unreadable=summary.gate_seniority_unreadable,
                 seniority_skipped=summary.gate_seniority_skipped,
                 readings_absent=summary.gate_readings_absent,
+                maintenance_skipped=summary.fresh_hours is not None,
                 refresh_budget=settings.gate.refresh_budget,
                 refresh_candidates=summary.gate_refresh_candidates,
                 refresh_sent=summary.gate_refresh_sent,
@@ -4339,6 +4398,7 @@ def _emit_funnel(
     # rendering fault would take out B8's instrument as well as its record.
     summary.apply_lane = funnel.apply_lane
     # T137. Same placement, same reason: the drift alert reads the answer the funnel computed.
+    funnel = replace(funnel, fresh_hours=summary.fresh_hours)
     summary.identity_drift = funnel.identity_drift
     # T203. Same placement, same reason.
     summary.cross_check_disagreements = funnel.disagreements

@@ -86,7 +86,7 @@ def check_corpus_regression(
             for run_id, evaluated, candidates in conn.execute(
                 select(runs.c.id, runs.c.corpus_evaluated, runs.c.corpus_candidates)
                 .where(
-                    runs.c.status == RUN_OK,
+                    runs.c.status == RUN_OK, runs.c.incremental.is_(False),
                     # All three explicitly, including `corpus_open`, which this select does
                     # not read: it is the coverage guard's denominator, and a row missing it
                     # cannot be coverage-checked. Half-written is not measured.

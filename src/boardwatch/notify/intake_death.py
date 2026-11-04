@@ -41,7 +41,7 @@ def check_intake_death(engine: Engine, *, window: int = INTAKE_DEATH_WINDOW) -> 
     with engine.connect() as conn:
         rows = conn.execute(
             select(runs.c.id, runs.c.new_count)
-            .where(runs.c.new_count.is_not(None))
+            .where(runs.c.new_count.is_not(None), runs.c.incremental.is_(False))
             .order_by(runs.c.id.desc())
             .limit(window)
         ).all()
@@ -49,6 +49,14 @@ def check_intake_death(engine: Engine, *, window: int = INTAKE_DEATH_WINDOW) -> 
         return None
     if any(new_count != 0 for _, new_count in rows):
         return None
+    # D-670: a daytime scan finds the postings first, so the nightly scans read zero.
+    with engine.connect() as conn:
+        if conn.execute(
+            select(runs.c.id).where(
+                runs.c.incremental.is_(True), runs.c.new_count > 0, runs.c.id > rows[-1].id
+            ).limit(1)
+        ).first() is not None:
+            return None
     run_ids = ", ".join(str(run_id) for run_id, _ in rows)
     return (
         f"intake: 0 net-new postings across the last {window} scanning runs "

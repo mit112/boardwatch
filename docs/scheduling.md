@@ -10,6 +10,11 @@ Run `boardwatch init` once interactively before scheduling scans. The scheduler 
 
 Each example below appends the scan summary to a log. Replace `/absolute/path/to/boardwatch` with the output of `command -v boardwatch`, then run the command once manually before enabling its timer.
 
+To scan several providers in one pass, repeat `--provider`, for example
+`boardwatch scan --provider greenhouse --provider ashby`. Each selected board is scanned once
+and the pass writes one run row. For delivery at 10:00 and 16:00, see the
+[same-day run recipe](unattended-run.md#deliver-newly-found-jobs-during-the-day).
+
 ### cron (Linux or macOS)
 
 Create a log directory, then add a daily job with `crontab -e`:

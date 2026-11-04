@@ -13,6 +13,7 @@ so a crash between batches leaves a consistent, resumable state.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from rich.console import Console
 from sqlalchemy import Engine, select, update
@@ -22,6 +23,7 @@ from boardwatch.extract.taxonomy import Taxonomy, load_taxonomy, write_extractio
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.store.db import write_connection
 from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.queries import first_seen_since_clause
 from boardwatch.store.tables import extractions, postings, profile
 
 BATCH_SIZE = 200
@@ -70,6 +72,7 @@ def run_preflight(
     progress_console: Console | None = None,
     profile_already_refreshed: bool = False,
     posting_id: int | None = None,
+    first_seen_since: datetime | None = None,
 ) -> PreflightStats:
     """`profile_already_refreshed` means a caller already ran `refresh_profile_taxonomy` this
     run and it fired (T164). It only keeps the `taxonomy changed — re-extracting` line below
@@ -87,7 +90,9 @@ def run_preflight(
         refresh_profile_taxonomy(engine, taxonomy) or profile_already_refreshed
     )
 
-    pending = _open_postings_missing_extraction(engine, taxonomy.version, posting_id=posting_id)
+    pending = _open_postings_missing_extraction(
+        engine, taxonomy.version, posting_id=posting_id, first_seen_since=first_seen_since
+    )
     if pending:
         # The CAUSE is read, never assumed. A posting lacks an extraction at the current
         # version for two unrelated reasons and only one of them is a taxonomy change: the
@@ -119,7 +124,8 @@ def run_preflight(
 
 
 def _open_postings_missing_extraction(
-    engine: Engine, version: str, *, posting_id: int | None = None
+    engine: Engine, version: str, *, posting_id: int | None = None,
+    first_seen_since: datetime | None = None,
 ) -> list[tuple[int, str, str]]:
     current = (
         select(extractions.c.id)
@@ -134,6 +140,8 @@ def _open_postings_missing_extraction(
     query = select(postings.c.id, postings.c.content_hash).where(
         postings.c.status == "open", ~current
     )
+    if first_seen_since is not None:
+        query = query.where(first_seen_since_clause(first_seen_since))
     if posting_id is not None:
         query = query.where(postings.c.id == posting_id)
     # Two steps, so a body is read only for a posting that needs one: asking for `body_text` here

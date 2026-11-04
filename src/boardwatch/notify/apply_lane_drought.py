@@ -123,7 +123,7 @@ def check_apply_lane_drought(
             int(rid)
             for (rid,) in conn.execute(
                 select(runs.c.id)
-                .where(runs.c.status == RUN_OK)
+                .where(runs.c.status == RUN_OK, runs.c.incremental.is_(False))
                 .order_by(runs.c.id.desc())
                 .limit(max(window, max_window))
             ).all()

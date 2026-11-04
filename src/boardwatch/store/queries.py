@@ -146,9 +146,11 @@ def _checked_status(status: str) -> str:
     return status
 
 
-def insert_run(engine: Engine) -> int:
+def insert_run(engine: Engine, *, incremental: bool = False) -> int:
     with engine.begin() as conn:
-        result = conn.execute(insert(runs).values(started_at=utcnow(), boards_attempted=0))
+        result = conn.execute(
+            insert(runs).values(started_at=utcnow(), boards_attempted=0, incremental=incremental)
+        )
         return int(result.inserted_primary_key[0])  # type: ignore[index]
 
 
@@ -414,8 +416,23 @@ def get_validators(
     return ResponseValidators(etag=row.etag, last_modified=row.last_modified)
 
 
+def first_seen_since_clause(since: datetime) -> ColumnElement[bool]:
+    """Postings newer than the newest one first seen before `since`, without a time index.
+
+    Rows are inserted in time order, so walking the id down from the top stops at the first old
+    row and costs only the fresh rows. An index on `first_seen_at` is not an option: SQLite then
+    drives the Applied page's ORDER BY from it and scans every posting (106 s measured).
+    """
+    older = postings.alias("older")
+    newest_old = (
+        select(older.c.id).where(older.c.first_seen_at < since)
+        .order_by(older.c.id.desc()).limit(1).scalar_subquery()
+    )
+    return postings.c.id > func.coalesce(newest_old, 0)
+
+
 def get_watched_companies(
-    conn: Connection, *, slug: str | None = None, provider: str | None = None
+    conn: Connection, *, slug: str | None = None, provider: str | Sequence[str] | None = None
 ) -> list[Row[Any]]:
     stmt = select(companies).where(companies.c.watched.is_(True))
     if slug is not None:
@@ -423,7 +440,9 @@ def get_watched_companies(
         # reach the board stored as `kayak`. A Python `.lower()` disagrees above ASCII.
         stmt = stmt.where(func.lower(companies.c.slug) == func.lower(slug))
     if provider is not None:
-        stmt = stmt.where(companies.c.provider == provider)
+        stmt = stmt.where(
+            companies.c.provider.in_([provider] if isinstance(provider, str) else provider)
+        )
     return list(conn.execute(stmt).all())
 
 

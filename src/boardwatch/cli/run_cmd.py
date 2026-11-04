@@ -155,6 +155,10 @@ def run(
     skip_scan: bool = typer.Option(
         False, "--no-scan", help="Reuse already-fetched postings instead of refetching boards."
     ),
+    fresh_hours: int | None = typer.Option(
+        None, "--fresh-hours", min=1,
+        help="Only postings first seen in the last N hours. Requires --no-scan.",
+    ),
     project: bool = typer.Option(
         False,
         "--project",
@@ -185,6 +189,8 @@ def run(
     # deliberately leaves open), and until the owner rules it the only honest answer is to refuse.
     # A usage error, not a fatal run: nothing about the store or the bundle is wrong, and a refusal
     # that first created a run row would burn a row per typo.
+    if fresh_hours is not None and not skip_scan:
+        raise typer.BadParameter("--fresh-hours requires --no-scan", param_hint="--fresh-hours")
     if project and resume_path is not None:
         raise typer.BadParameter(
             "--resume names an authored résumé and --project renders each lead from the "
@@ -225,6 +231,7 @@ def run(
             out_root=out_root,
             resume_path=resume_path or settings.config_dir / "resume.yaml",
             skip_scan=skip_scan,
+            fresh_hours=fresh_hours,
             project=project,
             # Built here rather than inside the pipeline so that which URLs get probed is the
             # CLI's decision. Not an offline switch — the scan stage fetches every configured
@@ -248,6 +255,10 @@ def run(
     except ScanLockHeldError as exc:
         console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
         raise typer.Exit(code=2) from None
+
+    if summary.no_fresh_postings and summary.fatal is None:
+        console.print("no fresh postings")
+        return
 
     # Net intake and the untailored count are both silent-failure signals: "0 new" is intake
     # death (a provider quietly returns an empty listing), and any untailored count means a lead

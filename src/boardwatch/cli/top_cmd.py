@@ -83,6 +83,7 @@ from boardwatch.store.ledger_queries import live_dispositions, record_dispositio
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import (
     current_posting_version_ids,
+    first_seen_since_clause,
     get_profile,
     jobapps_employer_url,
     open_empty_body_posting_ids,
@@ -542,6 +543,7 @@ def rank_open_postings(
     run_id: int | None = None,
     record_surfaced: bool = True,
     profile_already_refreshed: bool = False,
+    first_seen_since: datetime | None = None,
 ) -> RankedResults:
     """Rank the open corpus. `record_surfaced=False` ranks WITHOUT consuming the queue.
 
@@ -558,10 +560,11 @@ def rank_open_postings(
     """
     run_preflight(
         engine, settings, output_console, profile_already_refreshed=profile_already_refreshed,
-        progress_console=progress_console,
+        progress_console=progress_console, first_seen_since=first_seen_since,
     )
     stats = run_eligibility(
-        engine, settings, output_console, run_id=run_id, progress_console=progress_console
+        engine, settings, output_console, run_id=run_id, progress_console=progress_console,
+        first_seen_since=first_seen_since,
     )  # no-op on a null profile; before the check
     skill_taxonomy = load_taxonomy(settings.config_dir)
     version = skill_taxonomy.version
@@ -625,11 +628,15 @@ def rank_open_postings(
             )
             .where(
                 postings.c.status == "open",
+                *([first_seen_since_clause(first_seen_since)]
+                  if first_seen_since is not None else []),
             )
         ).all()
         progress = StageProgress("ranking", len(rows), console=progress_console)
         # The run computed the identity; reuse it rather than reload the catalog.
-        version_ids = current_posting_version_ids(conn, None)
+        version_ids = current_posting_version_ids(
+            conn, [int(row.id) for row in rows] if first_seen_since is not None else None
+        )
         verdicts = current_verdicts(
             conn,
             list(version_ids.values()),

@@ -52,7 +52,10 @@ def check_buried_good_lead(
     with engine.connect() as conn:
         since = conn.execute(
             select(runs.c.finished_at)
-            .where(runs.c.corpus_open.is_not(None), runs.c.id < run_id)
+            .where(
+                runs.c.corpus_open.is_not(None), runs.c.id < run_id,
+                runs.c.incremental.is_(False),
+            )
             .order_by(runs.c.id.desc())
             .limit(1)
         ).scalar_one_or_none()
