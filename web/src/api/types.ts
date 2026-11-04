@@ -107,6 +107,15 @@ export type ReviewReason =
    */
   | "provider_employment_type";
 
+/** One employer's H-1B filing history, counted over certified computing-role rows. */
+export interface SponsorSeen {
+  computing_rows: number;
+  /** Of `computing_rows`, those at the DOL's lowest two wage levels (I and II). */
+  computing_low_wage_rows: number;
+  /** ISO date of the most recent decision counted, or `null`. */
+  latest_decision: string | null;
+}
+
 export interface QueueRow {
   posting_id: number;
   job_id: number;
@@ -200,6 +209,14 @@ export interface QueueRow {
    * because a viewer older than the field omits it; read that as `hand`, the route with no promise.
    */
   apply_route?: ApplyRoute;
+  /**
+   * What the badge's tooltip needs when this employer has been seen filing H-1B applications for
+   * computing roles in the owner's local index of public DOL filings. `null` or absent is "no
+   * badge", and it means no record, a profile that does not need sponsorship, or no usable index.
+   * It is never "does not sponsor": a record is evidence an employer filed, and no record is
+   * evidence of nothing. Optional because a viewer older than the field omits it.
+   */
+  sponsor_seen?: SponsorSeen | null;
   /**
    * The final gate's BODY-seniority reading: `true` exactly when the judge read the job
    * description as describing a role above the target band.

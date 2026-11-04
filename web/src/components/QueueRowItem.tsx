@@ -4,6 +4,7 @@ import { describeGroup } from "../lib/similar";
 import type { SimilarGroup } from "../lib/similar";
 import { FollowUpBadge } from "./FollowUpBadge";
 import { Icon } from "./Icon";
+import { SponsorBadge } from "./SponsorBadge";
 import { StatusMark } from "./StatusMark";
 
 /*
@@ -165,8 +166,13 @@ export function QueueRowItem({
                 >
                   {row.title}
                 </span>
-                <span className="mt-0.5 block truncate text-sm text-fg-2" title={row.company}>
-                  {row.company}
+                <span className="mt-0.5 flex items-center gap-2 text-sm text-fg-2">
+                  <span className="min-w-0 truncate" title={row.company}>
+                    {row.company}
+                  </span>
+                  <span className="shrink-0">
+                    <SponsorBadge seen={row.sponsor_seen} />
+                  </span>
                 </span>
               </button>
               {posted === null ? null : (

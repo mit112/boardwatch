@@ -31,7 +31,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.delivery.apply_routes import ApplyRoutes, load_apply_routes
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
-from boardwatch.eligibility.facts import ProfileRowInvalid
+from boardwatch.eligibility.facts import Facts, ProfileRowInvalid
 from boardwatch.eligibility.final_gate import gate_effort_key
 from boardwatch.eligibility.preflight import engine_facts, run_eligibility
 from boardwatch.eligibility.read import current_gate_verdicts, current_verdicts
@@ -64,6 +64,12 @@ from boardwatch.rank.seniority_gate import (
     TargetBand,
     build_token_probe,
     seniority_verdict,
+)
+from boardwatch.rank.sponsors import (
+    SPONSORS_FILENAME,
+    SponsorIndex,
+    facts_need_sponsorship,
+    load_sponsor_index,
 )
 from boardwatch.rank.tenant_assumptions import TenantAssumptionTally, ungrounded_reasons
 from boardwatch.store.app_state import get_digest_cursor
@@ -562,6 +568,27 @@ def interleave_direct(
     return out
 
 
+def _active_sponsor_index(
+    settings: Settings, facts: Facts, output_console: Console
+) -> SponsorIndex | None:
+    """The index when the tie-break applies, else None (and then no file has been read).
+
+    Active means the profile declares `needs_sponsorship` true AND the tenant's index has records.
+    The data file's presence is the second switch: it is local to the tenant, so it is not a
+    `Settings` field. A missing file is silent; one that exists but cannot be used is said once.
+    """
+    if not facts_need_sponsorship(facts):
+        return None
+    index = load_sponsor_index(settings.config_dir)
+    if index.problem is not None:
+        if (settings.config_dir / SPONSORS_FILENAME).exists():
+            output_console.print(
+                f"sponsor history tie-break is inert: {index.problem}", markup=False
+            )
+        return None
+    return index if index.records else None
+
+
 def rank_open_postings(
     engine: Engine,
     settings: Settings,
@@ -983,7 +1010,23 @@ def rank_open_postings(
         return 3
 
     scored = [replace(r, tier=_rank_tier(r)) for r in scored]
-    scored.sort(key=lambda r: (r.tier, -r.score.total))
+    sponsor_index = _active_sponsor_index(settings, facts, output_console)
+    if sponsor_index is None:
+        scored.sort(key=lambda r: (r.tier, -r.score.total))
+    else:
+        # A near-tie-break, never a verdict: `Score.total` is a float on [0, 1], so an exact tie
+        # almost never fires and the 0.01 band (`round(total, 2)`) is what makes a tie exist. A
+        # lookup miss ranks with an absent record: no record is not "does not sponsor".
+        seen = {r.posting_id: sponsor_index.lookup(r.company) is not None for r in scored}
+        scored.sort(
+            key=lambda r: (
+                r.tier, -round(r.score.total, 2), 0 if seen[r.posting_id] else 1, -r.score.total
+            )
+        )
+        output_console.print(
+            f"sponsor history tie-break: {sum(seen[r.posting_id] for r in scored[:limit])} of "
+            f"the first {limit} positions carry an H-1B filer flag"
+        )
     # Hide persisted-ineligible postings BEFORE the limit, so `top N` returns up to N shown
     # rows instead of losing an eligible posting that ranks just below an ineligible one. An
     # unevaluated posting (verdict None) is never hidden (D-P2-10). The hidden count spans the

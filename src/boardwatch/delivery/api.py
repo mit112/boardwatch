@@ -85,6 +85,7 @@ from boardwatch.delivery.answers import (
 from boardwatch.delivery.apply_routes import ApplyRoute, load_apply_routes
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
+from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
@@ -96,6 +97,7 @@ from boardwatch.rank.heuristic import (
 )
 from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
+from boardwatch.rank.sponsors import facts_need_sponsorship, load_sponsor_index
 from boardwatch.store.applications import (
     APPLIED_STATUSES,
     ApplicationStatus,
@@ -389,7 +391,41 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     for served in payload["manual"]:
         served["apply_route"] = ApplyRoute.HAND.value
     payload["apply_routes"] = {"configured": routes.configured, "problem": routes.problem}
+    _attach_sponsor_seen(conn, ctx, [*payload["rows"], *payload["review"], *payload["manual"]])
     return payload
+
+
+def _attach_sponsor_seen(
+    conn: Connection, ctx: ApiContext, served_rows: Sequence[dict[str, Any]]
+) -> None:
+    """Set `sponsor_seen` on every served row: what the badge's tooltip needs, else `None`.
+
+    `None` is the answer for no record, a profile that does not declare `needs_sponsorship`, and
+    an index that is missing or unusable. It is never "does not sponsor": a record is evidence an
+    employer filed, and its absence is evidence of nothing. The index is read per request like
+    `load_apply_routes`, and only for a profile that needs sponsorship.
+    """
+    index = None
+    profile_row = get_profile(conn)
+    if profile_row is not None:
+        try:
+            facts = parse_facts(profile_row.eligibility_facts_json)
+        except ProfileRowInvalid:
+            facts = None  # the page must still render; the engine paths refuse this row loudly
+        if facts is not None and facts_need_sponsorship(facts):
+            loaded = load_sponsor_index(ctx.settings.config_dir)
+            index = loaded if loaded.problem is None else None
+    for served in served_rows:
+        record = None if index is None else index.lookup(served["company"])
+        served["sponsor_seen"] = (
+            None
+            if record is None
+            else {
+                "computing_rows": record.computing_rows,
+                "computing_low_wage_rows": record.computing_low_wage_rows,
+                "latest_decision": record.latest_decision,
+            }
+        )
 
 
 def _rejected(row: QueueRow) -> bool:
@@ -464,14 +500,16 @@ def detail_payload(conn: Connection, ctx: ApiContext, posting_id: int) -> dict[s
     # applied or skipped, and neither is this: the pane is the only surface that can still
     # show the follow-up on a lead that has left the list.
     follow_up = followup_job_dates(conn).get(detail.row.job_id)
+    row_json = _row_json(
+        detail.row,
+        facts,
+        ctx,
+        follow_up,
+        applied_identical_jds(conn).get(detail.row.posting_id, []),
+    )
+    _attach_sponsor_seen(conn, ctx, [row_json])
     return {
-        "row": _row_json(
-            detail.row,
-            facts,
-            ctx,
-            follow_up,
-            applied_identical_jds(conn).get(detail.row.posting_id, []),
-        ),
+        "row": row_json,
         "jd_body": detail.jd_body,
         "requirements": _requirements_json(detail, facts),
         "board_target": detail.board_target,

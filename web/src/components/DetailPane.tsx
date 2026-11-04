@@ -30,6 +30,7 @@ import { ApplyLink } from "./ApplyLink";
 import { Badge } from "./Badge";
 import { CopyButton } from "./CopyButton";
 import { Icon } from "./Icon";
+import { SponsorBadge } from "./SponsorBadge";
 import { StatusMark } from "./StatusMark";
 
 /**
@@ -790,6 +791,7 @@ export function DetailPane({
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {row.target_flag === true ? <Badge label="Company you target" /> : null}
                   {row.thin_jd ? <Badge label="Very short description" /> : null}
+                  <SponsorBadge seen={row.sponsor_seen} showReason />
                 </div>
                 <div className="mt-2">
                   <AppliedIdenticalJdLine twins={row.applied_identical_jd ?? []} />
