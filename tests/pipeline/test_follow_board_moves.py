@@ -21,6 +21,7 @@ from boardwatch.pipeline.death_probe import unreachable_by_the_scanner
 from boardwatch.pipeline.runner import PipelineSummary, run_pipeline
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.apply import apply_board
+from boardwatch.scan.board_moves import DeadBoard, follow_board_moves
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
@@ -241,3 +242,69 @@ def test_a_board_that_is_itself_dead_does_not_cover_another(
     with engine.connect() as conn:
         watched = conn.execute(select(tables.companies.c.watched)).scalars().all()
     assert watched == [True, True]
+
+
+def test_404_then_500_then_404_is_not_three_dead_scans(setup: tuple[Engine, Settings]) -> None:
+    engine, settings = setup
+    _watch(engine, "acme")
+    board = _PROVIDERS["greenhouse"].board_url("acme")
+    with respx.mock as routes:
+        route = routes.get(board)
+        last = None
+        for status in (404, 500, 404):
+            route.respond(status)
+            last = _run(engine, settings)
+    assert last is not None and not _dead_alerts(last)
+
+
+def test_a_dead_alias_is_unwatched_by_id_and_the_healthy_alias_stays(
+    setup: tuple[Engine, Settings],
+) -> None:
+    engine, settings = setup
+    with engine.begin() as conn:
+        for slug in ("ACME", "acme"):
+            conn.execute(insert(tables.companies).values(
+                name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
+            ))
+        rows = conn.execute(select(tables.companies.c.id, tables.companies.c.slug)).all()
+        conn.execute(insert(tables.companies).values(
+            name="Acme", provider="ashby", slug="acme", source="user", watched=True,
+        ))
+    dead = next(r.id for r in rows if r.slug == "acme")
+    actions, errors = follow_board_moves(
+        engine, settings, [DeadBoard(dead, "greenhouse", "acme", "Acme")]
+    )
+    assert not errors and len(actions) == 1
+    with engine.connect() as conn:
+        watched = dict(conn.execute(select(tables.companies.c.id, tables.companies.c.watched)).all())
+    assert watched[dead] is False or watched[dead] == 0
+    assert watched[next(r.id for r in rows if r.slug == "ACME")]
+
+
+def test_another_employer_on_the_same_handle_neither_covers_nor_gets_renamed(
+    setup: tuple[Engine, Settings],
+) -> None:
+    engine, settings = setup
+    _watch(engine, "acme")
+    with engine.begin() as conn:
+        conn.execute(insert(tables.companies).values(
+            name="Different Employer", provider="lever", slug="acme", source="lane", watched=False,
+        ))
+        conn.execute(insert(tables.companies).values(
+            name="Other Watched", provider="ashby", slug="acme", source="user", watched=True,
+        ))
+        dead = conn.execute(select(tables.companies.c.id).where(
+            tables.companies.c.provider == "greenhouse"
+        )).scalar_one()
+    with respx.mock as routes:
+        routes.get(_PROVIDERS["lever"].board_url("acme")).respond(200, json=[{"id": "x"}])
+        routes.get(_PROVIDERS["ashby"].board_url("acme")).respond(404)
+        routes.get(_PROVIDERS["workable"].board_url("acme")).respond(404)
+        actions, errors = follow_board_moves(
+            engine, settings, [DeadBoard(dead, "greenhouse", "acme", "Name acme")]
+        )
+    assert actions == [] and errors == []
+    with engine.connect() as conn:
+        rows = {r.provider: r for r in conn.execute(select(tables.companies)).all()}
+    assert rows["greenhouse"].watched and not rows["lever"].watched
+    assert rows["lever"].name == "Different Employer"

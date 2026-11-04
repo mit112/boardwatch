@@ -12,7 +12,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.providers.registry import build_providers
 from boardwatch.scan.board_migration import company_key, suggest_migrations
-from boardwatch.store.queries import get_watched_companies, unwatch, upsert_watch
+from boardwatch.store.queries import get_watched_companies, upsert_watch
 from boardwatch.store.tables import board_scans, companies
 
 
@@ -63,6 +63,11 @@ def dead_boards_alert(boards: list[DeadBoard]) -> str:
     return f"{len(boards)} boards dead for 3+ scans: {names}{rest}; full list in the funnel"
 
 
+def _unwatch_id(conn: Connection, company_id: int) -> None:
+    """The evidenced row itself: `unwatch` resolves a slug and can land on a healthy alias."""
+    conn.execute(update(companies).where(companies.c.id == company_id).values(watched=False))
+
+
 def follow_board_moves(
     engine: Engine, settings: Settings, boards: list[DeadBoard],
 ) -> tuple[list[str], list[str]]:
@@ -94,13 +99,14 @@ def follow_board_moves(
                 continue
             covered = next((r for r in watched if r.provider != board.provider and
                             r.id not in dead_ids and
+                            r.name.casefold() == board.name.casefold() and
                             company_key(r.provider, r.slug).casefold() ==
                             company_key(board.provider, board.slug).casefold()), None)
             undo = join(["boardwatch", "--data-dir", str(settings.data_dir),
                          "companies", "add", f"{board.provider}:{board.slug}"])
             if covered is not None:
                 with engine.begin() as conn:
-                    unwatch(conn, provider=board.provider, slug=board.slug)
+                    _unwatch_id(conn, board.company_id)
                 actions.append(
                     f"Unwatched {board.provider}:{board.slug}; already watched on "
                     f"{covered.provider}:{covered.slug}. Undo: `{undo}`"
@@ -111,12 +117,16 @@ def follow_board_moves(
                 continue
             move = suggestions[0]
             with engine.begin() as conn:
+                # A stored board under another name is another employer's: never rename it.
+                held = conn.execute(select(companies.c.name).where(
+                    companies.c.provider == move.new_provider,
+                    func.lower(companies.c.slug) == func.lower(move.new_slug),
+                )).scalar()
+                if held is not None and held.casefold() != board.name.casefold():
+                    continue
                 slug = upsert_watch(conn, provider=move.new_provider, slug=move.new_slug,
                                     name=board.name, source="user")
-                conn.execute(update(companies).where(
-                    companies.c.provider == move.new_provider, companies.c.slug == slug,
-                ).values(name=board.name))
-                unwatch(conn, provider=board.provider, slug=board.slug)
+                _unwatch_id(conn, board.company_id)
             undo += " && " + join(["boardwatch", "--data-dir", str(settings.data_dir),
                                    "companies", "remove", f"{move.new_provider}:{slug}"])
             actions.append(

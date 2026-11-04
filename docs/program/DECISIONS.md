@@ -35627,7 +35627,7 @@ and funnel with the exact undo command, including the data directory. No probes 
 run with the setting off, and `--no-scan` never follows moves. Doctor remains suggest-only.
 
 **Reversal of D-301 and D-291.** Their rejection of auto-apply is reversed only for this opt-in
-case. A wrong same-handle match only adds postings that still pass eligibility, and the move is
+case. A same-handle board that the store already holds under another name is left alone, and a covering board must carry the same name. A brand-new same-handle board cannot be told apart from another employer: that case adds postings under the old name, they still pass eligibility, and the move is
 logged with an undo command. Three typed dead observations replace stale health metadata as the
 trigger. The default leaves watch changes under manual control.
 
