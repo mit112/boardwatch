@@ -117,6 +117,16 @@ postings = Table(
     CheckConstraint("status IN ('open', 'closed')", name="status_enum"),
 )
 
+application_destinations = Table(
+    "application_destinations",
+    metadata,
+    Column("posting_id", Integer, ForeignKey("postings.id"), primary_key=True),
+    Column("url", Text, nullable=False),
+    Column("source_url", Text, nullable=False),
+    Column("evidence_ref", Text, nullable=False),
+    Column("verified_at", DateTime, nullable=False),
+)
+
 jobs = Table(
     "jobs",
     metadata,
