@@ -366,3 +366,19 @@ def test_the_share_does_not_move_config_hash_so_no_disposition_goes_stale(tmp_pa
     on = Settings(**dirs, slate_direct_share=0.5)
     assert config_hash(off) == config_hash(on)
     assert routing_hash(off) != routing_hash(on)
+
+
+def test_verified_destination_counts_as_direct_while_source_stays_aggregator(env: Path) -> None:
+    from boardwatch.store.application_destinations import record_application_destination
+    ids = _seed(env)
+    (env.parent / "cfg").mkdir(exist_ok=True)
+    (env.parent / "cfg" / "apply-routes.toml").write_text(_ROUTES_TOML)
+    with get_engine(env).begin() as conn:
+        record_application_destination(
+            conn, posting_id=ids["agg1"], url="https://jobs.ashbyhq.com/acme/resolved-1",
+            source_url="https://www.linkedin.com/jobs/view/1",
+            evidence_ref="ledger.json#1", verified_at=utcnow(),
+        )
+    ranked, out = _rank(env, 1.0, limit=1)
+    assert [p.posting_id for p in ranked.visible] == [ids["agg1"]]
+    assert "1 direct of 1 on the ranked slate" in out

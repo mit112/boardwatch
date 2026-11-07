@@ -1547,3 +1547,50 @@ def test_the_full_time_sentinel_is_the_value_the_live_fleet_writes() -> None:
     from boardwatch.store.delivery_queries import _FULL_TIME_EMPLOYMENT_TYPE
 
     assert _FULL_TIME_EMPLOYMENT_TYPE == "FullTime"
+
+
+def test_verified_destination_is_shared_by_queue_detail_and_applied(engine: Engine) -> None:
+    from boardwatch.store.application_destinations import record_application_destination
+    source = "https://www.linkedin.com/jobs/view/123"
+    target = "https://jobs.ashbyhq.com/acme/123"
+    with engine.begin() as conn:
+        pid, job = _deliver(conn, "resolved", url=source)
+        control, _ = _deliver(conn, "control")
+        record_application_destination(conn, posting_id=pid, url=target, source_url=source,
+                                       evidence_ref="ledger.json#123", verified_at=NOW)
+    with engine.connect() as conn:
+        rows = {r.posting_id: r for r in delivered_unapplied(conn, skipped=set())}
+        assert rows[pid].apply_url == target
+        assert rows[control].apply_url == "https://boards.test/apply"
+        detail = queue_detail(conn, pid)
+        assert detail is not None and detail.row.apply_url == target
+    with engine.begin() as conn:
+        create_application(conn, job_id=job, status="applied", source="test")
+    with engine.connect() as conn:
+        assert delivery_queries.applied_rows(conn)[0].apply_url == target
+
+
+def test_destination_drives_web_route_without_mutating_source(engine: Engine, tmp_path: Path) -> None:
+    from boardwatch.delivery.api import ApiContext, queue_payload
+    from boardwatch.store.application_destinations import record_application_destination
+
+    config = tmp_path / "config"
+    config.mkdir(exist_ok=True)
+    (config / "apply-routes.toml").write_text(
+        'auto_hosts = ["ashbyhq.com"]\nunresolved_hosts = ["linkedin.com"]\n'
+    )
+    source = "https://www.linkedin.com/jobs/view/123"
+    target = "https://jobs.ashbyhq.com/acme/123"
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, "one", url=source)
+        record_application_destination(conn, posting_id=pid, url=target, source_url=source,
+                                       evidence_ref="ledger.json#123", verified_at=NOW)
+    ctx = ApiContext(settings=load_settings(), out_root=tmp_path, queue_root=tmp_path,
+                     owner_name="Example", platform="darwin")
+    with engine.connect() as conn:
+        payload = queue_payload(conn, ctx)
+        rows = payload["rows"] + payload["review"]
+        row = next(r for r in rows if r["posting_id"] == pid)
+        assert row["apply_url"] == target
+        assert row["apply_route"] == "auto"
+        assert conn.execute(text("SELECT url FROM postings WHERE id=:pid"), {"pid": pid}).scalar_one() == source

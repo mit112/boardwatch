@@ -5553,3 +5553,30 @@ def test_each_unapplied_requisition_keeps_one_visible_standing_lead(
         for requisition in requisitions:
             assert len(visible & requisition) == 1
         assert visible == expected
+
+
+@pytest.mark.parametrize("manual", [False, True])
+def test_verified_destination_reaches_existing_folder_without_source_mutation(
+    engine: Engine, root: Path, apps: Path, manual: bool,
+) -> None:
+    from boardwatch.store.application_destinations import record_application_destination
+    new_url = "https://employer.test/careers/job/42"
+    with engine.begin() as conn:
+        pid, job = _deliver(conn, apps, "one")
+    queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    if manual:
+        with engine.begin() as conn:
+            mark_job_manual(conn, job_id=job, at=NOW)
+        queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    base = root / MANUAL_DIR if manual else root
+    assert _link_url(_sole_folder(base)) == APPLY_URL
+    with engine.begin() as conn:
+        record_application_destination(conn, posting_id=pid, url=new_url, source_url=APPLY_URL,
+                                       evidence_ref="ledger.json#42", verified_at=NOW)
+    _, synced = queue.refresh_queue(engine, root=root, owner_name=OWNER)
+    assert synced.failed == 0, synced.failures
+    folder = _sole_folder(base)
+    assert _link_url(folder) == new_url
+    assert _details(folder)["apply_url"] == new_url
+    with engine.connect() as conn:
+        assert conn.execute(select(postings.c.url).where(postings.c.id == pid)).scalar_one() == APPLY_URL

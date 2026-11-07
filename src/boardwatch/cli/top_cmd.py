@@ -73,6 +73,7 @@ from boardwatch.rank.sponsors import (
 )
 from boardwatch.rank.tenant_assumptions import TenantAssumptionTally, ungrounded_reasons
 from boardwatch.store.app_state import get_digest_cursor
+from boardwatch.store.application_destinations import effective_apply_url
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     EMPTY_BODY_HASH,
@@ -668,6 +669,7 @@ def rank_open_postings(
                 # The requisition-twin rule's input (D-654), read off the row the ranker already
                 # loads. Keyed only for the rows that reach the slate, inside the fill loop.
                 postings.c.url,
+                effective_apply_url().label("apply_url"),
                 jobapps_employer_url().label("employer_url"),
                 postings.c.posted_at,
                 postings.c.locations_json,
@@ -766,6 +768,7 @@ def rank_open_postings(
     cluster_keys: dict[int, tuple[int, str, str]] = {}
     # posting_id -> (stored URL, employer evidence), read only on reaching the slate (D-655).
     posting_urls: dict[int, tuple[str | None, str | None]] = {}
+    application_urls: dict[int, str | None] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
     signal_unmeasured = 0
@@ -940,6 +943,7 @@ def rank_open_postings(
                 int(row.company_id), row.normalized_title, locations_key,
             )
         posting_urls[int(row.id)] = (row.url, row.employer_url)
+        application_urls[int(row.id)] = row.apply_url
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
             score=score,
@@ -1059,7 +1063,7 @@ def rank_open_postings(
             direct_routes = routes
             reordered = interleave_direct(
                 eligible,
-                lambda r: routes.is_direct_auto(posting_urls[r.posting_id][0]),
+                lambda r: routes.is_direct_auto(application_urls[r.posting_id]),
                 settings.slate_direct_share,
             )
             moved = sum(a is not b for a, b in zip(eligible, reordered, strict=True))
@@ -1429,7 +1433,7 @@ def rank_open_postings(
         # The delivered reading, not the target: rows dropped in the loop above can leave it short
         # of the setting, and the reserve has never been seen working until this line says so.
         direct_shown = sum(
-            direct_routes.is_direct_auto(posting_urls[r.posting_id][0]) for r in visible
+            direct_routes.is_direct_auto(application_urls[r.posting_id]) for r in visible
         )
         output_console.print(
             f"slate_direct_share {settings.slate_direct_share:g}: {direct_shown} direct of "

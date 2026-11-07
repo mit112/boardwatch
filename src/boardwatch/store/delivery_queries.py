@@ -73,6 +73,7 @@ from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.role_gate import RoleVerdict, taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
+from boardwatch.store.application_destinations import effective_apply_url
 from boardwatch.store.applications import APPLIED_STATUSES, STATE_EVENTS, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
 from boardwatch.store.quarantine_queries import is_quarantined
@@ -373,6 +374,7 @@ def _delivered_select() -> Select[Any]:
             # query so both readers resolve the posting through one join.
             postings.c.closed_at,
             postings.c.url,
+            effective_apply_url().label("apply_url"),
             jobapps_employer_url().label("employer_url"),
             companies.c.name.label("company"),
             companies.c.provider,
@@ -569,7 +571,7 @@ def _queue_row(
         first_seen=row.first_seen_at,
         status=_status(row.status, row.watched, row.board_ever_complete),
         verdict=verdict,
-        apply_url=str(row.url) if row.url is not None else None,
+        apply_url=str(row.apply_url) if row.apply_url is not None else None,
         delivered_run_id=(
             int(row.delivered_run_id) if row.delivered_run_id is not None else None
         ),
@@ -1562,6 +1564,7 @@ def _job_posting_select() -> Select[Any]:
         postings.c.status,
         postings.c.closed_at,
         postings.c.url,
+        effective_apply_url().label("apply_url"),
         jobapps_employer_url().label("employer_url"),
         companies.c.name.label("company"),
         companies.c.watched,
@@ -1603,7 +1606,7 @@ def _applied_row(
         title=None if posting is None else str(posting.title),
         location=None if posting is None else _location(posting.locations_json),
         apply_url=(
-            None if posting is None or posting.url is None else str(posting.url)
+            None if posting is None or posting.apply_url is None else str(posting.apply_url)
         ),
         posting_status=(
             None
