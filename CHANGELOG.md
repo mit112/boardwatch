@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Verified application links survive imports.** Application destinations are stored separately
+  from discovery URLs and used consistently by the web queue, applied history, queue folders,
+  and direct-apply ranking. Existing links require an explicit reviewed backfill (D-677).
+
 - **Import Handshake jobs captured by job-apps.** The job-apps lane accepts `handshake` records
   with their saved job description and posting link instead of counting them as not attemptable.
   They use the existing eligibility and liveness checks; their application route is by hand (D-676).
