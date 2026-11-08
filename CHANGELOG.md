@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Last delivery survives maintenance work.** Queue history selects genuine delivery runs and
+  counts their retained artifact cohort, even after the same job is re-tailored. The runs API
+  distinguishes delivery, scan and maintenance from unknown historical purpose, independently
+  of incremental scope (D-680).
+
 - **Owner holds persist until explicit release.** `ledger hold`, `holds` and `release-hold`
   manage independent job-scoped decisions. Held jobs do not enter résumé work or actionable
   queue lists; existing folders drain to `_held` on refresh and return to their current lane on
