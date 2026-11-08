@@ -258,6 +258,8 @@ def collect_run_funnel(
     # T43 appended `pending_tailor`: a review-lane lead delivered with no PDF.
     tailored: list[tuple[int, str, str, Path, bool, bool]],
     tailor_failed: int,
+    execution_deferred: int = 0,
+    execution_deferred_after_projection: int = 0,
     # P5a. `projection_ran` is the ONLY thing that decides whether the artifact carries a
     # `projection` stage — never whether `projection_outcomes` is non-empty. A projected run can
     # legitimately count nothing (the preflight refused before the loop, or every shortlisted lead
@@ -504,6 +506,8 @@ def collect_run_funnel(
         sources=sources,
         leads=leads,
         tailor_failed=tailor_failed,
+        execution_deferred=execution_deferred,
+        execution_deferred_after_projection=execution_deferred_after_projection,
         projection=(
             build_projection_counters(projection_outcomes or {}) if projection_ran else None
         ),

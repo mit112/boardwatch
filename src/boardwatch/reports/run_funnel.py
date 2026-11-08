@@ -2093,6 +2093,8 @@ def build_run_funnel(
     sources: Sequence[SourceOutcome],
     leads: Sequence[Lead],
     tailor_failed: int,
+    execution_deferred: int = 0,
+    execution_deferred_after_projection: int = 0,
     tailored_artifacts: TailoredArtifactCounts,
     marked_applied: int,
     stub_postings: int,
@@ -2399,6 +2401,16 @@ def build_run_funnel(
             "third terminal state, which is why it is its own bucket"
         ),
     )
+    deferred_before = () if execution_deferred == execution_deferred_after_projection else (Drop(
+        reason="execution_deferred",
+        count=execution_deferred - execution_deferred_after_projection,
+        note="Current execution inputs changed or could not be read; no disposition earned.",
+    ),)
+    deferred_after = () if not execution_deferred_after_projection else (Drop(
+        reason="execution_deferred",
+        count=execution_deferred_after_projection,
+        note="Projection finished; inputs changed before tailoring. Projection artifacts retained.",
+    ),)
     # T60 — the judge's own terminal state (T42, D-483): the leads `run_gate_stage` persisted
     # `ineligible` against a quoted span and removed from the slate, before the lane split. ONE
     # object, moving between the ranker's two possible successors exactly as `withheld_drop`
@@ -2453,7 +2465,8 @@ def build_run_funnel(
             drops=(
                 ()
                 if shortlist is None
-                else (withheld_drop, *gate_drops, review_lane_drop, *projection.drops)
+                else (withheld_drop, *gate_drops, review_lane_drop,
+                      *deferred_before, *projection.drops)
             ),
             # NOT derived. Every drop is counted where the lead actually leaves — one increment at
             # the raise site inside the loop — so this identity can genuinely fail, and it is what
@@ -2583,7 +2596,8 @@ def build_run_funnel(
                 Drop(reason="tailor_failed", count=tailor_failed),
                 # Only when there is no projection stage to hold them. Keeping them here as well
                 # would subtract those leads twice and report a healthy run as unbalanced.
-                *(() if projection_stage is not None else (withheld_drop, *gate_drops)),
+                *(deferred_after if projection_stage is not None
+                  else (withheld_drop, *gate_drops, *deferred_before)),
             ),
             note=(
                 ""

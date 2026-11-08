@@ -36,8 +36,10 @@ from rich.console import Console
 from sqlalchemy import Connection as SAConnection
 from sqlalchemy import Engine, func, select
 
+from boardwatch.cli.top_cmd import _held_lane_copy_ids
 from boardwatch.core.clock import utcnow
 from boardwatch.core.dedup import Suppression
+from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION, SUPPRESSING_KINDS
 from boardwatch.core.lineage import ResumeSourceLineage
 from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting
 from boardwatch.core.politeness import Fetcher
@@ -62,11 +64,13 @@ from boardwatch.eligibility.read import (
     current_gate_seniority,
     current_gate_verdicts,
     current_requirement_flags,
+    current_verdicts,
 )
 from boardwatch.extract.preflight import refresh_profile_taxonomy
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.lanes.admission import CompanyBudget
 from boardwatch.lanes.base import Lane, LaneCompanySnapshot, LaneContext, LaneResult, lane_snapshot
+from boardwatch.lanes.dereference import posting_requisition_key
 from boardwatch.lanes.facets import (
     MINED_FACET_WINDOW_DAYS,
     LaneFacets,
@@ -126,6 +130,8 @@ from boardwatch.projection.run import (
     resolve_projection_run,
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
+from boardwatch.providers.registry import PROVIDER_NAMES
+from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.tenant_assumptions import (
     TenantAssumptionReport,
@@ -165,18 +171,25 @@ from boardwatch.scan.coordinator import (
     scan_under_lease,
     systemic_scan_outage_reason,
 )
+from boardwatch.store import tables
+from boardwatch.store.application_destinations import effective_apply_url
+from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.buried_queries import BuriedLeads
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema, write_connection
 from boardwatch.store.delivery_queries import (
     QueueRow,
+    delivered_cross_host_keys,
     form_question_hits,
     lane_decision,
+    requisition_holder_urls,
     revised_since_build_ids,
+    standing_board_cross_host_keys,
 )
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
-from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.identity_queries import load_identities
+from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -188,11 +201,13 @@ from boardwatch.store.queries import (
     first_seen_since_clause,
     get_profile,
     insert_run,
+    jobapps_employer_url,
     posting_slugs,
     reap_stale_runs,
     upsert_lane_company,
     watched_company_names,
 )
+from boardwatch.store.queue_state import manual_job_ids, reported_job_ids, skipped_job_ids
 from boardwatch.store.regroup import (
     apply_merges,
     job_anchors,
@@ -575,6 +590,8 @@ class PipelineSummary:
     # bundle or the machine, and burying the lead for it would delete an opportunity that
     # tomorrow's run would have built.
     projection_failed_ids: list[int] = field(default_factory=list)
+    execution_deferred_ids: list[int] = field(default_factory=list)
+    execution_deferred_after_projection: int = 0
     # Posting ids the final-eligibility judge persisted `ineligible` for this run and the
     # stage therefore removed from the slate (`GateStageResult.excluded_ids`). A FIFTH terminal
     # state beside lead / render failure / withheld-dead / projection-refused: the lead never
@@ -1663,6 +1680,91 @@ def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
     return sorted((row for row in rows if row.status != "closed"), key=rank)
 
 
+def _execution_inputs(
+    engine: Engine, settings: Settings, posting: RankedPosting
+) -> tuple[object, ...] | None:
+    """Read admission facts again at execution; None means already withdrawn.
+
+    No ranking/preflight, evaluation or disposition writes. Changed duplicate evidence defers
+    to the next normal rank, preserving its survivor and completeness policies.
+    """
+    pid = posting.posting_id
+    with engine.connect() as conn:
+        row = conn.execute(select(
+            postings.c.job_id, postings.c.status, postings.c.title, postings.c.locations_json,
+            postings.c.remote_policy, postings.c.content_hash, postings.c.body_text,
+            postings.c.url, effective_apply_url().label("apply_url"),
+            companies.c.provider, companies.c.name, jobapps_employer_url().label("employer_url"),
+        ).join(companies, companies.c.id == postings.c.company_id)
+          .where(postings.c.id == pid)).first()
+        versions = current_posting_versions(conn, [pid])
+        version = versions.get(pid)
+        if (row is None or version is None or row.status == "closed"
+                or row.title != posting.title or row.name != posting.company):
+            return None
+        job = int(row.job_id)
+        if row.provider not in PROVIDER_NAMES:
+            delivered_keys, delivered_ids = delivered_cross_host_keys(conn)
+            if pid in _held_lane_copy_ids(
+                conn, standing_board_keys=standing_board_cross_host_keys(
+                    conn, skipped=set(skipped_job_ids(conn))),
+                delivered_keys=delivered_keys, delivered_ids=delivered_ids,
+            ):
+                return None
+        if (job in skipped_job_ids(conn) or job in reported_job_ids(conn)
+                or job in applied_job_ids(conn)
+                or job in live_dispositions(conn, now=utcnow(), job_ids=[job])):
+            return None
+        identity = current_identity(conn, settings)
+        profile_hash, rules_hash = identity if identity is not None else (None, None)
+        vids = [version.posting_version_id]
+        verdict = current_verdicts(conn, vids, profile_hash, rules_hash).get(pid)
+        facts, band = current_judge_inputs(conn, settings)
+        gates = current_gate_verdicts(
+            conn, vids, facts, load_rules(settings.config_dir), model=settings.gate.model,
+            effort=gate_effort_key(settings.gate.effort), target_band=band,
+        )
+        if verdict == "ineligible" or gates.get(pid) == "ineligible":
+            return None
+        # The routine ranker's holder reader and key, without activating slice 1's changes.
+        holders, delivered = requisition_holder_urls(conn)
+        key = posting_requisition_key(row.url, row.employer_url)
+        conflict = key is not None and pid not in delivered and any(
+            other != pid and posting_requisition_key(*urls) == key
+            for other, urls in holders.items()
+        )
+        if conflict and job not in manual_job_ids(conn):
+            return None
+        identities = load_identities(conn, [pid]).get(pid, ())
+        peers = tuple(
+            (i.kind, i.identity_key, tuple(tuple(r) for r in conn.execute(select(
+                tables.posting_identities.c.posting_id, postings.c.status,
+                postings.c.job_id, postings.c.content_hash,
+                func.max(tables.eligibility_evaluations.c.id),
+            ).join(postings, postings.c.id == tables.posting_identities.c.posting_id)
+             .outerjoin(tables.posting_versions,
+                        tables.posting_versions.c.posting_id == postings.c.id)
+             .outerjoin(tables.eligibility_inputs,
+                        tables.eligibility_inputs.c.posting_version_id
+                        == tables.posting_versions.c.id)
+             .outerjoin(tables.eligibility_evaluations,
+                        tables.eligibility_evaluations.c.input_id == tables.eligibility_inputs.c.id)
+             .where(tables.posting_identities.c.algorithm_version == IDENTITY_ALGORITHM_VERSION,
+                    tables.posting_identities.c.kind == i.kind,
+                    tables.posting_identities.c.identity_key == i.identity_key)
+             .group_by(postings.c.id)
+             .order_by(postings.c.id)).all()))
+            for i in identities if i.kind in {spec.name for spec in SUPPRESSING_KINDS}
+        )
+        return (
+            tuple(row), version, run_policy_version(conn, settings), verdict, gates.get(pid),
+            current_requirement_flags(conn, vids, profile_hash, rules_hash).get(pid),
+            current_gate_seniority(conn, vids, facts, model=settings.gate.model,
+                                   target_band=band).get(pid),
+            form_question_hits(conn, versions).get(pid), job in manual_job_ids(conn), peers,
+        )
+
+
 def _lead_lanes(
     engine: Engine, settings: Settings, leads: Sequence[RankedPosting]
 ) -> tuple[dict[int, tuple[str, int | None]], int, TenantAssumptionTally | None]:
@@ -1675,8 +1777,8 @@ def _lead_lanes(
     not) here can never disagree with the lane `sync_queue` files its folder under later, because
     both call sites are `review_gate.lane` reading the CURRENT evaluation.
 
-    `posting_closed=False` unconditionally: `leads` is `ranked.visible`, already filtered to
-    `postings.status == "open"` by the ranker's own query, so a closed posting never reaches here.
+    The execution barrier checks current liveness before acting on this batch lane reading;
+    the ranker originally selected open postings, but they can close while the run is working.
 
     T44's `seniority_above_band` is computed HERE and passed in, rather than re-derived inside
     `review_gate.classify`: the scheme/band/tier/catalog inputs are config- and profile-dependent
@@ -1698,6 +1800,7 @@ def _lead_lanes(
         versions = current_posting_versions(conn, posting_ids)
         version_ids = [v.posting_version_id for v in versions.values()]
         flags = current_requirement_flags(conn, version_ids, profile_hash, rules_hash)
+        verdicts = current_verdicts(conn, version_ids, profile_hash, rules_hash)
         # 0-B (D-489): the FINAL GATE's verdict, through the SAME read `delivered_unapplied`
         # makes -- same version list, same facts, judge and catalog -- so the lane this run
         # tailors for can never disagree with the one `sync_queue` files the folder under. Keyed
@@ -1802,6 +1905,7 @@ def _lead_lanes(
             target_countries=target_countries,
         )
     )
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
     result: dict[int, tuple[str, int | None]] = {}
     for posting in leads:
         posting_version = versions.get(posting.posting_id)
@@ -1810,11 +1914,9 @@ def _lead_lanes(
         )
         posting_flags = flags.get(posting.posting_id, NO_REQUIREMENT_FLAGS)
         decision = classify(
-            verdict=posting.verdict,
+            verdict=verdicts.get(posting.posting_id),
             locations=locations_by_posting.get(posting.posting_id, ()),
-            # T184b. The ranker's own taxonomy verdict on this lead, so the lane this run
-            # tailors for is the one `top` ranked it under — never re-derived here.
-            role=posting.role,
+            role=taxonomy_role_verdict(posting.title, role_taxonomy)[0],
             seniority_above_band=band_reader.above_band(
                 posting.title, company_of.get(posting.posting_id)
             ),
@@ -2939,6 +3041,30 @@ def _run_pipeline_leased(
         # apply-lane leads only. Computed once over the whole slate rather than per-lead inside
         # the loop, for the same reason `dead_job_ids` above is: one query beats N. Runs on the
         # POST-gate `leads`: a lead the gate just excluded must not be lane-classified at all.
+        with engine.connect() as admission_conn:
+            admitted_jobs = job_anchors(admission_conn, [p.posting_id for p in leads])
+        admitted: dict[int, tuple[object, ...] | None] = {}
+        for lead in leads:
+            try:
+                admitted[lead.posting_id] = _execution_inputs(engine, settings, lead)
+            except Exception as exc:  # unavailable inputs never authorize work
+                console.print(f"execution admission unavailable: posting {lead.posting_id}: {exc}")
+                admitted[lead.posting_id] = None
+
+        def still_admitted(lead: RankedPosting, *, projected: bool = False) -> bool:
+            try:
+                current = _execution_inputs(engine, settings, lead)
+                if current is not None and current == admitted.get(lead.posting_id):
+                    return True
+            except Exception as exc:  # retry through normal admission on a later run
+                console.print(f"execution read unavailable: posting {lead.posting_id}: {exc}")
+            summary.execution_deferred_ids.append(lead.posting_id)
+            summary.execution_deferred_after_projection += int(projected)
+            console.print(
+                f"execution deferred: posting {lead.posting_id}: inputs changed or unavailable"
+            )
+            return False
+
         lane_of, summary.gate_readings_absent, summary.tenant_review = _lead_lanes(
             engine, settings, leads
         )
@@ -2964,8 +3090,13 @@ def _run_pipeline_leased(
         # and every one behind it — rather than leaving them counted nowhere while the funnel stage
         # still claims it entered at the full shortlist. See `_abandon_unattempted`.
         for lead_index, posting in enumerate(leads):
-            dest = day_dir / _slug(posting.company, posting.posting_id)
             posting_lane, posting_version_id = lane_of.get(posting.posting_id, ("", None))
+            if not still_admitted(posting):
+                progress = review_progress if posting_lane == REVIEW_DIR else tailor_progress
+                assert progress is not None
+                progress.advance(item=posting.company)
+                continue
+            dest = day_dir / _slug(posting.company, posting.posting_id)
             if posting_lane == REVIEW_DIR:
                 # T43. Never reaches projection or `run_tailor` — both render, and the render is
                 # exactly the cost this ticket exists to stop spending on a lead the owner has to
@@ -3056,6 +3187,9 @@ def _run_pipeline_leased(
                 summary.projection_outcomes[ProjectionLeadOutcome.PROJECTED] += 1
                 lead_resume_path = projected.resume_path
                 lead_lineage = projected.lineage
+            if not still_admitted(posting, projected=projection_ctx is not None):
+                tailor_progress.advance(item=posting.company)
+                continue
             try:
                 result = run_tailor(
                     engine,
@@ -3210,7 +3344,8 @@ def _run_pipeline_leased(
         # A lead the judge rejected is subtracted for the same reason a dead one is: it never
         # entered the tailor loop, so counting it as a render failure would report a working
         # judge as a broken résumé path.
-        renderable = shortlisted - len(summary.dead_lead_ids) - len(summary.gate_excluded_ids)
+        renderable = (shortlisted - len(summary.dead_lead_ids) - len(summary.gate_excluded_ids)
+                      - len(summary.execution_deferred_ids))
         # A projected lead that never reached `run_tailor` is counted here and NOT subtracted from
         # `renderable`, deliberately: it was renderable, and a run that produced nothing from a
         # non-empty shortlist must stay fatal. Subtracting them would leave the zero-output guard
@@ -3238,7 +3373,13 @@ def _run_pipeline_leased(
             summary.shortlist = replace(summary.shortlist, dead_this_run=dead_this_run)
         # A bounded fresh slice may legitimately lose every candidate to normal filters.
         # Cohort and render/filesystem failures remain fatal on both paths.
-        if summary.fatal is None and not summary.tailored and fresh_hours is None:
+        # A bounded slate explicitly withdrawn at execution is an explained empty result,
+        # even when the ranker judged other candidates beyond this run's selected slate.
+        slate_deferred = bool(leads) and {p.posting_id for p in leads}.issubset(
+            summary.execution_deferred_ids
+        )
+        if (summary.fatal is None and not summary.tailored and fresh_hours is None
+                and not slate_deferred):
             # T131. INTERSECTED with `judged`, because the denominator counts only postings whose
             # deterministic evaluation THIS run wrote: a lead the gate excluded on a verdict
             # computed in a prior run is not in it, and subtracting the raw count would underflow
@@ -3278,6 +3419,7 @@ def _run_pipeline_leased(
                 - frozenset(summary.projection_failed_ids)
                 - frozenset(summary.gate_excluded_ids)
                 - beyond_slate_ids
+                - frozenset(summary.execution_deferred_ids)
             )
             lead_ids = frozenset(lead.posting_id for lead in summary.tailored)
             failed_ids = frozenset(summary.tailor_failed_ids)
@@ -3334,6 +3476,8 @@ def _run_pipeline_leased(
                 if job_id not in dead_job_ids
                 and job_id not in beyond_slate_job_ids
                 and job_id not in fresh_failed_job_ids
+                and job_id not in {admitted_jobs[p] for p in summary.execution_deferred_ids
+                                   if p in admitted_jobs}
             ),
             stage_completed=summary.fatal is None,
         )
@@ -4359,6 +4503,8 @@ def _emit_funnel(
             for lead in summary.tailored
         ],
         tailor_failed=summary.tailor_failed,
+        execution_deferred=len(summary.execution_deferred_ids),
+        execution_deferred_after_projection=summary.execution_deferred_after_projection,
         # P5a — the run's own verdict decides whether the artifact carries a `projection` stage.
         # `None` means `--project` was never passed and there is nothing to report; it is
         # deliberately distinct from `AVAILABLE` (see `PipelineSummary.projection_availability`),
