@@ -88,6 +88,7 @@ from boardwatch.store.identity_queries import (
     load_identity_inputs,
 )
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
+from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import (
     current_posting_version_ids,
@@ -1133,6 +1134,7 @@ def rank_open_postings(
         # gate above: a stored disposition records a decision this program already made, so it
         # governs whether or not dedup happens to be running this minute.
         anchors = job_anchors(dedup_conn, eligible_ids)
+        owner_held = owner_holds(dedup_conn)
         handled = live_dispositions(
             dedup_conn, now=now, job_ids=sorted(set(anchors.values()))
         )
@@ -1220,6 +1222,12 @@ def rank_open_postings(
         # reason eligibility is: `top 8` should return 8 ACTIONABLE rows, not 8 slots of which
         # five were built last week.
         job_id = anchors.get(posting.posting_id)
+        # Explicit owner intent earns no disposition and is never bypassed by inspection flags.
+        if job_id in owner_held:
+            hidden_handled += 1
+            if posting.posting_id in judged_this_run:
+                hidden_handled_this_run += 1
+            continue
         # Applied state is checked BEFORE the ledger, so a job that is both applied-to and
         # `built` reports the applied reason. Not cosmetic: the ledger's `built` lapses on a
         # policy change and its drain would release the row, whereas an application never
@@ -1932,8 +1940,8 @@ def _print_hidden_notices(
         # shrinking: a job you were shown yesterday is simply absent today, with no visible
         # reason. `seen` rows lapse on their own; `built`/`skipped` need `ledger reopen`.
         target.print(
-            f"{results.hidden_handled} hidden as already handled (built, skipped, or surfaced "
-            "recently) — see them with --include-handled, each naming its disposition.",
+            f"{results.hidden_handled} hidden as already handled or owner-held; inspect decisions "
+            "with --include-handled, or owner holds with `ledger holds`.",
             markup=False,
         )
     if results.hidden_applied and not include_applied:

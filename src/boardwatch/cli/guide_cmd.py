@@ -565,6 +565,22 @@ only.""",
         """Multi-posting jobs whose recorded grouping evidence no longer holds, and whether each
 carries a live disposition or an application. Reports only — nothing splits a job.""",
     ),
+    "ledger hold": Entry(
+        ("writes store",),
+        """Hold a canonical `--job` with a required `--reason` until explicit release. Independent
+of skips, eligibility, applications and manual routing; no automatic expiry. Queue folders follow
+the hold on their ordinary refresh. Does not cancel work that has already started.""",
+    ),
+    "ledger holds": Entry(
+        ("reads store",),
+        """List owner holds and reasons independently of ranking. Takes `--json`; `--all` includes
+the last released record for each job. No existing triage overrides are imported automatically.""",
+    ),
+    "ledger release-hold": Entry(
+        ("writes store",),
+        """Release only the owner hold for `--job`, retaining the release record. Does not clear
+a separate skip, application, report or built disposition. An absent hold is a no-op.""",
+    ),
     "ledger show": Entry(
         ("reads store",),
         """Every job the delivery ledger is suppressing, with disposition, reason and whether it

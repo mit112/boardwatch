@@ -93,6 +93,7 @@ from boardwatch.store.delivery_queries import (
     requisition_copy_posting_ids,
     review_job_ids,
 )
+from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.queries import canonical_job_ids
 from boardwatch.store.queue_state import manual_job_ids, reported_job_ids, skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
@@ -110,6 +111,7 @@ REPORTED_DIR = "_reported"
 #: The owner's apply-by-hand list (`queue.manual.<job_id>`). Registered in
 #: ``delivery.names.DRAIN_DIRS``.
 MANUAL_DIR = "_manual"
+HELD_DIR = "_held"
 INELIGIBLE_DIR = "_ineligible"
 #: D-498 rule (a)'s standing-queue drain. Registered in ``delivery.names.DRAIN_DIRS``.
 LANE_COPY_DIR = "_lane_copy"
@@ -243,6 +245,7 @@ class ReconcileReport:
     to_skipped: int = 0
     to_reported: int = 0
     to_manual: int = 0
+    to_held: int = 0
     to_ineligible: int = 0
     to_review: int = 0
     to_closed: int = 0
@@ -263,6 +266,7 @@ class ReconcileReport:
             + self.to_skipped
             + self.to_reported
             + self.to_manual
+            + self.to_held
             + self.to_ineligible
             + self.to_review
             + self.to_closed
@@ -363,6 +367,7 @@ def standing_queue_rows(conn: Connection) -> list[QueueRow]:
     each exclusion is there is `_sync_locked`'s comment."""
     withheld = (
         set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
+        | set(owner_holds(conn))
     )
     lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
     return [
@@ -379,7 +384,7 @@ def _manual_rows(conn: Connection) -> list[QueueRow]:
     manual = set(manual_job_ids(conn))
     if not manual:
         return []
-    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn))
+    withheld = set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(owner_holds(conn))
     # A closed lead belongs in `_closed/`. Excluded here rather than trusted to reconcile, because a
     # refused move (an unclassified folder holding the name) leaves it sitting in `_manual/`.
     return [
@@ -1249,6 +1254,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
     skipped = skipped_job_ids(conn)
     reported = reported_job_ids(conn)
     manual = manual_job_ids(conn)
+    held = set(owner_holds(conn))
     closed = closed_job_ids(conn)
     ineligible = ineligible_job_ids(conn)
     review = review_job_ids(conn)
@@ -1280,6 +1286,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         SKIPPED_DIR: 0,
         REPORTED_DIR: 0,
         MANUAL_DIR: 0,
+        HELD_DIR: 0,
         INELIGIBLE_DIR: 0,
         REVIEW_DIR: 0,
         CLOSED_DIR: 0,
@@ -1294,6 +1301,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
             skipped=skipped,
             reported=reported,
             manual=manual,
+            held=held,
             closed=closed,
             ineligible=ineligible,
             review=review,
@@ -1336,6 +1344,7 @@ def _reconcile_locked(conn: Connection, *, root: Path, owner_name: str = "") -> 
         to_skipped=counts[SKIPPED_DIR],
         to_reported=counts[REPORTED_DIR],
         to_manual=counts[MANUAL_DIR],
+        to_held=counts[HELD_DIR],
         to_ineligible=counts[INELIGIBLE_DIR],
         to_review=counts[REVIEW_DIR],
         to_closed=counts[CLOSED_DIR],
@@ -1370,6 +1379,7 @@ def _wanted_location(
     ineligible: dict[int, str],
     review: set[int],
     lane_copy: set[int],
+    held: set[int] | frozenset[int] = frozenset(),
 ) -> str:
     """Precedence, and it is not arbitrary.
 
@@ -1420,6 +1430,8 @@ def _wanted_location(
         return REPORTED_DIR
     if entry.job_id in closed:
         return CLOSED_DIR
+    if entry.job_id in held:
+        return HELD_DIR
     if entry.job_id in manual:
         return MANUAL_DIR
     if entry.job_id in ineligible:

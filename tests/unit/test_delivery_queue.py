@@ -60,6 +60,7 @@ from boardwatch.delivery.queue import (
     APPLIED_DIR,
     CLOSED_DIR,
     DETAILS_FILE,
+    HELD_DIR,
     INELIGIBLE_DIR,
     JD_FILE,
     LANE_COPY_DIR,
@@ -1769,6 +1770,7 @@ def test_the_drain_set_has_exactly_one_source_of_truth() -> None:
         CLOSED_DIR,
         LANE_COPY_DIR,
         MANUAL_DIR,
+        HELD_DIR,
     }
 
 
@@ -3212,7 +3214,7 @@ def test_sync_creates_every_drain_and_the_lockfile_and_nothing_else(
     assert sorted(path.name for path in root.iterdir() if path.is_dir()) == sorted(
         [
             APPLIED_DIR, SKIPPED_DIR, INELIGIBLE_DIR, REVIEW_DIR, CLOSED_DIR, REPORTED_DIR,
-            LANE_COPY_DIR, MANUAL_DIR,
+            LANE_COPY_DIR, MANUAL_DIR, HELD_DIR,
         ]
     )
     # The lockfile is excluded rather than asserted either way: `filelock`'s POSIX release unlinks

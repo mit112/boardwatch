@@ -2327,9 +2327,9 @@ def build_run_funnel(
                     reason="hidden_handled",
                     count=shortlist.hidden_handled,
                     note=(
-                        "a live ledger disposition: already built, already refused, or surfaced "
+                        "an owner hold or live ledger disposition: built, refused, or surfaced "
                         "inside its seen TTL; drain with `top --include-handled` or "
-                        "`ledger reopen`"
+                        "`ledger reopen`; owner holds require `ledger release-hold`"
                     ),
                 ),
                 Drop(

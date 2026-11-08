@@ -26,6 +26,7 @@ from boardwatch.reports.tailor import (
     plan_tier_a,
     run_tailor,
 )
+from boardwatch.store.owner_holds import OwnerHoldError
 from boardwatch.tailor.load import ResumeLoadError, load_resume, scaffold_template
 from boardwatch.tailor.render.latex import TemplateArtifactError
 from boardwatch.tailor.rewrite.agent_io import CandidatesFile, VerdictsFile, dump_json, load_json
@@ -161,6 +162,7 @@ def run_cmd(
             cache=cache,
         )
     except (
+        OwnerHoldError,
         ResumeLoadError,
         NoCurrentVersionError,
         TierASafetyError,
@@ -294,7 +296,7 @@ def rewrite_request_cmd(
             posting_id,
             resume_path=_resume_path(settings, resume_path),
         )
-    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+    except (OwnerHoldError, ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc
 
@@ -345,7 +347,7 @@ def rewrite_screen_cmd(
             posting_id,
             resume_path=_resume_path(settings, resume_path),
         )
-    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+    except (OwnerHoldError, ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc
 
@@ -397,7 +399,7 @@ def rewrite_apply_cmd(
         tailored, jd_skills, taxonomy, jd_text = plan_tier_a(
             app_ctx.engine, settings, posting_id, resume_path=resolved_resume_path
         )
-    except (ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
+    except (OwnerHoldError, ResumeLoadError, NoCurrentVersionError, TierASafetyError) as exc:
         console.print(str(exc))
         raise typer.Exit(code=1) from exc
 

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Owner holds persist until explicit release.** `ledger hold`, `holds` and `release-hold`
+  manage independent job-scoped decisions. Held jobs do not enter résumé work or actionable
+  queue lists; existing folders drain to `_held` on refresh and return to their current lane on
+  release. Skips, applications and eligibility remain independent (D-679).
+
 - **Requisition dedup uses verified application destinations.** New candidates and standing
   copies match delivered/applied requisitions through their verified employer links. Unsupported
   destinations stay unmatched; existing manual treatment and reversible deferral remain (D-678).

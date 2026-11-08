@@ -19,6 +19,7 @@ from boardwatch.core.identity_kinds import IDENTITY_ALGORITHM_VERSION
 from boardwatch.core.ledger import is_live
 from boardwatch.core.regroup import JobMerge
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
+from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queue_state import (
     disputed_job_ids,
@@ -78,6 +79,7 @@ def queue_action_job_ids(conn: Connection) -> frozenset[int]:
     """
     return frozenset(
         skipped_job_ids(conn).keys()
+        | owner_holds(conn).keys()
         | reported_job_ids(conn).keys()
         | disputed_job_ids(conn).keys()
         | manual_job_ids(conn).keys()

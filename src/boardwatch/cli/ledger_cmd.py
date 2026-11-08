@@ -17,16 +17,64 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.ledger import is_live
 from boardwatch.pipeline.policy import run_policy_version
+from boardwatch.store.db import write_connection
 from boardwatch.store.ledger_queries import (
     live_dispositions,
     load_dispositions,
     reopen_jobs,
     stale_dispositions,
 )
-from boardwatch.store.tables import postings
+from boardwatch.store.owner_holds import hold_job, owner_holds, release_job_hold
+from boardwatch.store.tables import jobs, postings
 
 ledger_app = typer.Typer(no_args_is_help=True, help="The durable decision ledger (dedup/queue).")
 console = Console()
+
+
+@ledger_app.command("hold")
+def hold(
+    ctx: typer.Context,
+    job: int = typer.Option(..., "--job", help="Canonical job id to hold."),
+    reason: str = typer.Option(..., "--reason", help="Owner's reason; no automatic expiry."),
+) -> None:
+    """Hold a job across invocations without changing its eligibility or skipping it."""
+    if not reason.strip():
+        raise typer.BadParameter("a hold requires a nonblank reason")
+    app_ctx = build_context(ctx.obj)
+    with write_connection(app_ctx.engine) as conn, conn.begin():
+        if conn.execute(select(jobs.c.id).where(jobs.c.id == job)).first() is None:
+            raise typer.BadParameter(f"job {job} does not exist")
+        hold_job(conn, job_id=job, reason=reason, at=utcnow())
+    console.print(f"held job {job}; release with `ledger release-hold --job {job}`")
+
+
+@ledger_app.command("release-hold")
+def release_hold(ctx: typer.Context, job: int = typer.Option(..., "--job")) -> None:
+    """Release only the hold; existing skip/application/ledger decisions still apply."""
+    app_ctx = build_context(ctx.obj)
+    with write_connection(app_ctx.engine) as conn, conn.begin():
+        release_job_hold(conn, job_id=job, at=utcnow())
+    console.print(f"released owner hold for job {job}")
+
+
+@ledger_app.command("holds")
+def holds(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json"),
+    include_released: bool = typer.Option(False, "--all", help="Include released hold records."),
+) -> None:
+    """List holds independently of ranking, with reasons and explicit release history."""
+    app_ctx = build_context(ctx.obj)
+    with app_ctx.engine.connect() as conn:
+        records = owner_holds(conn, include_released=include_released)
+    if as_json:
+        emit_json({"holds": [{"job_id": job, **record.model_dump(mode="json")}
+                             for job, record in sorted(records.items())]})
+    else:
+        for job, record in sorted(records.items()):
+            console.print(
+                f"job {job}: {record.reason}; released={record.released_at}", markup=False
+            )
 
 
 @ledger_app.command("show")
