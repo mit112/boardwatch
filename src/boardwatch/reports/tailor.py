@@ -59,6 +59,7 @@ from boardwatch.store.artifacts import (
     record_artifact,
 )
 from boardwatch.store.db import write_connection
+from boardwatch.store.owner_holds import require_unheld_posting
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -504,6 +505,8 @@ def _plan_tier_a(
     are checked against the three this function loads (see `_reject_mixed_transformation`) before
     anything at all is read out of the database.
     """
+    with engine.connect() as conn:
+        require_unheld_posting(conn, posting_id)
     run_preflight(engine, settings, posting_id=posting_id)
     taxonomy = load_taxonomy(settings.config_dir)
     # A malformed registry (bundled OR override) raises PersonaError here, before any render or

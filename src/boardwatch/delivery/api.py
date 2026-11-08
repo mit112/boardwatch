@@ -119,6 +119,7 @@ from boardwatch.store.delivery_queries import (
     queue_detail,
     requisition_copy_posting_ids,
 )
+from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
 from boardwatch.store.queue_state import (
@@ -302,8 +303,12 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # Below `closed` and above `ineligible`, as `_wanted_location` ranks `_manual`, so this list and
     # that folder name the same leads — a manual lead the rules later reject stays listed here.
     manual = manual_job_ids(conn)
-    manual_rows = [row for row in every if not row.closed and row.job_id in manual]
-    rest = [row for row in every if not row.closed and row.job_id not in manual]
+    held = owner_holds(conn)
+    held_rows = [row for row in every if not row.closed and row.job_id in held]
+    manual_rows = [row for row in every if not row.closed and row.job_id in manual
+                   and row.job_id not in held]
+    rest = [row for row in every if not row.closed and row.job_id not in manual
+            and row.job_id not in held]
     # Lane and requisition copies share `_lane_copy` on disk (D-655) and leave both page lists.
     # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
     # tree asks, so the two cannot disagree about which leads it names.
@@ -331,6 +336,10 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     review_rows = sorted((r for r in kept if lanes[r.posting_id] != ""), key=rank_key)
     manual_rows.sort(key=rank_key)
     payload: dict[str, Any] = {
+        "held": [{"posting_id": row.posting_id, "job_id": row.job_id,
+                  "title": row.title, "company": row.company,
+                  "reason": held[row.job_id].reason,
+                  "held_at": held[row.job_id].held_at.isoformat()} for row in held_rows],
         "rows": [
             _row_json(
                 row,
@@ -374,6 +383,7 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             closed=len(closed_rows),
             lane_copy=len(open_rows) - len(kept),
             manual=len(manual_rows),
+            held=len(held_rows),
             follow_ups=follow_ups,
         ),
         # A capability flag, not a preference: the button is hidden where the platform has no
@@ -452,6 +462,7 @@ def rejected_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # A manual lead outranks `ineligible` (`_wanted_location`), so it is listed as manual, not here.
     excluded = (
         set(skipped_job_ids(conn)) | set(reported_job_ids(conn)) | set(manual_job_ids(conn))
+        | set(owner_holds(conn))
     )
     disputed = disputed_job_ids(conn)
     rows = [row for row in delivered_unapplied(conn, skipped=excluded) if _rejected(row)]
@@ -718,6 +729,7 @@ def _counts(
     closed: int = 0,
     lane_copy: int = 0,
     manual: int = 0,
+    held: int = 0,
     follow_ups: dict[int, str] | None = None,
 ) -> dict[str, Any]:
     """The status band. `uncertain` is its own bucket and is NEVER summed into `eligible`.
@@ -782,6 +794,7 @@ def _counts(
         "lane_copy": lane_copy,
         # The apply-by-hand list, counted for the same reconciling reason as `review`.
         "manual": manual,
+        "held": held,
         "applied_ever": len(applied_job_ids(conn)),
         "skipped": len(skipped_job_ids(conn)),
         # Its own cell, never folded into `skipped`: a report is a distinct signal ("this looks

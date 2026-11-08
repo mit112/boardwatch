@@ -466,6 +466,7 @@ def resume_project(
     from boardwatch.extract.taxonomy import TaxonomyError
     from boardwatch.projection.run import project_for_posting, resolve_projection_run
     from boardwatch.reports.tailor import default_compile_runner
+    from boardwatch.store.owner_holds import OwnerHoldError
     from boardwatch.tailor.equivalences import EquivalenceError
     from boardwatch.tailor.render.latex import TemplateArtifactError
 
@@ -499,6 +500,7 @@ def resume_project(
             compile_runner=default_compile_runner(),
         )
     except (
+        OwnerHoldError,
         ProjectionError,
         ProfileBundleError,
         TemplateArtifactError,

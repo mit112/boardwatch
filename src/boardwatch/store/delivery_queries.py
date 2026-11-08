@@ -731,6 +731,11 @@ def standing_slate_keys(
       the board twin stops holding, `lane_copy_posting_ids` stops returning the lane copy and it
       ranks again.
 
+    * **`held` is KEPT**: this is pending owner intent, not an eligibility dispute. Preserve the
+      existing duplicate-holder behavior while the owner decides; explicit hold release restores
+      the lead to its lane, and applying/skipping/closing it still releases its slot. A hold must
+      not cause a second copy to surface while that decision is pending.
+
     **That list is `delivery.names.DRAIN_DIRS`, and this is the SECOND place the program decides
     what a drain means** — `queue._wanted_location` ranks the same six into folders. Two ladders
     over one catalog drift silently, and a seventh drain added to one of them would be filed by the

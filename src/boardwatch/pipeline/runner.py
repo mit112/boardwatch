@@ -190,6 +190,7 @@ from boardwatch.store.delivery_queries import (
 from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.identity_queries import load_identities
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
+from boardwatch.store.owner_holds import OwnerHoldError, owner_holds
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -1712,7 +1713,8 @@ def _execution_inputs(
                 delivered_keys=delivered_keys, delivered_ids=delivered_ids,
             ):
                 return None
-        if (job in skipped_job_ids(conn) or job in reported_job_ids(conn)
+        if (job in owner_holds(conn) or job in skipped_job_ids(conn)
+                or job in reported_job_ids(conn)
                 or job in applied_job_ids(conn)
                 or job in live_dispositions(conn, now=utcnow(), job_ids=[job])):
             return None
@@ -3059,12 +3061,15 @@ def _run_pipeline_leased(
                     return True
             except Exception as exc:  # retry through normal admission on a later run
                 console.print(f"execution read unavailable: posting {lead.posting_id}: {exc}")
+            defer_execution(lead, projected=projected)
+            return False
+
+        def defer_execution(lead: RankedPosting, *, projected: bool = False) -> None:
             summary.execution_deferred_ids.append(lead.posting_id)
             summary.execution_deferred_after_projection += int(projected)
             console.print(
                 f"execution deferred: posting {lead.posting_id}: inputs changed or unavailable"
             )
-            return False
 
         lane_of, summary.gate_readings_absent, summary.tenant_review = _lead_lanes(
             engine, settings, leads
@@ -3140,6 +3145,10 @@ def _run_pipeline_leased(
                         out_dir=dest,
                         compile_runner=default_compile_runner(),
                     )
+                except OwnerHoldError:
+                    defer_execution(posting)
+                    tailor_progress.advance(item=posting.company)
+                    continue
                 except Exception as exc:
                     # Broad, then routed by SCOPE — see `_projection_scope`, which raises rather
                     # than bucketing anything the two closed catalogs do not name.
@@ -3205,6 +3214,10 @@ def _run_pipeline_leased(
                     # unreachable code.
                     source_lineage=lead_lineage,
                 )
+            except OwnerHoldError:
+                defer_execution(posting, projected=projection_ctx is not None)
+                tailor_progress.advance(item=posting.company)
+                continue
             except (RenderToolMissingError, TemplateArtifactError) as exc:
                 # An environment/authoring fault, not a per-lead failure (P1a): either the
                 # compiler binary is missing from PATH or the template itself is broken, so

@@ -1104,6 +1104,8 @@ def test_every_drain_has_a_recorded_answer_on_whether_it_holds_a_slot() -> None:
         "_review": True,
         # KEPT: the apply-by-hand list is in front of the owner, and apply or skip still releases it.
         "_manual": True,
+        # Pending owner intent retains the existing holder until the owner resolves the lead.
+        "_held": True,
         # EXCLUDED, and for the opposite reason to `_ineligible`. The lead is NOT in front of the
         # owner; its employer-board twin is, and that twin is itself a delivered lead holding the
         # slot. Letting both hold would give one job two slots and suppress a second, distinct

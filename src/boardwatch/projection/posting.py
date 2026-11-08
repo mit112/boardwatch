@@ -31,6 +31,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import Taxonomy
 from boardwatch.projection.errors import ProjectionIssue, raise_violation
 from boardwatch.reports.tailor import jd_skills_for
+from boardwatch.store.owner_holds import require_unheld_posting
 from boardwatch.store.queries import current_posting_versions, get_profile
 from boardwatch.store.tables import postings
 
@@ -60,6 +61,8 @@ def posting_context(
     `run_preflight` stays: it is extraction preflight, not configuration — it backfills the
     extraction rows `jd_skills_for` then reads, and owns its own taxonomy load for that.
     """
+    with engine.connect() as conn:
+        require_unheld_posting(conn, posting_id)
     run_preflight(engine, settings, posting_id=posting_id)
     with engine.connect() as conn:
         cv = current_posting_versions(conn, [posting_id]).get(posting_id)
