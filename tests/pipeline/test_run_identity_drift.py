@@ -355,7 +355,7 @@ def test_provenance_names_the_commit_the_run_started_on_when_head_moves_during_t
 ) -> None:
     """F11. The commit used to be read in `_capture_run_start`, AFTER the scan returned — about
     an hour into a real run — so a checkout that moved during the scan was reported as the code
-    that ran. HEAD is moved where the scan would be (`ensure_run` is the `--no-scan` branch's
+    that ran. HEAD is moved where the scan would be (`insert_run` is the `--no-scan` branch's
     stand-in for it), in a scratch repository the package root is pointed at."""
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
@@ -376,15 +376,15 @@ def test_provenance_names_the_commit_the_run_started_on_when_head_moves_during_t
     started_on = git("rev-parse", "HEAD")
     monkeypatch.setattr(funnel_writer, "_PACKAGE_ROOT", repo / "boardwatch")
 
-    real_ensure_run = runner_mod.ensure_run
+    real_insert_run = runner_mod.insert_run
     moved: list[str] = []
 
-    def ensure_run_while_the_checkout_moves(*args: Any, **kwargs: Any) -> Any:
+    def insert_run_while_the_checkout_moves(*args: Any, **kwargs: Any) -> Any:
         git("commit", "-q", "--allow-empty", "-m", "moved during the scan")
         moved.append(git("rev-parse", "HEAD"))
-        return real_ensure_run(*args, **kwargs)
+        return real_insert_run(*args, **kwargs)
 
-    monkeypatch.setattr(runner_mod, "ensure_run", ensure_run_while_the_checkout_moves)
+    monkeypatch.setattr(runner_mod, "insert_run", insert_run_while_the_checkout_moves)
 
     summary = _pipeline(env, tmp_path / "apps")
 

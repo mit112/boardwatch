@@ -99,7 +99,7 @@ def test_lock_released_on_success_and_on_failure(
     run_scan(engine, settings)  # no watched companies: trivially succeeds
     run_scan(engine, settings)  # would deadlock/raise if the lock leaked
 
-    def boom(engine_: object) -> int:
+    def boom(engine_: object, **_kwargs: object) -> int:
         raise RuntimeError("injected failure after lock acquisition")
 
     monkeypatch.setattr("boardwatch.scan.coordinator.insert_run", boom)
@@ -136,11 +136,11 @@ def test_sidecar_written_on_acquire_and_removed_on_release(
     real_insert_run = coordinator.insert_run
     seen: dict[str, object] = {}
 
-    def spy_insert_run(engine_: object) -> int:
+    def spy_insert_run(engine_: Engine, *, incremental: bool = False, kind: str = "maintenance") -> int:
         # insert_run runs INSIDE the scan lock, so this is the moment to check the sidecar.
         assert meta_path.exists()
         seen["meta"] = json.loads(meta_path.read_text())
-        return real_insert_run(engine_)  # type: ignore[arg-type]
+        return real_insert_run(engine_, incremental=incremental, kind=kind)
 
     monkeypatch.setattr(coordinator, "insert_run", spy_insert_run)
     run_scan(engine, settings)

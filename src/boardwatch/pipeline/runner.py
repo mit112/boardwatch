@@ -197,7 +197,6 @@ from boardwatch.store.queries import (
     append_run_error,
     company_exists,
     current_posting_versions,
-    ensure_run,
     finish_run,
     first_seen_since_clause,
     get_profile,
@@ -2485,10 +2484,7 @@ def _run_pipeline_leased(
         run_id = scan_summary.run_id
     else:
         ensure_schema(engine)
-        run_id = (
-            insert_run(engine, incremental=True)
-            if fresh_hours is not None else ensure_run(engine, None)
-        )
+        run_id = insert_run(engine, incremental=fresh_hours is not None, kind="delivery")
     clock.mark("scan")
 
     summary = PipelineSummary(run_id=run_id, fresh_hours=fresh_hours)
