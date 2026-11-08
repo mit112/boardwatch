@@ -122,17 +122,9 @@ export interface QueueRow {
   title: string;
   company: string;
   /**
-   * The ATS the posting SITS ON, from the store's `companies.provider` — the company ROW, never
-   * the apply URL's host. The two genuinely differ: the job-apps and aggregator lanes write the
-   * EMPLOYER's own apply URL, so a lane copy's host reads as the employer's board while the row
-   * it sits on is the lane (`jobapps`, `linkedin`, `indeed`, `hiringcafe`, `jsonld`). The lane
-   * name is the correct answer here — it is what the owner, who applies in batches by form, is
-   * sorting on. The frontend NEVER re-derives this from `apply_url`.
-   *
-   * Optional on the wire for the reason `judge_seniority_above_band` is: `boardwatch web` serves
-   * this bundle from DISK while answering from the Python it imported at STARTUP, so an older
-   * server omits the key and the read is `undefined`. Every guard on it is `== null`, and the
-   * honest render for "the server cannot say" is no label.
+   * Discovery provenance from `companies.provider`. Application-site labels, grouping and filters
+   * use `apply_url` instead: a job found on LinkedIn may open an employer's Workday form.
+   * Optional because an older running server may omit this field.
    */
   provider?: string | null;
   /** The PRIMARY location: the first entry of `locations`, or `null` when the list is empty. */

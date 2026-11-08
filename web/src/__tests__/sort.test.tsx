@@ -109,10 +109,10 @@ it("matches the text filter against a secondary location, not only the primary",
  * compared the provider string would pass the grouping half and shuffle every block.
  */
 describe("sortRows groups by provider and keeps rank order inside each block", () => {
-  const workdayLate = queueRow({ provider: "workday" });
-  const greenhouseLate = queueRow({ provider: "greenhouse" });
-  const workdayEarly = queueRow({ provider: "workday" });
-  const greenhouseEarly = queueRow({ provider: "greenhouse" });
+  const workdayLate = queueRow({ provider: "workday", apply_url: "https://example.myworkdayjobs.com/1" });
+  const greenhouseLate = queueRow({ provider: "greenhouse", apply_url: "https://boards.greenhouse.io/example/2" });
+  const workdayEarly = queueRow({ provider: "workday", apply_url: "https://example.myworkdayjobs.com/1" });
+  const greenhouseEarly = queueRow({ provider: "greenhouse", apply_url: "https://boards.greenhouse.io/example/2" });
   // Deliberately the REVERSE of the array order below, so a sort that returned its input
   // unchanged — or one that ignored the rank tiebreak — cannot read as green.
   const ranks = new Map([
@@ -148,11 +148,8 @@ describe("sortRows groups by provider and keeps rank order inside each block", (
     ]);
   });
 
-  it("a row the server named no provider for sorts LAST in both directions", () => {
-    // `withoutFields` and not `provider: null`: an older server omits the key entirely, so the
-    // value is `undefined`, and a comparator guarded `=== null` would let it through to
-    // `localeCompare` and throw. Absence is not a low value and not a high one — it is last.
-    const unnamed = withoutFields(queueRow({ provider: "greenhouse" }), ["provider"]);
+  it("a row without an application link sorts LAST in both directions", () => {
+    const unnamed = withoutFields(queueRow({ apply_url: null }), ["provider"]);
     const rows = [unnamed, workdayLate, greenhouseLate];
     const providers = (sorted: QueueRow[]) => sorted.map((row) => row.provider);
     expect(providers(sortRows(rows, { key: "provider", direction: "asc" }, byRank))).toEqual([

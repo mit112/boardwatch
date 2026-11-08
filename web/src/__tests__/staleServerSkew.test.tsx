@@ -92,11 +92,9 @@ describe("a field an older server never sent", () => {
     expect(container.textContent).not.toMatch(/today|0d ago/);
   });
 
-  it("renders no job-board label, and still sorts by provider, when the key is absent", () => {
-    // A row from a server that predates `provider`: the key is not there at all, so the read is
-    // `undefined`. Rendering must produce nothing rather than an empty chip, and `sortRows` must
-    // not reach `localeCompare` on it — a guard written `=== null` does both wrong.
-    const stale = withoutFields(queueRow({ provider: "greenhouse" }), ["provider"]);
+  it("renders the application site and sorts safely when discovery provenance is absent", () => {
+    // An older server can omit discovery provenance; the actual application URL still names the site.
+    const stale = withoutFields(queueRow({ apply_url: "https://boards.greenhouse.io/example/1" }), ["provider"]);
 
     const { container } = render(
       <QueueRowItem
@@ -107,23 +105,23 @@ describe("a field an older server never sent", () => {
         onSelect={() => undefined}
       />,
     );
-    expect(container.textContent).not.toContain("greenhouse");
+    expect(container.textContent).toContain("greenhouse");
     expect(() =>
       sortRows([stale, queueRow({ provider: "workday" })], PROVIDER_SORT, () => 1),
     ).not.toThrow();
   });
 
-  it("CONTROL: the same row WITH a provider does render the job-board label", () => {
-    // Without this, the assertion above is green for a component that renders no label at all.
+  it("CONTROL: source alone cannot label a missing application link", () => {
+    // No usable application URL means there is no destination to label, even with a source.
     render(
       <QueueRowItem
-        row={queueRow({ provider: "greenhouse" })}
+        row={queueRow({ provider: "greenhouse", apply_url: null })}
         selected={false}
         active={false}
         collapsing={false}
         onSelect={() => undefined}
       />,
     );
-    expect(screen.getByText("greenhouse")).toBeTruthy();
+    expect(screen.queryByText("greenhouse")).toBeNull();
   });
 });

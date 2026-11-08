@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -474,7 +475,7 @@ function RelatedPostings({
             >
               <span className="text-fg">{row.location ?? "Location not listed"}</span>
               <span className="text-fg-3">
-                {[row.remote_policy, row.provider].filter(Boolean).join(" · ")}
+                {[row.remote_policy, applicationSite(row.apply_url)].filter(Boolean).join(" · ")}
               </span>
             </button>
           </li>
@@ -675,7 +676,7 @@ export function DetailPane({
             : row.posted_days === 0
               ? "Posted today"
               : `Posted ${String(row.posted_days)}d ago`,
-          row.provider ?? null,
+          applicationSite(row.apply_url),
         ].filter((part): part is string => part !== null && part !== "");
 
   return (

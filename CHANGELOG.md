@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Application-site tags follow the link.** Job labels, filters, sorting and related-posting
+  groups use the current application URL. Recognized ATS hosts share a service name; other
+  sites show their hostname. Discovery source remains separate from application destination.
+
 - **Verified application links survive imports.** Application destinations are stored separately
   from discovery URLs and used consistently by the web queue, applied history, queue folders,
   and direct-apply ranking. Existing links require an explicit reviewed backfill (D-677).

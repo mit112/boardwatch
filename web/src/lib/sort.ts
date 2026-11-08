@@ -1,3 +1,4 @@
+import { applicationSite } from "./applicationSite";
 import type { AppliedRow, QueueRow } from "../api/types";
 
 /** Only user-initiated sorting changes the order; a background refresh never does.
@@ -72,9 +73,8 @@ function compareText(a: string | null, b: string | null, direction: SortDirectio
  * therefore the tiebreak and it is ALWAYS ascending: the direction reverses which block comes
  * first, never the reading order inside one.
  *
- * `?? null` and not `=== null`: an older server omits `provider` entirely (see the type), so the
- * value is `undefined`, and `compareText` — which is what puts an absent value LAST in both
- * directions — checks for `null`. Absence is not an ATS and never heads the list.
+ * The stored sort key stays `provider` for saved-view compatibility; its meaning is now the
+ * application site. A missing or unsafe application link sorts last in either direction.
  */
 function compareProvider(
   a: QueueRow,
@@ -82,7 +82,7 @@ function compareProvider(
   direction: SortDirection,
   rankOf: (row: QueueRow) => number,
 ): number {
-  const byProvider = compareText(a.provider ?? null, b.provider ?? null, direction);
+  const byProvider = compareText(applicationSite(a.apply_url), applicationSite(b.apply_url), direction);
   return byProvider === 0 ? rankOf(a) - rankOf(b) : byProvider;
 }
 

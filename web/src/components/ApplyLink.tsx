@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import { isSafeHttpUrl } from "../lib/format";
 import { Icon } from "./Icon";
 
@@ -45,7 +46,7 @@ export function ApplyLink({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        title="Opens the employer’s page in a new tab. Nothing is recorded until you say you applied."
+        title={`Opens ${applicationSite(url) ?? "the application site"} in a new tab. Nothing is recorded until you say you applied.`}
         {...(onOpen === undefined
           ? {}
           : {

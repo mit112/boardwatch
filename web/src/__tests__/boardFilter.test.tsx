@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { queueResponse, queueRow } from "../test/rows";
 
-/* The job-board filter: narrows BOTH lanes by the row's `provider`, and its options count what is on the page. */
+/* The job-board filter: narrows BOTH lanes by the application URL, independently of discovery source, and its options count what is on the page. */
 
 vi.mock("../api/client", () => ({
   FIXTURE_MODE: false,
@@ -41,10 +41,10 @@ beforeEach(() => {
   vi.mocked(getQueue).mockResolvedValue(
     queueResponse(
       [
-        queueRow({ title: "APPLY-WD", provider: "workday" }),
-        queueRow({ title: "APPLY-LI", provider: "linkedin" }),
+        queueRow({ title: "APPLY-WD", provider: "linkedin", apply_url: "https://example.wd5.myworkdayjobs.com/jobs/1" }),
+        queueRow({ title: "APPLY-LI", provider: "indeed", apply_url: "https://www.linkedin.com/jobs/view/2" }),
       ],
-      [queueRow({ title: "REVIEW-WD", provider: "workday", review_reason: "unevaluated" })],
+      [queueRow({ title: "REVIEW-WD", provider: "jobapps", apply_url: "https://other.wd1.myworkdayjobs.com/jobs/3", review_reason: "unevaluated" })],
     ),
   );
 });
@@ -58,9 +58,9 @@ describe("the job board filter", () => {
     render(<App />);
     await screen.findByRole("grid", { name: "No check held these back" });
 
-    const select = screen.getByLabelText("Job board");
+    const select = screen.getByLabelText("Application site");
     expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual([
-      "All boards",
+      "All sites",
       "linkedin (1)",
       "workday (2)",
     ]);
@@ -71,6 +71,21 @@ describe("the job board filter", () => {
 
     fireEvent.change(select, { target: { value: "" } });
     expect(titles("No check held these back")).toEqual(["APPLY-WD", "APPLY-LI"]);
+  });
+
+  it("counts and filters manual jobs by destination too", async () => {
+    const response = queueResponse([queueRow({ title: "APPLY-WD", provider: "linkedin", apply_url: "https://example.myworkdayjobs.com/1" })]);
+    response.manual = [queueRow({ title: "APPLY-MANUAL", provider: "indeed", apply_route: "hand", apply_url: "https://other.myworkdayjobs.com/2" })];
+    vi.mocked(getQueue).mockResolvedValue(response);
+    render(<App />);
+    await screen.findByRole("grid", { name: "No check held these back" });
+    const select = screen.getByLabelText("Application site");
+    expect(within(select).getAllByRole("option").map((o) => o.textContent)).toEqual(["All sites", "workday (2)"]);
+    fireEvent.change(select, { target: { value: "workday" } });
+    expect(screen.getByText("APPLY-MANUAL")).toBeTruthy();
+    expect(screen.getAllByText("workday")).toHaveLength(2);
+    expect(screen.queryByText("linkedin")).toBeNull();
+    expect(screen.queryByText("indeed")).toBeNull();
   });
 
   it("hides thin-JD and unverifiable rows, and filters by work mode", async () => {

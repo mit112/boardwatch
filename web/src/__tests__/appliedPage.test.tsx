@@ -276,6 +276,7 @@ describe("the row's controls", () => {
 
     const link = screen.getByRole("link", { name: "Backend Engineer" });
     expect(link.getAttribute("href")).toBe("https://careers.acme.test/apply");
+    expect(link.getAttribute("title")).toContain("careers.acme.test");
     expect(link.getAttribute("target")).toBe("_blank");
     expect(link.getAttribute("rel") ?? "").toContain("noreferrer");
   });

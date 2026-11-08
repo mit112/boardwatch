@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -433,7 +434,7 @@ export function QueuePage({
     decodeText,
     encodeText,
   );
-  // The job board (`provider`) to show; "" is every board.
+  // The application site to show; "" is every board.
   const [board, setBoard] = useSessionState(QUEUE_KEYS.board, "", decodeText, encodeText);
   // Work mode is the row's own `remote_policy`; "" is every mode and NO_MODE is "the board states none".
   const [mode, setMode] = useSessionState(QUEUE_KEYS.mode, "", decodeText, encodeText);
@@ -849,7 +850,7 @@ export function QueuePage({
       if (runFilter !== null && row.delivered_run_id !== runFilter) return false;
       if (!matchesQuery(row, query.trim())) return false;
       if (!matchesLocation(row, location.trim())) return false;
-      if (board !== "" && row.provider !== board) return false;
+      if (board !== "" && applicationSite(row.apply_url) !== board) return false;
       if (mode !== "" && (row.remote_policy ?? NO_MODE) !== mode) return false;
       if (applyFirst !== "" && !isApplyFirst(row)) return false;
       if (hideThin !== "" && row.thin_jd) return false;
@@ -1712,7 +1713,8 @@ export function QueuePage({
   const boardCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of [...(data?.rows ?? []), ...(data?.review ?? []), ...(data?.manual ?? [])]) {
-      if (row.provider != null) counts.set(row.provider, (counts.get(row.provider) ?? 0) + 1);
+      const site = applicationSite(row.apply_url);
+      if (site !== null) counts.set(site, (counts.get(site) ?? 0) + 1);
     }
     return [...counts].sort(([a], [b]) => a.localeCompare(b));
   }, [data]);
@@ -1816,7 +1818,7 @@ export function QueuePage({
     location.trim() === "" ? null : `places matching “${location.trim()}”`,
     mode === "" ? null : mode === NO_MODE ? "no work arrangement stated" : mode,
     applyFirst === "" ? null : "apply first (both checks eligible, résumé ready, no known flags)",
-    board === "" ? null : `${board} postings`,
+    board === "" ? null : `applications on ${board}`,
     minScore.trim() === "" ? null : `ranking score of at least ${minScore.trim()}`,
     hideThin === "" ? null : "very short descriptions hidden",
     hideUnverifiable === "" ? null : "postings that can’t be verified hidden",

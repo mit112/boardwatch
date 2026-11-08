@@ -129,13 +129,13 @@ describe("similar roles", () => {
 
   it("does not call differently-placed postings one job: the group says how many places it spans", () => {
     const rows = [
-      queueRow({ company: "Globex", title: "Engineer", location: "Austin, TX", provider: "greenhouse" }),
-      queueRow({ company: "Globex", title: "Engineer", location: "Boston, MA", provider: "workday" }),
+      queueRow({ company: "Globex", title: "Engineer", location: "Austin, TX", provider: "linkedin", apply_url: "https://boards.greenhouse.io/example/1" }),
+      queueRow({ company: "Globex", title: "Engineer", location: "Boston, MA", provider: "linkedin", apply_url: "https://example.myworkdayjobs.com/2" }),
     ];
     const group = similarGroups(rows).get(rows[0]?.posting_id ?? -1);
     expect(group).toEqual({ count: 2, locations: 2, boards: 2 });
     expect(describeGroup(group ?? { count: 0, locations: 0, boards: 0 })).toBe(
-      "2 related postings · 2 locations · 2 job boards",
+      "2 related postings · 2 locations · 2 application sites",
     );
   });
 

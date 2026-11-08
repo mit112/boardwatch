@@ -1,3 +1,4 @@
+import { applicationSite } from "./applicationSite";
 import type { QueueRow } from "../api/types";
 
 /*
@@ -35,7 +36,7 @@ export interface SimilarGroup {
   count: number;
   /** Distinct locations across the group, compared case-insensitively. */
   locations: number;
-  /** Distinct job boards (`provider`) across the group. */
+  /** Distinct application sites across the group. */
   boards: number;
 }
 
@@ -56,7 +57,7 @@ export function similarGroups(rows: readonly QueueRow[]): Map<number, SimilarGro
     const info: SimilarGroup = {
       count: members.length,
       locations: new Set(members.map((row) => (row.location ?? "").trim().toLowerCase())).size,
-      boards: new Set(members.map((row) => row.provider ?? "")).size,
+      boards: new Set(members.map((row) => applicationSite(row.apply_url)).filter((site) => site !== null)).size,
     };
     for (const row of members) groups.set(row.posting_id, info);
   }
@@ -74,7 +75,7 @@ export function relatedPostings(row: QueueRow, rows: readonly QueueRow[]): Queue
 export function describeGroup(group: SimilarGroup): string {
   const parts = [`${String(group.count)} related postings`];
   if (group.locations > 1) parts.push(`${String(group.locations)} locations`);
-  if (group.boards > 1) parts.push(`${String(group.boards)} job boards`);
+  if (group.boards > 1) parts.push(`${String(group.boards)} application sites`);
   return parts.join(" · ");
 }
 

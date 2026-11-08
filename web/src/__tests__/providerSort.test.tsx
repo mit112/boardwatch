@@ -46,9 +46,9 @@ beforeEach(() => {
 describe("sorting by job board", () => {
   // Interleaved, so neither the delivered order nor a plain reversal of it can pass for a sort.
   const rows = [
-    queueRow({ title: "Alpha Engineer", provider: "workday" }),
-    queueRow({ title: "Bravo Engineer", provider: "greenhouse" }),
-    queueRow({ title: "Charlie Engineer", provider: "workday" }),
+    queueRow({ title: "Alpha Engineer", provider: "linkedin", apply_url: "https://example.myworkdayjobs.com/1" }),
+    queueRow({ title: "Bravo Engineer", provider: "linkedin", apply_url: "https://boards.greenhouse.io/example/2" }),
+    queueRow({ title: "Charlie Engineer", provider: "indeed", apply_url: "https://other.myworkdayjobs.com/3" }),
   ];
 
   it("groups the list into job-board blocks, each still in the delivered order", async () => {

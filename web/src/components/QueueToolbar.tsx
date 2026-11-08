@@ -121,7 +121,7 @@ const SORT_CHOICES: readonly { label: string; sort: SortState }[] = [
   { label: "Company A–Z", sort: { key: "company", direction: "asc" } },
   { label: "Title A–Z", sort: { key: "title", direction: "asc" } },
   { label: "Location A–Z", sort: { key: "location", direction: "asc" } },
-  { label: "Job board", sort: { key: "provider", direction: "asc" } },
+  { label: "Application site", sort: { key: "provider", direction: "asc" } },
   { label: "Follow-up date", sort: { key: "follow_up", direction: "asc" } },
   { label: "Ranking score, high to low", sort: { key: "score", direction: "desc" } },
   { label: "Résumé keyword match, high to low", sort: { key: "coverage", direction: "desc" } },
@@ -301,7 +301,7 @@ export function QueueToolbar({
         <div className="mt-2 flex flex-col gap-3 rounded-md bg-surface-2 p-4">
           <div className="flex flex-wrap items-end gap-3">
             <label className="flex w-48 flex-col gap-1">
-              <span className="label-micro text-fg-2">Job board</span>
+              <span className="label-micro text-fg-2">Application site</span>
               <select
                 value={board}
                 onChange={(event) => {
@@ -309,7 +309,7 @@ export function QueueToolbar({
                 }}
                 className={FIELD}
               >
-                <option value="">All boards</option>
+                <option value="">All sites</option>
                 {boards.map(([name, count]) => (
                   <option key={name} value={name}>
                     {name} ({count.toLocaleString()})

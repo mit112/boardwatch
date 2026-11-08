@@ -272,6 +272,18 @@ describe("the application actions", () => {
     screen.getByRole("link", { name: /Open application/ });
   });
 
+  it("labels the workspace and related postings by application destination", () => {
+    renderPane(detailWith([MET], { provider: "linkedin", apply_url: "https://example.myworkdayjobs.com/jobs/1" }), {
+      related: [queueRow({ provider: "indeed", apply_url: "https://boards.greenhouse.io/example/jobs/2" })],
+      onOpenRelated: () => undefined,
+    });
+    expect(screen.getByText(/remote · Posted 3d ago · workday/)).toBeTruthy();
+    expect(screen.getByText("remote · greenhouse")).toBeTruthy();
+    expect(screen.queryByText("linkedin")).toBeNull();
+    expect(screen.queryByText("indeed")).toBeNull();
+    expect(screen.getByRole("link", { name: /Open application/ }).getAttribute("title")).toContain("Opens workday");
+  });
+
   it("says plainly when the board supplied no application link", () => {
     renderPane(detailWith([MET], { apply_url: null }));
     screen.getByText("No application link");

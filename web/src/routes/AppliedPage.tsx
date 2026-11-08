@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -88,7 +89,7 @@ function TitleCell({ row }: { row: AppliedRow }) {
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      title="Open the board's page for this posting, in a new tab."
+      title={`Open ${applicationSite(url) ?? "the application site"} for this posting, in a new tab.`}
       className="rounded-sm underline decoration-divider underline-offset-2 transition-colors duration-[120ms] ease-snap hover:decoration-fg-2 hover:text-fg"
     >
       {label}

@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import type { QueueRow } from "../api/types";
 import { materialsMark, reviewsDiffer, rowNote } from "../lib/jobStatus";
 import { describeGroup } from "../lib/similar";
@@ -207,8 +208,8 @@ export function QueueRowItem({
                   {materials.tone === "ok" ? "Résumé ready" : "No résumé"}
                 </span>
               )}
-              {row.provider == null ? null : (
-                <span title={`Posted on ${row.provider}`}>{row.provider}</span>
+              {applicationSite(row.apply_url) === null ? null : (
+                <span title={`Application site: ${row.apply_url ?? ""}`}>{applicationSite(row.apply_url)}</span>
               )}
               {similar === undefined ? null : (
                 <span title="Postings at this company with the same title once formatting is ignored. They may be one job in several places or separate openings; each stays listed.">

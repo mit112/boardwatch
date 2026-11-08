@@ -1,3 +1,4 @@
+import { applicationSite } from "../lib/applicationSite";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -418,6 +419,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                             target="_blank"
                             rel="noopener noreferrer"
                             aria-label={`Open application: ${named}`}
+                            title={`Open ${applicationSite(url) ?? "the application site"} in a new tab.`}
                             className={BUTTON}
                           >
                             Open application
