@@ -121,7 +121,7 @@ from boardwatch.store.delivery_queries import (
 )
 from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile
+from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile, run_kind
 from boardwatch.store.queue_state import (
     disputed_job_ids,
     followup_job_dates,
@@ -129,7 +129,7 @@ from boardwatch.store.queue_state import (
     reported_job_ids,
     skipped_job_ids,
 )
-from boardwatch.store.run_funnel_queries import TAILORED_KIND
+from boardwatch.store.run_funnel_queries import TAILORED_KIND, count_tailored_artifacts
 from boardwatch.store.tables import artifacts, extractions, postings, runs
 from boardwatch.tailor.coverage import (
     CoverageReport,
@@ -808,7 +808,9 @@ def _counts(
             1 for row in rows if (on := due.get(row.job_id)) is not None and on <= today
         ),
         "delivered_last_run": (
-            0 if last is None else sum(1 for row in rows if row.delivered_run_id == int(last.id))
+            # The retained delivery cohort, not its surviving queue rows: a later maintenance
+            # render can replace a row's delivered_run_id without undoing the daily delivery.
+            0 if last is None else count_tailored_artifacts(conn, int(last.id)).rows
         ),
         "last_run_finished": (None if last is None else _iso_utc(last.finished_at)),
     }
@@ -817,7 +819,7 @@ def _counts(
 def _last_finished_run(conn: Connection) -> Row[Any] | None:
     return conn.execute(
         select(runs).where(
-            runs.c.finished_at.is_not(None), runs.c.incremental.is_(False)
+            runs.c.finished_at.is_not(None), runs.c.incremental.is_(False), run_kind() == "delivery"
         ).order_by(runs.c.id.desc()).limit(1)
     ).one_or_none()
 
@@ -1405,7 +1407,8 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
     """`GET /api/runs`: the recent runs, with how many leads each delivered.
 
     `leads` is counted from `artifacts`, which is where a delivery is recorded — `runs` carries no
-    such column, and a run that delivered nothing is a real 0 rather than an unknown.
+    such column. This retained artifact count includes maintenance renders; `kind` identifies
+    delivery pipelines, scans and maintenance. Missing historical purpose is `unknown`.
     """
     delivered: dict[int, int] = {
         int(row[0]): int(row[1])
@@ -1415,11 +1418,15 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
             .group_by(artifacts.c.run_id)
         ).all()
     }
-    rows = conn.execute(select(runs).order_by(runs.c.id.desc()).limit(RUNS_LIMIT)).all()
+    rows = conn.execute(
+        select(runs, run_kind().label("kind")).order_by(runs.c.id.desc()).limit(RUNS_LIMIT)
+    ).all()
     return {
         "runs": [
             {
                 "id": int(row.id),
+                "kind": row.kind,
+                "incremental": bool(row.incremental),
                 "started": _iso_utc(row.started_at),
                 "finished": _iso_utc(row.finished_at),
                 "status": row.status,

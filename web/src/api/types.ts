@@ -654,6 +654,8 @@ export interface Answers {
 
 export interface RunSummary {
   id: number;
+  kind?: "delivery" | "scan" | "maintenance" | "unknown";
+  incremental?: boolean;
   started: string | null;
   finished: string | null;
   status: string | null;
