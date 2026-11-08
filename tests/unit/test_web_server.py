@@ -243,6 +243,7 @@ def _run(conn: Connection, *, finished: datetime | None = NOW) -> int:
                 started_at=NOW - timedelta(minutes=20),
                 finished_at=finished,
                 boards_attempted=3,
+                corpus_open=120,  # retained evidence that this legacy fixture is a delivery run
                 boards_complete=3,
                 postings_seen=120,
                 new_count=7,
@@ -3793,3 +3794,52 @@ def test_local_today_is_the_servers_own_zone_and_never_utc() -> None:
 
     assert ahead != behind
     assert 1 <= (ahead - behind).days <= 2
+
+
+@pytest.mark.parametrize("same_job", [False, True])
+@pytest.mark.parametrize("kind,incremental", [("maintenance", False), ("scan", False), ("scan", True), ("delivery", True)])
+def test_non_daily_work_cannot_replace_last_delivery(
+    live: Live, engine: Engine, kind: str, incremental: bool, same_job: bool,
+) -> None:
+    from boardwatch.store.queries import finish_run, insert_run
+    with engine.begin() as conn:
+        daily = _run(conn)
+        _, job_id = _deliver(conn, "daily", run_id=daily)
+    other = insert_run(engine, kind=kind, incremental=incremental)
+    with engine.begin() as conn:
+        _deliver(conn, "standalone-render", run_id=other, job_id=job_id if same_job else None)
+    finish_run(engine, other)
+    counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
+    assert counts["delivered_last_run"] == 1
+    assert counts["last_run_finished"] == NOW.replace(tzinfo=UTC).isoformat()
+    by_id = {r["id"]: r for r in call(live, "/api/runs", bearer=live.token).json()["runs"]}
+    assert by_id[daily]["kind"] == "delivery"
+    assert by_id[other]["kind"] == kind
+    assert by_id[other]["incremental"] is incremental
+    assert by_id[other]["leads"] == 1  # retained artifact count, not a daily-delivery claim
+
+
+def test_zero_delivery_remains_the_last_delivery(live: Live, engine: Engine) -> None:
+    from boardwatch.store.queries import finish_run, insert_run
+    with engine.begin() as conn:
+        older = _run(conn)
+        _deliver(conn, "older-delivery", run_id=older)
+    latest = insert_run(engine, kind="delivery")
+    finish_run(engine, latest)
+    counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
+    assert counts["delivered_last_run"] == 0
+    with engine.connect() as conn:
+        finished = conn.execute(select(runs.c.finished_at).where(runs.c.id == latest)).scalar_one()
+    assert counts["last_run_finished"] == finished.replace(tzinfo=UTC).isoformat()
+
+
+def test_untagged_or_running_work_is_not_assumed_daily(live: Live, engine: Engine) -> None:
+    from boardwatch.store.queries import insert_run
+    with engine.begin() as conn:
+        legacy = int(conn.execute(insert(runs).values(started_at=NOW, finished_at=NOW)).inserted_primary_key[0])
+    running = insert_run(engine, kind="delivery")
+    counts = call(live, "/api/queue", bearer=live.token).json()["counts"]
+    assert counts["last_run_finished"] is None and counts["delivered_last_run"] == 0
+    by_id = {r["id"]: r for r in call(live, "/api/runs", bearer=live.token).json()["runs"]}
+    assert by_id[legacy]["kind"] == "unknown"
+    assert by_id[running]["kind"] == "delivery" and by_id[running]["finished"] is None

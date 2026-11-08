@@ -98,12 +98,12 @@ def test_queue_last_run_read_ignores_incremental_rows(engine: Engine) -> None:
     with engine.begin() as conn:
         nightly = int(
             conn.execute(
-                insert(tables.runs).values(started_at=utcnow(), finished_at=utcnow())
+                insert(tables.runs).values(started_at=utcnow(), finished_at=utcnow(), corpus_open=0)
             ).inserted_primary_key[0]
         )
         extra = int(
             conn.execute(
-                insert(tables.runs).values(started_at=utcnow(), finished_at=utcnow())
+                insert(tables.runs).values(started_at=utcnow(), finished_at=utcnow(), corpus_open=0)
             ).inserted_primary_key[0]
         )
     _mark(engine, extra)

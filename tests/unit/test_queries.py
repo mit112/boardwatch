@@ -688,3 +688,48 @@ def test_finish_run_appends_a_long_error_list_in_order_across_chunk_boundaries(
     with engine.connect() as conn:
         row = conn.execute(select(tables.runs).where(tables.runs.c.id == run_id)).one()
     assert list(row.errors_json) == ["scan: board x failed", *notes]
+
+
+@pytest.mark.parametrize("kind", ["maintenance", "scan", "delivery"])
+def test_run_purpose_is_atomic_and_visible(engine: Engine, kind: str) -> None:
+    from boardwatch.store import queries
+    rid = queries.insert_run(engine, kind=kind)
+    with engine.connect() as conn:
+        assert conn.execute(select(queries.run_kind()).where(tables.runs.c.id == rid)).scalar_one() == kind
+
+
+def test_default_runs_are_maintenance_and_invalid_kind_writes_nothing(engine: Engine) -> None:
+    from boardwatch.store import queries
+    rid = queries.ensure_run(engine, None)
+    with engine.connect() as conn:
+        assert conn.execute(select(queries.run_kind()).where(tables.runs.c.id == rid)).scalar_one() == "maintenance"
+    with pytest.raises(ValueError):
+        queries.insert_run(engine, kind="invented")
+    with engine.connect() as conn:
+        assert conn.execute(select(tables.runs.c.id)).scalars().all() == [rid]
+
+
+def test_legacy_purpose_requires_positive_delivery_evidence(engine: Engine) -> None:
+    from boardwatch.store import queries
+    with engine.begin() as conn:
+        for rid, corpus in [(41, None), (42, 0), (43, 10), (44, 10)]:
+            conn.execute(insert(tables.runs).values(id=rid, started_at=utcnow(), corpus_open=corpus))
+        conn.execute(insert(tables.app_state).values(key="run.kind.v1.43", value="unsupported"))
+        conn.execute(insert(tables.app_state).values(key="run.kind.v1.44", value=None))
+    with engine.connect() as conn:
+        assert conn.execute(select(tables.runs.c.id, queries.run_kind()).order_by(tables.runs.c.id)).all() == [
+            (41, "unknown"), (42, "delivery"), (43, "unknown"), (44, "unknown")]
+
+
+def test_failed_purpose_insert_cannot_leave_an_untagged_run(engine: Engine) -> None:
+    def fail(_conn: object, _cursor: object, statement: str, *_args: object) -> None:
+        if statement.startswith("INSERT INTO app_state"):
+            raise RuntimeError("injected metadata failure")
+    event.listen(engine, "before_cursor_execute", fail)
+    try:
+        with pytest.raises(RuntimeError, match="injected"):
+            insert_run(engine)
+    finally:
+        event.remove(engine, "before_cursor_execute", fail)
+    with engine.connect() as conn:
+        assert conn.execute(select(tables.runs)).all() == []

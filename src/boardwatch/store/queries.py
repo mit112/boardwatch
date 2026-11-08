@@ -18,8 +18,10 @@ from sqlalchemy import (
     Engine,
     Row,
     Select,
+    Text,
     and_,
     case,
+    cast,
     exists,
     func,
     insert,
@@ -34,8 +36,10 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import ResponseValidators
+from boardwatch.store.app_state import set_state
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE, id_chunks
 from boardwatch.store.tables import (
+    app_state,
     board_scans,
     companies,
     http_cache,
@@ -146,12 +150,40 @@ def _checked_status(status: str) -> str:
     return status
 
 
-def insert_run(engine: Engine, *, incremental: bool = False) -> int:
+RUN_KINDS = frozenset({"delivery", "scan", "maintenance"})
+RUN_KIND_PREFIX = "run.kind.v1."
+
+
+class UnknownRunKindError(ValueError):
+    """A writer supplied a purpose outside the closed run-kind catalog."""
+
+
+def run_kind() -> ColumnElement[str]:
+    """Explicit purpose; historical corpus measurement proves delivery, otherwise unknown.
+
+    Neither a tailored artifact nor incremental=False proves a pipeline ran. An unsupported
+    explicit marker is unknown, never reinterpreted through the legacy fallback.
+    """
+    kind = select(case(
+        (app_state.c.value.in_(RUN_KINDS), app_state.c.value), else_="unknown"
+    )).where(
+        app_state.c.key == literal(RUN_KIND_PREFIX) + cast(runs.c.id, Text)
+    ).correlate(runs).scalar_subquery()
+    return func.coalesce(
+        kind, case((runs.c.corpus_open.is_not(None), "delivery"), else_="unknown")
+    )
+
+
+def insert_run(engine: Engine, *, incremental: bool = False, kind: str = "maintenance") -> int:
+    if kind not in RUN_KINDS:
+        raise UnknownRunKindError(f"unknown run kind: {kind!r}")
     with engine.begin() as conn:
         result = conn.execute(
             insert(runs).values(started_at=utcnow(), boards_attempted=0, incremental=incremental)
         )
-        return int(result.inserted_primary_key[0])  # type: ignore[index]
+        run_id = int(result.inserted_primary_key[0])  # type: ignore[index]
+        set_state(conn, f"{RUN_KIND_PREFIX}{run_id}", kind)
+        return run_id
 
 
 def finalize_run(

@@ -445,9 +445,9 @@ def _run_scan_locked(
     # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
     # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
     # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
-    active_run_id = (
-        insert_run(engine, incremental=True)
-        if company is not None or provider is not None else insert_run(engine)
+    active_run_id = insert_run(
+        engine, incremental=company is not None or provider is not None,
+        kind="scan" if finish else "delivery",
     )
     summary.run_id = active_run_id
     if on_run_started is not None:

@@ -219,6 +219,9 @@ def test_one_run_row_spans_eligibility_and_tailor(env: Path, tmp_path: Path) -> 
     engine = get_engine(env)
     with engine.connect() as conn:
         runs = conn.execute(select(tables.runs.c.id, tables.runs.c.finished_at)).all()
+        assert conn.execute(select(tables.app_state.c.value).where(
+            tables.app_state.c.key == f"run.kind.v1.{summary.run_id}"
+        )).scalar_one() == "delivery"
         eval_runs = {
             r.run_id for r in conn.execute(select(tables.eligibility_evaluations.c.run_id)).all()
         }
@@ -853,6 +856,9 @@ def test_scan_given_a_run_id_records_its_counts_without_claiming_the_run_finishe
             ).where(tables.runs.c.id == summary.run_id)
         ).one()
         assert conn.execute(select(func.count()).select_from(tables.runs)).scalar_one() == 1
+        assert conn.execute(select(tables.app_state.c.value).where(
+            tables.app_state.c.key == f"run.kind.v1.{summary.run_id}"
+        )).scalar_one() == "delivery"
     # postings_seen is NULL at birth and only finalize_run ever sets it, so asserting it is
     # non-NULL is what actually pins "the counts were written". boards_attempted is 0 from
     # birth, so on its own it pinned nothing — deleting finalize_run left the old test green.
@@ -862,7 +868,7 @@ def test_scan_given_a_run_id_records_its_counts_without_claiming_the_run_finishe
 
 
 def test_bare_scan_mints_and_finishes_its_own_run(env: Path) -> None:
-    """A bare `scan` is a degenerate pipeline run: one row shape, no `kind` column."""
+    """A bare scan owns a scan-purpose run, distinct from a delivery pipeline."""
     from boardwatch.scan.coordinator import run_scan
 
     ensure_schema(get_engine(env))
@@ -872,6 +878,9 @@ def test_bare_scan_mints_and_finishes_its_own_run(env: Path) -> None:
 
     with engine.connect() as conn:
         rows = conn.execute(select(tables.runs.c.finished_at)).all()
+        assert conn.execute(select(tables.app_state.c.value).where(
+            tables.app_state.c.key.like("run.kind.v1.%")
+        )).scalar_one() == "scan"
     assert len(rows) == 1
     assert rows[0].finished_at is not None
 

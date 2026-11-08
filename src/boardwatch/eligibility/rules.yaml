@@ -321,7 +321,9 @@ families:
         # sentence that merely BEGINS with the phrase, so it is widened by ONE character rather
         # than removed. The three sentence escapes above keep EEO boilerplate and
         # "Citizenship and Immigration Services" silent and are unchanged.
-        pattern: '^\s*(?:[-*\u2022\u25cf\u00b7]\s*)?(?:(?<!\w)U\.?S\.?|United\s+States)\s+Citizens?(?:hip)?(?:\s+(?:required|only))?\s*(?:[.:;(]|\s*$|,?\s+(?:with|and\s+an?\s+active))'
+        # A coordinated obtainability bar is still a citizenship requirement; require the
+        # concrete clearance continuation so descriptive citizenship prose stays silent.
+        pattern: '^\s*(?:[-*\u2022\u25cf\u00b7]\s*)?(?:(?<!\w)U\.?S\.?|United\s+States)\s+Citizens?(?:hip)?(?:\s+(?:required|only))?\s*(?:[.:;(]|\s*$|,?\s+(?:with|and\s+an?\s+active|and\s+(?:the\s+)?ability(?=\s+to\s+obtain(?:\s+and\s+maintain)?\s+(?:an?\s+)?(?:(?:active|current)\s+)?(?:U\.?S\.?\s+)?(?:Top\s+Secret|Secret|Confidential)(?:\s+or\s+higher)?\s+(?:security\s+)?clearance\b)))'
 
       - id: us_citizen_predicate_required
         requiredness: required
@@ -1503,7 +1505,8 @@ families:
         hedged_by_tail: [*bar_hedges]
         hedged_as: clearance_preferred
         subject_suppressors: *company_side_clearance
-        pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+(?:to\s+obtain(?:\s+and\s+maintain)?|for)\s+(?:a\s+|an\s+)?(?:(?:active|current)\s+)?(?:U\.?S\.?\s+)?(?:(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:(?:Top\s+Secret|Secret|Confidential|T\.?S\.?\s*/\s*S\.?C\.?I\.?|(?<!\w)T\.?S\.?(?!\w)|(?<!\w)S\.?C\.?I\.?(?!\w)|NATO|Public\s+Trust|(?:D\.?O\.?E\.?\s+)?(?<!\w)[QL](?!\w))\s+)*(?:security\s+)?clearance'
+        # "Secret or higher" qualifies the obtainable level, not a clearance already held.
+        pattern: '(?:able|ability|eligible|eligibility|willing|willingness)\s+(?:to\s+obtain(?:\s+and\s+maintain)?|for)\s+(?:a\s+|an\s+)?(?:(?:active|current)\s+)?(?:U\.?S\.?\s+)?(?:(?:DoD|D\.?o\.?D\.?|DOE|Department\s+of\s+(?:Defense|Energy)|government|federal)\s+)?(?:(?:(?:Top\s+Secret|Secret|Confidential)(?:\s+or\s+higher)?|T\.?S\.?\s*/\s*S\.?C\.?I\.?|(?<!\w)T\.?S\.?(?!\w)|(?<!\w)S\.?C\.?I\.?(?!\w)|NATO|Public\s+Trust|(?:D\.?O\.?E\.?\s+)?(?<!\w)[QL](?!\w))\s+)*(?:security\s+)?clearance'
 
       - id: clearance_preferred
         requiredness: preferred
