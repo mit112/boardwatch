@@ -73,7 +73,7 @@ from boardwatch.rank.sponsors import (
 )
 from boardwatch.rank.tenant_assumptions import TenantAssumptionTally, ungrounded_reasons
 from boardwatch.store.app_state import get_digest_cursor
-from boardwatch.store.application_destinations import effective_apply_url
+from boardwatch.store.application_destinations import effective_apply_url, verified_application_url
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.delivery_queries import (
     EMPTY_BODY_HASH,
@@ -670,6 +670,7 @@ def rank_open_postings(
                 # loads. Keyed only for the rows that reach the slate, inside the fill loop.
                 postings.c.url,
                 effective_apply_url().label("apply_url"),
+                verified_application_url().label("verified_url"),
                 jobapps_employer_url().label("employer_url"),
                 postings.c.posted_at,
                 postings.c.locations_json,
@@ -766,8 +767,8 @@ def rank_open_postings(
     # posting_id -> CLUSTER key (T73), absent for a posting that cannot be keyed: no
     # `normalized_title`, or no location evidence at all. See CLUSTER_CAP_PER_KEY.
     cluster_keys: dict[int, tuple[int, str, str]] = {}
-    # posting_id -> (stored URL, employer evidence), read only on reaching the slate (D-655).
-    posting_urls: dict[int, tuple[str | None, str | None]] = {}
+    # posting_id -> (source, employer evidence, verified destination), read at the slate.
+    posting_urls: dict[int, tuple[str | None, str | None, str | None]] = {}
     application_urls: dict[int, str | None] = {}
     hidden_non_swe = 0
     hidden_zero_signal = 0
@@ -942,7 +943,7 @@ def rank_open_postings(
             cluster_keys[int(row.id)] = (
                 int(row.company_id), row.normalized_title, locations_key,
             )
-        posting_urls[int(row.id)] = (row.url, row.employer_url)
+        posting_urls[int(row.id)] = (row.url, row.employer_url, row.verified_url)
         application_urls[int(row.id)] = row.apply_url
         scored.append(RankedPosting(
             posting_id=int(row.id), title=row.title, company=row.company_name,
