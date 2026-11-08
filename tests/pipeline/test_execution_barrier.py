@@ -263,3 +263,76 @@ def test_later_lead_is_withdrawn_while_first_build_runs(
     assert {p.posting_id for p in summary.tailored} == {built[0]}
     assert len(built) == 1
     assert summary.fatal is None, summary.fatal
+
+
+@pytest.mark.parametrize("destination", ["matching", "unsupported", "distinct"])
+@pytest.mark.parametrize("boundary", ["projection", "tailor"])
+def test_verified_destination_controls_execution_requisition_conflict(
+    isolated: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    destination: str, boundary: str,
+) -> None:
+    from boardwatch.store.application_destinations import record_application_destination
+
+    pid = _ready(isolated, 1)[0]
+    _projected_env(isolated)
+    engine = get_engine(isolated)
+    source = "https://www.amazon.jobs/en/jobs/100"
+    verified = {
+        "matching": "https://www.amazon.jobs/en/jobs/200",
+        "unsupported": "https://careers.example.test/search",
+        "distinct": "https://www.amazon.jobs/en/jobs/300",
+    }[destination]
+    with engine.begin() as conn:
+        conn.execute(update(tables.postings).where(tables.postings.c.id == pid)
+                     .values(url=source))
+        record_application_destination(
+            conn, posting_id=pid, url=verified, source_url=source,
+            evidence_ref="synthetic candidate", verified_at=utcnow(),
+        )
+
+    def apply_twin() -> None:
+        change(engine, pid, "applied_twin")
+        with engine.begin() as conn:
+            twin = conn.execute(select(tables.postings.c.id).where(
+                tables.postings.c.provider_posting_id == f"closed-twin-{pid}"
+            )).scalar_one()
+            record_application_destination(
+                conn, posting_id=twin,
+                url="https://www.amazon.jobs/en/jobs/200" if destination == "matching" else source,
+                source_url=source, evidence_ref="synthetic applied twin", verified_at=utcnow(),
+            )
+
+    if boundary == "projection":
+        original = runner._lead_lanes
+
+        def lanes(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            apply_twin()
+            return result
+
+        monkeypatch.setattr(runner, "_lead_lanes", lanes)
+    else:
+        original_project = runner.project_for_posting
+
+        def project(*args: Any, **kwargs: Any) -> Any:
+            result = original_project(*args, **kwargs)
+            apply_twin()
+            return result
+
+        monkeypatch.setattr(runner, "project_for_posting", project)
+    settings = load_settings(data_dir=isolated)
+    summary = runner.run_pipeline(
+        engine, settings, out_root=tmp_path / "apps", queue_root=tmp_path / "queue",
+        resume_path=settings.config_dir / "resume.yaml", skip_scan=True, project=True,
+    )
+    assert summary.fatal is None, summary.fatal
+    assert summary.tailor_failed == 0
+    # Expectations follow the fixture requisitions, independently of the key parser.
+    if destination == "matching":
+        assert summary.tailored == []
+        assert summary.execution_deferred_ids == [pid]
+        with engine.connect() as conn:
+            assert conn.execute(select(tables.job_dispositions.c.disposition)).all() == []
+    else:
+        assert {lead.posting_id for lead in summary.tailored if lead.pdf_built} == {pid}
+        assert summary.execution_deferred_ids == []

@@ -172,7 +172,7 @@ from boardwatch.scan.coordinator import (
     systemic_scan_outage_reason,
 )
 from boardwatch.store import tables
-from boardwatch.store.application_destinations import effective_apply_url
+from boardwatch.store.application_destinations import effective_apply_url, verified_application_url
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.buried_queries import BuriedLeads
@@ -1694,6 +1694,7 @@ def _execution_inputs(
             postings.c.job_id, postings.c.status, postings.c.title, postings.c.locations_json,
             postings.c.remote_policy, postings.c.content_hash, postings.c.body_text,
             postings.c.url, effective_apply_url().label("apply_url"),
+            verified_application_url().label("verified_url"),
             companies.c.provider, companies.c.name, jobapps_employer_url().label("employer_url"),
         ).join(companies, companies.c.id == postings.c.company_id)
           .where(postings.c.id == pid)).first()
@@ -1726,9 +1727,9 @@ def _execution_inputs(
         )
         if verdict == "ineligible" or gates.get(pid) == "ineligible":
             return None
-        # The routine ranker's holder reader and key, without activating slice 1's changes.
+        # Use the routine ranker's authoritative destination semantics on both sides.
         holders, delivered = requisition_holder_urls(conn)
-        key = posting_requisition_key(row.url, row.employer_url)
+        key = posting_requisition_key(row.url, row.employer_url, row.verified_url)
         conflict = key is not None and pid not in delivered and any(
             other != pid and posting_requisition_key(*urls) == key
             for other, urls in holders.items()
