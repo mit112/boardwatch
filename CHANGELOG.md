@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Requisition dedup uses verified application destinations.** New candidates and standing
+  copies match delivered/applied requisitions through their verified employer links. Unsupported
+  destinations stay unmatched; existing manual treatment and reversible deferral remain (D-678).
+
 - **Application-site tags follow the link.** Job labels, filters, sorting and related-posting
   groups use the current application URL. Recognized ATS hosts share a service name; other
   sites show their hostname. Discovery source remains separate from application destination.

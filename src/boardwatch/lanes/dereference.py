@@ -614,13 +614,15 @@ def requisition_key(url: str) -> tuple[str, str, str] | None:
 
 
 def posting_requisition_key(
-    url: str | None, employer_url: object = None,
+    url: str | None, employer_url: object = None, verified_url: str | None = None,
 ) -> tuple[str, str, str] | None:
-    """Read evidenced employer URL first, then stored URL; unreadable evidence costs no key.
+    """An explicit destination overrides older URLs, even when it supplies no readable key.
 
-    `employer_url` is the optional job-apps resolver evidence, never a company/title inference.
-    JSON evidence of another type is absent evidence (D-655).
+    Without one, try job-apps employer evidence then the source URL (D-655). JSON evidence
+    of another type is absent evidence; no company/title inference is made.
     """
+    if verified_url is not None:
+        return requisition_key(verified_url)
     for candidate in (employer_url, url):
         if isinstance(candidate, str):
             key = requisition_key(candidate)

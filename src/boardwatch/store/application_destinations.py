@@ -107,9 +107,9 @@ def read_application_destinations(
     return result
 
 
-def effective_apply_url() -> ColumnElement[Any]:
-    """An indexed lookup correlated to the current posting; never read mutable raw_json."""
-    destination = (
+def verified_application_url() -> ColumnElement[Any]:
+    """The explicit destination, or NULL; keep absence distinct from the source fallback."""
+    return (
         select(application_destinations.c.url)
         .where(
             application_destinations.c.posting_id == postings.c.id,
@@ -117,4 +117,8 @@ def effective_apply_url() -> ColumnElement[Any]:
         .correlate(postings)
         .scalar_subquery()
     )
-    return func.coalesce(destination, postings.c.url)
+
+
+def effective_apply_url() -> ColumnElement[Any]:
+    """An indexed lookup correlated to the current posting; never read mutable raw_json."""
+    return func.coalesce(verified_application_url(), postings.c.url)

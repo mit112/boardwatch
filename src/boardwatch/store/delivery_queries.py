@@ -73,7 +73,7 @@ from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.rank.role_gate import RoleVerdict, taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, load_role_taxonomy
 from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
-from boardwatch.store.application_destinations import effective_apply_url
+from boardwatch.store.application_destinations import effective_apply_url, verified_application_url
 from boardwatch.store.applications import APPLIED_STATUSES, STATE_EVENTS, applied_job_ids
 from boardwatch.store.ledger_queries import live_dispositions
 from boardwatch.store.quarantine_queries import is_quarantined
@@ -375,6 +375,7 @@ def _delivered_select() -> Select[Any]:
             postings.c.closed_at,
             postings.c.url,
             effective_apply_url().label("apply_url"),
+            verified_application_url().label("verified_url"),
             jobapps_employer_url().label("employer_url"),
             companies.c.name.label("company"),
             companies.c.provider,
@@ -955,8 +956,8 @@ def delivered_cross_host_keys(
 
 def requisition_holder_urls(
     conn: Connection,
-) -> tuple[dict[int, tuple[str | None, str | None]], frozenset[int]]:
-    """posting id -> (stored URL, employer evidence) for requisition holders; delivered open ids.
+) -> tuple[dict[int, tuple[str | None, str | None, str | None]], frozenset[int]]:
+    """Requisition holders' (source, employer evidence, verified destination); delivered open ids.
 
     The seed for the requisition-twin rule in `top_cmd`: a posting that has never been delivered is
     held when another posting of the SAME employer requisition (`lanes.dereference.requisition_key`)
@@ -975,7 +976,7 @@ def requisition_holder_urls(
     held by this rule, so two delivered copies cannot hold each other and both vanish.
     """
     reported = reported_job_ids(conn)
-    holders: dict[int, tuple[str | None, str | None]] = {}
+    holders: dict[int, tuple[str | None, str | None, str | None]] = {}
     delivered: set[int] = set()
     for row in conn.execute(
         _delivered_select().where(postings.c.status == "open", postings.c.job_id.is_not(None))
@@ -983,14 +984,14 @@ def requisition_holder_urls(
         posting_id = int(row.posting_id)
         delivered.add(posting_id)
         if int(row.job_id) not in reported:
-            holders[posting_id] = (row.url, row.employer_url)
+            holders[posting_id] = (row.url, row.employer_url, row.verified_url)
     # Reached by the JOIN outward from `applications` the Applied page uses, never by binding a
     # job-id list (this module builds no `.in_()`). That join also returns jobs whose only attempt
     # was never submitted, so the rows are kept to `applied_job_ids`, the ranker's own test.
     applied = applied_job_ids(conn)
     for row in conn.execute(_applied_postings_select()).all():
         if int(row.job_id) in applied:
-            holders[int(row.posting_id)] = (row.url, row.employer_url)
+            holders[int(row.posting_id)] = (row.url, row.employer_url, row.verified_url)
     return holders, frozenset(delivered)
 
 
@@ -1018,7 +1019,7 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
         key
         for row in conn.execute(_applied_postings_select()).all()
         if int(row.job_id) in applied
-        if (key := posting_requisition_key(row.url, row.employer_url)) is not None
+        if (key := posting_requisition_key(row.url, row.employer_url, row.verified_url)) is not None
     }
     lane_copy = lane_copy_posting_ids(conn)
     representatives = {
@@ -1034,7 +1035,7 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
     for row in _delivered_by_posting(deliveries).values():
         if int(row.posting_id) not in representatives:
             continue
-        key = posting_requisition_key(row.url, row.employer_url)
+        key = posting_requisition_key(row.url, row.employer_url, row.verified_url)
         if key is not None:
             groups.setdefault(key, []).append(row)
     deferred_jobs: set[int] = set()
@@ -1121,7 +1122,8 @@ def lane_copy_posting_ids(conn: Connection) -> set[int]:
     # Every holder is one of these rows: the seed reads this same select, join and filter.
     job_of = {int(row.posting_id): int(row.job_id) for row in rows}
     requisition_of = {
-        int(row.posting_id): posting_requisition_key(row.url, row.employer_url) for row in rows
+        int(row.posting_id): posting_requisition_key(row.url, row.employer_url, row.verified_url)
+        for row in rows
     }
     out: set[int] = set()
     for row in rows:
@@ -1565,6 +1567,7 @@ def _job_posting_select() -> Select[Any]:
         postings.c.closed_at,
         postings.c.url,
         effective_apply_url().label("apply_url"),
+        verified_application_url().label("verified_url"),
         jobapps_employer_url().label("employer_url"),
         companies.c.name.label("company"),
         companies.c.watched,

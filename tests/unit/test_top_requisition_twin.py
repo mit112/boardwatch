@@ -480,3 +480,93 @@ def test_non_jobapps_requisition_ignores_incidental_employer_evidence(
     results = _rank(engine, data_dir)
     assert _visible(results) == [copy]
     assert results.hidden_requisition_twin == 0
+
+
+@pytest.mark.parametrize("enriched", ["candidate", "delivered", "applied", "closed_applied", "slate"])
+def test_verified_destinations_key_candidates_and_holders(data_dir: Path, enriched: str) -> None:
+    """Ignoring either side's durable destination leaks a duplicate and consumes a slate slot."""
+    from boardwatch.store.application_destinations import record_application_destination
+
+    url = WD.format(site="Global", req="R-785495")
+    source = "https://www.linkedin.com/jobs/view/123"
+    candidate_side = enriched in ("candidate", "slate")
+    engine, (copy, holder, other) = _seed(data_dir, [
+        ("copy", "jobapps", "SW Engineer I", source if candidate_side else url),
+        ("holder", "jobapps", "Software Engineer", url if candidate_side else source),
+        ("other", "greenhouse", "Platform Engineer", "https://boards.greenhouse.io/other/jobs/111111"),
+    ])
+    evidenced = copy if candidate_side else holder
+    with engine.begin() as conn:
+        # Stale legacy evidence must not override the explicit verified destination.
+        conn.execute(update(postings).where(postings.c.id == evidenced).values(
+            raw_json={"jobapps": {"employer_url": WD.format(site="Global", req="R-999999")}},
+        ))
+        record_application_destination(
+            conn, posting_id=evidenced, url=url, source_url=source,
+            evidence_ref="fixture#verified", verified_at=NOW,
+        )
+        if enriched in ("applied", "closed_applied"):
+            mark_job_applied(conn, posting_id=holder, source="test")
+        if enriched == "closed_applied":
+            conn.execute(update(postings).where(postings.c.id == holder).values(status="closed"))
+    if enriched in ("candidate", "delivered"):
+        _delivered(engine, holder)
+    result = _rank(engine, data_dir, limit=2 if enriched == "slate" else 1)
+    assert _visible(result) == ([copy, other] if enriched == "slate" else [other])
+    assert result.hidden_requisition_twin == 1
+    with engine.connect() as conn:
+        assert conn.execute(select(postings.c.url).where(postings.c.id == evidenced)).scalar_one() == source
+
+
+def test_verified_destination_replacement_and_clear_refresh_ranking(data_dir: Path) -> None:
+    """A stale key or fallback past an explicit unsupported destination hides a distinct job."""
+    from boardwatch.store.application_destinations import (
+        clear_application_destination,
+        record_application_destination,
+    )
+
+    url = AMAZON.format(req="10567489")
+    engine, (copy, holder) = _seed(data_dir, [
+        ("copy", "jobapps", "SW Engineer I", url),
+        ("holder", "amazon", "Software Engineer", url),
+    ])
+    _delivered(engine, holder)
+
+    def visible() -> list[int]:
+        return _visible(rank_open_postings(
+            engine, Settings(data_dir=data_dir, config_dir=data_dir), record_surfaced=False,
+        ))
+
+    assert visible() == []
+    for destination, expected in (
+        (AMAZON.format(req="10567490"), [copy]),
+        ("https://employer.invalid/careers", [copy]),
+        (url, []),
+    ):
+        with engine.begin() as conn:
+            record_application_destination(
+                conn, posting_id=copy, url=destination, source_url=url,
+                evidence_ref="fixture#replacement", verified_at=NOW,
+            )
+        assert visible() == expected
+    with engine.begin() as conn:
+        clear_application_destination(conn, posting_id=copy)
+    assert visible() == []
+
+
+@pytest.mark.parametrize("destination,expected", [
+    ("https://www.amazon.jobs/en/jobs/10567490/job", ("amazon", "amazon.jobs", "10567490")),
+    ("https://boards.greenhouse.io/another/jobs/1234567", ("greenhouse", "another", "1234567")),
+    ("https://employer.invalid/careers", None),
+    ("https://[broken/jobs/1", None),
+])
+def test_verified_requisition_is_authoritative(
+    destination: str, expected: tuple[str, str, str] | None,
+) -> None:
+    """Falling back past explicit destinations falsely matches the old source requisition."""
+    from boardwatch.lanes.dereference import posting_requisition_key
+
+    source = "https://boards.greenhouse.io/original/jobs/1234567"
+    legacy = AMAZON.format(req="10567489")
+    assert posting_requisition_key(source, legacy, destination) == expected
+    assert posting_requisition_key(source, legacy) == ("amazon", "amazon.jobs", "10567489")

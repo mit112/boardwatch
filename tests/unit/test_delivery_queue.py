@@ -5350,16 +5350,28 @@ def test_a_closed_manual_lead_stuck_in_manual_is_not_rewritten(
 _REQ_URL = "https://www.amazon.jobs/en/jobs/10567489/software-development-engineer"
 
 
-def _requisition(conn: Connection, *posting_ids: int) -> None:
+def _requisition(conn: Connection, *posting_ids: int, verified: bool = False) -> None:
+    from boardwatch.store.application_destinations import record_application_destination
+
     for posting_id in posting_ids:
-        conn.execute(update(postings).where(postings.c.id == posting_id).values(
-            url=_REQ_URL,
-        ))
+        if verified:
+            source = conn.execute(select(postings.c.url).where(
+                postings.c.id == posting_id,
+            )).scalar_one()
+            record_application_destination(
+                conn, posting_id=posting_id, url=_REQ_URL, source_url=source,
+                evidence_ref="fixture#verified", verified_at=NOW,
+            )
+        else:
+            conn.execute(update(postings).where(postings.c.id == posting_id).values(
+                url=_REQ_URL,
+            ))
 
 
+@pytest.mark.parametrize("verified", [False, True])
 @pytest.mark.parametrize("tied", [False, True])
 def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
-    engine: Engine, apps: Path, tied: bool,
+    engine: Engine, apps: Path, tied: bool, verified: bool,
 ) -> None:
     """Latest delivery, unstable ties, or a job-keyed deferral would lose the survivor."""
     with engine.begin() as conn:
@@ -5368,7 +5380,7 @@ def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
             conn, apps, "copy", delivered_at=NOW - timedelta(days=2 if tied else 1),
         )
         same_job, _ = _deliver(conn, apps, "same", job_id=job, delivered_at=NOW)
-        _requisition(conn, first, copy, same_job)
+        _requisition(conn, first, copy, same_job, verified=verified)
         # Another build of the first posting must not replace its FIRST delivery date.
         version = conn.execute(select(posting_versions.c.id).where(
             posting_versions.c.posting_id == first,
@@ -5385,10 +5397,11 @@ def test_requisition_deferral_keeps_earliest_job_and_same_job_control(
             ]
 
 
+@pytest.mark.parametrize("verified", [False, True])
 @pytest.mark.parametrize("holder_status", ["open", "closed"])
 @pytest.mark.parametrize("standing_copies", [1, 2])
 def test_applied_requisition_holder_defeats_every_standing_copy(
-    engine: Engine, apps: Path, holder_status: str, standing_copies: int,
+    engine: Engine, apps: Path, holder_status: str, standing_copies: int, verified: bool,
 ) -> None:
     """An applied holder wins open or closed, even if it was delivered last."""
     with engine.begin() as conn:
@@ -5398,22 +5411,23 @@ def test_applied_requisition_holder_defeats_every_standing_copy(
             second, _ = _deliver(conn, apps, "second", delivered_at=NOW - timedelta(days=1))
             copies.append(second)
         applied, _ = _deliver(conn, apps, "applied")
-        _requisition(conn, *copies, applied)
+        _requisition(conn, *copies, applied, verified=verified)
         mark_job_applied(conn, posting_id=applied, source="test")
         conn.execute(update(postings).where(postings.c.id == applied).values(status=holder_status))
     with engine.connect() as conn:
         assert queue.standing_queue_rows(conn) == []
 
 
+@pytest.mark.parametrize("verified", [False, True])
 @pytest.mark.parametrize("release", ["closed", "reported", "skipped", "manual", "ineligible"])
 def test_requisition_copy_returns_when_holder_stops_holding(
-    engine: Engine, apps: Path, release: str,
+    engine: Engine, apps: Path, release: str, verified: bool,
 ) -> None:
     """A stamped deferral or a holder that ignores drains would permanently lose the copy."""
     with engine.begin() as conn:
         holder, job = _deliver(conn, apps, "holder", delivered_at=NOW - timedelta(days=1))
         copy, _ = _deliver(conn, apps, "copy")
-        _requisition(conn, holder, copy)
+        _requisition(conn, holder, copy, verified=verified)
     with engine.connect() as conn:
         assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [holder]
     with engine.begin() as conn:
@@ -5431,9 +5445,10 @@ def test_requisition_copy_returns_when_holder_stops_holding(
         assert copy in [r.posting_id for r in queue.standing_queue_rows(conn)]
 
 
+@pytest.mark.parametrize("verified", [False, True])
 @pytest.mark.parametrize("consumer", ["standing", "reconcile", "api", "cohort"])
 def test_requisition_deferral_reaches_every_consumer_without_store_writes(
-    engine: Engine, root: Path, apps: Path, consumer: str,
+    engine: Engine, root: Path, apps: Path, consumer: str, verified: bool,
 ) -> None:
     """Omitting one consumer disagrees with folders; reopening a built row repeats delivery."""
     from boardwatch.delivery.api import queue_payload  # noqa: PLC0415
@@ -5452,8 +5467,13 @@ def test_requisition_deferral_reaches_every_consumer_without_store_writes(
         sync_queue(conn, root=root, owner_name=OWNER)
     with engine.begin() as conn:
         current_copy, _ = _deliver(conn, apps, "current-copy", job_id=copy_job)
-        _requisition(conn, holder, copy, current_copy)
-    tables = (postings, jobs, artifacts, job_dispositions, eligibility_evaluations)
+        _requisition(conn, holder, copy, current_copy, verified=verified)
+    from boardwatch.store.tables import application_destinations, applications
+
+    tables = (
+        postings, jobs, artifacts, posting_versions, posting_identities,
+        job_dispositions, eligibility_evaluations, applications, application_destinations,
+    )
     with engine.connect() as conn:
         before = [conn.execute(select(table).order_by(*table.primary_key.columns)).all() for table in tables]
         if consumer == "standing":
@@ -5499,8 +5519,9 @@ def test_requisition_deferral_reaches_every_consumer_without_store_writes(
             assert _snapshot(root) == before_files
 
 
+@pytest.mark.parametrize("verified", [False, True])
 def test_exact_requisition_earliest_lane_copy_survives_board_preference(
-    engine: Engine, apps: Path,
+    engine: Engine, apps: Path, verified: bool,
 ) -> None:
     """Unioning the old board-preference drain with earliest-wins would hide BOTH copies."""
     with engine.begin() as conn:
@@ -5508,7 +5529,7 @@ def test_exact_requisition_earliest_lane_copy_survives_board_preference(
         board, _ = _deliver(conn, apps, "board", provider="greenhouse")
         _cross_host(conn, lane, "one-group")
         _cross_host(conn, board, "one-group")
-        _requisition(conn, lane, board)
+        _requisition(conn, lane, board, verified=verified)
     with engine.connect() as conn:
         assert [r.posting_id for r in queue.standing_queue_rows(conn)] == [lane]
 

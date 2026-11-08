@@ -1037,6 +1037,8 @@ def test_the_applied_postings_read_is_driven_from_the_applications_not_a_posting
         plan = "\n".join(str(row[3]) for row in conn.execute(text(f"EXPLAIN QUERY PLAN {sql}")))
     assert "SEARCH postings USING INDEX ix_postings_job_id" in plan, plan
     assert "SCAN postings" not in plan, plan
+    assert "SEARCH application_destinations USING INTEGER PRIMARY KEY" in plan, plan
+    assert "SCAN application_destinations" not in plan, plan
 
 
 def test_requirement_view_is_the_audits_own_requirement_type() -> None:
