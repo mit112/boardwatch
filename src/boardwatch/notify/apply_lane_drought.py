@@ -84,7 +84,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
 from boardwatch.store.delivery_queries import apply_lane_placements
-from boardwatch.store.queries import RUN_OK
+from boardwatch.store.queries import RUN_OK, run_kind
 from boardwatch.store.tables import runs
 
 APPLY_LANE_DROUGHT_WINDOW = 3
@@ -110,8 +110,9 @@ def check_apply_lane_drought(
     """Return a soft-alert string when the newest clean runs each delivered placeable leads yet
     every one of them now classifies away from the apply lane, else ``None``.
 
-    Only `status = 'ok'` runs count, newest first — a crashed or in-flight run carries no
-    delivery signal. Fewer than `window` clean runs of history abstains rather than firing on a
+    Only successful, non-incremental delivery runs count, newest first — a crashed or
+    in-flight run carries no delivery signal. Fewer than `window` clean runs of history abstains
+    rather than firing on a
     fresh store, mirroring both sibling detectors.
 
     The window is `window` runs AT MINIMUM and grows towards `max_window` until it holds
@@ -123,7 +124,10 @@ def check_apply_lane_drought(
             int(rid)
             for (rid,) in conn.execute(
                 select(runs.c.id)
-                .where(runs.c.status == RUN_OK, runs.c.incremental.is_(False))
+                .where(
+                    runs.c.status == RUN_OK, runs.c.incremental.is_(False),
+                    run_kind() == "delivery",
+                )
                 .order_by(runs.c.id.desc())
                 .limit(max(window, max_window))
             ).all()

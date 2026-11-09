@@ -13,7 +13,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.notify.delivery_drought import DELIVERY_DROUGHT_WINDOW, check_delivery_drought
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.queries import RUN_OK
+from boardwatch.store.queries import RUN_KIND_PREFIX, RUN_OK, set_state
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 
 
@@ -60,7 +60,7 @@ def _seed_input(engine: Engine) -> int:
 
 def _run(
     engine: Engine, input_id: int, *, candidates: int, delivered: int,
-    verdict: str = "eligible", status: str = RUN_OK,
+    verdict: str = "eligible", status: str = RUN_OK, kind: str | None = "delivery",
 ) -> int:
     """One run plus `candidates` candidate evaluations and `delivered` tailored artifacts."""
     now = utcnow()
@@ -70,6 +70,8 @@ def _run(
                 insert(tables.runs).values(started_at=now, finished_at=now, status=status)
             ).inserted_primary_key[0]
         )
+        if kind is not None:
+            set_state(conn, f"{RUN_KIND_PREFIX}{run_id}", kind)
         for _ in range(candidates):
             conn.execute(
                 insert(tables.eligibility_evaluations).values(
@@ -148,4 +150,32 @@ def test_default_window_is_three(engine: Engine) -> None:
     _run(engine, input_id, candidates=2, delivered=0)
     assert check_delivery_drought(engine) is None
     _run(engine, input_id, candidates=2, delivered=0)
+    assert check_delivery_drought(engine) is not None
+
+
+@pytest.mark.parametrize("kind", ["maintenance", "scan", None, "unsupported"])
+def test_non_delivery_cannot_dilute_a_real_drought(engine: Engine, kind: str | None) -> None:
+    input_id = _seed_input(engine)
+    ids = [_run(engine, input_id, candidates=1, delivered=0) for _ in range(3)]
+    _run(engine, input_id, candidates=0, delivered=1, kind=kind)
+    alert = check_delivery_drought(engine)
+    assert alert is not None
+    assert "runs " + ", ".join(str(rid) for rid in reversed(ids)) + ")" in alert
+
+
+@pytest.mark.parametrize("kind", ["maintenance", "scan", None, "unsupported"])
+def test_non_delivery_cannot_manufacture_a_drought(engine: Engine, kind: str | None) -> None:
+    input_id = _seed_input(engine)
+    for _ in range(3):
+        _run(engine, input_id, candidates=1, delivered=0, kind=kind)
+    assert check_delivery_drought(engine) is None
+
+
+def test_historical_corpus_evidence_still_proves_a_delivery(engine: Engine) -> None:
+    from sqlalchemy import update
+    input_id = _seed_input(engine)
+    for _ in range(3):
+        rid = _run(engine, input_id, candidates=1, delivered=0, kind=None)
+        with engine.begin() as conn:
+            conn.execute(update(tables.runs).where(tables.runs.c.id == rid).values(corpus_open=0))
     assert check_delivery_drought(engine) is not None
