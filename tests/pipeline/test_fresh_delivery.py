@@ -19,7 +19,11 @@ from boardwatch.core.settings import load_settings
 from boardwatch.pipeline import runner
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
-from tests.pipeline.test_gate_stage import _arm_gate, fake_claude  # noqa: F401
+from tests.pipeline.test_gate_stage import (  # noqa: F401
+    _arm_gate,
+    _needs_an_executable_fake,
+    fake_claude,
+)
 from tests.pipeline.test_pipeline_run import _GH, _pipeline, _ready, _seed_posting
 
 cli = CliRunner()
@@ -179,7 +183,8 @@ def test_fresh_filter_precedes_rank_depth_and_scopes_preflights(
 
 
 @pytest.mark.usefixtures("fake_claude")
-@pytest.mark.parametrize("empty", [False, True])
+# The judged-lead assertions (`empty=False`) need the fake `claude`, which Windows cannot spawn.
+@pytest.mark.parametrize("empty", [pytest.param(False, marks=_needs_an_executable_fake), True])
 def test_fresh_skips_nightly_work_and_heartbeat(
     data: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, empty: bool
 ) -> None:

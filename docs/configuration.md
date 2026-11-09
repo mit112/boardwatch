@@ -277,7 +277,8 @@ unresolved_hosts = ["linkedin.com", "indeed.com", "lnkd.in"]
 unresolved_url_markers = ["gh_jid="]
 # The unresolved hosts with a fillable form of their own, used when no employer link exists.
 native_fill_hosts = ["linkedin.com"]
-# JSON files of link checks: {"<posting_id>": {"company_status": "..."}}.
+# JSON files of link checks: {"<posting_id>": {"company_status": "..."}}. On Windows, quote a path with
+# single quotes ('D:\boardwatch\link_checks.json'): inside double quotes a backslash starts an escape.
 link_ledgers = ["/path/to/link_checks.json"]
 # The company_status values meaning the check finished and found no employer link.
 no_employer_statuses = ["none"]
