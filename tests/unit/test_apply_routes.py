@@ -8,6 +8,7 @@ is `auto` on a board with its own form; a moved lead stays by hand whatever its 
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,8 @@ NONE_LINK, AGGREGATOR_LINK, LIVE_LINK, UNCHECKED = 21, 22, 23, 24
 
 
 def _configure(config_dir: Path, *, extra: str = "") -> None:
+    # A path goes in a TOML literal string ('...'): in a basic string ("...") the backslashes of a
+    # Windows path read as escapes (`\U` is a Unicode escape) and the file does not parse.
     config_dir.mkdir(parents=True, exist_ok=True)
     (config_dir / "links.json").write_text(
         json.dumps(
@@ -42,7 +45,7 @@ auto_hosts = ["ashbyhq.com", "job-boards.greenhouse.io"]
 unresolved_hosts = ["linkedin.com", "jobright.ai"]
 unresolved_url_markers = ["gh_jid="]
 native_fill_hosts = ["linkedin.com"]
-link_ledgers = ["{config_dir / "links.json"}"]
+link_ledgers = ['{config_dir / "links.json"}']
 no_employer_statuses = ["none", "aggregator"]
 {extra}
 """,
@@ -84,6 +87,21 @@ def test_the_route_of_a_lead(
     routes = load_apply_routes(tmp_path)
     assert routes.problem is None
     assert routes.route(posting_id=posting_id, apply_url=url) is expected
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="a Windows file name cannot contain a backslash"
+)
+def test_a_config_dir_whose_path_has_backslashes_still_loads(tmp_path: Path) -> None:
+    """On POSIX a backslash is an ordinary file-name character, so this builds the path shape a
+    Windows runner has (`C:\\Windows\\...`) and guards `_configure`'s TOML quoting on every other OS."""
+    config_dir = tmp_path / r"C:\Windows\Temp\Runner"
+    _configure(config_dir)
+    routes = load_apply_routes(config_dir)
+    assert routes.problem is None
+    assert routes.route(posting_id=NONE_LINK, apply_url="https://www.linkedin.com/jobs/view/1") is (
+        ApplyRoute.AUTO
+    )
 
 
 def test_no_file_is_unconfigured_and_routes_nothing_automatically(tmp_path: Path) -> None:

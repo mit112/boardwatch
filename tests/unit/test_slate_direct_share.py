@@ -320,8 +320,10 @@ def test_an_unreadable_link_ledger_does_not_turn_the_share_off(env: Path) -> Non
     """`is_direct_auto` reads no ledger, and a ledger mid-rewrite must not change the slate."""
     ids = _seed(env)
     (env.parent / "cfg").mkdir(exist_ok=True)
+    missing = env.parent / "cfg" / "missing.json"
+    # A TOML literal string ('...'): a Windows path's backslashes are escapes in a "..." string.
     (env.parent / "cfg" / "apply-routes.toml").write_text(
-        _ROUTES_TOML + f'\nlink_ledgers = ["{env.parent / "cfg" / "missing.json"}"]\n'
+        _ROUTES_TOML + f"\nlink_ledgers = ['{missing}']\n"
     )
     ranked, out = _rank(env, 1.0, limit=2)
     assert {p.posting_id for p in ranked.visible} == {ids["dir1"], ids["dir2"]}
