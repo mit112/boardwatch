@@ -12,9 +12,10 @@ All notable changes to this project are documented here. The format follows
   file name and the PDF's Title/Author come from `answers.yaml`'s `identity.full_name`, else `resume.yaml`'s first
   `header` line; the page prints `resume_template.tex`'s header. A test run shipped `Ada_Lovelace_*.pdf` headed
   "Pat Example". The render now refuses, before anything is written, when the template's text never contains that
-  name (case, whitespace and LaTeX escaping ignored). The refusal is a `TemplateArtifactError`, so a `run` stops its
-  tailor stage as it does for any broken template. When neither file names the owner, the generic fallback name is
-  not checked.
+  name as the page would print it: case, accents and whitespace are ignored, styling, accent and escape macros are read
+  as the text they draw, and a name that appears only in a `%` comment does not count. The refusal is a
+  `TemplateArtifactError`, so a `run` stops its tailor stage as it does for any broken template. When neither file
+  names the owner, the generic fallback name is not checked (D-685).
 
 - **The starter résumé template's refusal now covers the whole sample block (T268, 2026-09-28).** Three more of the
   starter's sample values are checked ("Your City, ST", "linkedin.com/in/[username]", "Course One"), and the bundled

@@ -582,3 +582,20 @@ def test_a_resume_filed_under_a_name_the_template_never_prints_is_refused(tmp_pa
         engine, settings, pid, resume_path=owned, out_dir=out, typst_runner=_runner_ok,
     )
     assert res.pdf_path is not None and res.pdf_path.name.startswith("Ada_Lovelace_")
+
+
+def test_the_generic_fallback_name_is_exempt_from_the_template_name_check(tmp_path: Path) -> None:
+    """T268: with neither `answers.yaml` nor a config-dir `resume.yaml`, the file is filed under
+    the generic fallback, which names nobody, so a template printing any name is not a mismatch."""
+    from boardwatch.delivery.api import FALLBACK_OWNER_NAME, resolve_owner_name
+
+    settings = _settings(tmp_path)
+    assert resolve_owner_name(None, settings.config_dir) == FALLBACK_OWNER_NAME
+    assert FALLBACK_OWNER_NAME.casefold() not in (settings.config_dir / "resume_template.tex").read_text(encoding="utf-8").casefold()
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=tmp_path / "out",
+        typst_runner=_runner_ok,
+    )
+    assert res.pdf_path is not None and res.pdf_path.name.startswith(f"{FALLBACK_OWNER_NAME}_")

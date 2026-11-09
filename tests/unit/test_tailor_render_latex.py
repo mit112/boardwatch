@@ -413,6 +413,44 @@ def test_the_owner_name_must_be_printed_by_the_template():
     assert "'Ada Lovelace'" in str(excinfo.value)
 
 
+@pytest.mark.parametrize(
+    ("printed", "owner"),
+    [
+        # A name split across styling macros, so no raw span of the source holds it.
+        ("\\textbf{\\Huge Pat} \\textit{Example} \\\\ pat@example.com", "Pat Example"),
+        # Accent macros, symbol and braced-letter forms, against the name as the owner types it.
+        ("\\scshape Jos\\'e Mu\\~noz", "José Muñoz"),
+        ("\\scshape Fran\\c{c}ois Lef\\`{e}vre", "François Lefèvre"),
+        # LaTeX-escaped specials, and a name typed with the accents already in UTF-8.
+        ("\\textbf{AT\\&T Jo\\_Ann}", "AT&T Jo_Ann"),
+        ("\\textbf{José Muñoz}", "Jose Munoz"),
+        # An uppercased, re-spaced header (the template styles it, the owner types it plain).
+        ("\\textbf{PAT\n   EXAMPLE}", "Pat Example"),
+    ],
+)
+def test_the_owner_name_matches_what_the_page_prints_not_the_latex_source(printed, owner):
+    """T268: Codex found the source-substring match refused a name written with accent macros
+    or split across styling macros, and `runner.py` treats that refusal as fatal for the whole
+    tailor stage. The name is compared with what the page prints."""
+    from boardwatch.tailor.render.latex import require_owner_printed
+
+    require_owner_printed(printed, owner)
+
+
+def test_a_name_inside_a_latex_comment_is_not_printed():
+    """T268: the page does not print a `%` comment, so a name that appears only there leaves the
+    header printing someone else. An escaped `\\%` starts no comment."""
+    from boardwatch.tailor.render.latex import TemplateOwnerMismatchError, require_owner_printed
+
+    template = "% Pat Example (old header)\n\\textbf{Grace Hopper} 100\\% remote\n"
+    with pytest.raises(TemplateOwnerMismatchError):
+        require_owner_printed(template, "Pat Example")
+    require_owner_printed(template, "Grace Hopper")
+    require_owner_printed(template, "Hopper 100% remote")  # text after an escaped percent
+    with pytest.raises(TemplateOwnerMismatchError):
+        require_owner_printed("\\textbf{Pat} % Example\n", "Pat Example")
+
+
 def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
     """The bundled default's own header/education literally ARE "Your Name" / "Example
     University" / etc, so the phrase catalog must not fire when the caller has explicitly asked

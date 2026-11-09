@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from importlib.resources import files
 from pathlib import Path
 
@@ -333,17 +334,41 @@ def _extracurricular(resume: Resume) -> str:
     return "\n".join(lines) + "\n"
 
 
+_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
+# A symbol accent (`\\'e`, `\\~{n}`) or a letter accent over a braced letter (`\\c{c}`, `\\v{s}`).
+_ACCENT_RE = re.compile(r"\\(?:['`^\"~=.]\s*\{?([A-Za-z])\}?|[cvuHkr]\s*\{([A-Za-z])\})")
+_ESCAPED_RE = re.compile(r"\\([&%$#_{}])")
+_COMMAND_RE = re.compile(r"\\(?:[A-Za-z]+\*?|\\)")
+
+
+def _fold(text: str) -> str:
+    """Case-, accent- and whitespace-blind form of `text`, for comparing two spellings of a name."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch) and not ch.isspace())
+
+
+def _printed_text(template: str) -> str:
+    """Approximately what the compiled page prints for `template`: comments dropped, accent
+    macros and escapes read as the characters they draw, every other command and brace removed.
+    A heuristic, not a LaTeX engine; a macro the template defines itself is not expanded."""
+    text = _COMMENT_RE.sub("", template)
+    text = _ACCENT_RE.sub(lambda m: m.group(1) or m.group(2), text)
+    text = _ESCAPED_RE.sub(lambda m: m.group(1), text)
+    text = _COMMAND_RE.sub("", text)
+    return text.replace("{", "").replace("}", "").replace("~", " ")
+
+
 def require_owner_printed(template: str, owner: str) -> None:
-    """Refuse a template whose text never prints `owner`, the name the PDF is filed under.
+    """Refuse a template whose page never prints `owner`, the name the PDF is filed under.
 
     Refusing rather than picking a winner: the header is free LaTeX, so reading a name back out
     of it is a guess, and either guess could file one person's page under another's name. The
-    match is a case- and whitespace-insensitive substring, raw or LaTeX-escaped, so styling
-    macros around the name (`\\scshape`, `\\textbf{...}`) never cause a refusal.
+    template is reduced to the text it prints (`_printed_text`) and the name must be a substring
+    of that, ignoring case, accents and whitespace, so a name set in styling macros, split across
+    them, written with accent macros or LaTeX-escaped is never refused, and a name that sits only
+    in a `%` comment is. The name may sit anywhere on the page, not only in the header.
     """
-    haystack = " ".join(template.split()).casefold()
-    raw = " ".join(owner.split()).casefold()
-    if raw in haystack or escape(owner).casefold() in haystack:
+    if _fold(owner) in _fold(_printed_text(template)):
         return
     raise TemplateOwnerMismatchError(
         f"the résumé would be filed as {owner!r} (answers.yaml identity.full_name, else "
