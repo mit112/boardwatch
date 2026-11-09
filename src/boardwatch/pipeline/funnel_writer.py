@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, Row, select
 
 from boardwatch.core.settings import Settings, load_settings
+from boardwatch.delivery.apply_routes import load_apply_routes
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
@@ -34,6 +35,7 @@ from boardwatch.eligibility.preflight import current_identity, engine_facts
 from boardwatch.eligibility.read import current_evaluations_chunked
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.run import ProjectionLeadOutcome
+from boardwatch.rank.direct_share import DirectShareReport
 from boardwatch.rank.leveling import load_leveling
 from boardwatch.rank.role_taxonomy import load_role_taxonomy, role_taxonomy_digest
 from boardwatch.rank.tenant_assumptions import TenantAssumptionReport
@@ -83,6 +85,7 @@ from boardwatch.store.run_funnel_queries import (
     count_stub_postings,
     count_tailored_artifacts,
     count_unattributed_evaluations,
+    delivered_apply_urls,
     lead_provenance,
     sweep_duplicates,
 )
@@ -304,6 +307,8 @@ def collect_run_funnel(
     execution_provenance: ExecutionProvenance | None = None,
     # T185. `None` means the ranker did not run, and the section says so.
     tenant_assumptions: TenantAssumptionReport | None = None,
+    # D-674. `None` means no attribution was collected, and the section says so.
+    direct_share: DirectShareReport | None = None,
     errors: list[str],
     board_moves: Sequence[str] = (),
     fatal: str | None,
@@ -410,6 +415,17 @@ def collect_run_funnel(
         unattributed = count_unattributed_evaluations(conn)
         provenance = lead_provenance(conn, posting_ids)
         stub_postings = count_stub_postings(conn)
+        # D-683. The delivered leads' stored links routed afresh, not the ranking-time
+        # classification the attribution was built from. Only when the attribution measured
+        # something, and only when the routes file is still readable: a share that was inert or
+        # off classified nothing to compare against.
+        delivered_direct_from_store: tuple[int, int] | None = None
+        if direct_share is not None and direct_share.measured:
+            routes = load_apply_routes(settings.config_dir)
+            if routes.configured:
+                urls = delivered_apply_urls(conn, posting_ids)
+                direct_count = sum(routes.is_direct_auto(url) for url in urls.values())
+                delivered_direct_from_store = (direct_count, len(urls) - direct_count)
         row = conn.execute(
             select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
                 runs.c.id == run_id
@@ -540,6 +556,8 @@ def collect_run_funnel(
         ),
         provenance=execution_provenance,
         tenant_assumptions=tenant_assumptions,
+        direct_share=direct_share,
+        delivered_direct_from_store=delivered_direct_from_store,
         errors=errors,
         board_moves=board_moves,
         fatal=fatal,

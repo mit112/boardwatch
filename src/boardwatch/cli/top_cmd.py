@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import cast
 
@@ -40,6 +40,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.lanes.dereference import posting_requisition_key
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.registry import PROVIDER_NAMES
+from boardwatch.rank.direct_share import DirectShareTally
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
     HardFilterClause,
@@ -406,6 +407,10 @@ class RankedResults:
     # profile data. Reported only, never read back into a decision. `None` from a caller that
     # never ranked.
     tenant_assumptions: TenantAssumptionTally | None = None
+    # Where direct and other leads left the ranked list, by tier (D-674's share). Reported only,
+    # never read back into a decision. `None` from a caller that never ranked. Excluded from `==`:
+    # it is a record of how the ranking went, not part of what was ranked.
+    direct_share: DirectShareTally | None = field(default=None, compare=False)
     # The canonical jobs this call put in front of the user, in rank order. Populated whether or
     # not the `seen` write actually happened, so a caller that ranked with `record_surfaced=False`
     # can record the decision at the point it genuinely takes one (the pipeline, after tailoring).
@@ -533,6 +538,8 @@ def interleave_direct(
     ranked: Sequence[RankedPosting],
     is_direct: Callable[[RankedPosting], bool],
     share: float,
+    *,
+    reserved: dict[int, int] | None = None,
 ) -> list[RankedPosting]:
     """Reserve `share` of each tier's positions for direct-apply leads, by REORDERING only.
 
@@ -544,6 +551,10 @@ def interleave_direct(
     It never moves a lead across a tier (`runner._slate_size` reads tier 0-1 as a prefix of the
     list) and never drops one, so every filter, counter and refill after it sees the same
     postings: only their order differs. At `share <= 0` the input order is returned unchanged.
+
+    `reserved`, when given, is filled with how many positions of each tier the share rule itself
+    claimed (the `d < share * (p + 1)` clause held). It only counts: the order is the same with
+    and without it.
     """
     if share <= 0:
         return list(ranked)
@@ -561,6 +572,9 @@ def interleave_direct(
             if d < len(direct) and (
                 d < share * (position + 1) or o >= len(rest) or direct[d][0] < rest[o][0]
             ):
+                if reserved is not None and d < share * (position + 1):
+                    tier = ranked[start].tier
+                    reserved[tier] = reserved.get(tier, 0) + 1
                 out.append(direct[d][1])
                 d += 1
             else:
@@ -1059,14 +1073,27 @@ def rank_open_postings(
     # tier only; every filter, counter and refill below is untouched. `postings.url` is the link
     # the queue page routes by; `employer_url` is only requisition-twin evidence.
     direct_routes: ApplyRoutes | None = None
+    direct_share = DirectShareTally.off(settings.slate_direct_share)
     if settings.slate_direct_share > 0:
         routes = load_apply_routes(settings.config_dir)
         if routes.configured:
             direct_routes = routes
+            direct_ids = frozenset(
+                r.posting_id for r in eligible
+                if routes.is_direct_auto(application_urls[r.posting_id])
+            )
+            reserved: dict[int, int] = {}
             reordered = interleave_direct(
                 eligible,
-                lambda r: routes.is_direct_auto(application_urls[r.posting_id]),
+                lambda r: r.posting_id in direct_ids,
                 settings.slate_direct_share,
+                reserved=reserved,
+            )
+            direct_share = DirectShareTally.measured(
+                settings.slate_direct_share,
+                leads=((r.posting_id, r.tier) for r in eligible),
+                direct_ids=direct_ids,
+                reserved=reserved,
             )
             moved = sum(a is not b for a, b in zip(eligible, reordered, strict=True))
             output_console.print(
@@ -1076,11 +1103,14 @@ def rank_open_postings(
             )
             eligible = reordered
         else:
+            inert_reason = routes.problem or "no apply-routes.toml in the config directory"
+            direct_share = DirectShareTally.inert(settings.slate_direct_share, inert_reason)
             output_console.print(
-                f"slate_direct_share {settings.slate_direct_share:g} is inert: "
-                + (routes.problem or "no apply-routes.toml in the config directory"),
+                f"slate_direct_share {settings.slate_direct_share:g} is inert: " + inert_reason,
                 markup=False,
             )
+    # `None` unless armed, so a run with the share off pays nothing at the drop sites below.
+    trace = direct_share if direct_share.state == "measured" else None
 
     # A second connection, deliberately. The function's existing `with engine.connect()`
     # block closes at `new_ids = ...`, well before scoring; every later line here runs with
@@ -1212,6 +1242,8 @@ def rank_open_postings(
         suppression = suppressions.get(posting.posting_id)
         if suppression is not None and not include_duplicates:
             hidden_duplicate += 1
+            if trace is not None:
+                trace.drop("hidden_duplicate", posting.tier, posting.posting_id)
             if posting.posting_id in judged_this_run:
                 hidden_duplicate_this_run += 1
             continue
@@ -1225,6 +1257,8 @@ def rank_open_postings(
         # Explicit owner intent earns no disposition and is never bypassed by inspection flags.
         if job_id in owner_held:
             hidden_handled += 1
+            if trace is not None:
+                trace.drop("hidden_handled", posting.tier, posting.posting_id)
             if posting.posting_id in judged_this_run:
                 hidden_handled_this_run += 1
             continue
@@ -1236,6 +1270,8 @@ def rank_open_postings(
         applied_status = applied.get(job_id) if job_id is not None else None
         if applied_status is not None and not include_applied:
             hidden_applied += 1
+            if trace is not None:
+                trace.drop("hidden_applied", posting.tier, posting.posting_id)
             if posting.posting_id in judged_this_run:
                 hidden_applied_this_run += 1
             continue
@@ -1245,6 +1281,8 @@ def rank_open_postings(
         disposition = handled.get(job_id) if job_id is not None else None
         if disposition is not None and not include_handled:
             hidden_handled += 1
+            if trace is not None:
+                trace.drop("hidden_handled", posting.tier, posting.posting_id)
             if posting.posting_id in judged_this_run:
                 hidden_handled_this_run += 1
             continue
@@ -1267,6 +1305,8 @@ def rank_open_postings(
             # cutoff, 121 of the 150 ranked slots were held copies by run 686. No `seen` is
             # written, so the drain is the one `_suppress_lane_copies` states.
             hidden_lane_copy_held += 1
+            if trace is not None:
+                trace.drop("hidden_lane_copy", posting.tier, posting.posting_id)
             continue
         if kept < limit:
             # The requisition-twin rule (D-654): the same employer requisition as a posting that
@@ -1286,6 +1326,8 @@ def rank_open_postings(
                 )
             ):
                 hidden_requisition_twin += 1
+                if trace is not None:
+                    trace.drop("hidden_requisition_twin", posting.tier, posting.posting_id)
                 continue
             # The slate cap (D-345), and it sits HERE rather than earlier for two reasons.
             # Inside `kept < limit`, so a row the rank cutoff would have dropped anyway is
@@ -1316,6 +1358,8 @@ def rank_open_postings(
                 # A lead that can never be actioned is excluded from the seed for exactly this
                 # reason (`standing_slate_keys`), so the deferral always has an end.
                 hidden_slate_cap += 1
+                if trace is not None:
+                    trace.drop("hidden_slate_cap", posting.tier, posting.posting_id)
                 if any(held in standing_ids for held in holders):
                     hidden_slate_cap_standing += 1
                 continue
@@ -1355,6 +1399,8 @@ def rank_open_postings(
                 # the next run. A DEFERRAL, never a suppression — nothing is dropped and no
                 # claim is made that these postings are one job.
                 hidden_cluster_cap += 1
+                if trace is not None:
+                    trace.drop("hidden_cluster_cap", posting.tier, posting.posting_id)
                 continue
             if len(cluster_holders) >= CLUSTER_CAP_PER_KEY:
                 visible.append(replace(posting, cluster_capped_by=cluster_holders[0]))
@@ -1404,6 +1450,8 @@ def rank_open_postings(
             # only by rank, which is a different reason from every other bucket and the one
             # the funnel could not name before P0 item 3.
             hidden_below_cutoff += 1
+            if trace is not None:
+                trace.drop("capped_by_top_n", posting.tier, posting.posting_id)
             version_id = version_ids.get(posting.posting_id)
             if posting.role == "in_field" and version_id is not None:
                 below_cutoff_in_field.append((posting.posting_id, version_id))
@@ -1418,6 +1466,7 @@ def rank_open_postings(
     # **Before `_record_surfaced`, and that is load-bearing.** A dropped row must not be written
     # `seen`, or the deferral would not re-enter on the run after the board copy is actioned and
     # the drain would close behind the operator (the rule the block comment above states).
+    visible_before_lane_copy = visible
     visible, hidden_lane_copy, lane_copy_ids = _suppress_lane_copies(
         engine,
         visible,
@@ -1427,6 +1476,11 @@ def rank_open_postings(
         include_lane_copy=include_lane_copy,
     )
     hidden_lane_copy += hidden_lane_copy_held
+    if trace is not None:
+        for dropped in visible_before_lane_copy:
+            if dropped.posting_id in lane_copy_ids:
+                trace.drop("hidden_lane_copy", dropped.tier, dropped.posting_id)
+        trace.finish((r.posting_id, r.tier) for r in visible)
     lane_copy_job_ids = {
         surfaced_job_of[posting_id]
         for posting_id in lane_copy_ids
@@ -1480,6 +1534,7 @@ def rank_open_postings(
         hidden_duplicate_this_run=hidden_duplicate_this_run,
         suppressions=tuple(suppressions.values()),
         tenant_assumptions=tenant,
+        direct_share=direct_share,
     )
 
 

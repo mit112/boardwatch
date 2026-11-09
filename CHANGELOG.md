@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format follows
   no longer raise it. A positive count on any later scan still counts as intake. Corpus regression
   and the buried-lead baseline are unchanged (D-682).
 
+- **The run funnel records where direct-apply leads leave the slate.** With `slate_direct_share`
+  above zero, each run's `funnel-<id>.json` and `.md` carry a `direct_share` section: per rank
+  tier and per route (direct / non-direct), the leads that entered the interleave, the positions
+  the share claimed, the leads removed at each step (the funnel's own drop names) and the leads
+  delivered, plus the posting ids of the direct leads removed at each step. It reconciles per tier
+  and route, adds `direct_share:<step>` cross-checks against the funnel's counters and a recount of
+  delivered direct leads from their stored links, and reads `off` or `inert` rather than zeros when the share is
+  not working. Counting only: the slate, the reservation and every filter are unchanged (D-683).
+
 - **Last delivery survives maintenance work.** Queue history selects genuine delivery runs and
   counts their retained artifact cohort, even after the same job is re-tailored. The runs API
   distinguishes delivery, scan and maintenance from unknown historical purpose, independently

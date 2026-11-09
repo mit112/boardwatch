@@ -131,6 +131,7 @@ from boardwatch.projection.run import (
 )
 from boardwatch.projection.scoring import DEFAULT_SCORER_ID
 from boardwatch.providers.registry import PROVIDER_NAMES
+from boardwatch.rank.direct_share import DirectShareTally, attribute
 from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.tenant_assumptions import (
@@ -643,6 +644,10 @@ class PipelineSummary:
     # where each gate runs; `None` where it did not, which the funnel reports as unmeasured.
     tenant_ranker: TenantAssumptionTally | None = None
     tenant_review: TenantAssumptionTally | None = None
+    # D-674's share, as the ranker tallied it, and the post-gate cut the tally cannot see. Both
+    # feed `rank.direct_share.attribute`; `None` / empty where the ranker did not run.
+    direct_share_tally: DirectShareTally | None = None
+    beyond_slate_ids: list[int] = field(default_factory=list)
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
     # no-boundary rather than as untimed, which is `None` and is what a pre-D-343 artifact has.
@@ -2815,6 +2820,7 @@ def _run_pipeline_leased(
             summary.errors.append(f"eligibility: {summary.fatal}")
             return summary
         summary.tenant_ranker = ranked.tenant_assumptions
+        summary.direct_share_tally = ranked.direct_share
         summary.shortlist = ShortlistCounts(
             considered=ranked.considered,
             shortlisted=len(ranked.visible),
@@ -2965,6 +2971,7 @@ def _run_pipeline_leased(
             leads = leads[:slate_size]
         beyond_slate_ids = frozenset(posting.posting_id for posting in beyond_slate)
         summary.gate_beyond_slate = len(beyond_slate)
+        summary.beyond_slate_ids = sorted(beyond_slate_ids)
         beyond_slate_job_ids: set[int] = set()
         if beyond_slate_ids:
             with engine.connect() as anchor_conn:
@@ -4545,6 +4552,21 @@ def _emit_funnel(
                     for lane in summary.lanes if lane.not_attemptable is not None
                 },
             )
+        ),
+        # D-674. Built from the id sets the cohort guard already reconciles. A run whose ranker
+        # never ran gets a `not_measured` report, never counts.
+        direct_share=attribute(
+            summary.direct_share_tally,
+            liveness_ran=summary.liveness_checked is not None,
+            gate_armed=settings.gate.enabled,
+            projection_ran=summary.projection_availability is not None,
+            dead_ids=summary.dead_lead_ids,
+            gate_excluded_ids=summary.gate_excluded_ids,
+            beyond_slate_ids=summary.beyond_slate_ids,
+            execution_deferred_ids=summary.execution_deferred_ids,
+            projection_failed_ids=summary.projection_failed_ids,
+            tailor_failed_ids=summary.tailor_failed_ids,
+            delivered={lead.posting_id: lead.pending_tailor for lead in summary.tailored},
         ),
         errors=summary.errors,
         board_moves=summary.board_moves,
