@@ -13,6 +13,7 @@ from boardwatch.notify.delivery_drought import check_delivery_drought
 from boardwatch.notify.intake_death import check_intake_death
 from boardwatch.store import tables
 from boardwatch.store.buried_queries import BuriedLeads
+from boardwatch.store.queries import RUN_KIND_PREFIX, set_state
 from tests.unit.test_delivery_drought import _run, _seed_input
 
 
@@ -166,6 +167,10 @@ def test_daytime_intake_keeps_zero_nightly_scans_from_reading_as_death(engine: E
             for count in (0, 25, 0, 0)
         ]
     _mark(engine, ids[1])
+    # The nightly rows are delivery runs; the daytime scan stays untagged, as on the live store.
+    with engine.begin() as conn:
+        for rid in (ids[0], ids[2], ids[3]):
+            set_state(conn, f"{RUN_KIND_PREFIX}{rid}", "delivery")
     assert check_intake_death(engine) is None
     with engine.begin() as conn:
         conn.execute(

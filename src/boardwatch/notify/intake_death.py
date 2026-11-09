@@ -18,9 +18,10 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.engine import Engine
 
+from boardwatch.store.queries import run_kind
 from boardwatch.store.tables import runs
 
-# Consecutive SCANNING runs (a recorded `new_count`) that must all read zero net-new
+# Consecutive SCANNING delivery runs (a recorded `new_count`) that must all read zero net-new
 # before the detector fires. Three guards against a single quiet run — new-posting
 # rate is a fetch-budget artifact and one empty run is not death — while still
 # catching a real stall within a few daily ticks.
@@ -28,12 +29,15 @@ INTAKE_DEATH_WINDOW = 3
 
 
 def check_intake_death(engine: Engine, *, window: int = INTAKE_DEATH_WINDOW) -> str | None:
-    """Return a soft-alert string when the last `window` scanning runs all found zero
+    """Return a soft-alert string when the last `window` scanning delivery runs all found zero
     net-new postings, else ``None``.
 
-    Only runs whose scan stage recorded a count are considered. ``new_count IS NULL``
-    marks a run whose scan never ran — a ``top --no-record`` phantom, or a run that
-    aborted before scanning — and such a run carries no intake signal, so it is
+    Only non-incremental delivery runs (`run_kind`, D-680) whose scan stage recorded a count
+    form the window: it is calibrated in daily ticks, and a bare `boardwatch scan` reads zero
+    merely because an earlier scan took the postings. Such a scan, a scoped one or an untagged
+    row never counts toward the window; a positive one still counts as intake below.
+    ``new_count IS NULL`` marks a run whose scan never ran — a ``top --no-record`` phantom,
+    or a run that aborted before scanning — and such a run carries no intake signal, so it is
     skipped rather than counted as a zero. Fewer than ``window`` qualifying runs means
     there is not yet enough history to judge, so the detector abstains (returns
     ``None``) instead of firing on a fresh store.
@@ -41,7 +45,10 @@ def check_intake_death(engine: Engine, *, window: int = INTAKE_DEATH_WINDOW) -> 
     with engine.connect() as conn:
         rows = conn.execute(
             select(runs.c.id, runs.c.new_count)
-            .where(runs.c.new_count.is_not(None), runs.c.incremental.is_(False))
+            .where(
+                runs.c.new_count.is_not(None), runs.c.incremental.is_(False),
+                run_kind() == "delivery",
+            )
             .order_by(runs.c.id.desc())
             .limit(window)
         ).all()
@@ -49,12 +56,11 @@ def check_intake_death(engine: Engine, *, window: int = INTAKE_DEATH_WINDOW) -> 
         return None
     if any(new_count != 0 for _, new_count in rows):
         return None
-    # D-670: a daytime scan finds the postings first, so the nightly scans read zero.
+    # D-670: a daytime scan finds the postings first, so the nightly scans read zero. Any scan
+    # row of ANY purpose counts, tagged or not: only the window's own rows are restricted.
     with engine.connect() as conn:
         if conn.execute(
-            select(runs.c.id).where(
-                runs.c.incremental.is_(True), runs.c.new_count > 0, runs.c.id > rows[-1].id
-            ).limit(1)
+            select(runs.c.id).where(runs.c.new_count > 0, runs.c.id > rows[-1].id).limit(1)
         ).first() is not None:
             return None
     run_ids = ", ".join(str(run_id) for run_id, _ in rows)

@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Intake-death alert ignores manual scans.** Its window is now the last non-incremental delivery
+  runs with a recorded scan count, so a bare `boardwatch scan` or an untagged pre-purpose row can
+  no longer raise it. A positive count on any later scan still counts as intake. Corpus regression
+  and the buried-lead baseline are unchanged (D-682).
+
 - **Last delivery survives maintenance work.** Queue history selects genuine delivery runs and
   counts their retained artifact cohort, even after the same job is re-tailored. The runs API
   distinguishes delivery, scan and maintenance from unknown historical purpose, independently
