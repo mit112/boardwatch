@@ -37,12 +37,14 @@ from boardwatch.core.identity_kinds import (
     SUPPRESSING_KINDS,
 )
 from boardwatch.core.lineage import meta_probe_key
+from boardwatch.store.application_destinations import effective_apply_url
 from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.identity_queries import (
     identities_complete,
     load_identities,
     load_identity_inputs,
 )
+from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import body_is_empty
 from boardwatch.store.tables import (
     applications,
@@ -382,6 +384,23 @@ def count_tailored_artifacts(conn: Connection, run_id: int) -> TailoredArtifactC
         ).where(artifacts.c.run_id == run_id, artifacts.c.kind == TAILORED_KIND)
     ).one()
     return TailoredArtifactCounts(rows=int(row[0]), with_pdf=int(row[1]))
+
+
+def delivered_apply_urls(conn: Connection, posting_ids: Sequence[int]) -> dict[int, str | None]:
+    """posting_id -> the link the ranker routed by, read afresh for the delivered leads.
+
+    A primary-key lookup per delivered lead (at most the slate), not a scan: the direct-share
+    delivered count is recounted from the stored links, a path that shares nothing with the
+    ranking-time classification the attribution used. `effective_apply_url` is the ranker's own
+    expression for the link.
+    """
+    urls: dict[int, str | None] = {}
+    for chunk in id_chunks(posting_ids):
+        for row in conn.execute(
+            select(postings.c.id, effective_apply_url()).where(postings.c.id.in_(chunk))
+        ):
+            urls[int(row[0])] = row[1]
+    return urls
 
 
 def count_projected_tailored_artifacts(conn: Connection, run_id: int) -> int:

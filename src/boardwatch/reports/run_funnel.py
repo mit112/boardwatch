@@ -51,6 +51,12 @@ from typing import Literal
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.lanes.base import SearchOutcome
 from boardwatch.projection.run import ProjectionLeadOutcome
+from boardwatch.rank.direct_share import (
+    RANKER_STEP_COUNTER,
+    DirectShareReport,
+    direct_share_lines,
+    direct_share_to_dict,
+)
 from boardwatch.rank.location_gate import TargetClass, location_target
 from boardwatch.rank.tenant_assumptions import TenantAssumptionReport, tenant_assumptions_to_dict
 from boardwatch.reports.abstain import AbstainReport
@@ -296,6 +302,12 @@ _TOP_MISSING = 10
 # MEANING. It is a standing population read beside the funnel, never a drop inside it, and it sits
 # in no reconciliation identity. A funnel written before it lacks the key, which reads as `null`:
 # NOT MEASURED, never zero buried leads.
+#
+# **The `direct_share` section does NOT bump it either** (D-683), on that same precedent: a new
+# top-level key and more entries in `cross_checks` (named `direct_share:<step>`), neither changing
+# what an existing key MEANS. A funnel written before it lacks the key, which reads as `null`: NOT
+# MEASURED. A run with `slate_direct_share` at 0 carries `{"instrumented": false, "state": "off"}`,
+# never a block of zeros.
 ARTIFACT_VERSION = 9
 
 #: A lead's location class: the gate's `TargetClass`, or `abstain` where the gate cannot decide.
@@ -1908,6 +1920,9 @@ class RunFunnel:
     # T185 (DESIGN-T183 A2). `None` means NOT MEASURED — a funnel built outside `run_pipeline`,
     # or a run whose ranker never ran — never a run whose gates all decided on tenant data.
     tenant_assumptions: TenantAssumptionReport | None = None
+    # D-683. `None` means NOT MEASURED -- a funnel built outside `run_pipeline`. A run whose share
+    # was off or inert carries a report that says so (`state`), which is not the same as `None`.
+    direct_share: DirectShareReport | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -2081,6 +2096,102 @@ def _lane_cross_checks(
     )
 
 
+def _direct_share_cross_checks(
+    report: DirectShareReport | None,
+    *,
+    shortlist: ShortlistCounts | None,
+    liveness: LivenessCheck,
+    gate: GateCounters | None,
+    projection: ProjectionCounters | None,
+    execution_deferred: int,
+    tailor_failed: int,
+    delivered_rows: int,
+    delivered_from_store: tuple[int, int] | None,
+) -> tuple[CrossCheck, ...]:
+    """D-683: each direct-share step total against the counter the funnel already keeps for it.
+
+    `in_memory` is the attribution's total over every tier and route; `from_store` is the stage
+    counter, which was incremented at the same site by separate code, so a drop recorded against
+    the wrong step, or not at all, disagrees here. The route and tier split has no second counter
+    to compare with, so it is held by `direct_share:unaccounted` (a lead filed under the wrong
+    tier or route leaves its own bucket short) and, for delivery, by the artifact recount.
+    Absent unless the share was measured: an off or inert share has nothing to compare.
+    """
+    if report is None or not report.measured or shortlist is None:
+        return ()
+
+    def check(name: str, in_memory: int, from_store: int, note: str) -> CrossCheck:
+        return CrossCheck(
+            name=f"direct_share:{name}", in_memory=in_memory, from_store=from_store, note=note
+        )
+
+    pre_interleave = (
+        shortlist.skipped_not_new + shortlist.hidden_hard_filter + shortlist.hidden_non_swe
+        + shortlist.hidden_zero_signal + shortlist.hidden_over_seniority
+        + shortlist.hidden_ineligible
+    )
+    checks = [
+        check(
+            "entered",
+            report.total("direct", "entered") + report.total("non_direct", "entered"),
+            shortlist.considered - pre_interleave,
+            "leads handed to the interleave vs the ranker's considered count less every drop "
+            "that happens before it",
+        )
+    ]
+    for step, counter in RANKER_STEP_COUNTER.items():
+        in_memory = report.step_total(step)
+        note = f"leads removed at `{step}` vs the shortlist counter `{counter}`"
+        if step == "capped_by_top_n":
+            # The funnel folds the post-gate cut into the same counter (see `beyond_slate`).
+            in_memory += report.step_total("beyond_slate")
+            note = (
+                "leads removed at `capped_by_top_n` and `beyond_slate` vs the shortlist counter "
+                "`hidden_below_cutoff`, which holds both"
+            )
+        checks.append(check(step, in_memory, getattr(shortlist, counter), note))
+    if "withheld_not_live" in report.steps:
+        checks.append(check(
+            "withheld_not_live", report.step_total("withheld_not_live"), liveness.dead or 0,
+            "leads withheld as gone vs the liveness sweep's `dead`",
+        ))
+    if "gate_rejected" in report.steps and gate is not None:
+        checks.append(check(
+            "gate_rejected", report.step_total("gate_rejected"), gate.ineligible,
+            "leads the final judge rejected vs the gate's `ineligible`",
+        ))
+    checks.append(check(
+        "execution_deferred", report.step_total("execution_deferred"), execution_deferred,
+        "leads deferred for changed execution inputs vs the stage drop of the same name",
+    ))
+    if "projection_failed" in report.steps and projection is not None:
+        checks.append(check(
+            "projection_failed", report.step_total("projection_failed"),
+            sum(drop.count for drop in projection.drops),
+            "leads whose projection failed vs the projection stage's drops, every outcome",
+        ))
+    checks.append(check(
+        "tailor_failed", report.step_total("tailor_failed"), tailor_failed,
+        "leads that failed tailoring vs the tailor stage's `tailor_failed`",
+    ))
+    delivered = report.total("direct", "delivered") + report.total("non_direct", "delivered")
+    checks.append(check(
+        "delivered", delivered, delivered_rows,
+        "leads delivered vs this run's `resume_tailored` rows",
+    ))
+    if delivered_from_store is not None:
+        checks.append(check(
+            "delivered_direct", report.total("direct", "delivered"), delivered_from_store[0],
+            "direct leads delivered vs the delivered leads' stored links, each routed afresh "
+            "through the same `is_direct_auto`",
+        ))
+    checks.append(check(
+        "unaccounted", report.unaccounted, 0,
+        "leads in no step and not delivered, summed over tiers and routes as magnitudes",
+    ))
+    return tuple(checks)
+
+
 def build_run_funnel(
     *,
     run_id: int,
@@ -2155,6 +2266,10 @@ def build_run_funnel(
     provenance: ExecutionProvenance | None = None,
     # T185. Omitted means NOT MEASURED, and the section says so.
     tenant_assumptions: TenantAssumptionReport | None = None,
+    # D-683. Omitted means NOT MEASURED. `delivered_direct_from_store` is (direct, non-direct)
+    # delivered leads recounted from their stored links, `None` when it was not read.
+    direct_share: DirectShareReport | None = None,
+    delivered_direct_from_store: tuple[int, int] | None = None,
     errors: Sequence[str] = (),
     board_moves: Sequence[str] = (),
     fatal: str | None = None,
@@ -2692,6 +2807,17 @@ def build_run_funnel(
             )
         ),
         *_lane_cross_checks(lanes, lane_captures),
+        *_direct_share_cross_checks(
+            direct_share,
+            shortlist=shortlist,
+            liveness=liveness,
+            gate=gate,
+            projection=projection,
+            execution_deferred=execution_deferred,
+            tailor_failed=tailor_failed,
+            delivered_rows=tailored_artifacts.rows,
+            delivered_from_store=delivered_direct_from_store,
+        ),
     )
 
     # ONE total, not two. A per-board `eligible` total was shipped here and deleted after
@@ -2747,6 +2873,7 @@ def build_run_funnel(
         identity_drift=None if identity_drift is None else tuple(identity_drift),
         tenant_assumptions=tenant_assumptions,
         provenance=provenance,
+        direct_share=direct_share,
     )
 
 
@@ -2940,6 +3067,9 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # T185. Its own section: whether each ranker/review gate decided on the TENANT's data.
         # It restates no count above; `stages[].drops` still say what the gates did.
         "tenant_assumptions": tenant_assumptions_to_dict(funnel.tenant_assumptions),
+        # D-683. Where direct and other leads left the slate, by tier. Its own section: it restates
+        # no stage above, and each step's total is cross-checked against the stage counter.
+        "direct_share": direct_share_to_dict(funnel.direct_share),
         "liveness": {
             # All None when the shortlist was not probed. `instrumented` is emitted so a reader
             # never has to infer "unmeasured" from a null, the same way each stage does.
@@ -3886,6 +4016,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "corpus as a parse failure.*",
         *_apply_lane_lines(funnel.apply_lane),
         *_buried_lines(funnel.buried),
+        *direct_share_lines(funnel.direct_share),
         "",
         "## Stub rate",
         "",
