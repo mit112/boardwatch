@@ -17,9 +17,12 @@ from boardwatch.core.liveness import (
     ContradictoryLiveness,
     Liveness,
     UnknownLivenessVerdict,
+    verdict_for_adp_requisition,
+    verdict_for_eightfold_position,
     verdict_for_failure,
     verdict_for_linkedin_guest,
     verdict_for_oracle_details,
+    verdict_for_smartrecruiters_posting,
     verdict_for_status,
     verdict_for_workday_cxs,
     verdict_without_url,
@@ -108,20 +111,27 @@ def test_the_catalogs_are_closed_and_pinned() -> None:
         "workday_unposted",
         "oracle_unposted",
         "linkedin_closed",
+        "smartrecruiters_inactive",
+        "eightfold_unposted",
+        "adp_unposted",
         "refetch_gone_after_redirect",
         "refetch_ok",
         "refetch_error",
         "no_url",
     }
-    # Every signal declares its verdict, and `dead` is reachable through exactly four of them:
+    # Every signal declares its verdict, and `dead` is reachable through exactly seven of them:
     # a 404/410 from the URL asked about, Workday's CXS 403 naming S22, an Oracle HCM detail
-    # resource answering an empty `items`, and LinkedIn's guest top card marked closed.
+    # resource answering an empty `items`, LinkedIn's guest top card marked closed, and (D-684)
+    # SmartRecruiters' `active: false`, Eightfold's `Position not found` and ADP's empty requisition.
     assert set(SIGNAL_VERDICTS) == set(SIGNALS)
     assert [s for s, v in SIGNAL_VERDICTS.items() if v == "dead"] == [
         "refetch_gone",
         "workday_unposted",
         "oracle_unposted",
         "linkedin_closed",
+        "smartrecruiters_inactive",
+        "eightfold_unposted",
+        "adp_unposted",
     ]
 
 
@@ -138,6 +148,16 @@ def test_every_signal_in_the_catalog_is_actually_emitted() -> None:
         verdict_for_oracle_details(1, 200, b'{"items":[]}').signal,
         verdict_for_linkedin_guest(
             1, 200, b'<figcaption class="closed-job__flavor--closed"></figcaption>'
+        ).signal,
+        verdict_for_smartrecruiters_posting(
+            1, 200, b'{"id": "9", "active": false}', posting_ref="9"
+        ).signal,
+        verdict_for_eightfold_position(
+            1, 404, b'{"status": 404, "error": {"message": "Position not found"}}', position_id="9"
+        ).signal,
+        verdict_for_adp_requisition(
+            1, 200, b'{"postingInstructions":[],"links":[],"organizationalUnits":[],'
+            b'"requisitionLocations":[],"screeningRequirements":[],"sponsoredVisaTypeCodes":[]}'
         ).signal,
     }
     assert emitted == set(SIGNALS)

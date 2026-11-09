@@ -36,8 +36,10 @@ Salary is never mined (D19).
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
@@ -52,6 +54,32 @@ from boardwatch.providers.base import (
 
 _PAGE_LIMIT = 100  # server-side maximum; a larger request is silently clamped
 _BODY_SECTIONS = ("jobDescription", "qualifications", "additionalInformation")
+
+
+_POSTING_HOST = "jobs.smartrecruiters.com"
+# `/{Company}/{postingId}[-slug]`. The company token is the identifier the public API takes in its
+# path, so it is held to a plain identifier rather than quoted; the id is the long numeric one.
+_POSTING_PATH = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,99})/(\d{6,20})(?:-[^/]*)?$")
+
+
+def posting_api_target(url: str) -> tuple[str, str] | None:
+    """`(detail API URL, posting id)` for one posting's public page, or None if `url` is not one.
+
+    The liveness probe asks the API's `active` flag before the page (D-684). Exactly the page
+    shape the board scan stores and nothing looser: any other path, a different host, or an
+    identifier outside a plain token is None and keeps the plain page probe.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https" or parts.hostname != _POSTING_HOST or parts.port is not None:
+        return None
+    if parts.username or parts.password:
+        return None
+    match = _POSTING_PATH.match(parts.path)
+    if match is None:
+        return None
+    company, posting_id = match.group(1).lower(), match.group(2)
+    api = f"https://api.smartrecruiters.com/v1/companies/{company}/postings/{posting_id}"
+    return api, posting_id
 
 
 def _failed(url: str, error: str) -> BoardSnapshot:

@@ -1,0 +1,591 @@
+{
+ "controls": [
+  {
+   "body_sha256": "c6c9c1131f84de6947c2cf830855dbc6a30cfd438956fa5c40407d6533c2cca1",
+   "captured_at": "2026-11-09T12:54:40-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://bostonscientific.eightfold.ai/careers/job/563602813696161",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "bostonscientific.com",
+     "title": "Careers at Boston Scientific"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "563602813696161",
+   "provider": "eightfold",
+   "source": "GET https://bostonscientific.eightfold.ai/careers/job/563602813696161 then GET https://bostonscientific.eightfold.ai/api/pcsx/position_details?domain=bostonscientific.com&position_id=563602813696161",
+   "store_posting_id": 1134991,
+   "tenant": "bostonscientific.eightfold.ai"
+  },
+  {
+   "body_sha256": "453e587a2dfe57cdb8be15f244dfff3a7996e2e42535868eb4d01e4bd9affbba",
+   "captured_at": "2026-11-09T12:54:43-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://bostonscientific.eightfold.ai/careers/job/563602813850226",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "bostonscientific.com",
+     "title": "Principal, AI Enablement | Boston Scientific"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "637052",
+      "id": 563602813850226,
+      "name": "Principal, AI Enablement"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "563602813850226",
+   "provider": "eightfold",
+   "source": "GET https://bostonscientific.eightfold.ai/careers/job/563602813850226 then GET https://bostonscientific.eightfold.ai/api/pcsx/position_details?domain=bostonscientific.com&position_id=563602813850226",
+   "store_posting_id": 1213812,
+   "tenant": "bostonscientific.eightfold.ai"
+  },
+  {
+   "body_sha256": "ff73475deb75617a6bf7a294926e6772f2ffad9447aec787565bcf75fe9ca836",
+   "captured_at": "2026-11-09T12:54:09-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://careers.appliedmaterials.com/careers/job/790318881214",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "appliedmaterials.com",
+     "title": "Careers at Applied Materials"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "790318881214",
+   "provider": "eightfold",
+   "source": "GET https://careers.appliedmaterials.com/careers/job/790318881214 then GET https://careers.appliedmaterials.com/api/pcsx/position_details?domain=appliedmaterials.com&position_id=790318881214",
+   "store_posting_id": 1194412,
+   "tenant": "careers.appliedmaterials.com"
+  },
+  {
+   "body_sha256": "30a6a09cab7cdd7ec40005548c716150911775dfebb6a0eb69ea12f25e838b1d",
+   "captured_at": "2026-11-09T12:54:15-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://careers.appliedmaterials.com/careers/job/790319215315",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "appliedmaterials.com",
+     "title": "Applications Engineer New College Grad- Bachelor&#39;s/Master&#39;s (Santa Clara/Austin) | Applied Materials"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "R2632413",
+      "id": 790319215315,
+      "name": "Applications Engineer New College Grad- Bachelor's/Master's (Santa Clara/Austin)"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "790319215315",
+   "provider": "eightfold",
+   "source": "GET https://careers.appliedmaterials.com/careers/job/790319215315 then GET https://careers.appliedmaterials.com/api/pcsx/position_details?domain=appliedmaterials.com&position_id=790319215315",
+   "store_posting_id": 1236071,
+   "tenant": "careers.appliedmaterials.com"
+  },
+  {
+   "body_sha256": "2a7d148610ae19d0e40080284eab5d25267e1ef15ed528304764a30df6b1fc98",
+   "captured_at": "2026-11-09T12:54:12-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://careers.appliedmaterials.com/careers/job/790319258831",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "appliedmaterials.com",
+     "title": "2027 Spring Project Manager Co-op (Billerica, MA) | Applied Materials"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "R2631534",
+      "id": 790319258831,
+      "name": "2027 Spring Project Manager Co-op (Billerica, MA)"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "790319258831",
+   "provider": "eightfold",
+   "source": "GET https://careers.appliedmaterials.com/careers/job/790319258831 then GET https://careers.appliedmaterials.com/api/pcsx/position_details?domain=appliedmaterials.com&position_id=790319258831",
+   "store_posting_id": 1223698,
+   "tenant": "careers.appliedmaterials.com"
+  },
+  {
+   "body_sha256": "ff73475deb75617a6bf7a294926e6772f2ffad9447aec787565bcf75fe9ca836",
+   "captured_at": "2026-11-09T12:54:06-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://careers.appliedmaterials.com/careers/job/790319262027",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "appliedmaterials.com",
+     "title": "Careers at Applied Materials"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "790319262027",
+   "provider": "eightfold",
+   "source": "GET https://careers.appliedmaterials.com/careers/job/790319262027 then GET https://careers.appliedmaterials.com/api/pcsx/position_details?domain=appliedmaterials.com&position_id=790319262027",
+   "store_posting_id": 1214113,
+   "tenant": "careers.appliedmaterials.com"
+  },
+  {
+   "body_sha256": "1e9b0a79d81f3e1e5c09a9f408aeeb2ca9cab5ae6866691e8e0bb605650a27a3",
+   "captured_at": "2026-11-09T12:54:32-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://careers.qualcomm.com/careers/job/446721189463",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "qualcomm.com",
+     "title": "Careers at Qualcomm"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "446721189463",
+   "provider": "eightfold",
+   "source": "GET https://careers.qualcomm.com/careers/job/446721189463 then GET https://careers.qualcomm.com/api/pcsx/position_details?domain=qualcomm.com&position_id=446721189463",
+   "store_posting_id": 1194337,
+   "tenant": "careers.qualcomm.com"
+  },
+  {
+   "body_sha256": "1e9b0a79d81f3e1e5c09a9f408aeeb2ca9cab5ae6866691e8e0bb605650a27a3",
+   "captured_at": "2026-11-09T12:54:35-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "open-at-scan-stale",
+   "oracle_basis": "present in the board's latest complete scan (cm=0); BUT answered 404 at probe time, ~9h after that scan; its displayJobId is absent from the live search that finds a live control (diag requests), so it is recorded as closed-since-scan and excluded from the open count",
+   "page_url": "https://careers.qualcomm.com/careers/job/446721218819",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "qualcomm.com",
+     "title": "Careers at Qualcomm"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "446721218819",
+   "provider": "eightfold",
+   "source": "GET https://careers.qualcomm.com/careers/job/446721218819 then GET https://careers.qualcomm.com/api/pcsx/position_details?domain=qualcomm.com&position_id=446721218819",
+   "store_posting_id": 1223676,
+   "tenant": "careers.qualcomm.com"
+  },
+  {
+   "body_sha256": "1e9b0a79d81f3e1e5c09a9f408aeeb2ca9cab5ae6866691e8e0bb605650a27a3",
+   "captured_at": "2026-11-09T12:54:29-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://careers.qualcomm.com/careers/job/446721755340",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "qualcomm.com",
+     "title": "Careers at Qualcomm"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "446721755340",
+   "provider": "eightfold",
+   "source": "GET https://careers.qualcomm.com/careers/job/446721755340 then GET https://careers.qualcomm.com/api/pcsx/position_details?domain=qualcomm.com&position_id=446721755340",
+   "store_posting_id": 1135166,
+   "tenant": "careers.qualcomm.com"
+  },
+  {
+   "body_sha256": "db224fef905fe9b94426baf6f40cf2fd78d5b8bee6320454f596bb3f8e0ed3d7",
+   "captured_at": "2026-11-09T12:54:38-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://careers.qualcomm.com/careers/job/446721829462",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "qualcomm.com",
+     "title": "FY27 Intern - Camera HW ASIC Verification Intern - Canada (12 or 16 months) | Qualcomm"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "3098738",
+      "id": 446721829462,
+      "name": "FY27 Intern - Camera HW ASIC Verification Intern - Canada (12 or 16 months)"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "446721829462",
+   "provider": "eightfold",
+   "source": "GET https://careers.qualcomm.com/careers/job/446721829462 then GET https://careers.qualcomm.com/api/pcsx/position_details?domain=qualcomm.com&position_id=446721829462",
+   "store_posting_id": 1213926,
+   "tenant": "careers.qualcomm.com"
+  },
+  {
+   "body_sha256": "c42b7a669cde5e264073cd7981c496554cb7e0414c936382367af58f5027ec68",
+   "captured_at": "2026-11-09T12:54:17-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://eaton.eightfold.ai/careers/job/687239829579",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "eaton.com",
+     "title": "Careers at Eaton Corporation"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "687239829579",
+   "provider": "eightfold",
+   "source": "GET https://eaton.eightfold.ai/careers/job/687239829579 then GET https://eaton.eightfold.ai/api/pcsx/position_details?domain=eaton.com&position_id=687239829579",
+   "store_posting_id": 1084176,
+   "tenant": "eaton.eightfold.ai"
+  },
+  {
+   "body_sha256": "c42b7a669cde5e264073cd7981c496554cb7e0414c936382367af58f5027ec68",
+   "captured_at": "2026-11-09T12:54:20-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://eaton.eightfold.ai/careers/job/687239900959",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "eaton.com",
+     "title": "Careers at Eaton Corporation"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "687239900959",
+   "provider": "eightfold",
+   "source": "GET https://eaton.eightfold.ai/careers/job/687239900959 then GET https://eaton.eightfold.ai/api/pcsx/position_details?domain=eaton.com&position_id=687239900959",
+   "store_posting_id": 1136021,
+   "tenant": "eaton.eightfold.ai"
+  },
+  {
+   "body_sha256": "376001ae31e40e470d0d9684dd58014f5922bdb063961f497d0b8b7dc5102517",
+   "captured_at": "2026-11-09T12:54:24-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://eaton.eightfold.ai/careers/job/687239918783",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "eaton.com",
+     "title": "Eng Assistant Co-op | Eaton Corporation"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "76447",
+      "id": 687239918783,
+      "name": "Eng Assistant Co-op"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "687239918783",
+   "provider": "eightfold",
+   "source": "GET https://eaton.eightfold.ai/careers/job/687239918783 then GET https://eaton.eightfold.ai/api/pcsx/position_details?domain=eaton.com&position_id=687239918783",
+   "store_posting_id": 1214338,
+   "tenant": "eaton.eightfold.ai"
+  },
+  {
+   "body_sha256": "aabfe33d2d990d0b1efc82b5b91cfa748a86dcf72bf764423a2dc092731f491a",
+   "captured_at": "2026-11-09T12:54:27-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://eaton.eightfold.ai/careers/job/687240014553",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "eaton.com",
+     "title": "Engineer - PCB Design | Eaton Corporation"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "76767",
+      "id": 687240014553,
+      "name": "Engineer - PCB Design"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "687240014553",
+   "provider": "eightfold",
+   "source": "GET https://eaton.eightfold.ai/careers/job/687240014553 then GET https://eaton.eightfold.ai/api/pcsx/position_details?domain=eaton.com&position_id=687240014553",
+   "store_posting_id": 1223971,
+   "tenant": "eaton.eightfold.ai"
+  },
+  {
+   "body_sha256": "ba95d58e0dcc6a0f8abfd7685ae7d8d51e86bb6b9c429f2e52b6beecb06c7a1f",
+   "captured_at": "2026-11-09T12:53:36-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://jobs.northropgrumman.com/careers/job/1340074623482",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "ngc.com",
+     "title": "Careers at Northrop Grumman"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "1340074623482",
+   "provider": "eightfold",
+   "source": "GET https://jobs.northropgrumman.com/careers/job/1340074623482 then GET https://jobs.northropgrumman.com/api/pcsx/position_details?domain=ngc.com&position_id=1340074623482",
+   "store_posting_id": 792277,
+   "tenant": "jobs.northropgrumman.com"
+  },
+  {
+   "body_sha256": "b6479cd9570eee2d676e02615210b294606e2178c2876c05f8e1c13d92b1216d",
+   "captured_at": "2026-11-09T12:53:37-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://jobs.northropgrumman.com/careers/job/1340075075804",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "ngc.com",
+     "title": "Sentinel Cyber Software Engineer Lead - 20458 | Northrop Grumman"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "R10258658",
+      "id": 1340075075804,
+      "name": "Sentinel Cyber Software Engineer Lead - 20458"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "1340075075804",
+   "provider": "eightfold",
+   "source": "GET https://jobs.northropgrumman.com/careers/job/1340075075804 then GET https://jobs.northropgrumman.com/api/pcsx/position_details?domain=ngc.com&position_id=1340075075804",
+   "store_posting_id": 1254016,
+   "tenant": "jobs.northropgrumman.com"
+  },
+  {
+   "body_sha256": "8d481c6458e5d8fe239765188a3661cd6c26001727cf1175fc4939eb1a074284",
+   "captured_at": "2026-11-09T12:53:57-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://apply.careers.microsoft.com/careers/job/1970393556630075",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "microsoft.com",
+     "title": " | Microsoft Careers"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "1970393556630075",
+   "provider": "eightfold",
+   "source": "GET https://apply.careers.microsoft.com/careers/job/1970393556630075 then GET https://apply.careers.microsoft.com/api/pcsx/position_details?domain=microsoft.com&position_id=1970393556630075",
+   "store_posting_id": 1236363,
+   "tenant": "microsoft.eightfold.ai"
+  },
+  {
+   "body_sha256": "dfdf49282ade816912cf0ff673cf5ce3d605fe77c676ecda01576b94783e99e0",
+   "captured_at": "2026-11-09T12:54:00-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://apply.careers.microsoft.com/careers/job/1970393557023035",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "microsoft.com",
+     "title": "Software Engineering | Microsoft Careers"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "200059565",
+      "id": 1970393557023035,
+      "name": "Software Engineering"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "1970393557023035",
+   "provider": "eightfold",
+   "source": "GET https://apply.careers.microsoft.com/careers/job/1970393557023035 then GET https://apply.careers.microsoft.com/api/pcsx/position_details?domain=microsoft.com&position_id=1970393557023035",
+   "store_posting_id": 768999,
+   "tenant": "microsoft.eightfold.ai"
+  },
+  {
+   "body_sha256": "8d481c6458e5d8fe239765188a3661cd6c26001727cf1175fc4939eb1a074284",
+   "captured_at": "2026-11-09T12:53:53-0600",
+   "detector_expected": "dead",
+   "http_status": 404,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "page_url": "https://apply.careers.microsoft.com/careers/job/1970393557050564",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "microsoft.com",
+     "title": " | Microsoft Careers"
+    },
+    "position_details": {
+     "data": {},
+     "error": {
+      "message": "Position not found"
+     },
+     "status": 404
+    }
+   },
+   "posting_id": "1970393557050564",
+   "provider": "eightfold",
+   "source": "GET https://apply.careers.microsoft.com/careers/job/1970393557050564 then GET https://apply.careers.microsoft.com/api/pcsx/position_details?domain=microsoft.com&position_id=1970393557050564",
+   "store_posting_id": 1214285,
+   "tenant": "microsoft.eightfold.ai"
+  },
+  {
+   "body_sha256": "71343503841bc7b7b555b34e7d36993077e531f822b11dc76791d505c42bcb64",
+   "captured_at": "2026-11-09T12:54:04-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "present in the board's latest complete scan (cm=0)",
+   "page_url": "https://apply.careers.microsoft.com/careers/job/1970393557054056",
+   "payload": {
+    "career_page": {
+     "pcsx_domain": "microsoft.com",
+     "title": "Software Engineer 2 - CoreAI | Microsoft Careers"
+    },
+    "position_details": {
+     "data": {
+      "displayJobId": "200065693",
+      "id": 1970393557054056,
+      "name": "Software Engineer 2 - CoreAI"
+     },
+     "error": {
+      "body": "",
+      "message": ""
+     },
+     "status": 200
+    }
+   },
+   "posting_id": "1970393557054056",
+   "provider": "eightfold",
+   "source": "GET https://apply.careers.microsoft.com/careers/job/1970393557054056 then GET https://apply.careers.microsoft.com/api/pcsx/position_details?domain=microsoft.com&position_id=1970393557054056",
+   "store_posting_id": 1301773,
+   "tenant": "microsoft.eightfold.ai"
+  }
+ ],
+ "note": "Trimmed captures of public, unauthenticated provider responses taken 2026-11-09 (D-684). body_sha256 is the sha256 of the canonical JSON of `payload`, so a hand edit fails tests/unit/test_provider_liveness_controls.py; the generalization gate pins the whole file.",
+ "provider": "eightfold"
+}

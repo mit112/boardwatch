@@ -84,6 +84,7 @@ import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from boardwatch.core.clock import to_naive_utc
 from boardwatch.core.html_text import html_to_text
@@ -243,6 +244,36 @@ def _envelope_data(content: bytes) -> dict[str, Any] | None:
     return data if isinstance(data, dict) else None
 
 
+_POSITION_PATH = re.compile(r"^/careers/job/(\d{6,20})$")
+
+
+def position_details_url(host: str, domain: str, position_id: str) -> str:
+    return f"https://{host}/api/pcsx/position_details?domain={domain}&position_id={position_id}"
+
+
+def position_page_target(url: str) -> tuple[str, str] | None:
+    """`(host, position id)` for one position's career-page URL, or None if `url` is not one.
+
+    The shape alone does not prove the host is Eightfold (a custom domain cannot be told from the
+    employer's own site, property 1), so the liveness probe still requires the page it fetches
+    to carry a `pcsx-data` boot blob before it asks the API (D-684). Exactly
+    `https://{host}/careers/job/{id}`, query ignored.
+    """
+    parts = urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname or parts.port is not None:
+        return None
+    if parts.username or parts.password:
+        return None
+    match = _POSITION_PATH.match(parts.path)
+    if match is None:
+        return None
+    try:
+        host = validated_host(parts.hostname)
+    except ValueError:
+        return None
+    return host, match.group(1)
+
+
 def board_domain(content: bytes) -> str:
     """The tenant's `domain` out of a career page's `pcsx-data` blob.
 
@@ -340,10 +371,7 @@ class EightfoldProvider:
         return f"https://{host}/api/pcsx/search?domain={domain}&start={start}"
 
     def _detail_url(self, host: str, domain: str, posting_id: str) -> str:
-        return (
-            f"https://{host}/api/pcsx/position_details"
-            f"?domain={domain}&position_id={posting_id}"
-        )
+        return position_details_url(host, domain, posting_id)
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         ledger = _ThrottleLedger()

@@ -22,6 +22,14 @@ All notable changes to this project are documented here. The format follows
   delivered direct leads from their stored links, and reads `off` or `inert` rather than zeros when the share is
   not working. Counting only: the slate, the reservation and every filter are unchanged (D-683).
 
+- **Liveness asks SmartRecruiters, Eightfold and ADP through the resource that tells open from
+  closed.** A SmartRecruiters posting whose API says `active: false`, an Eightfold position whose
+  tenant answers `Position not found`, and an ADP requisition that returns an empty record are now
+  `dead` for the shortlist probe and strike under the death probe's existing two-run rule. Each rule
+  was measured against same-provider known-open and known-closed postings from several tenants
+  first; walls, CDN errors and looser shapes stay `unknown`, only the exact posting is closed, and
+  Dayforce has no rule because its closed phrase is on every page (D-684).
+
 - **Last delivery survives maintenance work.** Queue history selects genuine delivery runs and
   counts their retained artifact cohort, even after the same job is re-tailored. The runs API
   distinguishes delivery, scan and maintenance from unknown historical purpose, independently

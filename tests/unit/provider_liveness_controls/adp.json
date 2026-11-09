@@ -1,0 +1,228 @@
+{
+ "controls": [
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:24-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "630511",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/630511?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:38-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "630513",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/630513?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:37-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "630532",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/630532?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "f442eabb3b8bdaf1bd66d008fa26914d58a5533e394a68e2b94fa2bcbcdc868f",
+   "captured_at": "2026-11-09T12:57:35-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "4864",
+    "itemID": "9207439738015_306",
+    "requisitionTitle": "Construction Inspector"
+   },
+   "posting_id": "634121",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/634121?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "cf16cf11bcb435bee073f0eef5aa2c2821458046eb0bf70cce0fb9843c75d720",
+   "captured_at": "2026-11-09T12:57:34-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "4865",
+    "itemID": "9207439738015_338",
+    "requisitionTitle": "Project Engineer - Highway/Traffic"
+   },
+   "posting_id": "634122",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/634122?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "fa517fe8478865a7520151cfa79a40a4742dd79bfb81c74a3693294994567328",
+   "captured_at": "2026-11-09T12:57:32-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "4866",
+    "itemID": "9207439975133_183",
+    "requisitionTitle": "Senior Plumbing & Fire Protection Engineer"
+   },
+   "posting_id": "634123",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/634123?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "fp"
+  },
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:43-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "573926",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/573926?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  },
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:44-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "574139",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/574139?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  },
+  {
+   "body_sha256": "bdac0c4e09d43de13b4084d721f5cfb6fb293ae0b09ca755fb871b7042a6dc15",
+   "captured_at": "2026-11-09T12:57:46-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "absent from the tenant's complete public job-requisitions listing (ExternalJobID); stored by an aggregator, never scanned",
+   "payload": {
+    "links": [],
+    "organizationalUnits": [],
+    "postingInstructions": [],
+    "requisitionLocations": [],
+    "screeningRequirements": [],
+    "sponsoredVisaTypeCodes": []
+   },
+   "posting_id": "574152",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/574152?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  },
+  {
+   "body_sha256": "921901d8ac03a9c67a5032337cc870e618d792b57ee0d1e476a6180a478a94e8",
+   "captured_at": "2026-11-09T12:57:42-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "2396",
+    "itemID": "9201690249556_4",
+    "requisitionTitle": " Lead Interface & Interoperability Analyst- Onsite- Jackson, MS"
+   },
+   "posting_id": "577627",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/577627?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  },
+  {
+   "body_sha256": "e1375e8dd0ee064c19c4442db173f2728f27af0e36948e54bb0181ad87c233b2",
+   "captured_at": "2026-11-09T12:57:41-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "2397",
+    "itemID": "9201690469543_1",
+    "requisitionTitle": "Lead Interface & Interoperability Analyst (Healthcare) - Onsite "
+   },
+   "posting_id": "577629",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/577629?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  },
+  {
+   "body_sha256": "25349954ef40ffa476ec98d14da99c0bc69478d8f50d80941dda9e21428ba1d0",
+   "captured_at": "2026-11-09T12:57:39-0600",
+   "detector_expected": "alive",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by the tenant's complete public job-requisitions listing (ExternalJobID)",
+   "payload": {
+    "clientRequisitionID": "2398",
+    "itemID": "9201690247190_5",
+    "requisitionTitle": "SVOR Review Coordinator -Onsite -Indianapolis, IN"
+   },
+   "posting_id": "577654",
+   "provider": "adp",
+   "source": "GET https://workforcenow.adp.com/mascsr/default/careercenter/public/events/staffing/v1/job-requisitions/577654?cid=<tenant cid>&ccId=19000101_000001&lang=en_US&locale=en_US",
+   "tenant": "info"
+  }
+ ],
+ "note": "Trimmed captures of public, unauthenticated provider responses taken 2026-11-09 (D-684). body_sha256 is the sha256 of the canonical JSON of `payload`, so a hand edit fails tests/unit/test_provider_liveness_controls.py; the generalization gate pins the whole file.",
+ "provider": "adp"
+}

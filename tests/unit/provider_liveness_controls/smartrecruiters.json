@@ -1,0 +1,538 @@
+{
+ "controls": [
+  {
+   "body_sha256": "5d6771e8e27f6654e9db111950353bcd3b86437552cf056fe9d854ef15b75e92",
+   "captured_at": "2026-11-09T12:51:08-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "AbbVie",
+     "name": "AbbVie"
+    },
+    "id": "3743990016411155",
+    "name": "Senior Training Manager, Oncology",
+    "postingUrl": "https://jobs.smartrecruiters.com/AbbVie/3743990016411155-senior-training-manager-oncology",
+    "refNumber": "R00151126",
+    "releasedDate": "2026-10-26T17:49:14.445Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016411155",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/abbvie/postings/3743990016411155",
+   "store_closed_at": "2026-11-05 10:00:45.352173",
+   "store_last_seen_at": "2026-10-27 09:03:57.955063",
+   "store_posting_id": 1126165,
+   "tenant": "abbvie"
+  },
+  {
+   "body_sha256": "1ac58438d90ad0e0723d44e7bde207ba18c233996e96bd29a6751edc29059c21",
+   "captured_at": "2026-11-09T12:51:07-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "AbbVie",
+     "name": "AbbVie"
+    },
+    "id": "3743990016499966",
+    "name": "Au\u00dfendienstmitarbeiter - Oncology/Hematology Specialist (all genders) Region Nord",
+    "postingUrl": "https://jobs.smartrecruiters.com/AbbVie/3743990016548096-au-endienstmitarbeiter-oncology-hematology-specialist-all-genders-region-nord",
+    "refNumber": "R00151843",
+    "releasedDate": "2026-11-02T08:20:46.111Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016499966",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/abbvie/postings/3743990016499966",
+   "store_closed_at": "2026-11-04 09:19:42.076234",
+   "store_last_seen_at": "2026-10-30 09:05:54.421553",
+   "store_posting_id": 1186225,
+   "tenant": "abbvie"
+  },
+  {
+   "body_sha256": "b460d622316f00309e33c10441a7b946211133313265f048252c012d76764d2e",
+   "captured_at": "2026-11-09T12:51:11-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "AbbVie",
+     "name": "AbbVie"
+    },
+    "id": "3743990016531446",
+    "name": "Transformation Senior Process Engineer- API",
+    "postingUrl": "https://jobs.smartrecruiters.com/AbbVie/3743990016531446-transformation-senior-process-engineer-api",
+    "refNumber": "R00149399",
+    "releasedDate": "2026-10-30T17:26:59.665Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016531446",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/abbvie/postings/3743990016531446",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-10-31 09:05:20.604311",
+   "store_posting_id": 1206672,
+   "tenant": "abbvie"
+  },
+  {
+   "body_sha256": "c8dab1d744251489fc9ab53b84302dd23f65ea0ba66e5e145e811439ef0b0d0a",
+   "captured_at": "2026-11-09T12:51:10-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "AbbVie",
+     "name": "AbbVie"
+    },
+    "id": "3743990016537646",
+    "name": "Program Manager, MES ",
+    "postingUrl": "https://jobs.smartrecruiters.com/AbbVie/3743990016537646-program-manager-mes-",
+    "refNumber": "R00152410",
+    "releasedDate": "2026-10-30T20:06:52.338Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016537646",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/abbvie/postings/3743990016537646",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-10-31 09:05:20.604311",
+   "store_posting_id": 1206645,
+   "tenant": "abbvie"
+  },
+  {
+   "body_sha256": "8226fa6bd7ceb266871e02c9e67da7b4e981bbbc7ee126b722a1338159898f57",
+   "captured_at": "2026-11-09T12:51:04-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "AECOM2",
+     "name": "AECOM"
+    },
+    "id": "744000158459790",
+    "name": "Environment Advocacy Communications Consultant ",
+    "postingUrl": "https://jobs.smartrecruiters.com/AECOM2/744000159564506-environment-advocacy-communications-consultant-",
+    "refNumber": "REF59874W",
+    "releasedDate": "2026-11-04T08:24:12.568Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158459790",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/aecom2/postings/744000158459790",
+   "store_closed_at": "2026-11-04 09:41:04.074917",
+   "store_last_seen_at": "2026-10-29 09:52:17.875700",
+   "store_posting_id": 1175963,
+   "tenant": "aecom2"
+  },
+  {
+   "body_sha256": "529697880b8a7900b99895eac724269ffbc9300a4f06e99961afb93d6c27f8ab",
+   "captured_at": "2026-11-09T12:50:40-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "AECOM2",
+     "name": "AECOM"
+    },
+    "id": "744000158460929",
+    "name": "Acoustics & Noise Consultant",
+    "postingUrl": "https://jobs.smartrecruiters.com/AECOM2/744000159567569-acoustics-noise-consultant",
+    "refNumber": "REF59859E",
+    "releasedDate": "2026-11-04T08:24:29.441Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158460929",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/aecom2/postings/744000158460929",
+   "store_closed_at": null,
+   "store_last_seen_at": null,
+   "store_posting_id": 1175961,
+   "tenant": "aecom2"
+  },
+  {
+   "body_sha256": "7ed82dd007af23749141c91ab5cc2cc05a70d9c96b824556bf7e94b04f628925",
+   "captured_at": "2026-11-09T12:50:42-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "AECOM2",
+     "name": "AECOM"
+    },
+    "id": "744000158729194",
+    "name": "Document Control Specialist II",
+    "postingUrl": "https://jobs.smartrecruiters.com/AECOM2/744000158729194-document-control-specialist-ii",
+    "refNumber": "J10152507",
+    "releasedDate": "2026-10-30T12:33:26.207Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158729194",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/aecom2/postings/744000158729194",
+   "store_closed_at": null,
+   "store_last_seen_at": null,
+   "store_posting_id": 1215049,
+   "tenant": "aecom2"
+  },
+  {
+   "body_sha256": "43a6be75af1c1e5531aeea2d1e09078550a6dd6867baa6a0e5b515eeaafafc6e",
+   "captured_at": "2026-11-09T12:51:06-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "AECOM2",
+     "name": "AECOM"
+    },
+    "id": "744000158729750",
+    "name": "Senior Electrical Secondary Engineer",
+    "postingUrl": "https://jobs.smartrecruiters.com/AECOM2/744000158729750-senior-electrical-secondary-engineer",
+    "refNumber": "J10163250",
+    "releasedDate": "2026-10-30T12:20:38.011Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158729750",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/aecom2/postings/744000158729750",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-10-31 09:50:06.262165",
+   "store_posting_id": 1215069,
+   "tenant": "aecom2"
+  },
+  {
+   "body_sha256": "47dcba2f9caca8c8d17e8008de9241b5d9c119ae2f5f6e5f76d3232188be73d3",
+   "captured_at": "2026-11-09T12:51:20-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "CityOfNewYork",
+     "name": "City of New York"
+    },
+    "id": "3743990016488336",
+    "name": "Direct Care Worker",
+    "postingUrl": "https://jobs.smartrecruiters.com/CityOfNewYork/3743990016517426-direct-care-worker",
+    "refNumber": "786563",
+    "releasedDate": "2026-10-30T11:11:57.504Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016488336",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/cityofnewyork/postings/3743990016488336",
+   "store_closed_at": "2026-11-02 06:21:48.406398",
+   "store_last_seen_at": "2026-10-30 09:11:18.642367",
+   "store_posting_id": 1187296,
+   "tenant": "cityofnewyork"
+  },
+  {
+   "body_sha256": "44fc73e2d4ee354d618d10194503334b8cfe260d332f2d702ed053736322b453",
+   "captured_at": "2026-11-09T12:51:19-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "CityOfNewYork",
+     "name": "City of New York"
+    },
+    "id": "3743990016493831",
+    "name": "Event Manager",
+    "postingUrl": "https://jobs.smartrecruiters.com/CityOfNewYork/3743990016517256-event-manager",
+    "refNumber": "775653",
+    "releasedDate": "2026-10-30T11:07:50.065Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016493831",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/cityofnewyork/postings/3743990016493831",
+   "store_closed_at": "2026-11-02 06:21:48.406398",
+   "store_last_seen_at": "2026-10-30 09:11:18.642367",
+   "store_posting_id": 1187221,
+   "tenant": "cityofnewyork"
+  },
+  {
+   "body_sha256": "80da0b417e52b30590e444136f346c97dcbd1b85e2149e765d14931284e9496c",
+   "captured_at": "2026-11-09T12:51:23-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "CityOfNewYork",
+     "name": "City of New York"
+    },
+    "id": "3743990016543276",
+    "name": "Trial Preparation Assistant II - Discovery Compliance Bureau",
+    "postingUrl": "https://jobs.smartrecruiters.com/CityOfNewYork/3743990016543276-trial-preparation-assistant-ii-discovery-compliance-bureau",
+    "refNumber": "808991",
+    "releasedDate": "2026-10-31T11:35:39.524Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016543276",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/cityofnewyork/postings/3743990016543276",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-11-02 06:21:46.411722",
+   "store_posting_id": 1222477,
+   "tenant": "cityofnewyork"
+  },
+  {
+   "body_sha256": "5a616b0f3a755dded18b05aa609fcbcee95b3b28eace87c9bbf398dc9dc47000",
+   "captured_at": "2026-11-09T12:51:22-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "CityOfNewYork",
+     "name": "City of New York"
+    },
+    "id": "3743990016644026",
+    "name": "College Aide (Graduate)",
+    "postingUrl": "https://jobs.smartrecruiters.com/CityOfNewYork/3743990016644026-college-aide-graduate-",
+    "refNumber": "786351",
+    "releasedDate": "2026-11-05T11:09:35.153Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "3743990016644026",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/cityofnewyork/postings/3743990016644026",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-11-06 10:02:34.150137",
+   "store_posting_id": 1293125,
+   "tenant": "cityofnewyork"
+  },
+  {
+   "body_sha256": "f82d8605e33fb6055423af81e126d26d29986632ba7852ef376483909c509d80",
+   "captured_at": "2026-11-09T12:51:15-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "NorthwesternMedicine",
+     "name": "Northwestern Memorial Healthcare"
+    },
+    "id": "744000158502669",
+    "name": "Registered Nurse Endoscopy Casual Days",
+    "postingUrl": "https://jobs.smartrecruiters.com/NorthwesternMedicine/744000159191570-registered-nurse-endoscopy-casual-days",
+    "refNumber": "228067",
+    "releasedDate": "2026-11-02T16:27:03.718Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158502669",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/northwesternmedicine/postings/744000158502669",
+   "store_closed_at": "2026-11-04 09:46:06.004808",
+   "store_last_seen_at": "2026-10-30 10:09:51.012028",
+   "store_posting_id": 1197844,
+   "tenant": "northwesternmedicine"
+  },
+  {
+   "body_sha256": "18abd468131f2cb786ffc331c18a76cab6bca0a8f7144b3685d749248b8d4ea2",
+   "captured_at": "2026-11-09T12:51:13-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "NorthwesternMedicine",
+     "name": "Northwestern Memorial Healthcare"
+    },
+    "id": "744000158970459",
+    "name": "Registered Nurse Medical Oncology Full Time Nights ",
+    "postingUrl": "https://jobs.smartrecruiters.com/NorthwesternMedicine/744000160491739-registered-nurse-medical-oncology-full-time-nights-",
+    "refNumber": "227406",
+    "releasedDate": "2026-11-08T17:42:35.486Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000158970459",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/northwesternmedicine/postings/744000158970459",
+   "store_closed_at": "2026-11-06 10:19:53.454718",
+   "store_last_seen_at": "2026-11-02 07:07:44.365233",
+   "store_posting_id": 1225875,
+   "tenant": "northwesternmedicine"
+  },
+  {
+   "body_sha256": "569362dbcf4f1c6fbc7822b46cae148cd3c8586a9b9607eac7605510bbf2d976",
+   "captured_at": "2026-11-09T12:51:18-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "NorthwesternMedicine",
+     "name": "Northwestern Memorial Healthcare"
+    },
+    "id": "744000159136181",
+    "name": "Outpatient Physical Therapist-Orthopedic Full-time",
+    "postingUrl": "https://jobs.smartrecruiters.com/NorthwesternMedicine/744000160613009-outpatient-physical-therapist-orthopedic-full-time",
+    "refNumber": "222799",
+    "releasedDate": "2026-11-09T13:17:24.186Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000159136181",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/northwesternmedicine/postings/744000159136181",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-11-03 11:10:36.296686",
+   "store_posting_id": 1249905,
+   "tenant": "northwesternmedicine"
+  },
+  {
+   "body_sha256": "cbaed3854a60603965af2a4be84049e533e5772ea1731fab2ff7273426792a7f",
+   "captured_at": "2026-11-09T12:51:16-0600",
+   "detector_expected": "not_dead",
+   "http_status": 200,
+   "oracle": "open",
+   "oracle_basis": "listed by its board in the latest scan",
+   "payload": {
+    "active": true,
+    "company": {
+     "identifier": "NorthwesternMedicine",
+     "name": "Northwestern Memorial Healthcare"
+    },
+    "id": "744000159136624",
+    "name": "Physical Therapist-Pelvic Health Sign-on Bonus Available",
+    "postingUrl": "https://jobs.smartrecruiters.com/NorthwesternMedicine/744000160612719-physical-therapist-pelvic-health-sign-on-bonus-available",
+    "refNumber": "197265",
+    "releasedDate": "2026-11-09T13:16:20.134Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000159136624",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/northwesternmedicine/postings/744000159136624",
+   "store_closed_at": null,
+   "store_last_seen_at": "2026-11-03 11:10:36.296686",
+   "store_posting_id": 1249907,
+   "tenant": "northwesternmedicine"
+  },
+  {
+   "body_sha256": "81aaaf1587a7f5b67188d61d596a5c43a2f30fc15933803bb2c358ce26c6cb04",
+   "captured_at": "2026-11-09T12:52:36-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed-manual",
+   "oracle_basis": "manual native close; exact page expired, absent from listing, same-tenant open control",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "Skyward1",
+     "name": "Skyward"
+    },
+    "id": "744000159491899",
+    "name": "Software Engineer - Entry Level",
+    "postingUrl": "https://jobs.smartrecruiters.com/Skyward1/744000159491899-software-engineer-entry-level",
+    "refNumber": "REF246T",
+    "releasedDate": "2026-11-03T20:40:33.431Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000159491899",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/skyward1/postings/744000159491899",
+   "store_closed_at": null,
+   "store_last_seen_at": null,
+   "store_posting_id": 1290099,
+   "tenant": "skyward1"
+  },
+  {
+   "body_sha256": "06979eaf1d74bd9bc8896b74aa6ca7305446bccd83fbf986d06686d005424755",
+   "captured_at": "2026-11-09T12:52:33-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "SyncreonConsulting",
+     "name": "Syncreon Consulting"
+    },
+    "id": "744000159659039",
+    "name": "Full-Stack Java Developer - Java 17 or Higher - (Independents profiles only W2)",
+    "postingUrl": "https://jobs.smartrecruiters.com/SyncreonConsulting/744000159659039-full-stack-java-developer-java-17-or-higher-independents-profiles-only-w2-",
+    "refNumber": "REF1008N",
+    "releasedDate": "2026-11-04T15:10:06.437Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000159659039",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/syncreonconsulting/postings/744000159659039",
+   "store_closed_at": null,
+   "store_last_seen_at": null,
+   "store_posting_id": 1286542,
+   "tenant": "syncreonconsulting"
+  },
+  {
+   "body_sha256": "bd1b3dada02c76630b0013dec3bcef96a212cbea40724a93e47787915775780f",
+   "captured_at": "2026-11-09T12:52:35-0600",
+   "detector_expected": "dead",
+   "http_status": 200,
+   "oracle": "closed",
+   "oracle_basis": "scanner listing absence (consecutive_missing>=2)",
+   "payload": {
+    "active": false,
+    "company": {
+     "identifier": "SyncreonConsulting",
+     "name": "Syncreon Consulting"
+    },
+    "id": "744000159659078",
+    "name": "Full-Stack Java Developer - Java 17 or Higher - (Independents profiles only W2)",
+    "postingUrl": "https://jobs.smartrecruiters.com/SyncreonConsulting/744000159659078-full-stack-java-developer-java-17-or-higher-independents-profiles-only-w2-",
+    "refNumber": "REF1008N",
+    "releasedDate": "2026-11-04T15:10:07.433Z",
+    "visibility": "PUBLIC"
+   },
+   "posting_id": "744000159659078",
+   "provider": "smartrecruiters",
+   "source": "GET https://api.smartrecruiters.com/v1/companies/syncreonconsulting/postings/744000159659078",
+   "store_closed_at": null,
+   "store_last_seen_at": null,
+   "store_posting_id": 1290434,
+   "tenant": "syncreonconsulting"
+  }
+ ],
+ "note": "Trimmed captures of public, unauthenticated provider responses taken 2026-11-09 (D-684). body_sha256 is the sha256 of the canonical JSON of `payload`, so a hand edit fails tests/unit/test_provider_liveness_controls.py; the generalization gate pins the whole file.",
+ "provider": "smartrecruiters"
+}

@@ -62,6 +62,15 @@ serves before the job description, so nothing an employer writes in a descriptio
 is a class in LinkedIn's own markup, not a phrase in a JD, so the catalog rejected below does not
 apply to it.
 
+**SmartRecruiters, Eightfold and ADP are asked through the resource that differs between a posted
+and an unposted requisition** (D-684), each only after same-host known-open and known-closed
+controls from at least two tenants (`tests/unit/provider_liveness_controls/*.json`):
+`smartrecruiters_inactive` is the posting API's JSON `active: false` on the exact id,
+`eightfold_unposted` the tenant's `position_details` 404 carrying its `Position not found` body,
+`adp_unposted` the requisition resource's exactly-empty object. Each reads fields, never a phrase,
+and a wall, a CDN 404 or a looser shape is `unknown`. Dayforce did not meet the bar and has no
+rule: its closed phrase sits in the i18n store of EVERY page, open ones included.
+
 **What is deliberately NOT here: a closed-phrase catalog.** `PROGRAM.md` item 6 names "a saved
 body containing a closed phrase" as the AUTHORITATIVE signal, inherited from job-apps, which
 scraped HTML pages. boardwatch reads structured ATS APIs, and every provider assembles
@@ -113,6 +122,9 @@ SIGNALS: tuple[str, ...] = (
     "workday_unposted",  # Workday's CXS 403 naming error S22 — yields `dead`
     "oracle_unposted",  # Oracle HCM's detail resource answering an empty `items` — yields `dead`
     "linkedin_closed",  # LinkedIn's guest top card marked closed — yields `dead`
+    "smartrecruiters_inactive",  # SmartRecruiters' posting API `active: false` — yields `dead`
+    "eightfold_unposted",  # Eightfold's position_details 404 `Position not found` — yields `dead`
+    "adp_unposted",  # ADP's requisition resource answering an empty requisition — yields `dead`
     "refetch_gone_after_redirect",  # gone, but a different URL said so — served
     "refetch_ok",
     "refetch_error",
@@ -129,6 +141,9 @@ SIGNAL_VERDICTS: dict[str, str] = {
     "workday_unposted": "dead",
     "oracle_unposted": "dead",
     "linkedin_closed": "dead",
+    "smartrecruiters_inactive": "dead",
+    "eightfold_unposted": "dead",
+    "adp_unposted": "dead",
     "refetch_gone_after_redirect": "unknown",
     "refetch_ok": "alive",
     "refetch_error": "unknown",
@@ -165,6 +180,27 @@ _LINKEDIN_TOP_CARD_TITLE = b"top-card-layout__title"
 _LINKEDIN_DESCRIPTION = re.compile(
     rb"""class\s*=\s*["'](?:[^"']*\s)?show-more-less-html(?=["'\s])"""
 )
+
+# The shape ADP's public requisition resource answers for a requisition that is not posted (D-684,
+# measured 2026-11-09: 6 of 6 jobIds absent from two tenants' complete listings, byte-identical,
+# 143 bytes). A posted requisition carries `itemID` and `requisitionTitle`. The match is the whole
+# object: exactly these keys, every value an empty list, so `{}`, a wall page that parses, or any
+# future field turns the answer into `unknown` instead of a death.
+ADP_EMPTY_REQUISITION_KEYS = frozenset(
+    {
+        "postingInstructions",
+        "links",
+        "organizationalUnits",
+        "requisitionLocations",
+        "screeningRequirements",
+        "sponsoredVisaTypeCodes",
+    }
+)
+
+# The application's own 404 body from Eightfold's `position_details` (D-684): `{"status": 404,
+# "error": {"message": "Position not found"}, ...}`. Read as fields. A CDN or WAF 404 page is not
+# this body, and a bare 404 is not a death on this host (providers/eightfold.py, property 6).
+EIGHTFOLD_NOT_FOUND_MESSAGE = "Position not found"
 
 
 class UnknownLivenessVerdict(Exception):
@@ -437,6 +473,137 @@ def verdict_for_linkedin_guest(
         signal="refetch_error",
         detail="linkedin guest 200 without a top card",
     )
+
+
+def _unknown(posting_id: int, detail: str) -> Liveness:
+    return Liveness(posting_id=posting_id, verdict="unknown", signal="refetch_error", detail=detail)
+
+
+def _dead_unless_redirected(
+    posting_id: int, signal: str, detail: str, *, redirected: bool
+) -> Liveness:
+    """A death read from a resource other than the one asked is `unknown` (the redirect rule)."""
+    if redirected:
+        return Liveness(
+            posting_id=posting_id,
+            verdict="unknown",
+            signal="refetch_gone_after_redirect",
+            detail=f"{detail} after a redirect",
+        )
+    return Liveness(posting_id=posting_id, verdict="dead", signal=signal, detail=detail)
+
+
+def _json_object(body: bytes) -> dict[str, object] | None:
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def verdict_for_smartrecruiters_posting(
+    posting_id: int,
+    status_code: int,
+    body: bytes,
+    *,
+    posting_ref: str,
+    redirected: bool = False,
+) -> Liveness:
+    """Classify an answer from SmartRecruiters' posting API
+    (`providers/smartrecruiters.posting_api_target`).
+
+    Only one shape earns a verdict: a 200 whose object is the record of `posting_ref` (its `id`)
+    and whose `active` is the JSON `false`. Measured 2026-11-09 (D-684) on four tenants plus
+    Syncreon and Skyward: all 7 closed controls that read `active: false` were closed, and 0 of 8
+    open controls did. Four more scanner-closed ids still answered `active: true` with a live
+    page, so `active: true` is NOT `alive` here: it would clear earned strikes on the death-probe
+    path for a posting the scanner had already seen leave its board. Every other answer, a wall
+    included, is `unknown`, and the caller then asks the page as before.
+    """
+    if status_code != 200:
+        return _unknown(posting_id, f"smartrecruiters posting API HTTP {status_code}")
+    record = _json_object(body)
+    if record is None or str(record.get("id")) != posting_ref:
+        return _unknown(posting_id, "smartrecruiters posting API 200 without this posting's record")
+    if record.get("active") is False:
+        return _dead_unless_redirected(
+            posting_id,
+            "smartrecruiters_inactive",
+            "smartrecruiters posting API active false",
+            redirected=redirected,
+        )
+    return _unknown(posting_id, "smartrecruiters posting API 200 without active false")
+
+
+def verdict_for_eightfold_position(
+    posting_id: int,
+    status_code: int,
+    body: bytes,
+    *,
+    position_id: str,
+    redirected: bool = False,
+) -> Liveness:
+    """Classify an answer from an Eightfold tenant's `position_details`
+    (`providers/eightfold.position_details_url`).
+
+    The career page answers 200 for a closed position, so it says nothing. The API answers 200
+    with `data.id` equal to the position asked about, or 404 with the application's own
+    `Position not found` body. Measured 2026-11-09 (D-684) on six tenants: 10 of 10 scanner-closed
+    positions answered that 404 and 9 of 9 listed ones answered their own record; one more
+    position the store still listed as open answered 404 ~9 h after its scan and was gone from
+    the live search that finds a live control. Anything else, a bare or CDN 404 included, is
+    `unknown`: the provider documents that a detail 404 is not a close signal on its own.
+    """
+    record = _json_object(body)
+    if status_code == 404:
+        error = record.get("error") if record is not None else None
+        if (
+            record is not None
+            and record.get("status") == 404
+            and isinstance(error, dict)
+            and error.get("message") == EIGHTFOLD_NOT_FOUND_MESSAGE
+        ):
+            return _dead_unless_redirected(
+                posting_id,
+                "eightfold_unposted",
+                "eightfold position_details 404 Position not found",
+                redirected=redirected,
+            )
+        return _unknown(posting_id, "eightfold position_details 404 without the application body")
+    if status_code == 200 and record is not None:
+        data = record.get("data")
+        if isinstance(data, dict) and str(data.get("id")) == position_id:
+            return verdict_for_status(posting_id, status_code)
+    return _unknown(
+        posting_id, f"eightfold position_details HTTP {status_code} without this position"
+    )
+
+
+def verdict_for_adp_requisition(
+    posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
+) -> Liveness:
+    """Classify an answer from ADP WorkforceNow's public requisition resource
+    (`providers/adp.requisition_url_for_page`).
+
+    The recruitment page is one JavaScript shell for every jobId: 12 captures from two tenants,
+    six open and six closed, were byte-identical. The resource is not: measured 2026-11-09
+    (D-684), 6 of 6 jobIds in a tenant's complete listing returned their requisition and 6 of 6
+    absent from it returned the empty object in `ADP_EMPTY_REQUISITION_KEYS`. A requisition that
+    is returned is `alive`; exactly the empty object is `dead`; every other answer is `unknown`.
+    """
+    if status_code != 200:
+        return _unknown(posting_id, f"adp requisition HTTP {status_code}")
+    record = _json_object(body)
+    if record is None:
+        return _unknown(posting_id, "adp requisition 200 that is not a JSON object")
+    item_id = record.get("itemID")
+    if isinstance(item_id, str) and item_id and record.get("requisitionTitle"):
+        return verdict_for_status(posting_id, status_code)
+    if set(record) == ADP_EMPTY_REQUISITION_KEYS and all(v == [] for v in record.values()):
+        return _dead_unless_redirected(
+            posting_id, "adp_unposted", "adp requisition 200 empty", redirected=redirected
+        )
+    return _unknown(posting_id, "adp requisition 200 that is neither posted nor empty")
 
 
 def verdict_without_url(posting_id: int) -> Liveness:

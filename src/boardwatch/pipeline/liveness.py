@@ -28,19 +28,29 @@ from sqlalchemy import Engine, select
 from boardwatch.core.liveness import (
     LinkedInGuestObservation,
     Liveness,
+    verdict_for_adp_requisition,
+    verdict_for_eightfold_position,
     verdict_for_failure,
     verdict_for_linkedin_guest,
     verdict_for_oracle_details,
+    verdict_for_smartrecruiters_posting,
     verdict_for_status,
     verdict_for_workday_cxs,
     verdict_without_url,
 )
-from boardwatch.core.politeness import Fetcher, FetchFailure
+from boardwatch.core.politeness import Fetcher, FetchFailure, FetchResult
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.linkedin import LANE_NAME as LINKEDIN_LANE
 from boardwatch.lanes.linkedin import guest_posting_url
 from boardwatch.pipeline.progress import StageProgress
+from boardwatch.providers.adp import requisition_url_for_page
+from boardwatch.providers.eightfold import (
+    board_domain,
+    position_details_url,
+    position_page_target,
+)
 from boardwatch.providers.oraclehcm import details_url_for_page
+from boardwatch.providers.smartrecruiters import posting_api_target
 from boardwatch.providers.workday import cxs_job_url
 from boardwatch.store.tables import postings
 
@@ -78,6 +88,12 @@ def build_prober(settings: Settings) -> LivenessProber:
     page is asked through its requisition detail resource, for the same reason (D-648), and a
     LinkedIn job-view page through the guest `jobPosting` endpoint (D-653) — only when the user
     has enabled the LinkedIn lane, because that endpoint is the lane's opt-in request (D-290).
+
+    D-684 adds three more, each measured against same-host open and closed controls: an ADP
+    recruitment page is asked through ADP's public requisition resource (the page is one shell for
+    every jobId); a SmartRecruiters posting is asked through its API's `active` flag first and, if
+    that says nothing, through its page exactly as before; an Eightfold position page is fetched as
+    before and, when it carries the tenant's `pcsx-data` blob, its `position_details` is asked.
     """
     fetcher = Fetcher(settings.model_copy(update={"retry_attempts": 1}))
     ask_linkedin_guest = asks_linkedin_guest(settings)
@@ -139,6 +155,72 @@ def build_prober(settings: Settings) -> LivenessProber:
         )
         return replace(verdict, linkedin_guest=LinkedInGuestObservation(result.status_code))
 
+    def moved(final_url: str, asked: str) -> bool:
+        """Whether a 200 came from somewhere other than the resource asked about. The query is
+        compared decoded, because the requisition's identity can live there."""
+        final, wanted = urlsplit(final_url), urlsplit(asked)
+        return bool(final_url) and (
+            (final.hostname, final.path, unquote(final.query))
+            != (wanted.hostname, wanted.path, unquote(wanted.query))
+        )
+
+    def ask_json(
+        posting_id: int, resource_url: str, classify: Callable[..., Liveness]
+    ) -> Liveness:
+        """One GET of a JSON resource, classified by `classify(posting_id, status, body,
+        redirected=...)`. A transport fault is `unknown`; every non-200 reaches `classify` with its
+        body, because a wall and an application's own 404 are told apart by the body."""
+        try:
+            result = fetcher.get(resource_url, headers={"Accept": "application/json"})
+        except FetchFailure as exc:
+            if exc.status_code is None:
+                return verdict_for_failure(posting_id, None, str(exc))
+            return classify(posting_id, exc.status_code, exc.body, redirected=exc.redirected)
+        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
+            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
+        return classify(
+            posting_id,
+            result.status_code,
+            result.content,
+            redirected=moved(result.final_url, resource_url),
+        )
+
+    def fetch_page(posting_id: int, url: str) -> tuple[Liveness, FetchResult | None]:
+        """The plain page probe, plus the response when there was one."""
+        try:
+            result = fetcher.get(url)
+        except FetchFailure as exc:
+            return (
+                verdict_for_failure(
+                    posting_id, exc.status_code, str(exc), redirected=exc.redirected
+                ),
+                None,
+            )
+        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
+            # Deliberately broad. The whole point is that nothing except an explicit gone-status
+            # withholds a lead, so an unforeseen client error must not become a silent veto.
+            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}"), None
+        return verdict_for_status(posting_id, result.status_code), result
+
+    def probe_eightfold(posting_id: int, url: str, host: str, position_id: str) -> Liveness:
+        verdict, page = fetch_page(posting_id, url)
+        if page is None or verdict.verdict != "alive":
+            return verdict
+        try:
+            domain = board_domain(page.content)
+        except ValueError:
+            return verdict  # not an Eightfold career page: today's reading of the page stands
+        details = position_details_url(host, domain, position_id)
+        # The page's 200 is no evidence here (a closed position serves it), so an API answer that
+        # says nothing is `unknown`, not the page's `alive`: that would clear earned strikes.
+        return ask_json(
+            posting_id,
+            details,
+            lambda pid, status, body, *, redirected: verdict_for_eightfold_position(
+                pid, status, body, position_id=position_id, redirected=redirected
+            ),
+        )
+
     def probe(posting_id: int, url: str) -> Liveness:
         cxs_url = cxs_job_url(url)
         if cxs_url is not None:
@@ -149,17 +231,26 @@ def build_prober(settings: Settings) -> LivenessProber:
         guest_url = guest_posting_url(url) if ask_linkedin_guest else None
         if guest_url is not None:
             return probe_linkedin(posting_id, guest_url)
-        try:
-            result = fetcher.get(url)
-        except FetchFailure as exc:
-            return verdict_for_failure(
-                posting_id, exc.status_code, str(exc), redirected=exc.redirected
+        requisition_url = requisition_url_for_page(url)
+        if requisition_url is not None:
+            return ask_json(posting_id, requisition_url, verdict_for_adp_requisition)
+        posting = posting_api_target(url)
+        if posting is not None:
+            api_url, posting_ref = posting
+            flagged = ask_json(
+                posting_id,
+                api_url,
+                lambda pid, status, body, *, redirected: verdict_for_smartrecruiters_posting(
+                    pid, status, body, posting_ref=posting_ref, redirected=redirected
+                ),
             )
-        except Exception as exc:  # noqa: BLE001 - any transport fault is `unknown`, never `dead`
-            # Deliberately broad. The whole point is that nothing except an explicit gone-status
-            # withholds a lead, so an unforeseen client error must not become a silent veto.
-            return verdict_for_failure(posting_id, None, f"{type(exc).__name__}: {exc}")
-        return verdict_for_status(posting_id, result.status_code)
+            if flagged.withholds:
+                return flagged
+            # `active: true` is not `alive` (core/liveness.py): the page decides, as it always did.
+        position = position_page_target(url)
+        if position is not None:
+            return probe_eightfold(posting_id, url, *position)
+        return fetch_page(posting_id, url)[0]
 
     return probe
 
