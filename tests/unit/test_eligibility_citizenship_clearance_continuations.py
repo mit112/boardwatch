@@ -194,3 +194,55 @@ def test_holding_clearance_does_not_answer_obtainability(catalog: RulesCatalog) 
          "missing_profile_field:security_clearance.obtainable"),
     ]
     assert result.verdict == "uncertain"
+
+
+@pytest.mark.parametrize("status,want,verdict", [
+    ("permanent_resident", "met", "eligible"),
+    ("citizen", "met", "eligible"),
+    ("ead_or_similar", "unmet", "ineligible"),
+    ("needs_sponsorship", "unmet", "ineligible"),
+    ("prefer_not_to_say", "unknown", "uncertain"),
+    ("invalid", "unknown", "uncertain"),
+])
+def test_residency_alternative_is_not_also_a_citizen_only_bar(
+    status: str, want: str, verdict: str, catalog: RulesCatalog,
+) -> None:
+    body = "US citizenship or permanent residency required."
+    result = evaluate(body, Facts(work_authorization=WorkAuthFact(
+        status=status, jurisdiction="us",
+    )), POLICY, catalog)
+    assert result.verdict == verdict
+    assert [(r.rule_id, r.disposition) for r in result.requirements] == [
+        ("work_auth:us_citizen_or_lpr_required", want),
+    ]
+    assert body[slice(*result.requirements[0].jd_locator["span"])] == (
+        "US citizenship or permanent residency required"
+    )
+
+
+@pytest.mark.parametrize("facts", [
+    Facts(),
+    Facts(work_authorization=WorkAuthFact(status="permanent_resident")),
+])
+def test_residency_alternative_abstains_without_declared_inputs(
+    facts: Facts, catalog: RulesCatalog,
+) -> None:
+    result = evaluate("US citizenship or permanent residency required.", facts, POLICY, catalog)
+    assert result.verdict == "uncertain"
+    assert [(r.rule_id, r.disposition) for r in result.requirements] == [
+        ("work_auth:us_citizen_or_lpr_required", "unknown"),
+    ]
+
+
+@pytest.mark.parametrize("body", [
+    "US citizenship or permanent residency is not required.",
+    "US citizenship or permanent residency preferred.",
+])
+def test_residency_alternative_does_not_turn_negation_or_preference_into_a_bar(
+    body: str, catalog: RulesCatalog,
+) -> None:
+    result = evaluate(body, Facts(work_authorization=WorkAuthFact(
+        status="ead_or_similar", jurisdiction="us",
+    )), POLICY, catalog)
+    assert not result.requirements
+    assert result.verdict != "ineligible"
