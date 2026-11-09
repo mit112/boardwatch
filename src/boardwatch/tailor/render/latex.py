@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from importlib.resources import files
 from pathlib import Path
 
@@ -66,13 +67,25 @@ _PREAMBLE_END = "\\begin{document}"
 # multi-word phrases, not single tokens, so they cannot share `_word_token_pattern`'s word-boundary
 # regex — a plain case-insensitive substring match is enough and does not risk a false positive
 # the way a single common word might.
+#
+# T268 added the three below "Example Field": the starter's other sample values that no real
+# résumé carries. The rest of the sample block ("GPA: 3.5/4", the dates, the github link) could
+# be a real user's own text, so it is not matched by content; `_STARTER_SENTINEL` covers it.
 _PLACEHOLDER_PHRASES: tuple[str, ...] = (
     "Your Name",
     "you@example.com",
     "555 555 5555",
     "Example University",
     "Example Field",
+    "Your City, ST",
+    "linkedin.com/in/[username]",
+    "Course One",
 )
+# A comment line the bundled template carries above its sample header and education, and which a
+# config-dir copy is refused for until the owner deletes it (T268). It marks the WHOLE sample
+# block without matching any of its content, so a real value that happens to equal a sample one
+# can never be refused — only the owner's own "I have edited this" act clears it.
+_STARTER_SENTINEL = "BOARDWATCH-STARTER-TEMPLATE"
 
 
 def _word_token_pattern(token: str) -> re.Pattern[str]:
@@ -89,6 +102,13 @@ class TemplateArtifactError(RuntimeError):
     Deliberately does NOT scan for `{{`/`}}` — real LaTeX macro bodies legitimately produce `}}`
     (e.g. `\\hbox{\\tiny$\\bullet$}}`), so scanning them would false-positive on a valid
     template."""
+
+
+class TemplateOwnerMismatchError(TemplateArtifactError):
+    """Raised by `require_owner_printed` when the PDF is to be named for an owner the template's
+    own text never prints (T268): the page shows the template's header, while the file name and
+    the /Info Author come from `resolve_owner_name`. A subclass so every `TemplateArtifactError`
+    handler routes it unchanged."""
 
 
 class TemplateMissingError(TemplateArtifactError):
@@ -124,12 +144,13 @@ def _validate_template(text: str, *, check_placeholder_phrases: bool = True) -> 
         # Every hit in one refusal, so a newcomer edits them all before rerunning instead of
         # meeting them one run at a time (T268).
         lowered = text.lower()
-        found = [phrase for phrase in _PLACEHOLDER_PHRASES if phrase.lower() in lowered]
+        found = [repr(phrase) for phrase in _PLACEHOLDER_PHRASES if phrase.lower() in lowered]
+        if _STARTER_SENTINEL in text:
+            found.append(f"the {_STARTER_SENTINEL} marker line (delete it once edited)")
         if found:
             raise TemplateArtifactError(
-                f"template still carries the bundled placeholder(s) "
-                f"{', '.join(repr(phrase) for phrase in found)} — edit the header/education "
-                "before using this template"
+                f"template still carries the bundled placeholder(s) {', '.join(found)} — edit "
+                "the header/education before using this template"
             )
 
 
@@ -311,6 +332,49 @@ def _extracurricular(resume: Resume) -> str:
         lines.append(f"\\item \\small{{{escape(line)}}}")
     lines.append("\\end{itemize}")
     return "\n".join(lines) + "\n"
+
+
+_COMMENT_RE = re.compile(r"(?<!\\)%[^\n]*")
+# A symbol accent (`\\'e`, `\\~{n}`) or a letter accent over a braced letter (`\\c{c}`, `\\v{s}`).
+_ACCENT_RE = re.compile(r"\\(?:['`^\"~=.]\s*\{?([A-Za-z])\}?|[cvuHkr]\s*\{([A-Za-z])\})")
+_ESCAPED_RE = re.compile(r"\\([&%$#_{}])")
+_COMMAND_RE = re.compile(r"\\(?:[A-Za-z]+\*?|\\)")
+
+
+def _fold(text: str) -> str:
+    """Case-, accent- and whitespace-blind form of `text`, for comparing two spellings of a name."""
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch) and not ch.isspace())
+
+
+def _printed_text(template: str) -> str:
+    """Approximately what the compiled page prints for `template`: comments dropped, accent
+    macros and escapes read as the characters they draw, every other command and brace removed.
+    A heuristic, not a LaTeX engine; a macro the template defines itself is not expanded."""
+    text = _COMMENT_RE.sub("", template)
+    text = _ACCENT_RE.sub(lambda m: m.group(1) or m.group(2), text)
+    text = _ESCAPED_RE.sub(lambda m: m.group(1), text)
+    text = _COMMAND_RE.sub("", text)
+    return text.replace("{", "").replace("}", "").replace("~", " ")
+
+
+def require_owner_printed(template: str, owner: str) -> None:
+    """Refuse a template whose page never prints `owner`, the name the PDF is filed under.
+
+    Refusing rather than picking a winner: the header is free LaTeX, so reading a name back out
+    of it is a guess, and either guess could file one person's page under another's name. The
+    template is reduced to the text it prints (`_printed_text`) and the name must be a substring
+    of that, ignoring case, accents and whitespace, so a name set in styling macros, split across
+    them, written with accent macros or LaTeX-escaped is never refused, and a name that sits only
+    in a `%` comment is. The name may sit anywhere on the page, not only in the header.
+    """
+    if _fold(owner) in _fold(_printed_text(template)):
+        return
+    raise TemplateOwnerMismatchError(
+        f"the résumé would be filed as {owner!r} (answers.yaml identity.full_name, else "
+        "resume.yaml's first header line), but resume_template.tex never prints that name; "
+        "make the two agree"
+    )
 
 
 class LatexRenderer:

@@ -557,3 +557,45 @@ def test_coverage_is_not_a_veto_a_zero_coverage_lead_still_ships(tmp_path: Path)
     assert res.coverage is not None
     assert res.coverage.fraction == 0.0
     assert res.coverage.covered_count == 0
+
+
+def test_a_resume_filed_under_a_name_the_template_never_prints_is_refused(tmp_path: Path) -> None:
+    """T268: the file name and /Info Author come from the config dir's `resume.yaml` header
+    while the page prints the template's, so a disagreement is refused before any render — and
+    agreement, the configured user's normal case, still ships."""
+    from boardwatch.tailor.render.latex import TemplateOwnerMismatchError
+
+    settings = _settings(tmp_path)  # its template prints "Ada Lovelace"
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    owned = settings.config_dir / "resume.yaml"
+    owned.write_text(scaffold_template().replace("Ada Lovelace", "Grace Hopper"), encoding="utf-8")
+    out = tmp_path / "out"
+    with pytest.raises(TemplateOwnerMismatchError, match="'Grace Hopper'"):
+        run_tailor(
+            engine, settings, pid, resume_path=owned, out_dir=out, typst_runner=_runner_ok,
+        )
+    assert not out.exists() or not list(out.glob("*"))
+
+    owned.write_text(scaffold_template(), encoding="utf-8")
+    res = run_tailor(
+        engine, settings, pid, resume_path=owned, out_dir=out, typst_runner=_runner_ok,
+    )
+    assert res.pdf_path is not None and res.pdf_path.name.startswith("Ada_Lovelace_")
+
+
+def test_the_generic_fallback_name_is_exempt_from_the_template_name_check(tmp_path: Path) -> None:
+    """T268: with neither `answers.yaml` nor a config-dir `resume.yaml`, the file is filed under
+    the generic fallback, which names nobody, so a template printing any name is not a mismatch."""
+    from boardwatch.delivery.api import FALLBACK_OWNER_NAME, resolve_owner_name
+
+    settings = _settings(tmp_path)
+    assert resolve_owner_name(None, settings.config_dir) == FALLBACK_OWNER_NAME
+    assert FALLBACK_OWNER_NAME.casefold() not in (settings.config_dir / "resume_template.tex").read_text(encoding="utf-8").casefold()
+    engine = _engine(settings)
+    pid = _seed(engine, settings)
+    res = run_tailor(
+        engine, settings, pid, resume_path=_resume_yaml(tmp_path), out_dir=tmp_path / "out",
+        typst_runner=_runner_ok,
+    )
+    assert res.pdf_path is not None and res.pdf_path.name.startswith(f"{FALLBACK_OWNER_NAME}_")

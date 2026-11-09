@@ -35,13 +35,24 @@ from boardwatch.tailor.render.latex import resolve_template
 #
 # Centralised here rather than re-derived per module: it was the same six-line literal in
 # four test modules before this fixed it once.
+#
+# The name is the `tailor init` scaffold's own, because `LatexRenderer.emit` refuses a template
+# that never prints the name the PDF is filed under (T268).
 TEST_RESUME_TEMPLATE = (
     resolve_template(None)
-    .replace("Your Name", "Test Person")
+    .replace("Your Name", "Ada Lovelace")
     .replace("you@example.com", "test@example.org")
     .replace("555 555 5555", "555 555 0000")
     .replace("Example University", "Test University")
     .replace("Example Field", "Test Field")
+    .replace("Your City, ST", "Test City, ST")
+    .replace("linkedin.com/in/[username]", "example.org/profile")
+    .replace("Course One", "Course A")
+    .replace(
+        "% BOARDWATCH-STARTER-TEMPLATE -- replace the sample header and education below with "
+        "your own, then delete this line.\n",
+        "",
+    )
 )
 
 

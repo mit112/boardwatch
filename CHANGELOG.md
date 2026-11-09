@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`tailor run` refuses a résumé whose file name would not match the name the page prints (T268, 2026-09-28).** The
+  file name and the PDF's Title/Author come from `answers.yaml`'s `identity.full_name`, else `resume.yaml`'s first
+  `header` line; the page prints `resume_template.tex`'s header. A test run shipped `Ada_Lovelace_*.pdf` headed
+  "Pat Example". The render now refuses, before anything is written, when the template's text never contains that
+  name as the page would print it: case, accents and whitespace are ignored, styling, accent and escape macros are read
+  as the text they draw, and a name that appears only in a `%` comment does not count. The refusal is a
+  `TemplateArtifactError`, so a `run` stops its tailor stage as it does for any broken template. When neither file
+  names the owner, the generic fallback name is not checked (D-685).
+
+- **The starter résumé template's refusal now covers the whole sample block (T268, 2026-09-28).** Three more of the
+  starter's sample values are checked ("Your City, ST", "linkedin.com/in/[username]", "Course One"), and the bundled
+  template carries a `% BOARDWATCH-STARTER-TEMPLATE` comment line above its header that a config-dir copy is refused for
+  until it is deleted. The line marks the GPA, dates and sample links without matching them, so a real value that equals
+  a sample one ("GPA: 3.5/4") is never refused. A copy seeded before this change has no marker line and is still checked
+  by the eight phrases.
+
 - **Intake-death alert ignores manual scans.** Its window is now the last non-incremental delivery
   runs with a recorded scan count, so a bare `boardwatch scan` or an untagged pre-purpose row can
   no longer raise it. A positive count on any later scan still counts as intake. Corpus regression

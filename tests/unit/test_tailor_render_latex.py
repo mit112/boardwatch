@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from boardwatch.tailor.model import Bullet, Entry, Resume, SkillGroup
@@ -336,9 +338,9 @@ def test_validate_template_rejects_bundled_placeholder_phrase(tmp_path):
         resolve_template(tmp_path)
 
 
-def test_placeholder_refusal_names_every_phrase_at_once(tmp_path):
+def test_placeholder_refusal_names_every_phrase_and_the_marker_at_once(tmp_path):
     """T268: one refusal lists everything left to edit, so a newcomer does not rerun once per
-    phrase. The unedited starter carries all five catalog phrases."""
+    phrase. The unedited starter carries all eight catalog phrases and the marker line."""
     from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
 
     (tmp_path / "resume_template.tex").write_text(resolve_template(None), encoding="utf-8")
@@ -347,8 +349,106 @@ def test_placeholder_refusal_names_every_phrase_at_once(tmp_path):
     message = str(excinfo.value)
     for phrase in (
         "Your Name", "you@example.com", "555 555 5555", "Example University", "Example Field",
+        "Your City, ST", "linkedin.com/in/[username]", "Course One",
     ):
         assert repr(phrase) in message, phrase
+    assert "BOARDWATCH-STARTER-TEMPLATE marker line" in message
+
+
+@pytest.mark.parametrize(
+    "phrase", ["Your City, ST", "linkedin.com/in/[username]", "Course One"]
+)
+def test_each_added_starter_phrase_is_refused_on_its_own(tmp_path, phrase):
+    """A copy seeded before the marker existed carries no marker line, so the sample values no
+    real résumé holds are still caught by content."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+    from tests.conftest import TEST_RESUME_TEMPLATE
+
+    (tmp_path / "resume_template.tex").write_text(
+        TEST_RESUME_TEMPLATE.replace("\\end{document}", phrase + "\n\\end{document}"),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateArtifactError, match=re.escape(repr(phrase))):
+        resolve_template(tmp_path)
+
+
+def test_the_marker_line_alone_is_refused_and_sample_like_real_values_are_not(tmp_path):
+    """The marker covers the sample block the phrase catalog deliberately does not match:
+    "GPA: 3.5/4", the dates and the github link could be a real owner's own text, so a template
+    that still carries them but has had its marker deleted must load."""
+    from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
+    from tests.conftest import TEST_RESUME_TEMPLATE
+
+    assert "GPA: 3.5/4" in TEST_RESUME_TEMPLATE
+    assert "github.com/example" in TEST_RESUME_TEMPLATE
+    (tmp_path / "resume_template.tex").write_text(TEST_RESUME_TEMPLATE, encoding="utf-8")
+    assert "GPA: 3.5/4" in resolve_template(tmp_path)
+
+    marked = TEST_RESUME_TEMPLATE.replace(
+        "\\begin{center}", "% BOARDWATCH-STARTER-TEMPLATE -- delete me\n\\begin{center}", 1
+    )
+    (tmp_path / "resume_template.tex").write_text(marked, encoding="utf-8")
+    with pytest.raises(TemplateArtifactError, match="BOARDWATCH-STARTER-TEMPLATE"):
+        resolve_template(tmp_path)
+
+
+def test_the_owner_name_must_be_printed_by_the_template():
+    """T268: the file name and /Info Author come from the owner's files while the page prints
+    the template's header, so a name the template never prints is refused with a typed subclass
+    every `TemplateArtifactError` handler already routes."""
+    from boardwatch.tailor.render.latex import (
+        TemplateArtifactError,
+        TemplateOwnerMismatchError,
+        require_owner_printed,
+    )
+
+    template = "\\textbf{\\Huge \\scshape Pat   Example} \\\\ \\small Jo\\_Ann Ltd\n"
+    require_owner_printed(template, "Pat Example")
+    require_owner_printed(template, "pat example")  # case never refuses
+    require_owner_printed(template, "Pat\nExample")  # nor does whitespace
+    require_owner_printed(template, "Jo_Ann")  # the name as LaTeX-escaped in the template
+    with pytest.raises(TemplateOwnerMismatchError) as excinfo:
+        require_owner_printed(template, "Ada Lovelace")
+    assert isinstance(excinfo.value, TemplateArtifactError)
+    assert "'Ada Lovelace'" in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    ("printed", "owner"),
+    [
+        # A name split across styling macros, so no raw span of the source holds it.
+        ("\\textbf{\\Huge Pat} \\textit{Example} \\\\ pat@example.com", "Pat Example"),
+        # Accent macros, symbol and braced-letter forms, against the name as the owner types it.
+        ("\\scshape Jos\\'e Mu\\~noz", "José Muñoz"),
+        ("\\scshape Fran\\c{c}ois Lef\\`{e}vre", "François Lefèvre"),
+        # LaTeX-escaped specials, and a name typed with the accents already in UTF-8.
+        ("\\textbf{AT\\&T Jo\\_Ann}", "AT&T Jo_Ann"),
+        ("\\textbf{José Muñoz}", "Jose Munoz"),
+        # An uppercased, re-spaced header (the template styles it, the owner types it plain).
+        ("\\textbf{PAT\n   EXAMPLE}", "Pat Example"),
+    ],
+)
+def test_the_owner_name_matches_what_the_page_prints_not_the_latex_source(printed, owner):
+    """T268: Codex found the source-substring match refused a name written with accent macros
+    or split across styling macros, and `runner.py` treats that refusal as fatal for the whole
+    tailor stage. The name is compared with what the page prints."""
+    from boardwatch.tailor.render.latex import require_owner_printed
+
+    require_owner_printed(printed, owner)
+
+
+def test_a_name_inside_a_latex_comment_is_not_printed():
+    """T268: the page does not print a `%` comment, so a name that appears only there leaves the
+    header printing someone else. An escaped `\\%` starts no comment."""
+    from boardwatch.tailor.render.latex import TemplateOwnerMismatchError, require_owner_printed
+
+    template = "% Pat Example (old header)\n\\textbf{Grace Hopper} 100\\% remote\n"
+    with pytest.raises(TemplateOwnerMismatchError):
+        require_owner_printed(template, "Pat Example")
+    require_owner_printed(template, "Grace Hopper")
+    require_owner_printed(template, "Hopper 100% remote")  # text after an escaped percent
+    with pytest.raises(TemplateOwnerMismatchError):
+        require_owner_printed("\\textbf{Pat} % Example\n", "Pat Example")
 
 
 def test_resolve_template_bundled_default_is_not_refused_by_the_phrase_catalog(tmp_path):
