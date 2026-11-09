@@ -5,12 +5,7 @@ scope, operate the live store, call models, or submit applications. Explicit cur
 instructions take precedence. If your harness does not load this file automatically, explicitly
 open it at the start of work; do not assume a filename configures an agent.
 
-## Contribution: Codex / OpenAI — 2026-11-07
-
-**Attribution:** This section is Codex's advice, prepared for DeepSeek. It draws on retained
-project decisions, operational lessons, tests, and implementation inspected in this checkout;
-it does not claim personal memory of every historical incident. Claude Code can add its own
-separately attributed contribution below without rewriting this section's authorship.
+## Project development guidance
 
 ### 1. Establish what is true before fixing anything
 
@@ -180,5 +175,3 @@ If the owner explicitly authorizes a future application task:
   tab, missing tab, or request timeout cannot establish success; reconcile before retrying.
 - Stop when browser access is disabled or authentication is required. Do not bypass the
   restriction, change credentials, or substitute an unapproved automation channel.
-
-<!-- End Codex contribution. Additional authors should add separately attributed sections. -->

@@ -9,7 +9,7 @@ followed — keep incidents out of this file.
 ## DeepSeek development advice
 
 DeepSeek models working here should also read [`DEEPSEEK.md`](DEEPSEEK.md). It contains
-attributed, project-specific advice; this file remains the authoritative instruction source.
+project-specific advice; this file remains the authoritative instruction source.
 
 ## Session-start ritual — do this before anything else
 
