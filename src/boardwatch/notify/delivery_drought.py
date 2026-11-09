@@ -23,7 +23,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.engine import Engine
 
-from boardwatch.store.queries import RUN_OK
+from boardwatch.store.queries import RUN_OK, run_kind
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import artifacts, eligibility_evaluations, runs
 
@@ -38,8 +38,9 @@ def check_delivery_drought(engine: Engine, *, window: int = DELIVERY_DROUGHT_WIN
     """Return a soft-alert string when the last `window` clean runs each judged a candidate
     yet delivered nothing, else ``None``.
 
-    Only `status = 'ok'` runs count, newest first — a crashed or in-flight run carries no
-    delivery signal. Fewer than `window` clean runs of history abstains rather than firing on
+    Only successful, non-incremental delivery runs count, newest first — a crashed or
+    in-flight run carries no delivery signal. Fewer than `window` clean runs of history abstains
+    rather than firing on
     a fresh store, mirroring the intake-death detector.
     """
     with engine.connect() as conn:
@@ -47,7 +48,10 @@ def check_delivery_drought(engine: Engine, *, window: int = DELIVERY_DROUGHT_WIN
             int(rid)
             for (rid,) in conn.execute(
                 select(runs.c.id)
-                .where(runs.c.status == RUN_OK, runs.c.incremental.is_(False))
+                .where(
+                    runs.c.status == RUN_OK, runs.c.incremental.is_(False),
+                    run_kind() == "delivery",
+                )
                 .order_by(runs.c.id.desc())
                 .limit(window)
             ).all()

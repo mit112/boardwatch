@@ -42,7 +42,7 @@ from boardwatch.notify.apply_lane_drought import (
     check_apply_lane_drought,
 )
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.queries import RUN_OK, save_profile
+from boardwatch.store.queries import RUN_KIND_PREFIX, RUN_OK, save_profile, set_state
 from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
 from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
@@ -168,6 +168,7 @@ def _run(
     silent_lane: int = 0,
     closed: int = 0,
     status: str = RUN_OK,
+    kind: str | None = "delivery",
 ) -> int:
     """One run plus the leads it delivered, split by the lane each will classify into.
 
@@ -181,6 +182,8 @@ def _run(
                 )
             ).inserted_primary_key[0]
         )
+        if kind is not None:
+            set_state(conn, f"{RUN_KIND_PREFIX}{run_id}", kind)
         for _ in range(apply_lane):
             _lead(conn, run_id=run_id, locations=APPLY_LOCATION)
         for _ in range(review_lane):
@@ -498,3 +501,43 @@ def test_incremental_delivery_does_not_hide_a_nightly_apply_lane_drought(engine:
     extra = _run(engine, apply_lane=2)
     _mark(engine, extra)
     assert check_apply_lane_drought(engine, window=3, min_placeable=1) is not None
+
+
+@pytest.mark.parametrize("kind", ["maintenance", "scan", None, "unsupported"])
+def test_non_delivery_cannot_dilute_an_apply_lane_drought(
+    engine: Engine, kind: str | None,
+) -> None:
+    ids = [_run(engine, review_lane=2) for _ in range(3)]
+    _run(engine, apply_lane=1, kind=kind)
+    alert = check_apply_lane_drought(engine, min_placeable=1)
+    assert alert is not None
+    assert "runs " + ", ".join(str(rid) for rid in reversed(ids)) + ")" in alert
+
+
+@pytest.mark.parametrize("kind", ["maintenance", "scan", None, "unsupported"])
+def test_non_delivery_cannot_manufacture_an_apply_lane_drought(
+    engine: Engine, kind: str | None,
+) -> None:
+    for _ in range(3):
+        _run(engine, review_lane=2, kind=kind)
+    assert check_apply_lane_drought(engine, min_placeable=1) is None
+
+
+def test_population_window_grows_across_deliveries_only(engine: Engine) -> None:
+    ids = []
+    for _ in range(3):
+        ids.append(_run(engine, review_lane=2))
+        _run(engine, apply_lane=1, kind="maintenance")
+    alert = check_apply_lane_drought(engine, window=2, max_window=3, min_placeable=6)
+    assert alert is not None
+    assert "0 of 6 placeable" in alert
+    assert "runs " + ", ".join(str(rid) for rid in reversed(ids)) + ")" in alert
+
+
+def test_historical_corpus_evidence_counts_for_apply_lane_drought(engine: Engine) -> None:
+    from sqlalchemy import update
+    for _ in range(3):
+        rid = _run(engine, review_lane=2, kind=None)
+        with engine.begin() as conn:
+            conn.execute(update(runs).where(runs.c.id == rid).values(corpus_open=0))
+    assert check_apply_lane_drought(engine, min_placeable=1) is not None
