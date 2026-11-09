@@ -545,7 +545,8 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
   healthy corpus. `tests/unit/test_liveness_prober.py` is the only module driving the real `Fetcher` — its two
   redirect cases are the sole coverage; do not delete them as duplicates.
 - **A `Liveness` verdict must be the one its signal carries** (D-113) — `dead` is reachable through
-  `refetch_gone`, `workday_unposted` (D-647) and `oracle_unposted` (D-648), and nothing else. **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111);
+  `refetch_gone`, `workday_unposted` (D-647), `oracle_unposted` (D-648), `linkedin_closed` (D-653) and the
+  three D-684 signals (`smartrecruiters_inactive`, `eightfold_unposted`, `adp_unposted`), and nothing else. **An unprobed run reports liveness as UNMEASURED, never 0 dead** (D-111);
   `run --no-check-liveness` opts out.
 - **What the URL probe can close, per host, measured 2026-10-27** (each against a known-closed AND a known-open
   control): Workday through its CXS endpoint, 80/80 and 0 false deaths in 76 (D-647); Oracle HCM through its
@@ -553,6 +554,14 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
   768 unwatched amazon rows had never been probed (T284). Eightfold's page answers 200 either way and its
   `og:title` split 80/80 on two tenants only, so it is not a signal yet (T285). A LinkedIn job page almost never
   answers gone, which is why `linkedin` rows with a LinkedIn URL are probed last.
+  **Superseded in part by D-684 (2026-11-09):** Eightfold's `position_details` 404 `Position not found` split 10/10
+  closed from 9/9 open on six tenants, SmartRecruiters' API `active: false` read 7 of 11 closed and 0 of 8 open on
+  six, and ADP's requisition resource split 6/6 from 6/6 on two tenants (the ADP page is one shell). **Open item,
+  Dayforce: no rule.** Its page carries "no longer accepting applications" in the i18n store of every page, open ones
+  included, its only closed store row reads as open, and no public listing was found to build controls; the next
+  attempt needs a tenant listing API and 3 closed + 3 open from 2 tenants. ADP `ccId`s other than
+  `19000101_000001`, `workforcenow.cloud.adp.com` and `recruiting.adp.com/RTI.home` rows keep the page probe.
+  Evidence matrix: `tests/unit/provider_liveness_controls/*.json`.
 - **Applied state is read from `applications`, never mirrored into the ledger** (D-111). `interested` does not
   suppress (it is `track add`'s default); `withdrawn` is the drain.
 - **Only a deterministic refusal earns a permanent `skipped`** (D-110). `DETERMINISTIC_GATE_REFUSALS` is the

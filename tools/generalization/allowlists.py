@@ -691,6 +691,28 @@ SHIPPED_DATA.update(
     }
 )
 
+# D-684: the captured controls behind the SmartRecruiters, Eightfold and ADP liveness rules. Each
+# file holds the trimmed bodies of public, unauthenticated responses with the oracle that classed
+# the posting; no employer text beyond a title, and no personal data.
+_LIVENESS_CONTROLS = (
+    "Trimmed captures of public provider responses for postings whose open/closed state an "
+    "independent oracle knew, used by the liveness control tests (D-684)"
+)
+SHIPPED_DATA.update(
+    {
+        f"tests/unit/provider_liveness_controls/{name}.json": DataEntry(
+            kind="fixture",
+            reason=_LIVENESS_CONTROLS,
+            pin=f"sha256:{digest}",
+        )
+        for name, digest in {
+            "adp": "3a3f5ad5866081d5d0be5e311e69532b1d3e56015b4d7bebe277fd211a95feca",
+            "eightfold": "e7cbcd4e1fe28a41eed7920e88bfc185e5961d782f597e755c13ba030e2142bd",
+            "smartrecruiters": "a0c9328388d8f48d81c8b267160896be011393b97206624566c20efc926d035d",
+        }.items()
+    }
+)
+
 # The designation "the company registry" is bound to a literal path, not to a label a
 # contributor picks, so a second bulk list cannot inherit the designation by relabelling.
 # A second list CAN still be admitted under a different kind (a pinned first-party "corpus",

@@ -149,8 +149,19 @@ from boardwatch.store.tables import companies, postings, runs
 # `workday_unposted` is the CXS 403/S22 answer; a Workday 404 there is already `refetch_gone`.
 # `oracle_unposted` is an Oracle HCM detail resource answering an empty `items` (D-648).
 # `linkedin_closed` is LinkedIn's guest top card marked closed (D-653).
+# `smartrecruiters_inactive`, `eightfold_unposted` and `adp_unposted` are the three D-684 added,
+# each read from the provider's own resource for the EXACT posting; the close below is still by
+# `postings.id` alone, so a sibling posting of the same job is never touched.
 CLOSING_SIGNALS: frozenset[str] = frozenset(
-    {"refetch_gone", "workday_unposted", "oracle_unposted", "linkedin_closed"}
+    {
+        "refetch_gone",
+        "workday_unposted",
+        "oracle_unposted",
+        "linkedin_closed",
+        "smartrecruiters_inactive",
+        "eightfold_unposted",
+        "adp_unposted",
+    }
 )
 
 # T89. The closed catalog of providers whose whole board is readable in ONE request, with the

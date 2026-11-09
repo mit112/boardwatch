@@ -29,6 +29,7 @@ import json
 from datetime import timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import Engine, insert, select, update
 
 from boardwatch.core.clock import utcnow
@@ -133,12 +134,14 @@ def _posting(
     url: str | None = "https://boards.example.test/j/1",
     status: str = "open",
     death_strikes: int = 0,
+    job_id: int | None = None,
 ) -> int:
     now = utcnow()
     with engine.begin() as conn:
-        job_id = int(
-            conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
-        )
+        if job_id is None:
+            job_id = int(
+                conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
+            )
         return int(
             conn.execute(
                 insert(tables.postings).values(
@@ -316,6 +319,65 @@ def test_two_oracle_unposted_answers_in_different_runs_close_the_posting(
     assert report.closed == 1
     assert _row(engine, posting_id)[:2] == ("closed", 2)
     assert _events(engine, posting_id) == ["closed"]
+
+
+@pytest.mark.parametrize(
+    "signal", ["smartrecruiters_inactive", "eightfold_unposted", "adp_unposted"]
+)
+def test_two_provider_resource_deaths_in_different_runs_close_the_posting(
+    tmp_path: Path, signal: str
+) -> None:
+    """D-684: each new signal strikes exactly like the older ones, one per run."""
+
+    def dead(posting_id: int, url: str) -> Liveness:
+        return Liveness(posting_id=posting_id, verdict="dead", signal=signal, detail="x")
+
+    engine = _store(tmp_path)
+    posting_id = _posting(engine, _company(engine, slug="acme", watched=False))
+
+    first = _sweep(engine, dead)
+    assert first.gone == 1
+    assert _row(engine, posting_id) == ("open", 1, None)
+    _age_the_probe(engine)
+    report = _sweep(engine, dead)
+
+    assert report.closed == 1
+    assert _row(engine, posting_id)[:2] == ("closed", 2)
+    assert _events(engine, posting_id) == ["closed"]
+
+
+@pytest.mark.parametrize(
+    "signal", ["smartrecruiters_inactive", "eightfold_unposted", "adp_unposted"]
+)
+def test_a_dead_url_closes_that_posting_and_never_its_siblings(
+    tmp_path: Path, signal: str
+) -> None:
+    """One job, three open postings at three URLs. Only the URL the resource called dead is
+    closed; each sibling is asked on its own URL and stays open while that says alive. Closing by
+    `job_id` would retire live requisitions on one source's say-so (the BeaconFire case: three
+    open records, one closure signal)."""
+    engine = _store(tmp_path)
+    company = _company(engine, slug="acme", watched=False)
+    with engine.begin() as conn:
+        job_id = int(
+            conn.execute(insert(tables.jobs).values(created_at=utcnow())).inserted_primary_key[0]
+        )
+    dead_id = _posting(engine, company, pid="p-dead", url="https://x.test/dead", job_id=job_id)
+    live_id = _posting(engine, company, pid="p-live", url="https://x.test/live", job_id=job_id)
+    other_live_id = _posting(engine, company, pid="p-other", url="https://x.test/o", job_id=job_id)
+
+    def answer(posting_id: int, url: str) -> Liveness:
+        if url.endswith("/dead"):
+            return Liveness(posting_id=posting_id, verdict="dead", signal=signal, detail="x")
+        return _alive(posting_id, url)
+
+    _sweep(engine, answer)
+    _age_the_probe(engine)
+    _sweep(engine, answer)
+
+    statuses = {i: _row(engine, i)[0] for i in (dead_id, live_id, other_live_id)}
+    assert statuses == {dead_id: "closed", live_id: "open", other_live_id: "open"}
+    assert _events(engine, live_id) == [] and _events(engine, other_live_id) == []
 
 
 def _linkedin_closed(posting_id: int, url: str) -> Liveness:
