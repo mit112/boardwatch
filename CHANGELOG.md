@@ -11,8 +11,8 @@ All notable changes to this project are documented here. The format follows
 - **An account-wall host can be named in the routing config, so "Apply by hand" says why (D-687).** A new
   `account_wall_hosts` list in `apply-routes.toml` routes a matching host by hand (the route it already had as the
   fallback) and the queue row shows `needs an account on <host>`. A host listed in both the wall list and
-  `auto_hosts`/`unresolved_hosts` is refused at load, naming the host. No host name is shipped; the list is the
-  owner's config.
+  `auto_hosts`/`unresolved_hosts` is refused at load, naming the host. No entry from the owner's list is shipped; the list is his
+  config.
 
 - **The queue refresh reads "which boards ever completed a scan" from an index (D-686).** `board_scans` gains
   `ix_board_scans_status_company (status, company_id)`, created by the next `boardwatch run` or `boardwatch init`

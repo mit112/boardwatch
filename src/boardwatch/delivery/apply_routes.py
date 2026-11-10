@@ -57,18 +57,23 @@ class ApplyRoutesConfig(BaseModel):
 
     @model_validator(mode="after")
     def _one_answer_per_host(self) -> ApplyRoutesConfig:
-        """A host that is both fillable and walled is a config typo, not a preference to rank.
+        """One host, one answer. A host listed as both walled and fillable is an ambiguity.
 
-        `auto_hosts` and `unresolved_hosts` are both read BEFORE the wall list, so a host listed
-        beside either of them would never reach the wall branch: its entry would be dead config
-        whose only effect is a reason nobody sees. Refuse it at load, naming the host.
+        The two readers would not agree about such a config: `route()` reads the wall list first,
+        so the lead resolves as a wall and the other list's entry is dead; `is_direct_auto()` reads
+        only the fill list, so the same lead still counts as a direct auto in the slate share. The
+        overlap is therefore refused at load, naming the host, rather than ranked.
         """
         pairs = (("auto_hosts", self.auto_hosts), ("unresolved_hosts", self.unresolved_hosts))
         for name, other in pairs:
-            clashes = sorted(set(self.account_wall_hosts) & set(other))
+            clashes = sorted(
+                wall
+                for wall in self.account_wall_hosts
+                if any(_covers(wall, entry) for entry in other)
+            )
             if clashes:
                 raise ValueError(
-                    f"account_wall_hosts lists {', '.join(clashes)}, which {name} also lists; "
+                    f"account_wall_hosts lists {', '.join(clashes)}, which {name} also covers; "
                     "a host has one route"
                 )
         return self
@@ -93,7 +98,10 @@ class ApplyRoutes:
         if apply_url is None or host is None:
             return ApplyRoute.UNRESOLVED
         # A walled host is by hand whatever the link ledgers say: the wall is a property of the
-        # employer's form, not of the check. Validation keeps this list clear of the two below.
+        # employer's form, not of the check. Most wall hosts would land on the final `HAND` anyway;
+        # this branch is what makes them HAND when the link also carries an embedding marker (the
+        # one case where the marker branch below would answer UNRESOLVED). Validation keeps the
+        # list clear of the two branches that follow.
         if _matches(host, config.account_wall_hosts):
             return ApplyRoute.HAND
         if _matches(host, config.unresolved_hosts):
@@ -154,6 +162,15 @@ def _host(url: str | None) -> str | None:
 
 def _matches(host: str, hosts: Iterable[str]) -> bool:
     return any(host == entry or host.endswith(f".{entry}") for entry in hosts)
+
+
+def _covers(a: str, b: str) -> bool:
+    """One config entry answers for the other's host: equal, or either is the other's suffix.
+
+    `_matches` only knows host-in-list, so an overlap between two LISTS has to be asked both ways:
+    `careers.example.com` and `example.com` are one host's territory whichever list each is in.
+    """
+    return a == b or a.endswith(f".{b}") or b.endswith(f".{a}")
 
 
 def _read_ledger(path: Path) -> dict[str, object]:
