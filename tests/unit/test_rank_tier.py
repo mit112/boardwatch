@@ -36,6 +36,8 @@ def tier_of(
 
 def test_an_entry_marked_in_field_title_is_tier_zero_whatever_its_verdict() -> None:
     assert tier_of("Software Engineer, New Grad") == 0
+    assert tier_of("Software Engineer, New Grad", eligible=True) == 0
+    assert tier_of("Software Engineer, New Grad", uncertain=True) == 0
     assert tier_of(body_marked=True) == 0
 
 
