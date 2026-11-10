@@ -211,6 +211,14 @@ export function QueueRowItem({
               {applicationSite(row.apply_url) === null ? null : (
                 <span title={`Application site: ${row.apply_url ?? ""}`}>{applicationSite(row.apply_url)}</span>
               )}
+              {/* Why this one is by hand, when the owner's routing config can say. The route is
+                  already the answer (this row is in the "Apply by hand" list); the reason stops the
+                  reader having to open the form to find out what stands in the way. */}
+              {row.apply_route_reason == null ? null : (
+                <span title="Your routing config lists this employer's form as needing an account.">
+                  {row.apply_route_reason}
+                </span>
+              )}
               {similar === undefined ? null : (
                 <span title="Postings at this company with the same title once formatting is ignored. They may be one job in several places or separate openings; each stays listed.">
                   {describeGroup(similar)}

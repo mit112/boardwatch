@@ -21,7 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 CONFIG_FILENAME = "apply-routes.toml"
 
@@ -46,10 +46,32 @@ class ApplyRoutesConfig(BaseModel):
     unresolved_url_markers: tuple[str, ...] = ()
     # The `unresolved_hosts` with a fillable form of their own, used when no employer link exists.
     native_fill_hosts: tuple[str, ...] = ()
+    # Hosts whose application sits behind an account wall (a Workday tenant, a talent portal, an
+    # employer careers site). They are applied to by hand like any other `hand` host; listing them
+    # buys a reason the viewer can show and a conflict the loader refuses.
+    account_wall_hosts: tuple[str, ...] = ()
     # JSON files, `{"<posting_id>": {"company_status": "..."}}`, recording each link check.
     link_ledgers: tuple[Path, ...] = ()
     # The `company_status` values meaning the check finished and found no employer link.
     no_employer_statuses: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _one_answer_per_host(self) -> ApplyRoutesConfig:
+        """A host that is both fillable and walled is a config typo, not a preference to rank.
+
+        `auto_hosts` and `unresolved_hosts` are both read BEFORE the wall list, so a host listed
+        beside either of them would never reach the wall branch: its entry would be dead config
+        whose only effect is a reason nobody sees. Refuse it at load, naming the host.
+        """
+        pairs = (("auto_hosts", self.auto_hosts), ("unresolved_hosts", self.unresolved_hosts))
+        for name, other in pairs:
+            clashes = sorted(set(self.account_wall_hosts) & set(other))
+            if clashes:
+                raise ValueError(
+                    f"account_wall_hosts lists {', '.join(clashes)}, which {name} also lists; "
+                    "a host has one route"
+                )
+        return self
 
 
 @dataclass(frozen=True)
@@ -70,6 +92,10 @@ class ApplyRoutes:
         # No usable link is not evidence of a form to fill by hand.
         if apply_url is None or host is None:
             return ApplyRoute.UNRESOLVED
+        # A walled host is by hand whatever the link ledgers say: the wall is a property of the
+        # employer's form, not of the check. Validation keeps this list clear of the two below.
+        if _matches(host, config.account_wall_hosts):
+            return ApplyRoute.HAND
         if _matches(host, config.unresolved_hosts):
             if self.link_status.get(posting_id) not in config.no_employer_statuses:
                 return ApplyRoute.UNRESOLVED
@@ -82,6 +108,22 @@ class ApplyRoutes:
             finished = self.link_status.get(posting_id) in config.no_employer_statuses
             return ApplyRoute.HAND if finished else ApplyRoute.UNRESOLVED
         return ApplyRoute.HAND
+
+    def account_wall_host(self, *, apply_url: str | None) -> str | None:
+        """The configured entry a walled host matches, or None. It is what the reason names."""
+        config = self.config
+        host = _host(apply_url)
+        if config is None or host is None:
+            return None
+        for entry in config.account_wall_hosts:
+            if _matches(host, (entry,)):
+                return entry
+        return None
+
+    def reason(self, *, posting_id: int, apply_url: str | None) -> str | None:
+        """Why this lead is by hand, when the config knows a reason. `None` is "no reason known"."""
+        wall = self.account_wall_host(apply_url=apply_url)
+        return None if wall is None else f"needs an account on {wall}"
 
     def is_direct_auto(self, apply_url: str | None) -> bool:
         """True only when the link itself goes straight to a form the fill tool handles.
