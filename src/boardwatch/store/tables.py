@@ -226,6 +226,10 @@ board_scans = Table(
         "status IN ('complete', 'partial', 'failed', 'unchanged')", name="status_enum"
     ),
     CheckConstraint("scan_kind IN ('board', 'lane')", name="scan_kind_enum"),
+    # Answers "which companies have ever completed a scan" (`delivery_queries._board_ever_complete`)
+    # from the index alone. Without it that read walks every row of the table and sorts them, and
+    # the queue refresh issues it once per lead (D-686).
+    Index("ix_board_scans_status_company", "status", "company_id"),
 )
 
 posting_events = Table(

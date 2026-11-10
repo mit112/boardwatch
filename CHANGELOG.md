@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The queue refresh reads "which boards ever completed a scan" from an index (D-686).** `board_scans` gains
+  `ix_board_scans_status_company (status, company_id)`, created by the next `boardwatch run` or `boardwatch init`
+  (additive, about 11 s on the live store, safe to retry). The refresh asked that question once per lead and each ask scanned all
+  476,261 rows; on paired clones of the live store the refresh went from about 120 s to about 56 s with an identical queue tree.
+  Nothing else changes, and a viewer on old code or an unmigrated store behaves as before.
+
 - **`tailor run` refuses a résumé whose file name would not match the name the page prints (T268, 2026-09-28).** The
   file name and the PDF's Title/Author come from `answers.yaml`'s `identity.full_name`, else `resume.yaml`'s first
   `header` line; the page prints `resume_template.tex`'s header. A test run shipped `Ada_Lovelace_*.pdf` headed
