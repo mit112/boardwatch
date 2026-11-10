@@ -29,6 +29,7 @@ def lead(
     posting_id: int = 7,
     *,
     score: float = 0.5,
+    tier: int = 3,
     apply_url: str | None = "https://example.test/apply",
     pdf_path: str | None = "/out/2026-08-07/acme-7/resume.pdf",
     evidence_kind: str | None = "quote",
@@ -41,6 +42,7 @@ def lead(
         company="Acme",
         board="greenhouse:acme",
         score=score,
+        tier=tier,
         why="skills match: Python, Go",
         verdict_label=verdict_label,
         apply_url=apply_url,
@@ -48,6 +50,21 @@ def lead(
         evidence_kind=evidence_kind,
         evidence_text=evidence_text,
     )
+
+
+def test_build_morning_puts_the_rankers_tier_before_score() -> None:
+    """A new-grad role the ranker put first must not be listed under an off-target lead that
+    merely scored higher (run 1016: tier 0 at 0.469 was shown 39th of 40)."""
+    off_target = lead(posting_id=1, score=0.74, tier=3)
+    new_grad = lead(posting_id=2, score=0.47, tier=0)
+    eligible = lead(posting_id=3, score=0.60, tier=1)
+
+    artifact = build_morning(
+        run_id=42, funnel_name="funnel-42.md", leads=[off_target, new_grad, eligible]
+    )
+
+    assert [lead.posting_id for lead in artifact.leads] == [2, 3, 1]
+    assert [row["tier"] for row in morning_to_dict(artifact)["leads"]] == [0, 1, 3]
 
 
 def test_build_morning_ranks_by_score_descending() -> None:
@@ -258,7 +275,7 @@ def test_the_lead_count_belongs_to_leads_not_to_discovery_reach() -> None:
     )
     lines = rendered.splitlines()
 
-    assert lines.index("## Leads") < lines.index("1 lead(s) tailored this run, ranked by score.")
+    assert lines.index("## Leads") < lines.index("1 lead(s) tailored this run, ranked by tier, then score.")
     assert lines.index("## Discovery reach") < lines.index("## Leads")
 
 
