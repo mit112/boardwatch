@@ -302,9 +302,10 @@ no_employer_statuses = ["none"]
 
 The `account_wall_hosts` row answers before every other row in the table above, because a wall is a
 property of the employer's form rather than of the link check: a walled host with an unresolved
-`gh_jid=` fragment is still by hand. A host you list in two of the three host lists is refused at load,
-naming the host, since the route and the slate's direct share would otherwise answer differently about
-the same lead.
+`gh_jid=` fragment is still by hand. A host you list in `account_wall_hosts` and also in `auto_hosts`
+or `unresolved_hosts` (including a subdomain of the other list's entry) is refused at load, naming the
+host: the wall answers first, so the other entry would be dead config, and for an `auto_hosts` overlap
+the slate's direct share would still count the lead as a direct auto.
 
 A job you moved to Apply by hand stays there whatever its link. An unreadable ledger leaves its jobs under Link not
 resolved, and the page names the file. Do not list a closed posting in `no_employer_statuses`: use a separate status

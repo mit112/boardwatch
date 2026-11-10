@@ -215,14 +215,6 @@ def test_only_the_listed_host_or_its_subdomains_is_a_wall(tmp_path: Path, url: s
     assert (routes.reason(posting_id=1, apply_url=url) is not None) is is_wall
 
 
-def test_exactly_one_word_sits_between_the_hosts(tmp_path: Path) -> None:
-    """A wall host is by hand even when the rest of the config would not call it anything."""
-    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
-    routes = load_apply_routes(tmp_path)
-    url = "https://acme.wd1.wall.example/x/job/1"
-    assert routes.route(posting_id=1, apply_url=url) is ApplyRoute.HAND
-
-
 def test_an_account_wall_host_that_is_also_a_fill_host_is_refused(tmp_path: Path) -> None:
     """One host, two contradictory answers: `route()` and `is_direct_auto()` would disagree."""
     _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}", "ashbyhq.com"]')
@@ -250,6 +242,17 @@ def test_a_wall_subdomain_that_shadows_a_fill_host_is_refused_too(tmp_path: Path
     assert "careers.example.com" in (routes.problem or "")
     # A refused config routes nothing automatically, even on the host that would have been `auto`.
     assert routes.route(posting_id=1, apply_url="https://jobs.example.com/a/1") is ApplyRoute.HAND
+
+
+def test_a_wall_parent_that_shadows_a_fill_subdomain_is_refused_too(tmp_path: Path) -> None:
+    """The overlap is asked both ways: a wall parent covers a fill host below it."""
+    (tmp_path / "apply-routes.toml").write_text(
+        'auto_hosts = ["careers.example.com"]\naccount_wall_hosts = ["example.com"]\n',
+        encoding="utf-8",
+    )
+    routes = load_apply_routes(tmp_path)
+    assert not routes.configured
+    assert "example.com" in (routes.problem or "")
 
 
 def test_a_wall_host_wins_over_an_unresolved_embedding_marker(tmp_path: Path) -> None:

@@ -59,10 +59,11 @@ class ApplyRoutesConfig(BaseModel):
     def _one_answer_per_host(self) -> ApplyRoutesConfig:
         """One host, one answer. A host listed as both walled and fillable is an ambiguity.
 
-        The two readers would not agree about such a config: `route()` reads the wall list first,
-        so the lead resolves as a wall and the other list's entry is dead; `is_direct_auto()` reads
-        only the fill list, so the same lead still counts as a direct auto in the slate share. The
-        overlap is therefore refused at load, naming the host, rather than ranked.
+        `route()` reads the wall list first, so on either overlap the wall wins and the other list's
+        entry is dead config. An `auto_hosts` overlap carries a second disagreement:
+        `is_direct_auto()` reads only the fill list, so the slate's direct share would still count
+        that lead as a direct auto. The overlap is refused at load, naming the host, rather than
+        ranked.
         """
         pairs = (("auto_hosts", self.auto_hosts), ("unresolved_hosts", self.unresolved_hosts))
         for name, other in pairs:

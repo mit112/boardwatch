@@ -22,8 +22,8 @@ function renderRow(overrides = {}) {
 
 describe("the reason a lead is by hand", () => {
   it("shows the account wall the config named", () => {
-    renderRow({ apply_route: "hand", apply_route_reason: "needs an account on myworkdayjobs.com" });
-    screen.getByText("needs an account on myworkdayjobs.com");
+    renderRow({ apply_route: "hand", apply_route_reason: "needs an account on wall.example" });
+    screen.getByText("needs an account on wall.example");
   });
 
   it("shows nothing when the config knows no reason", () => {

@@ -36091,28 +36091,32 @@ being discovered when a session opened the form.
 through the fallback) and the row carries `apply_route_reason` — `needs an account on <host>` — which the queue row renders as text.
 The list is checked before the link-ledger branches, because the wall is a property of the employer's form rather than of the check.
 A config that names one host in both `account_wall_hosts` and `auto_hosts` or `unresolved_hosts` — including a subdomain of the other
-list's entry — is refused at load, naming the host. The reason is that the two readers would disagree: `route()` reads the wall list
-first, so the lead would resolve as a wall and the other list's entry would be dead, while `is_direct_auto()` reads only the fill list
+list's entry — is refused at load, naming the host. `route()` reads the wall list first, so on either overlap the wall wins and the
+other entry is dead config; an `auto_hosts` overlap also splits the two readers, because `is_direct_auto()` reads only the fill list
 and would still count that lead as a direct auto in the slate share. One host, one answer.
 
 **Measured (read-only; the replay is in the private ops repo).** Host level, the rule "≥3 account-wall entries and ≥90% of that
-host's entries" over the 495 gives 18 hosts. At ATS-family level it would give 5, and would route tenants that do allow a guest
-application (`myworkdayjobs.com` 91/126 = 72%, `icims.com` 70%, `oraclecloud.com` 89%), so the list stays per host: the same rule at
-family level is what the plan warned against. Replay over every entry with a recorded delivery: **273/365 (75%) of the wall leads are
-already routed by hand by the current config, and the proposed list leaves that at 273/365** — it adds the reason, not a route. The
-other 92 are 86 unresolved aggregator links (jobright 50, LinkedIn 15, Indeed 12, Recruitics 6, Appcast 3) plus four unresolved
-employer hosts and one fillable board with a single walled posting: their wall sits behind a link that has not been resolved, which is
-the link writer's problem, not a host list's. **None of the wall leads that would be routed by hand carries an application on record
+host's entries" over the 495 gives 18 hosts. The same rule at ATS-family level gives 5 families (`adp.com`, `brassring.com`,
+`myworkdaysite.com`, `tcsapps.com`, `ultipro.com`), while the families that mix walled and guest-apply tenants fall below the bar and
+would be dropped (`myworkdayjobs.com` 91/126 = 72%, `icims.com` 70%, `oraclecloud.com` 89%) — a family list is both coarser (it
+routes every tenant of a qualifying family) and lossier (the walled hosts inside a mixed family are lost), which is why the list
+stays per host. Replay over every entry with a recorded delivery: **273/365 (75%) of the wall leads are already routed by hand by
+the current config, and the proposed list leaves that at 273/365** — it adds the reason, not a route, and the reason reaches only
+**63 of the 365 wall leads (17.3%)** on their delivered links: the other 210 by-hand wall leads sit on hosts the rule excluded, so
+they are explained no better than before. The other 92 are 86 unresolved aggregator links (jobright 50, LinkedIn 15, Indeed 12,
+Recruitics 6, Appcast 3) plus five entries on four unresolved employer hosts and one fillable board with a single walled posting:
+their wall sits behind a link that has not been resolved, which is the link writer's problem, not a host list's. **None of the wall leads that would be routed by hand carries an application on record
 (0, target 0).** One wall-classified lead does carry one — posting 668952, on an unresolved jobright link that is not routed by hand —
 so the claim is about the by-hand set, not about every wall-classified entry. The 14-day window holds 2 entries, none of them
 wall-classified, so the replay is reported over the full list.
 
 **Rejected.** *An `ACCOUNT_WALL` route value of its own.* The viewer's lens, its counts, the slate and the folder tree all ask
 "is this hand", and a fourth value would make every one of them answer the question twice; the route stays `HAND` and the reason is an
-annotation. *Routing by ATS family* (`*.myworkdayjobs.com` as one host): the numbers above show it over-routes tenants that do not wall
-their form. *Deriving the list in code* from `manual_apply.json`: that file is the owner's private data and boardwatch never reads it.
+annotation. *Routing by ATS family* (`*.myworkdayjobs.com` as one host): the rule at family level lists 5 families and drops the mixed ones,
+so it is coarser for the first and lossier for the second — the host-level list is what the plan asked for. *Deriving the list in code* from `manual_apply.json`: that file is the owner's private data and boardwatch never reads it.
 *Letting a host appear in two lists and ranking one*: a silent pick is the failure mode the loader exists to prevent.
 
-**Not done.** The list itself is the owner's config, not the repo's: the proposed block is in the private ops repo and no entry
-from it is committed. The tests use `wall.example`. Nothing routes a lead whose wall is behind an unresolved aggregator link; that is the
+**Not done.** The list itself is the owner's config, not the repo's: the proposed block is in the private ops repo, and this
+change adds no entry from it (eight of its host names already occur in the repo in provider code and tests, so they are not all
+private facts). The tests use `wall.example`. Nothing routes a lead whose wall is behind an unresolved aggregator link; that is the
 link writer's work. The 80% target in the plan is not met at 75%, and the gap is entirely those unresolved links.
