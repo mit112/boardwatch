@@ -63,6 +63,8 @@ from boardwatch.tailor.coverage import CoverageReport, coverage_to_dict
 # and the funnel's `## Errors` section — which on run 131 put a real lane collapse at line
 # 1388 of a 116 KB file. Unattended, that is a channel with no receiver.
 # v4 adds `board_moves`: completed watch changes with their exact undo commands (D-669).
+# Each lead's `tier` and the tier-first order of `leads` (D-688) are an additive key inside an
+# existing block, so they did not move the version.
 ARTIFACT_VERSION = 4
 
 # How many alert lines the MARKDOWN half prints before it stops and points at the funnel.
@@ -93,6 +95,9 @@ class MorningLead:
     board: str
     score: float
     why: str
+    # The ranker's tier for this lead (`rank.leveling.rank_tier`). The list is ordered by it
+    # before score, as the slate was.
+    tier: int
     verdict_label: str
     apply_url: str | None
     pdf_path: str | None
@@ -138,10 +143,11 @@ def build_morning(
 ) -> MorningArtifact:
     """Assemble the artifact from already-built lead rows. Pure: no engine, no clock, no I/O.
 
-    Ranked by score, descending — the read order for a list the user works top to bottom. A tie
-    keeps the caller's original relative order (`sorted` is stable).
+    Ranked as the slate was: the ranker's tier first, then score descending — the read order for
+    a list the user works top to bottom. A tie keeps the caller's original relative order
+    (`sorted` is stable).
     """
-    ordered = tuple(sorted(leads, key=lambda lead: lead.score, reverse=True))
+    ordered = tuple(sorted(leads, key=lambda lead: (lead.tier, -lead.score)))
     return MorningArtifact(
         run_id=run_id,
         funnel_name=funnel_name,
@@ -176,6 +182,7 @@ def morning_to_dict(artifact: MorningArtifact) -> dict[str, object]:
                 "company": lead.company,
                 "board": lead.board,
                 "score": lead.score,
+                "tier": lead.tier,
                 "why": lead.why,
                 "verdict_label": lead.verdict_label,
                 "apply_url": lead.apply_url,
@@ -303,7 +310,7 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
     lines += [
         "## Leads",
         "",
-        f"{len(artifact.leads)} lead(s) tailored this run, ranked by score.",
+        f"{len(artifact.leads)} lead(s) tailored this run, ranked by tier, then score.",
         "",
     ]
     if not artifact.leads:
@@ -315,7 +322,7 @@ def morning_to_markdown(artifact: MorningArtifact) -> str:
             f"## {rank}. {lead.company} — {lead.title}",
             "",
             f"- **board:** {lead.board}",
-            f"- **score:** {lead.score:.3f}",
+            f"- **score:** {lead.score:.3f} (tier {lead.tier})",
             f"- **verdict:** {lead.verdict_label}",
             f"- **apply:** {_fmt_url(lead.apply_url)}",
             f"- **résumé PDF:** {_fmt_pdf(lead.pdf_path)}",

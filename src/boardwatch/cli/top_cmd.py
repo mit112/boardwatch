@@ -51,7 +51,14 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
-from boardwatch.rank.leveling import FieldTier, field_tier, load_leveling, resolve_schemes
+from boardwatch.rank.leveling import (
+    FieldTier,
+    entry_first_tier,
+    field_tier,
+    load_leveling,
+    rank_tier,
+    resolve_schemes,
+)
 from boardwatch.rank.location_gate import LocationTarget, TargetClass, location_target
 from boardwatch.rank.role_gate import (
     RoleVerdict,
@@ -1000,34 +1007,24 @@ def rank_open_postings(
     # marker, and never held: loading every open body here peaked the run at 11.9 GB. A title
     # naming one of the tier's `entry_marker_vetoes` ("intern", "co-op") earns tier 0 through no
     # marker: an internship is not a new-grad role.
-    entry_first = target_band == "entry" and tier is not None and bool(
-        tier.entry_markers or tier.entry_body_markers
-    )
+    entry_tier = entry_first_tier(target_band, tier)
     entry_body_marked = (
-        _entry_body_marked(engine, scored, version_ids, cast(FieldTier, tier))
-        if entry_first else set()
+        _entry_body_marked(engine, scored, version_ids, entry_tier)
+        if entry_tier is not None else set()
     )
 
     def _rank_tier(posting: RankedPosting) -> int:
-        entry_tier = cast(FieldTier, tier)
-        if (
-            entry_first
-            and posting.role == "in_field"
-            and not entry_tier.has_entry_veto(posting.title)
-        ):
-            if (
-                entry_tier.has_entry_marker(posting.title)
-                or posting.posting_id in entry_body_marked
-            ):
-                return 0
-        decided_eligible = (
-            posting.verdict == "eligible" or gate_verdicts.get(posting.posting_id) == "eligible"
+        return rank_tier(
+            role=posting.role,
+            title=posting.title,
+            decided_eligible=(
+                posting.verdict == "eligible"
+                or gate_verdicts.get(posting.posting_id) == "eligible"
+            ),
+            uncertain=posting.verdict == "uncertain",
+            entry_tier=entry_tier,
+            entry_body_marked=posting.posting_id in entry_body_marked,
         )
-        if decided_eligible and posting.role == "in_field":
-            return 1
-        if posting.verdict == "uncertain" and posting.role == "in_field":
-            return 2
-        return 3
 
     scored = [replace(r, tier=_rank_tier(r)) for r in scored]
     sponsor_index = _active_sponsor_index(settings, facts, output_console)

@@ -428,6 +428,8 @@ class TailoredLead:
     # from `pdf_built`: the latter is a bool the funnel already carries, this is where it is.
     why: str = ""
     score: float = 0.0
+    # The ranker's tier for this lead, so the morning artifact orders its list as the slate was.
+    tier: int = 3
     pdf_path: Path | None = None
     # P4 item 6: this lead's keyword-coverage report, carried for the morning artifact and the
     # funnel's coverage summary. None when the measurement was unavailable — never a veto.
@@ -3327,6 +3329,7 @@ def _run_pipeline_leased(
                     pdf_built=result.pdf_path is not None,
                     why=posting.why,
                     score=posting.score.total,
+                    tier=posting.tier,
                     pdf_path=result.pdf_path,
                     coverage=result.coverage,
                     degraded=result.degraded,
@@ -4654,6 +4657,7 @@ def _emit_morning(
                     company=lead.company,
                     board=board,
                     score=lead.score,
+                    tier=lead.tier,
                     why=lead.why,
                     verdict_label=(
                         audit.presentation.value if audit is not None else "no_audit_on_record"
@@ -4924,6 +4928,7 @@ def _deliver_pending_review_lead(
         pdf_built=False,
         why=posting.why,
         score=posting.score.total,
+        tier=posting.tier,
         pdf_path=None,
         coverage=None,
         degraded=False,

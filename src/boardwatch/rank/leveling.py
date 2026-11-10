@@ -162,6 +162,42 @@ def _phrases(value: object, where: str) -> tuple[str, ...]:
     return tuple(_spaced(_key(m, where)) for m in value or [])
 
 
+def entry_first_tier(target_band: str | None, tier: FieldTier | None) -> FieldTier | None:
+    """The tier whose entry markers earn rank tier 0, or `None` when nothing does: the user is
+    not targeting entry-level roles, their field ships no tier, or the tier carries no marker."""
+    if target_band != "entry" or tier is None:
+        return None
+    return tier if tier.entry_markers or tier.entry_body_markers else None
+
+
+def rank_tier(
+    *,
+    role: str,
+    title: str,
+    decided_eligible: bool,
+    uncertain: bool,
+    entry_tier: FieldTier | None,
+    entry_body_marked: bool,
+) -> int:
+    """Where a posting sorts before its score is read: 0 = entry-marked in-field title or body,
+    1 = decided `eligible` + in-field, 2 = `uncertain` + in-field, 3 = the rest.
+
+    One rule for the ranker and for every list that shows its result (D-688): a list ordered by
+    score alone puts a new-grad role below an off-target one the ranker had placed under it.
+    `entry_tier` is `entry_first_tier`'s answer; `entry_body_marked` is asked only of a row whose
+    title carried no marker.
+    """
+    in_field = role == "in_field"
+    if entry_tier is not None and in_field and not entry_tier.has_entry_veto(title):
+        if entry_tier.has_entry_marker(title) or entry_body_marked:
+            return 0
+    if decided_eligible and in_field:
+        return 1
+    if uncertain and in_field:
+        return 2
+    return 3
+
+
 def field_tier(catalog: LevelingCatalog, field: str | None) -> FieldTier | None:
     """The word tier for the user's field (their role taxonomy's), or `None` when the catalog
     has none for it — the seniority gate then abstains rather than read another field's words

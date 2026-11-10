@@ -95,6 +95,7 @@ from boardwatch.rank.heuristic import (
     profile_view_from_row,
     score_posting,
 )
+from boardwatch.rank.leveling import entry_first_tier, field_tier, load_leveling, rank_tier
 from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.sponsors import facts_need_sponsorship, load_sponsor_index
@@ -211,6 +212,9 @@ class LiveFacts:
     coverage: CoverageReport | None
     role: str
     role_reason: str
+    # The ranker's tier under today's verdicts (`rank.leveling.rank_tier`): the lists sort by it
+    # before score, so a new-grad role is not shown below an off-target one (D-688).
+    tier: int
 
 
 class PdfIssue(StrEnum):
@@ -318,8 +322,9 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     drained = len(rest) - len(open_rows)
     facts = _live_facts(conn, ctx, [*kept, *manual_rows])
 
-    def rank_key(row: QueueRow) -> tuple[bool, float]:
-        return (facts[row.posting_id].score is None, -(facts[row.posting_id].score or 0.0))
+    def rank_key(row: QueueRow) -> tuple[int, bool, float]:
+        fact = facts[row.posting_id]
+        return (fact.tier, fact.score is None, -(fact.score or 0.0))
 
     # The SAME split the folder tree uses, from the SAME call (D-332). Calling `lane_decision`
     # rather than re-deriving "is this appliable" here is the whole point: a second opinion in
@@ -863,6 +868,10 @@ def _live_facts(
     )
     profile_row = get_profile(conn)
     profile = None if profile_row is None else profile_view_from_row(profile_row)
+    entry_tier = entry_first_tier(
+        None if profile_row is None else profile_row.target_seniority_band,
+        field_tier(load_leveling(settings.config_dir), declared_field(role_taxonomy)),
+    )
     posting_ids = [row.posting_id for row in rows]
     inputs = _posting_inputs(conn, posting_ids, taxonomy_version)
     versions = current_posting_versions(conn, posting_ids)
@@ -900,6 +909,22 @@ def _live_facts(
             ),
             role=role,
             role_reason=role_reason,
+            tier=rank_tier(
+                role=role,
+                title=row.title,
+                decided_eligible="eligible" in (row.verdict, row.judge_verdict),
+                uncertain=row.verdict == "uncertain",
+                entry_tier=entry_tier,
+                # Asked of the body only when the title could not decide it, as the ranker does.
+                entry_body_marked=(
+                    entry_tier is not None
+                    and version is not None
+                    and role == "in_field"
+                    and not entry_tier.has_entry_marker(row.title)
+                    and not entry_tier.has_entry_veto(row.title)
+                    and entry_tier.has_entry_body_marker(version.body_text)
+                ),
+            ),
         )
     return facts
 

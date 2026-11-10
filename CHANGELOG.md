@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score
+  alone, so an entry-level role the ranker had placed first could be listed under an off-target lead that scored higher. Each
+  morning lead now shows its tier. No lead changes list, lane or verdict; only the order inside a list changes.
+
 - **An account-wall host can be named in the routing config, so "Apply by hand" says why (D-687).** A new
   `account_wall_hosts` list in `apply-routes.toml` routes a matching host by hand (the route it already had as the
   fallback) and the queue row shows `needs an account on <host>`. A host listed in both the wall list and
