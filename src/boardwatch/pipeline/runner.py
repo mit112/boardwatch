@@ -115,6 +115,7 @@ from boardwatch.pipeline.funnel_writer import (
     read_run_identity,
 )
 from boardwatch.pipeline.liveness import LivenessProber, asks_linkedin_guest, check_leads
+from boardwatch.pipeline.local_twin import record_local_twins
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.profile_bundle.paths import resolve_bundle_root
@@ -1687,6 +1688,32 @@ def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
     return sorted((row for row in rows if row.status != "closed"), key=rank)
 
 
+def _link_local_twins(
+    engine: Engine, shortlist_ids: Sequence[int], console: Console
+) -> list[str]:
+    """Record employer links for this slate's and the standing queue's lane leads (D-689).
+
+    Never fatal: a run that cannot write a link delivers the lead with the lane's own link, as
+    every run before this step did, and says so.
+    """
+    try:
+        with engine.begin() as conn:
+            _, standing = requisition_holder_urls(conn)
+            report = record_local_twins(
+                conn,
+                [*shortlist_ids, *standing],
+                now=utcnow(),
+                exclude_job_ids=frozenset(applied_job_ids(conn)),
+            )
+    except Exception as exc:  # a link is an improvement to a lead, never a condition of the run
+        return [f"local twins: no employer link recorded this run ({type(exc).__name__}: {exc})"]
+    console.print(
+        f"local twins: {report.written} employer link(s) recorded "
+        f"({report.considered} lane lead(s) checked, {report.company_matched} with a watched board)"
+    )
+    return []
+
+
 def _execution_inputs(
     engine: Engine, settings: Settings, posting: RankedPosting
 ) -> tuple[object, ...] | None:
@@ -2861,6 +2888,14 @@ def _run_pipeline_leased(
         summary.regrouped, regroup_errors = _regroup(engine, ranked.suppressions)
         stage_errors.extend(regroup_errors)
         summary.errors.extend(regroup_errors)
+        # D-689: after the ranker chose the slate and before admission reads each lead's link
+        # evidence, so a lane lead whose employer posting is already delivered or applied to is
+        # withheld by the requisition hold this run, and the rest are delivered with the link.
+        twin_errors = _link_local_twins(
+            engine, [posting.posting_id for posting in ranked.visible], console
+        )
+        stage_errors.extend(twin_errors)
+        summary.errors.extend(twin_errors)
         clock.mark("eligibility")
 
         # P6 item 6 — liveness, immediately before the render and after everything that decides
