@@ -367,6 +367,56 @@ The rules I would most expect a new model to break:
 8. Per-platform traps (Lever gets an answer sheet, not a pre-fill; one Indeed Apply at a time; LinkedIn
    rate limits) are listed in the job-apps skill. Read them there; do not rediscover them.
 
+### C7a. Auto-apply at scale: lessons from the first non-Claude pilot (2026-11-10)
+
+A non-Claude agent filled one Ashby form correctly and parked it at Submit. The answers were right.
+The process around them would fail at many forms a day. Each rule below comes from something that
+happened in that pilot.
+
+1. **Upload a named file, never browse for one.** The agent drove the native macOS file picker by
+   hand, and at one point the picker had another company's résumé selected. It cancelled in time.
+   Over 20 forms a day, a picker is how the wrong company's résumé gets sent. Use a tool that sets
+   the file input to an exact path (Playwright `browser_file_upload`, or the Chrome extension's
+   `file_upload`) with the file staged in `.playwright-mcp/bw-stage/`. After every upload, read back
+   the filename the form shows and confirm it contains this lead's company and posting id. If you
+   have no upload tool that takes a path, fill everything else, leave the upload empty and name it
+   in the hand-off. Do not fall back to the picker.
+2. **Get lead data from the queue API, never by scanning the live store.**
+   `GET http://127.0.0.1:8799/api/queue` with the bearer token returns the posting id, the judge
+   verdict, the PDF path and dedupe hints in one call. The pilot first spent about 15 minutes
+   running substring scans over a store of more than a million postings, all of them timing out,
+   minutes before the scheduled run. If the API lacks a field you need, say so. Do not write a
+   new store query.
+3. **Respect the scheduled-run window.** Do no store reads, builds or ledger writes from about
+   03:30 until the 04:00 run reports finished. Filling browser forms is fine. After a run or a
+   daytime pass ends, read the queue again, because it adds leads.
+4. **Batch.** One lead per session cannot reach the daily target, and the pilot took 41 minutes for
+   one form. Read the queue once, dedupe and gate every lead, build every résumé that passes, open
+   the tabs (up to 20), fill them all, then hand off ONE list. Do not ask questions mid-pass.
+5. **Dedupe on the requisition token yourself.** The queue row's `applied_identical_jd` catches
+   identical JDs only. Compare this posting's req id or URL token against every recorded application
+   and logged redirect (skill step 4). Several applications at the same company is normal. The same
+   requisition twice is not.
+6. **Check the résumé, not just the file.** Confirm the PDF has exactly one page, the right name in
+   the header, and the right company and posting id in its folder name. File size and existence
+   prove nothing.
+7. **Do not widen your own permissions.** If your harness runs commands from an allowlist, do not
+   edit the allowlist, its wrappers, or any script it calls in order to unblock yourself. Stop and
+   ask. An agent that can write the scripts it runs has no allowlist, and the owner must be able to
+   trust that the boundary holds. The same applies to the gate ledger (`jd_gate_ledger.json`): a
+   verdict you write yourself is not an independent gate.
+8. **Report your own mistakes as your own.** The pilot's log said the skill doc carried a wrong
+   auth header and token filename. Neither string exists anywhere in the job-apps repo; the agent had
+   guessed them. When something fails, check the doc before you blame it, and quote the line if you
+   do. A log the owner cannot trust has to be re-verified line by line, which costs more than the
+   fill saved.
+9. **Close the loop after the owner submits.** Run `boardwatch track add <id> --status applied`,
+   confirm the `applications` count went up by exactly the number submitted, run `reconcile_queue`,
+   and set the ledger entry to `submitted`. A parked form left as `parked` will come back as a lead.
+10. **Save new rulings the same day.** When the owner answers a question no standing answer covered
+    (pronouns, for example), add it to `profile.json` `standing_defaults`, so no later form asks it
+    again.
+
 ### C8. Working with the owner
 
 - Ask before you install a tool, write to the live store, start a paid or long model job, or fan out
