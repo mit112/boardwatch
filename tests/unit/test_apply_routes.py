@@ -182,3 +182,122 @@ def test_the_queue_without_the_file_serves_the_fresh_machine_default(
     row = next(r for r in payload["rows"] + payload["review"] if r["posting_id"] == posting)
     assert row["apply_route"] == "hand"
     assert payload["apply_routes"] == {"configured": False, "problem": None}
+
+
+# ------------------------------------------------------------------- account walls (plan 02)
+
+WALL_HOST = "wall.example"
+
+
+def test_an_account_wall_host_routes_by_hand_and_says_why(tmp_path: Path) -> None:
+    """A host the owner listed as an account wall is by hand, and the viewer can say which host."""
+    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
+    routes = load_apply_routes(tmp_path)
+    assert routes.problem is None
+    url = "https://acme.wd5.wall.example/x/job/1"
+    assert routes.route(posting_id=1, apply_url=url) is ApplyRoute.HAND
+    assert routes.reason(posting_id=1, apply_url=url) == f"needs an account on {WALL_HOST}"
+
+
+@pytest.mark.parametrize(
+    ("url", "is_wall"),
+    [
+        ("https://acme.wall.example/x/job/1", True),  # the listed host itself
+        ("https://acme.wd5.wall.example/x/job/1", True),  # a subdomain of it
+        ("https://notwall.example/x/job/1", False),  # resembling it is not being it
+        ("https://wall.example.evil.example/x", False),  # nor is it a prefix of a longer name
+        ("https://jobs.ashbyhq.com/acme/1", False),
+    ],
+)
+def test_only_the_listed_host_or_its_subdomains_is_a_wall(tmp_path: Path, url: str, is_wall: bool) -> None:
+    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
+    routes = load_apply_routes(tmp_path)
+    assert (routes.reason(posting_id=1, apply_url=url) is not None) is is_wall
+
+
+def test_an_account_wall_host_that_is_also_a_fill_host_is_refused(tmp_path: Path) -> None:
+    """One host, two contradictory answers: `route()` and `is_direct_auto()` would disagree."""
+    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}", "ashbyhq.com"]')
+    routes = load_apply_routes(tmp_path)
+    assert not routes.configured
+    assert "ashbyhq.com" in (routes.problem or "")
+
+
+def test_an_account_wall_host_that_is_also_an_unresolved_host_is_refused(tmp_path: Path) -> None:
+    """A host named as both unresolved and walled is the same ambiguity, against the other list."""
+    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}", "linkedin.com"]')
+    routes = load_apply_routes(tmp_path)
+    assert not routes.configured
+    assert "linkedin.com" in (routes.problem or "")
+
+
+def test_a_wall_subdomain_that_shadows_a_fill_host_is_refused_too(tmp_path: Path) -> None:
+    """`route()` and `is_direct_auto()` would disagree about this config, so it never loads."""
+    (tmp_path / "apply-routes.toml").write_text(
+        'auto_hosts = ["example.com"]\naccount_wall_hosts = ["careers.example.com"]\n',
+        encoding="utf-8",
+    )
+    routes = load_apply_routes(tmp_path)
+    assert not routes.configured
+    assert "careers.example.com" in (routes.problem or "")
+    # A refused config routes nothing automatically, even on the host that would have been `auto`.
+    assert routes.route(posting_id=1, apply_url="https://jobs.example.com/a/1") is ApplyRoute.HAND
+
+
+def test_a_wall_parent_that_shadows_a_fill_subdomain_is_refused_too(tmp_path: Path) -> None:
+    """The overlap is asked both ways: a wall parent covers a fill host below it."""
+    (tmp_path / "apply-routes.toml").write_text(
+        'auto_hosts = ["careers.example.com"]\naccount_wall_hosts = ["example.com"]\n',
+        encoding="utf-8",
+    )
+    routes = load_apply_routes(tmp_path)
+    assert not routes.configured
+    assert "example.com" in (routes.problem or "")
+
+
+def test_a_wall_host_wins_over_an_unresolved_embedding_marker(tmp_path: Path) -> None:
+    """Without the wall branch this URL is UNRESOLVED (an embed marker with no finished check)."""
+    _configure(tmp_path, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
+    routes = load_apply_routes(tmp_path)
+    url = f"https://acme.{WALL_HOST}/careers/1?gh_jid=9"
+    assert routes.route(posting_id=UNCHECKED, apply_url=url) is ApplyRoute.HAND
+
+
+def test_no_account_wall_list_means_no_wall_and_no_reason(tmp_path: Path) -> None:
+    _configure(tmp_path)
+    routes = load_apply_routes(tmp_path)
+    url = "https://acme.wd5.wall.example/x/job/1"
+    assert routes.route(posting_id=1, apply_url=url) is ApplyRoute.HAND
+    assert routes.reason(posting_id=1, apply_url=url) is None
+
+
+def test_the_manual_list_carries_the_reason_too(
+    served: tuple[Engine, ApiContext, Path],
+) -> None:
+    """A lead the owner moved by hand keeps the reason, so the list never reads as unexplained."""
+    engine, ctx, config_dir = served
+    walled = _deliver_on(engine, "moved-wall", f"https://acme.wd5.{WALL_HOST}/x/job/1", moved=True)
+    _configure(config_dir, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
+    with engine.connect() as conn:
+        payload = queue_payload(conn, ctx)
+    row = next(r for r in payload["manual"] if r["posting_id"] == walled)
+    assert row["apply_route"] == "hand"
+    assert row["apply_route_reason"] == f"needs an account on {WALL_HOST}"
+
+
+def test_the_queue_serves_the_reason_on_the_row_that_has_one(
+    served: tuple[Engine, ApiContext, Path],
+) -> None:
+    engine, ctx, config_dir = served
+    walled = _deliver_on(engine, "walled", f"https://acme.wd5.{WALL_HOST}/x/job/1")
+    plain = _deliver_on(engine, "plain", "https://jobs.ashbyhq.com/a/1")
+    _configure(config_dir, extra=f'account_wall_hosts = ["{WALL_HOST}"]')
+
+    with engine.connect() as conn:
+        payload = queue_payload(conn, ctx)
+
+    rows = {row["posting_id"]: row for row in payload["rows"] + payload["review"]}
+    assert rows[walled]["apply_route"] == "hand"
+    assert rows[walled]["apply_route_reason"] == f"needs an account on {WALL_HOST}"
+    assert rows[plain]["apply_route"] == "auto"
+    assert rows[plain]["apply_route_reason"] is None

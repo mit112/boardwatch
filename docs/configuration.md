@@ -277,6 +277,11 @@ unresolved_hosts = ["linkedin.com", "indeed.com", "lnkd.in"]
 unresolved_url_markers = ["gh_jid="]
 # The unresolved hosts with a fillable form of their own, used when no employer link exists.
 native_fill_hosts = ["linkedin.com"]
+# Hosts whose application sits behind an account wall (a Workday tenant, a talent portal, an
+# employer careers site). They apply by hand like any other by-hand host; listing one also gives
+# the row a reason: "needs an account on <host>". A host listed here must not also be in
+# auto_hosts or unresolved_hosts (that includes a subdomain of one), or the file is refused.
+account_wall_hosts = ["example.wd5.myworkdayjobs.com"]
 # JSON files of link checks: {"<posting_id>": {"company_status": "..."}}. On Windows, quote a path with
 # single quotes ('D:\boardwatch\link_checks.json'): inside double quotes a backslash starts an escape.
 link_ledgers = ["/path/to/link_checks.json"]
@@ -286,6 +291,7 @@ no_employer_statuses = ["none"]
 
 | The apply link | List |
 |---|---|
+| On an `account_wall_hosts` host | Apply by hand, with the reason `needs an account on <host>` |
 | On an `auto_hosts` host | Auto-apply |
 | On an `unresolved_hosts` host, with no finished check | Link not resolved |
 | On an `unresolved_hosts` host, check found no employer link | Auto-apply on a `native_fill_hosts` host, otherwise Apply by hand |
@@ -293,6 +299,13 @@ no_employer_statuses = ["none"]
 | Carries an `unresolved_url_markers` fragment, check found no employer link | Apply by hand |
 | Missing or unreadable | Link not resolved |
 | Anything else | Apply by hand |
+
+The `account_wall_hosts` row answers before every other row in the table above, because a wall is a
+property of the employer's form rather than of the link check: a walled host with an unresolved
+`gh_jid=` fragment is still by hand. A host you list in `account_wall_hosts` and also in `auto_hosts`
+or `unresolved_hosts` (including a subdomain of the other list's entry) is refused at load, naming the
+host: the wall answers first, so the other entry would be dead config, and for an `auto_hosts` overlap
+the slate's direct share would still count the lead as a direct auto.
 
 A job you moved to Apply by hand stays there whatever its link. An unreadable ledger leaves its jobs under Link not
 resolved, and the page names the file. Do not list a closed posting in `no_employer_statuses`: use a separate status

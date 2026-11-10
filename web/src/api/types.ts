@@ -202,6 +202,12 @@ export interface QueueRow {
    */
   apply_route?: ApplyRoute;
   /**
+   * Why the route above is what it is, when the owner's config knows a reason — today only an
+   * account wall ("needs an account on workday.com"). `null` or absent is "no reason known", which
+   * is not the same as "auto": the route is the answer and this only explains it.
+   */
+  apply_route_reason?: string | null;
+  /**
    * What the badge's tooltip needs when this employer has been seen filing H-1B applications for
    * computing roles in the owner's local index of public DOL filings. `null` or absent is "no
    * badge", and it means no record, a profile that does not need sponsorship, or no usable index.

@@ -397,9 +397,17 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             served["apply_route"] = routes.route(
                 posting_id=served["posting_id"], apply_url=served["apply_url"]
             ).value
+            # A route the config can explain says so on the row. `None` is "no reason known",
+            # never "no route": the route is the enum above, this is only its annotation.
+            served["apply_route_reason"] = routes.reason(
+                posting_id=served["posting_id"], apply_url=served["apply_url"]
+            )
     # The owner's move outranks the URL, whatever host the link is on. It stays until moved back.
     for served in payload["manual"]:
         served["apply_route"] = ApplyRoute.HAND.value
+        served["apply_route_reason"] = routes.reason(
+            posting_id=served["posting_id"], apply_url=served["apply_url"]
+        )
     payload["apply_routes"] = {"configured": routes.configured, "problem": routes.problem}
     _attach_sponsor_seen(conn, ctx, [*payload["rows"], *payload["review"], *payload["manual"]])
     return payload
