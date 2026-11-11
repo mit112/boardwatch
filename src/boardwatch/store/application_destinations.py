@@ -40,11 +40,17 @@ def record_application_destination(
     source_url: str,
     evidence_ref: str,
     verified_at: datetime,
+    only_if_absent: bool = False,
 ) -> bool:
     """Record or explicitly replace a verified link; identical evidence is a no-op.
 
     The caller verifies the job match and retains its evidence. This layer validates
     transport safety, not whether a site's application form is currently live.
+
+    `only_if_absent=True` refuses to replace an existing row at all, for a writer that read the
+    table earlier and did network work before this call: a browser-verified destination can be
+    written by another session in that window, and it must win. Returns False when a row already
+    existed, so the caller can report the write as not landed.
     """
     try:
         parts = urlsplit(url)
@@ -69,16 +75,24 @@ def record_application_destination(
         url=url, source_url=source_url, evidence_ref=evidence_ref, verified_at=verified_at
     )
     statement = insert(application_destinations).values(posting_id=posting_id, **values)
-    result = conn.execute(
-        statement.on_conflict_do_update(
-            index_elements=[application_destinations.c.posting_id],
-            set_=values,
-            where=(application_destinations.c.url != url)
-            | (application_destinations.c.source_url != source_url)
-            | (application_destinations.c.evidence_ref != evidence_ref)
-            | (application_destinations.c.verified_at != verified_at),
+    if only_if_absent:
+        # No-clobber: the row this call was told about may not be the only writer's. A deferred
+        # re-read inside the transaction would be too late on SQLite, so the conflict clause
+        # itself decides.
+        result = conn.execute(
+            statement.on_conflict_do_nothing(index_elements=[application_destinations.c.posting_id])
         )
-    )
+    else:
+        result = conn.execute(
+            statement.on_conflict_do_update(
+                index_elements=[application_destinations.c.posting_id],
+                set_=values,
+                where=(application_destinations.c.url != url)
+                | (application_destinations.c.source_url != source_url)
+                | (application_destinations.c.evidence_ref != evidence_ref)
+                | (application_destinations.c.verified_at != verified_at),
+            )
+        )
     return bool(result.rowcount)
 
 

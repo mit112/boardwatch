@@ -17,6 +17,34 @@ All notable changes to this project are documented here. The format follows
   read-only replay on a store clone read 406 destinations, proposed 16 boards, and excluded 36 `greenhouse:embed` rows
   and 7 workday tenant variants. No schema change, no config key, no scheduled-run change.
 
+- **A wrapper whose only employer twin is closed is queued for the death probe first (D-691).** The local-twin writer
+  links a lane copy only to an OPEN employer posting; a wrapper whose same-company, same-title, same-city twin is closed
+  gets nothing and sits in the queue. Each run now computes those wrappers from the standing queue and passes them as a
+  prior sort key to the existing measured-death sweep, which reorders its due set and never widens it — the two-strike
+  gone-status rule and its budget are unchanged, so an alive answer still clears and nothing closes on the match.
+  Measured on a store clone: the review cohort yields 10 such wrappers; 4 were due under the 24-hour TTL, the sweep asked
+  about exactly those 4 of 46,333 due rows (1 alive, 3 unknown, 0 closed), and all 10 carry a probe result. No schema
+  change, no config key, no new funnel count.
+
+- **A wrapper lead whose employer URL is already on disk is now delivered with it, and the `grnh.se` seed backlog
+  drains on full runs (D-690).** `apply-routes.toml`'s link ledgers were read for `company_status` only; their
+  `company` URL is now probed with the run's own liveness check and recorded as the application destination when
+  it names one posting and answers alive (evidence `ledger:<file>:<key>`). A posting whose stored source is a
+  `grnh.se` short link is followed once, with the resolver's pacing, and its landing recorded when that landing is
+  a posting page (evidence `grnh:v1:<posting id>`). On a store clone the measured cohort went from 0 to 10
+  destinations written, with one ledger URL and the one short link reported dead (both HTTP 410). Full runs also
+  follow up to 300 selectable `grnh.se` seeds and merge the boards they resolve into
+  `<data_dir>/grnh-board-candidates.yaml`, which `companies import` reads after the owner reviews it — nothing is
+  watched automatically. Two runs on a clone moved selectable seeds 2,054 -> 1,608 (316 s and 440 s) and
+  accumulated 16 board candidates, 195 of 211 resolutions being employers already watched. No schema change, no
+  config key, no route change for a lead without such a link.
+
+- **A lane copy is delivered with its employer's own link when the store already holds that posting (D-689).** After ranking, each
+  run looks for the one open posting on a watched employer board with the same company, title and city as a LinkedIn, Indeed or
+  job-apps lead, and records its URL as the lead's application destination. A lead with a link from any other source, a lead whose
+  own URL already names a requisition, and a job already applied to are left alone. A linked copy takes its twin's requisition, so
+  the existing duplicate hold then keeps the second copy off the list.
+
 ### Changed
 
 - **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score
