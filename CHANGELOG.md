@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A wrapper whose only employer twin is closed is queued for the death probe first (D-691).** The local-twin writer
+  links a lane copy only to an OPEN employer posting; a wrapper whose same-company, same-title, same-city twin is closed
+  gets nothing and sits in the queue. Each run now computes those wrappers from the standing queue and passes them as a
+  prior sort key to the existing measured-death sweep, which reorders its due set and never widens it — the two-strike
+  gone-status rule and its budget are unchanged, so an alive answer still clears and nothing closes on the match.
+  Measured on a store clone: the review cohort yields 10 such wrappers; 4 were due under the 24-hour TTL, the sweep asked
+  about exactly those 4 of 46,333 due rows (1 alive, 3 unknown, 0 closed), and all 10 carry a probe result. No schema
+  change, no config key, no new funnel count.
+
 - **A lane copy is delivered with its employer's own link when the store already holds that posting (D-689).** After ranking, each
   run looks for the one open posting on a watched employer board with the same company, title and city as a LinkedIn, Indeed or
   job-apps lead, and records its URL as the lead's application destination. A lead with a link from any other source, a lead whose

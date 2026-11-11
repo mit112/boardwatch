@@ -172,16 +172,10 @@ class _DirectCompanies:
         return ()
 
 
-def find_local_twins(
-    conn: Connection, posting_ids: Sequence[int], *, exclude_job_ids: Collection[int] = ()
-) -> tuple[list[TwinMatch], int, int]:
-    """(matches, lane postings considered, of those with a company match). Reads only.
-
-    `exclude_job_ids` are jobs the owner has already applied to. A destination gives a posting
-    its twin's requisition key, and an applied requisition holds every copy for good, so a wrong
-    match there would hide another opening permanently; an unapplied one drains when its holder
-    closes.
-    """
+def _lane_wrappers(
+    conn: Connection, posting_ids: Sequence[int], *, exclude_job_ids: Collection[int]
+) -> list[Row[Any]]:
+    """Lane-provider open postings with no destination, one read per id chunk."""
     wrappers: list[Row[Any]] = []
     for chunk in id_chunks(sorted(set(posting_ids))):
         wrappers += conn.execute(
@@ -201,10 +195,11 @@ def find_local_twins(
                 .exists(),
             )
         ).all()
-    wrappers = [row for row in wrappers if row.job_id not in exclude_job_ids]
-    if not wrappers:
-        return [], 0, 0
-    direct = _DirectCompanies(
+    return [row for row in wrappers if row.job_id not in exclude_job_ids]
+
+
+def _direct_index(conn: Connection) -> _DirectCompanies:
+    return _DirectCompanies(
         (int(row.id), str(row.name), str(row.slug))
         for row in conn.execute(
             select(companies.c.id, companies.c.name, companies.c.slug).where(
@@ -212,45 +207,132 @@ def find_local_twins(
             )
         )
     )
-    company_ids = {row.id: direct.matching(str(row.name)) for row in wrappers}
-    wanted = {company_id for ids in company_ids.values() for company_id in ids}
-    # One read of the matched employers' open postings, by company, through `ix_postings_corpus`.
-    by_company_title: dict[tuple[int, str], list[tuple[int, str, object, str]]] = {}
-    for chunk in id_chunks(sorted(wanted)):
+
+
+TwinRow = tuple[int, str, object, str, str]
+
+
+def _postings_by_company_title(
+    conn: Connection, company_ids: Collection[int], *, statuses: tuple[str, ...] | None
+) -> dict[tuple[int, str], list[TwinRow]]:
+    """The matched employers' postings with a URL, by (company, title key).
+
+    `statuses=None` keeps every status, which the closed-twin rule needs: an open twin means the
+    employer relisted and the wrapper is not dead, so it must be visible rather than filtered.
+    """
+    rows: dict[tuple[int, str], list[TwinRow]] = {}
+    for chunk in id_chunks(sorted(company_ids)):
         for row in conn.execute(
             select(
                 postings.c.id, postings.c.company_id, postings.c.normalized_title,
                 postings.c.url, postings.c.locations_json, postings.c.remote_policy,
+                postings.c.status,
             ).where(
-                postings.c.status == "open",
                 postings.c.company_id.in_(chunk),
                 postings.c.url.is_not(None),
+                *( [] if statuses is None else [postings.c.status.in_(statuses)] ),
             )
         ):
-            by_company_title.setdefault(
+            rows.setdefault(
                 (int(row.company_id), _title_key(str(row.normalized_title))), []
-            ).append((int(row.id), str(row.url), row.locations_json, str(row.remote_policy)))
+            ).append(
+                (
+                    int(row.id), str(row.url), row.locations_json, str(row.remote_policy),
+                    str(row.status),
+                )
+            )
+    return rows
+
+
+def _place_matches(
+    row: Row[Any],
+    company_ids: Sequence[int],
+    by_company_title: Mapping[tuple[int, str], list[TwinRow]],
+) -> list[TwinRow]:
+    """The twins that share this wrapper's city, or are both remote."""
+    title = _title_key(str(row.normalized_title))
+    if not title:
+        return []
+    remote = _is_remote(str(row.remote_policy), row.locations_json)
+    return [
+        twin
+        for company_id in company_ids
+        for twin in by_company_title.get((company_id, title), ())
+        if _shares_city(row.locations_json, twin[2])
+        or (remote and _is_remote(twin[3], twin[2]))
+    ]
+
+
+def find_local_twins(
+    conn: Connection, posting_ids: Sequence[int], *, exclude_job_ids: Collection[int] = ()
+) -> tuple[list[TwinMatch], int, int]:
+    """(matches, lane postings considered, of those with a company match). Reads only.
+
+    `exclude_job_ids` are jobs the owner has already applied to. A destination gives a posting
+    its twin's requisition key, and an applied requisition holds every copy for good, so a wrong
+    match there would hide another opening permanently; an unapplied one drains when its holder
+    closes.
+    """
+    wrappers = _lane_wrappers(conn, posting_ids, exclude_job_ids=exclude_job_ids)
+    if not wrappers:
+        return [], 0, 0
+    direct = _direct_index(conn)
+    company_ids = {row.id: direct.matching(str(row.name)) for row in wrappers}
+    # One read of the matched employers' open postings, by company, through `ix_postings_corpus`.
+    by_company_title = _postings_by_company_title(
+        conn, {cid for ids in company_ids.values() for cid in ids}, statuses=("open",)
+    )
 
     matches: list[TwinMatch] = []
     for row in wrappers:
-        title = _title_key(str(row.normalized_title))
-        remote = _is_remote(str(row.remote_policy), row.locations_json)
-        same_place = [
-            twin
-            for company_id in company_ids[row.id]
-            for twin in by_company_title.get((company_id, title), ())
-            if _shares_city(row.locations_json, twin[2])
-            or (remote and _is_remote(twin[3], twin[2]))
-        ]
-        if not title or len(same_place) != 1:
+        same_place = _place_matches(row, company_ids[row.id], by_company_title)
+        if len(same_place) != 1:
             continue
-        twin_id, twin_url, _, _ = same_place[0]
+        twin_id, twin_url, _, _, _ = same_place[0]
         # The lane posting's own URL may already name a requisition. The same one needs no
         # link; a different one is a different opening with the same title in the same city.
         if posting_requisition_key(str(row.url), row.employer_url) is not None:
             continue
         matches.append(TwinMatch(int(row.id), twin_id, twin_url, str(row.url)))
     return matches, len(wrappers), sum(1 for row in wrappers if company_ids[row.id])
+
+
+def find_closed_twin_wrappers(
+    conn: Connection,
+    posting_ids: Sequence[int],
+    *,
+    exclude_job_ids: Collection[int] = (),
+) -> tuple[int, ...]:
+    """Lane wrappers whose ONLY place-matching twin is CLOSED, for the death probe (D-691).
+
+    The same company/title/city rule as `find_local_twins`, asked of every status. Exactly one
+    place match that is closed is a suspicion, never a close: an employer reposts under a new
+    requisition, so the wrapper may be a live opening whose old twin simply retired. What this
+    returns is the queue of postings the existing liveness/death probe should ask about FIRST,
+    and only that probe's own evidence can close one.
+
+    An OPEN place match means the employer relisted; that is the local-twin writer's case, not
+    this one, so a wrapper with any open twin is not returned. A wrapper whose own URL already
+    names a requisition is refused for the reason `find_local_twins` states: it is a different
+    opening, whatever the title and city say.
+    """
+    wrappers = _lane_wrappers(conn, posting_ids, exclude_job_ids=exclude_job_ids)
+    if not wrappers:
+        return ()
+    direct = _direct_index(conn)
+    company_ids = {row.id: direct.matching(str(row.name)) for row in wrappers}
+    by_company_title = _postings_by_company_title(
+        conn, {cid for ids in company_ids.values() for cid in ids}, statuses=None
+    )
+    queued: list[int] = []
+    for row in wrappers:
+        same_place = _place_matches(row, company_ids[row.id], by_company_title)
+        if len(same_place) != 1 or same_place[0][4] != "closed":
+            continue
+        if posting_requisition_key(str(row.url), row.employer_url) is not None:
+            continue
+        queued.append(int(row.id))
+    return tuple(sorted(queued))
 
 
 def record_local_twins(
