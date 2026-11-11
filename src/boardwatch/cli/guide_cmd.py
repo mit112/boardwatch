@@ -402,6 +402,14 @@ nothing by itself: review, then `companies import`.""",
 proposal. It reaches the network: resolving a `grnh.se` short link means fetching it. Opens the
 store without migrating (no migration). Watches nothing by itself.""",
     ),
+    "companies discover-destinations": Entry(
+        ("reads store", "writes files"),
+        """Proposes boards from the application links a browser check already verified
+(`application_destinations`), for review; `--out` writes the proposal. Offline, and opens the
+store without migrating (no migration). Refuses two measured false-candidate classes: greenhouse's
+`embed` widget slug and a career-site spelling of an already-watched workday tenant. Watches
+nothing by itself: review, then `companies import`.""",
+    ),
     "companies discover-crawl": Entry(
         ("network", "reads store", "writes files"),
         """Proposes unwatched Greenhouse and Ashby boards (`--provider` adds Workable and

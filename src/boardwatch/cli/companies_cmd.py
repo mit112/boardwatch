@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 from sqlalchemy import Row, inspect
+from sqlalchemy import select as sql_select
 
 from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
@@ -31,6 +32,10 @@ from boardwatch.lanes.common_crawl import (
     crawl_header,
     enumerate_slugs,
     probe_candidates,
+)
+from boardwatch.lanes.destination_boards import candidate_boards, workday_tenant
+from boardwatch.lanes.destination_boards import (
+    candidate_document as destination_candidate_document,
 )
 from boardwatch.lanes.github_lists import (
     BoardCandidate,
@@ -66,6 +71,7 @@ from boardwatch.store.queries import (
     upsert_watch,
 )
 from boardwatch.store.seed_queries import unresolved_seed_count, unresolved_seeds
+from boardwatch.store.tables import application_destinations, companies
 
 companies_app = typer.Typer(no_args_is_help=True, help="Manage watched company boards.")
 console = Console()
@@ -607,6 +613,77 @@ def discover_grnh_(
     console.print(
         f"Wrote {len(resolution.boards)} candidate board(s) to {out} — {coverage.summary()}",
         markup=False, highlight=False, soft_wrap=True,
+    )
+
+
+@companies_app.command("discover-destinations")
+def discover_destinations_(
+    ctx: typer.Context,
+    out: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the candidate file here instead of stdout."),
+    ] = None,
+) -> None:
+    """Propose boards from the verified application links already in the store, for review.
+
+    Every destination a browser check verified points at one job on some ATS; where its URL parses
+    to a supported provider and board and that board is not watched, this proposes it. It is how a
+    link resolved once stops the same employer needing resolution again: once the board is watched,
+    the direct scan finds its postings and the wrapper copies converge.
+
+    Writes a registry-format file and NOTHING ELSE — no store write, watched or otherwise. Review
+    it, delete any row you do not want, then `companies import` it. Reads the store without
+    migrating (`ensure=False`), like the other discovery commands.
+    """
+    app_ctx = build_context(ctx.obj, ensure=False)
+    if not inspect(app_ctx.engine).has_table("application_destinations") or not inspect(
+        app_ctx.engine
+    ).has_table("companies"):
+        console.print("[red]no application_destinations table — run `boardwatch init` first[/red]")
+        raise typer.Exit(code=1)
+    with app_ctx.engine.connect() as conn:
+        destinations = [
+            (int(row.posting_id), str(row.url))
+            for row in conn.execute(
+                sql_select(
+                    application_destinations.c.posting_id, application_destinations.c.url
+                )
+            )
+        ]
+        watched_rows = [
+            (str(row.provider), str(row.slug))
+            for row in conn.execute(
+                sql_select(companies.c.provider, companies.c.slug).where(
+                    companies.c.watched.is_(True)
+                )
+            )
+        ]
+    watched = {(provider, slug.lower()) for provider, slug in watched_rows}
+    # The tenant set is the workday variant guard's whole input: one tenant, one employer, however
+    # many career-site spellings (or a slice's facet) its watched board carries.
+    watched_workday_tenants = {
+        tenant
+        for provider, slug in watched_rows
+        if provider == "workday" and (tenant := workday_tenant(slug)) is not None
+    }
+    boards, census = candidate_boards(
+        destinations, watched=watched, watched_workday_tenants=watched_workday_tenants
+    )
+    document = destination_candidate_document(
+        boards, census=census, generated_on=date.today()
+    )
+    if out is None:
+        typer.echo(document, nl=False)
+        return
+    out.write_text(document, encoding="utf-8")
+    console.print(
+        f"Wrote {len(boards)} candidate board(s) to {out} — {census.destinations} destination(s) "
+        f"read, {census.already_watched} already watched, {census.false_candidates} ATS chrome, "
+        f"{census.workday_variants} workday slug variant(s). Review it, then: "
+        f"boardwatch companies import {out}",
+        markup=False,
+        highlight=False,
+        soft_wrap=True,
     )
 
 

@@ -367,6 +367,11 @@ def candidate_document(
 
 
 def registry_yaml(selection: Selection) -> str:
+    """The `companies:` body of a candidate file, with no header."""
+    return registry_yaml_for(selection.admitted)
+
+
+def registry_yaml_for(candidates: Sequence[BoardCandidate]) -> str:
     """The `companies:` body of a candidate file, with no header.
 
     Public so a second discovery source writes the SAME registry format behind its own header
@@ -375,7 +380,7 @@ def registry_yaml(selection: Selection) -> str:
     payload = {
         "companies": [
             {"name": c.name, "provider": c.provider, "slug": c.slug, "tags": []}
-            for c in selection.admitted
+            for c in candidates
         ]
     }
     # `safe_dump` quotes any scalar whose plain form would resolve to something else, so a board

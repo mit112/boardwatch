@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Boards named by the store's verified application links can be proposed for watching (D-692).** A new read-only
+  `boardwatch companies discover-destinations [--out PATH]` parses every verified destination in
+  `application_destinations` to a supported provider and board, drops boards already watched, and writes the registry
+  file `companies import` reads for review — nothing is watched automatically. Two measured false-candidate classes
+  are refused: greenhouse's `embed` widget slug and a workday career-site spelling of an already-watched tenant. A
+  read-only replay on a store clone read 406 destinations, proposed 16 boards, and excluded 36 `greenhouse:embed` rows
+  and 7 workday tenant variants. No schema change, no config key, no scheduled-run change.
+
 ### Changed
 
 - **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score
