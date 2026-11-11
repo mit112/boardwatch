@@ -248,6 +248,11 @@ def run(
             # while this is one GET per delivered Greenhouse lead per posting version, already
             # bounded by `form_question_fetch_budget` (0 disarms it).
             form_fetcher=Fetcher(settings),
+            # D-690's grnh.se seed drain, built here for the same reason the prober is: which
+            # hosts get asked is the CLI's decision, and a pipeline that built its own client
+            # would make the test suite's fixtures reach the network. One Fetcher for the whole
+            # batch, so the per-host pace applies across it.
+            seed_fetcher=Fetcher(settings),
             # `None` unless given, same reasoning as `web_cmd`'s `--queue-root` resolution: a
             # relative root would price a shorter destination than the one actually written.
             queue_root=queue_root.expanduser().resolve() if queue_root is not None else None,

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import tomllib
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -81,10 +81,26 @@ class ApplyRoutesConfig(BaseModel):
 
 
 @dataclass(frozen=True)
+class LedgerLink:
+    """One link-ledger entry that names a URL, and the evidence reference a destination keeps.
+
+    The ledger is a check record, not a destination store: most entries only carry a
+    `company_status`, and `ApplyRoutes.link_status` already reads that. This carries the URL
+    beside it for the write step, which has to verify the URL is still live before recording it.
+    """
+
+    url: str
+    evidence_ref: str
+
+
+@dataclass(frozen=True)
 class ApplyRoutes:
     config: ApplyRoutesConfig | None
     link_status: dict[int, str]
     problem: str | None
+    # The `company` URL of every ledger entry that names one and whose check did NOT finish with
+    # no employer link. Read-only evidence; nothing here writes a destination.
+    ledger_links: dict[int, LedgerLink] = field(default_factory=dict)
 
     @property
     def configured(self) -> bool:
@@ -201,6 +217,13 @@ def load_apply_routes(config_dir: Path) -> ApplyRoutes:
 
     problems: list[str] = []
     link_status: dict[int, str] = {}
+    ledger_links: dict[int, LedgerLink] = {}
+    # A posting two ledgers disagree about is dropped rather than guessed. The write step probes
+    # the URL and keeps a wrong link from being stored only if it is dead; a live but wrong posting
+    # would still be stored, so the conflict itself has to refuse the candidate. Recency is not
+    # used to pick a winner: the write step asks about the URL now, and a stale-but-live entry is
+    # fine, while a stale-but-wrong one is not — so neither entry survives the disagreement.
+    conflicted: set[int] = set()
     for ledger in config.link_ledgers:
         try:
             entries = _read_ledger(ledger)
@@ -211,10 +234,32 @@ def load_apply_routes(config_dir: Path) -> ApplyRoutes:
             status = entry.get("company_status") if isinstance(entry, dict) else None
             if key.isdecimal() and isinstance(status, str):
                 link_status[int(key)] = status
+            # A URL and the file it came from, for the write step. The key is the posting id the
+            # owner's check ran against, and `no_employer_statuses` is left here rather than in
+            # the writer: it is this config's own statement about what a finished check means.
+            if (
+                key.isdecimal()
+                and isinstance(entry, dict)
+                and not (isinstance(status, str) and status in config.no_employer_statuses)
+            ):
+                url = entry.get("company")
+                if isinstance(url, str) and url.strip():
+                    posting_id = int(key)
+                    if posting_id in conflicted:
+                        continue
+                    prior = ledger_links.get(posting_id)
+                    if prior is not None and prior.url != url.strip():
+                        conflicted.add(posting_id)
+                        ledger_links.pop(posting_id, None)
+                        continue
+                    ledger_links[posting_id] = LedgerLink(
+                        url=url.strip(), evidence_ref=f"ledger:{ledger.name}:{key}"
+                    )
     return ApplyRoutes(
         config=config,
         link_status=link_status,
         problem="; ".join(problems) or None,
+        ledger_links=ledger_links,
     )
 
 
