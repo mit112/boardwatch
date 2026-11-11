@@ -309,7 +309,7 @@ def candidate_document(
     return _header(resolution, generated_on, coverage) + body
 
 
-def _one_line(value: str) -> str:
+def one_line(value: str) -> str:
     """Collapse anything that could break out of a one-line `#` comment.
 
     A slug or URL reaches this file from a redirect target, so it is remote input: a newline in
@@ -350,7 +350,7 @@ def _header(resolution: GrnhResolution, generated_on: date, coverage: SeedCovera
         # about which slugs are chrome, and the human step already exists.
         lines.append("# Check each evidence URL names a real employer board and not ATS chrome:")
         lines += [
-            f"#   {b.provider}:{_one_line(b.slug)} | {_one_line(b.final_url)}"
+            f"#   {b.provider}:{one_line(b.slug)} | {one_line(b.final_url)}"
             for b in resolution.boards
         ]
         lines.append("#")
@@ -358,9 +358,9 @@ def _header(resolution: GrnhResolution, generated_on: date, coverage: SeedCovera
         lines += ["# No boards resolved. Nothing to import.", "#"]
     if resolution.errors:
         lines += ["# ERRORS (a code defect, not a dead link):"]
-        # `_one_line` here too: an exception's `repr` is the one value in this header that is not
+        # `one_line` here too: an exception's `repr` is the one value in this header that is not
         # a URL the seed writer already refused whitespace in.
-        lines += [f"#   {_one_line(e)}" for e in resolution.errors[:10]]
+        lines += [f"#   {one_line(e)}" for e in resolution.errors[:10]]
         if len(resolution.errors) > 10:
             lines += [f"#   ... and {len(resolution.errors) - 10} more"]
         lines += ["#"]
