@@ -46,6 +46,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.apply_routes import load_apply_routes
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     DEFAULT_QUEUE_ROOT,
@@ -115,6 +116,7 @@ from boardwatch.pipeline.funnel_writer import (
     read_run_identity,
 )
 from boardwatch.pipeline.liveness import LivenessProber, asks_linkedin_guest, check_leads
+from boardwatch.pipeline.on_disk_links import drain_grnh_seeds, record_on_disk_links
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.profile_bundle.paths import resolve_bundle_root
@@ -1687,6 +1689,94 @@ def _refresh_order(rows: list[QueueRow]) -> list[QueueRow]:
     return sorted((row for row in rows if row.status != "closed"), key=rank)
 
 
+def _record_on_disk_links(
+    engine: Engine,
+    settings: Settings,
+    posting_ids: Sequence[int],
+    *,
+    prober: LivenessProber | None,
+    fetcher: Fetcher | None,
+    console: Console,
+) -> list[str]:
+    """Record employer links the ledgers and stored short links already name (D-690).
+
+    Runs after the slate is chosen and before any route is computed, so this run's delivery uses
+    the link. A failure costs the link and nothing else: the lead is delivered with the aggregator
+    wrapper exactly as every run before this step did, and the error line says so.
+    """
+    try:
+        routes = load_apply_routes(settings.config_dir)
+        with engine.connect() as conn:
+            # The standing queue as well as this slate: a browser check recorded weeks ago is
+            # evidence for a lead already delivered, not only for one ranked today.
+            _, standing = requisition_holder_urls(conn)
+        report = record_on_disk_links(
+            engine,
+            [*posting_ids, *standing],
+            routes=routes,
+            prober=prober,
+            fetcher=fetcher,
+            now=utcnow(),
+        )
+    except Exception as exc:  # a link is an improvement to a lead, never a condition of the run
+        return [f"on-disk links: no employer link recorded this run ({type(exc).__name__}: {exc})"]
+    if report.ledger_considered or report.grnh_considered:
+        skipped = []
+        if prober is None:
+            skipped.append("ledger half unmeasured: no liveness prober")
+        if fetcher is None:
+            skipped.append("short-link half unmeasured: no fetcher")
+        console.print(
+            f"on-disk links: {report.ledger_written} ledger link(s) and "
+            f"{report.grnh_written} short link(s) recorded "
+            f"({report.ledger_considered} ledger candidate(s), {report.grnh_considered} short "
+            f"link(s); {report.ledger_dead + report.grnh_dead} dead, "
+            f"{report.ledger_unknown + report.grnh_unknown} unknown"
+            + (f"; {'; '.join(skipped)}" if skipped else "")
+            + ")"
+        )
+    return []
+
+
+def _drain_grnh_backlog(
+    engine: Engine,
+    settings: Settings,
+    *,
+    run_id: int,
+    fetcher: Fetcher | None,
+    console: Console,
+) -> list[str]:
+    """Follow this run's share of the stored `grnh.se` seeds and propose the boards (D-690).
+
+    `fetcher=None` leaves the backlog unmeasured, never empty. Never fatal for the same reason the
+    death sweep is not: the corpus without this step is the corpus every earlier run ranked.
+    """
+    if fetcher is None:
+        return []
+    try:
+        report = drain_grnh_seeds(
+            engine,
+            fetcher=fetcher,
+            run_id=run_id,
+            now=utcnow(),
+            data_dir=settings.data_dir,
+        )
+    except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+        return [f"grnh seeds: backlog drain failed ({type(exc).__name__}: {exc})"]
+    if report.problem is not None:
+        return [f"grnh seeds: backlog drain wrote nothing ({report.problem})"]
+    if report.followed:
+        names = f" ({report.proposed} new in {report.candidates_path.name})" if (
+            report.candidates_path is not None
+        ) else ""
+        console.print(
+            f"grnh seeds: followed {report.followed} of {report.selectable} selectable, "
+            f"{report.resolved} board(s) resolved, {report.already_known} already known, "
+            f"{report.failed} failed{names}"
+        )
+    return []
+
+
 def _execution_inputs(
     engine: Engine, settings: Settings, posting: RankedPosting
 ) -> tuple[object, ...] | None:
@@ -2323,6 +2413,7 @@ def run_pipeline(
     liveness_prober: LivenessProber | None = None,
     listing_prober: ListingProber | None = None,
     form_fetcher: Fetcher | None = None,
+    seed_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
 ) -> PipelineSummary:
     """Run `_run_pipeline_leased` holding the scan lease for the WHOLE run (T133).
@@ -2352,6 +2443,7 @@ def run_pipeline(
             liveness_prober=liveness_prober,
             listing_prober=listing_prober,
             form_fetcher=form_fetcher,
+            seed_fetcher=seed_fetcher,
             queue_root=queue_root,
         )
 
@@ -2370,6 +2462,7 @@ def _run_pipeline_leased(
     liveness_prober: LivenessProber | None = None,
     listing_prober: ListingProber | None = None,
     form_fetcher: Fetcher | None = None,
+    seed_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
@@ -2721,6 +2814,16 @@ def _run_pipeline_leased(
         # so a sweep that dies costs the run its extra reach and nothing else. The report stays
         # `None` on failure — honest as "unmeasured", and deliberately understating any probes
         # that did land before the fault, because each posting commits in its own transaction.
+        # D-690: the grnh.se backlog drain, on full runs only — a daytime delivery pass must not
+        # spend five minutes of its window on board discovery. Placed before the death sweep so a
+        # board resolved here is proposed in the same run it was fetched.
+        if fresh_hours is None:
+            drain_errors = _drain_grnh_backlog(
+                engine, settings, run_id=run_id, fetcher=seed_fetcher, console=console
+            )
+            stage_errors.extend(drain_errors)
+            summary.errors.extend(drain_errors)
+
         if fresh_hours is None and liveness_prober is not None and settings.death_probe_budget > 0:
             try:
                 summary.death_probe = sweep_unwatched_deaths(
@@ -2861,6 +2964,18 @@ def _run_pipeline_leased(
         summary.regrouped, regroup_errors = _regroup(engine, ranked.suppressions)
         stage_errors.extend(regroup_errors)
         summary.errors.extend(regroup_errors)
+        # D-690: after the slate is chosen and before the route each lead is delivered with is
+        # computed, so a link already on disk reaches this run's queue.
+        link_errors = _record_on_disk_links(
+            engine,
+            settings,
+            [posting.posting_id for posting in ranked.visible],
+            prober=liveness_prober,
+            fetcher=seed_fetcher,
+            console=console,
+        )
+        stage_errors.extend(link_errors)
+        summary.errors.extend(link_errors)
         clock.mark("eligibility")
 
         # P6 item 6 — liveness, immediately before the render and after everything that decides

@@ -89,6 +89,39 @@ def test_the_route_of_a_lead(
     assert routes.route(posting_id=posting_id, apply_url=url) is expected
 
 
+def test_a_ledger_entry_that_names_an_employer_url_carries_it_with_its_file(
+    tmp_path: Path,
+) -> None:
+    """The write step needs the URL and where it came from; the route only needed the status."""
+    _configure(
+        tmp_path,
+        extra="",
+    )
+    # `_configure` writes only statuses; add the URL the browser check found and its file name.
+    (tmp_path / "links.json").write_text(
+        json.dumps(
+            {
+                str(LIVE_LINK): {
+                    "company": "https://careers.example.com/jobs/12345/software-engineer",
+                    "company_status": "live",
+                },
+                str(NONE_LINK): {
+                    "company": "https://careers.example.com/jobs/99999/other",
+                    "company_status": "none",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    routes = load_apply_routes(tmp_path)
+    assert routes.problem is None
+    link = routes.ledger_links[LIVE_LINK]
+    assert link.url == "https://careers.example.com/jobs/12345/software-engineer"
+    assert link.evidence_ref == f"ledger:links.json:{LIVE_LINK}"
+    # A finished check that found no employer link is not evidence of one.
+    assert NONE_LINK not in routes.ledger_links
+
+
 @pytest.mark.skipif(
     sys.platform == "win32", reason="a Windows file name cannot contain a backslash"
 )

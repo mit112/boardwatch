@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **A wrapper lead whose employer URL is already on disk is now delivered with it, and the `grnh.se` seed backlog
+  drains on full runs (D-690).** `apply-routes.toml`'s link ledgers were read for `company_status` only; their
+  `company` URL is now probed with the run's own liveness check and recorded as the application destination when
+  it names one posting and answers alive (evidence `ledger:<file>:<key>`). A posting whose stored source is a
+  `grnh.se` short link is followed once, with the resolver's pacing, and its landing recorded when that landing is
+  a posting page (evidence `grnh:v1:<posting id>`). On a store clone the measured cohort went from 0 to 10
+  destinations written, with one ledger URL and the one short link reported dead (both HTTP 410). Full runs also
+  follow up to 300 selectable `grnh.se` seeds and merge the boards they resolve into
+  `<data_dir>/grnh-board-candidates.yaml`, which `companies import` reads after the owner reviews it — nothing is
+  watched automatically. Two runs on a clone moved selectable seeds 2,054 -> 1,608 (316 s and 440 s) and
+  accumulated 16 board candidates, 195 of 211 resolutions being employers already watched. No schema change, no
+  config key, no route change for a lead without such a link.
+
 ### Changed
 
 - **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score

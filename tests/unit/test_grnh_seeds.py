@@ -341,7 +341,7 @@ def test_boards_already_stored_are_dropped_but_still_counted(tmp_path: Path) -> 
 
 
 def test_an_exception_repr_cannot_break_out_of_the_header_comment() -> None:
-    """The errors block was the one header path `_one_line` was not applied to."""
+    """The errors block was the one header path `one_line` was not applied to."""
     from boardwatch.lanes.grnh_seeds import GrnhCensus, GrnhResolution
 
     resolution = GrnhResolution(
