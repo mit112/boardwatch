@@ -116,7 +116,7 @@ from boardwatch.pipeline.funnel_writer import (
     read_run_identity,
 )
 from boardwatch.pipeline.liveness import LivenessProber, asks_linkedin_guest, check_leads
-from boardwatch.pipeline.local_twin import record_local_twins
+from boardwatch.pipeline.local_twin import find_closed_twin_wrappers, record_local_twins
 from boardwatch.pipeline.on_disk_links import drain_grnh_seeds, record_on_disk_links
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.pipeline.progress import StageProgress
@@ -1809,6 +1809,32 @@ def _link_local_twins(
     return []
 
 
+def _closed_twin_priority(engine: Engine, console: Console) -> frozenset[int]:
+    """The standing wrappers whose only employer twin is closed (D-691).
+
+    Read-only and over the standing queue, because that is the population the death probe's class
+    covers and the one whose death the owner feels. A failure returns the empty set: without a
+    priority the sweep behaves exactly as before, so no run is lost to this read.
+    """
+    try:
+        with engine.connect() as conn:
+            _, standing = requisition_holder_urls(conn)
+            queued = find_closed_twin_wrappers(
+                conn, sorted(standing), exclude_job_ids=frozenset(applied_job_ids(conn))
+            )
+    except Exception as exc:  # noqa: BLE001 - a priority list is never a condition of the run
+        console.print(
+            f"closed twins: no priority this run ({type(exc).__name__}: {exc})", soft_wrap=True
+        )
+        return frozenset()
+    if queued:
+        console.print(
+            f"closed twins: {len(queued)} wrapper(s) whose only employer twin is closed queued "
+            "for the death probe"
+        )
+    return frozenset(queued)
+
+
 def _execution_inputs(
     engine: Engine, settings: Settings, posting: RankedPosting
 ) -> tuple[object, ...] | None:
@@ -2857,6 +2883,9 @@ def _run_pipeline_leased(
             summary.errors.extend(drain_errors)
 
         if fresh_hours is None and liveness_prober is not None and settings.death_probe_budget > 0:
+            # D-691: a wrapper whose only employer twin is closed is a suspicion worth asking
+            # about first, never a close. The probe's own evidence decides, below.
+            priority_ids = _closed_twin_priority(engine, console)
             try:
                 summary.death_probe = sweep_unwatched_deaths(
                     engine,
@@ -2867,6 +2896,7 @@ def _run_pipeline_leased(
                     company_budget=settings.death_probe_company_budget,
                     ttl_hours=settings.death_probe_ttl_hours,
                     linkedin_can_close=asks_linkedin_guest(settings),
+                    priority_ids=priority_ids,
                     console=console,
                 )
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome

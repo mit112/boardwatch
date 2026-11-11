@@ -124,6 +124,7 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any
 from urllib.parse import quote
 
 from rich.console import Console
@@ -369,6 +370,7 @@ def sweep_unwatched_deaths(
     company_budget: int,
     ttl_hours: int,
     linkedin_can_close: bool = False,
+    priority_ids: frozenset[int] = frozenset(),
     console: Console | None = None,
 ) -> DeathProbeReport:
     """Probe the unreachable-by-the-scanner class two ways and close the proven-dead postings.
@@ -390,6 +392,11 @@ def sweep_unwatched_deaths(
     Both budgets go to the rows carrying a STANDING LEAD first (T90). The priority reorders the
     due set and never widens it, so it cannot become "always the same leads": a probed row leaves
     the due set for `ttl_hours`, and the next run's budget flows to the rest of the class.
+
+    `priority_ids` (D-691) is a second, prior reordering inside the same budget: a layer wrapper
+    whose only employer twin is closed is asked about before the rest of the due set. It is a
+    suspicion, not a close — the probe's own answer decides — and the due set is untouched, so a
+    priority row that comes back alive leaves for `ttl_hours` like any other.
 
     `linkedin_can_close` says whether `prober` asks a LinkedIn job-view URL through the guest
     endpoint (D-653). Without it those rows go last (`PROBED_LAST_PROVIDERS`).
@@ -441,13 +448,25 @@ def sweep_unwatched_deaths(
         )
         # Ahead of the standing-lead key: a row that cannot close is not worth a probe before one
         # that can, whoever holds it.
-        url_order = [
+        url_order: list[ColumnElement[Any]] = [
             held_by_a_standing_lead.asc(),
             postings.c.last_death_probe_at.asc(),
             postings.c.id.asc(),
         ]
         if not linkedin_can_close:
             url_order.insert(0, probed_last.asc())
+        if priority_ids:
+            # ALL of them, not the first `budget` by id: slicing before the order would drop a row
+            # that is due now in favour of a smaller id that is not, and the rows past the budget
+            # are ranked by the ordinary keys below rather than by id. The caller's set is bounded
+            # by the standing queue (delivery-sized), so this `IN` stays small.
+            # AFTER `probed_last`: when the LinkedIn guest check is off, those rows cannot close,
+            # and the existing invariant is that a row which cannot close never takes a budget slot
+            # from one that can. The priority reorders within that population.
+            url_order.insert(
+                0 if linkedin_can_close else 1,
+                case((postings.c.id.in_(sorted(priority_ids)), 0), else_=1),
+            )
         company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather
