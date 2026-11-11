@@ -636,10 +636,15 @@ def discover_destinations_(
     migrating (`ensure=False`), like the other discovery commands.
     """
     app_ctx = build_context(ctx.obj, ensure=False)
-    if not inspect(app_ctx.engine).has_table("application_destinations") or not inspect(
-        app_ctx.engine
-    ).has_table("companies"):
-        console.print("[red]no application_destinations table — run `boardwatch init` first[/red]")
+    missing = [
+        name
+        for name in ("application_destinations", "companies")
+        if not inspect(app_ctx.engine).has_table(name)
+    ]
+    if missing:
+        console.print(
+            f"[red]no {', '.join(missing)} table — run `boardwatch init` first[/red]"
+        )
         raise typer.Exit(code=1)
     with app_ctx.engine.connect() as conn:
         destinations = [
@@ -647,7 +652,7 @@ def discover_destinations_(
             for row in conn.execute(
                 sql_select(
                     application_destinations.c.posting_id, application_destinations.c.url
-                )
+                ).order_by(application_destinations.c.posting_id)
             )
         ]
         watched_rows = [
@@ -670,7 +675,7 @@ def discover_destinations_(
         destinations, watched=watched, watched_workday_tenants=watched_workday_tenants
     )
     document = destination_candidate_document(
-        boards, census=census, generated_on=date.today()
+        boards, census=census, generated_on=utcnow().date()
     )
     if out is None:
         typer.echo(document, nl=False)
@@ -680,7 +685,7 @@ def discover_destinations_(
         f"Wrote {len(boards)} candidate board(s) to {out} — {census.destinations} destination(s) "
         f"read, {census.already_watched} already watched, {census.false_candidates} ATS chrome, "
         f"{census.workday_variants} workday slug variant(s). Review it, then: "
-        f"boardwatch companies import {out}",
+        f'boardwatch companies import "{out}"',
         markup=False,
         highlight=False,
         soft_wrap=True,

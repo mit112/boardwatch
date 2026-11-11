@@ -12,7 +12,8 @@ All notable changes to this project are documented here. The format follows
   `boardwatch companies discover-destinations [--out PATH]` parses every verified destination in
   `application_destinations` to a supported provider and board, drops boards already watched, and writes the registry
   file `companies import` reads for review — nothing is watched automatically. Two measured false-candidate classes
-  are refused: greenhouse's `embed` widget slug and a workday career-site spelling of an already-watched tenant. A
+  are refused: the shared `ATS_CHROME` catalog (`greenhouse:embed`, `greenhouse:api`, `smartrecruiters:oneclick-ui`,
+  ...) and a career-site spelling/slice of an already-watched workday tenant. A
   read-only replay on a store clone read 406 destinations, proposed 16 boards, and excluded 36 `greenhouse:embed` rows
   and 7 workday tenant variants. No schema change, no config key, no scheduled-run change.
 

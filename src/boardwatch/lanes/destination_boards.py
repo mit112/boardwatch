@@ -6,14 +6,19 @@ never have watched: resolving such a link once should make the employer's postin
 direct board scan from then on, instead of the employer needing resolution again for every wrapper.
 
 This is a DISCOVERY source, so it watches nothing. It emits the registry format `companies import`
-reads, behind a header carrying what it excluded, and the owner reviews that file. The two
-false-candidate classes the review measured are refused here, in a closed catalog:
+reads, behind a header carrying what it excluded, and the owner reviews that file. Two
+false-candidate classes are refused here:
 
-* `greenhouse:embed` — greenhouse's widget URL (`/embed/job_app?for=<slug>&token=...`) parses to a
-  board slug `embed`, which is ATS chrome, not an employer.
+* ATS chrome — the slug ATS's own furniture parses to (`greenhouse:embed` from
+  `/embed/job_app?for=<slug>&token=...`, `greenhouse:api`, `smartrecruiters:oneclick-ui`, ...).
+  The catalog is `lanes/common_crawl.ATS_CHROME`, reused rather than re-spelled: it is the same
+  closed list the Common Crawl discovery already refuses as "not an employer".
 * a workday slug VARIANT of an already-watched tenant — the same `{host}/{tenant}` with a different
-  career-site segment or case (`.../hpe/Jobsathpe` beside a watched `.../hpe/acjobsite`). A tenant
-  is one employer; proposing each site spelling as a new board would double-watch it.
+  career-site segment or case (`.../hpe/Jobsathpe` beside a watched `.../hpe/acjobsite`), or the
+  unsliced board beside a watched facet slice. This is tenant-level BY THE PLAN'S RULING: the
+  repo's own measurements also show one tenant can hold genuinely distinct career sites
+  (`bmo/External` + `bmo/campus`), so a distinct unwatched site of a watched tenant is a KNOWN GAP
+  here — the owner can still add it by hand.
 
 No I/O: the caller supplies the destination rows and the watched sets it already read.
 """
@@ -25,14 +30,9 @@ from dataclasses import dataclass
 from datetime import date
 
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
+from boardwatch.lanes.common_crawl import ATS_CHROME
 from boardwatch.lanes.github_lists import BoardCandidate, one_line, registry_yaml_for
 from boardwatch.providers.registry import derive_employer_name
-
-# A closed catalog, not a growing suppression list: a provider whose public posting URL shape
-# parses to a value that is known chrome, never an employer. Out-of-catalog stays a candidate.
-_FALSE_CANDIDATE_SLUGS: dict[str, frozenset[str]] = {
-    "greenhouse": frozenset({"embed"}),
-}
 
 
 @dataclass(frozen=True)
@@ -112,7 +112,7 @@ def candidate_boards(
         parsed += 1
         provider, slug = provider_slug
         key = (provider, slug.lower())
-        if slug.lower() in _FALSE_CANDIDATE_SLUGS.get(provider, frozenset()):
+        if slug.lower() in ATS_CHROME:
             false_candidates += 1
             continue
         if key in watched:

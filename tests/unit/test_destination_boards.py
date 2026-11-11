@@ -1,8 +1,9 @@
 """Boards named by the store's verified application destinations (D-692).
 
-Every expected value comes from the measured replay of the live table, not from the candidate
-function: 396 destinations parsed to 161 boards, 38 of them greenhouse's `embed` widget, and 11
-workday slugs were career-site spellings of an already-watched tenant. Fixture names are made up.
+Every expected value comes from the measured replay of the store's table, not from the candidate
+function: a read-only run over 406 destinations parsed 161 to a board, 36 of them the ATS chrome
+class (greenhouse's `embed` widget), and 7 workday slugs were career-site spellings/slices of an
+already-watched tenant. Fixture names are made up.
 """
 
 from __future__ import annotations
@@ -71,6 +72,23 @@ def test_the_greenhouse_embed_widget_is_not_a_candidate() -> None:
     )
     assert boards == ()  # type: ignore[comparison-overlap]
     assert (census.false_candidates, census.boards) == (1, 0)
+
+
+def test_the_shared_ats_chrome_catalog_is_refused_for_every_provider() -> None:
+    """`lanes/common_crawl.ATS_CHROME` is the repo's existing closed list of ATS furniture."""
+    boards, census = _boards(
+        [
+            (1, "https://job-boards.greenhouse.io/api/jobs/1"),
+            (2, "https://jobs.lever.co/embed/00000000-0000-0000-0000-000000000001"),
+            (
+                3,
+                "https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/"
+                "publication/7370000000000000001",
+            ),
+        ]
+    )
+    assert boards == ()  # type: ignore[comparison-overlap]
+    assert (census.false_candidates, census.parsed) == (3, 3)
 
 
 def test_a_workday_site_spelling_of_a_watched_tenant_is_not_a_candidate() -> None:

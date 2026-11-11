@@ -63,8 +63,8 @@ DEFAULT_PROVIDERS: tuple[str, ...] = ("greenhouse", "ashby")
 
 # Path segments that are the ATS's own furniture, not an employer.
 ATS_CHROME = frozenset({
-    "embed", "api", "assets", "static", "_next", "j", "jobs", "oneclick", "sitemap",
-    "sitemap.xml", "robots.txt", "favicon.ico",
+    "embed", "api", "assets", "static", "_next", "j", "jobs", "oneclick", "oneclick-ui",
+    "sitemap", "sitemap.xml", "robots.txt", "favicon.ico",
 })
 _SLUG_SHAPE = re.compile(r"[a-z0-9._-]{2,80}")
 

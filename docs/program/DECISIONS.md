@@ -36166,9 +36166,11 @@ as a board slug `embed`, which is ATS chrome) and workday career-site spellings 
 (`hpe.wd5.../hpe/Jobsathpe` beside a watched `.../hpe/acjobsite`).
 
 **Choice.** `lanes/destination_boards.candidate_boards` is the pure decision: parse each destination with
-`parse_board_target`; drop a closed-catalog parse artefact (`greenhouse:embed`); drop a workday slug whose
-`(host, tenant)` matches an already-watched workday tenant, because a tenant is one employer however many career-site
-spellings (or a slice's facet) its watched board carries; drop a watched `(provider, slug)`; deduplicate by
+`parse_board_target`; drop an ATS-chrome slug — the existing closed `lanes/common_crawl.ATS_CHROME` catalog
+(`embed`, `api`, `jobs`, `oneclick-ui`, ...), reused rather than re-spelled, and extended by that one click-segment
+spelling; drop a workday slug whose `(host, tenant)` matches an already-watched workday tenant (tenant-level by the
+plan's ruling: the watched board may be a facet slice of the same site, and the plan measured `hpe/Jobsathpe` beside a
+watched `hpe/acjobsite`; see the known gap below); drop a watched `(provider, slug)`; deduplicate by
 `(provider, lower slug)` and keep the first posting's URL as evidence. A board the store HOLDS but does not watch is
 kept: `companies import` watches an existing row, so excluding it would propose nothing for exactly the lane-discovered
 boards this is for. `companies discover-destinations [--out PATH]` reads the destinations and the watched sets
@@ -36187,6 +36189,13 @@ not this one, and import would watch such a row. *A host-level suppression list*
 one provider's parsing, so the catalog stays closed and per-provider; an invented host list is a guess. *Reading the
 browser redirect ledgers instead of destinations*: destinations are the durable, already-verified half, and the ledgers'
 remaining links are D-690's problem.
+
+**Known gap, measured not assumed.** The workday guard is TENANT-level by the plan's ruling, and the repo's own
+measurements show one tenant can hold genuinely distinct career sites (`bmo/External` + `bmo/campus`, `visa/Visa` +
+`visa/Visa_Early_Careers`, the Sony three-site case in `providers/workday.py`). So a genuinely distinct, unwatched
+site of a watched tenant is dropped here and must be added by hand. Of the 7 excluded rows, 5 are the unsliced board
+beside a watched facet slice (`nvidia`, `amat`) and 2 are the `hpe/Jobsathpe` class the plan named; refining the guard
+to "same site spelling only" would propose the HPE duplicate, so the plan's class wins and the gap is stated.
 
 **Not done.** Not wired into a scheduled run: like every discovery command it is produced on demand and the owner
 reviews it. The proposed workday boards name the tenant and two eightfold boards name the employer derived from the
