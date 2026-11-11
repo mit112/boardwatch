@@ -21,6 +21,12 @@ All notable changes to this project are documented here. The format follows
   accumulated 16 board candidates, 195 of 211 resolutions being employers already watched. No schema change, no
   config key, no route change for a lead without such a link.
 
+- **A lane copy is delivered with its employer's own link when the store already holds that posting (D-689).** After ranking, each
+  run looks for the one open posting on a watched employer board with the same company, title and city as a LinkedIn, Indeed or
+  job-apps lead, and records its URL as the lead's application destination. A lead with a link from any other source, a lead whose
+  own URL already names a requisition, and a job already applied to are left alone. A linked copy takes its twin's requisition, so
+  the existing duplicate hold then keeps the second copy off the list.
+
 ### Changed
 
 - **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score
