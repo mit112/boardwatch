@@ -213,13 +213,23 @@ TwinRow = tuple[int, str, object, str, str]
 
 
 def _postings_by_company_title(
-    conn: Connection, company_ids: Collection[int], *, statuses: tuple[str, ...] | None
+    conn: Connection,
+    company_ids: Collection[int],
+    *,
+    statuses: tuple[str, ...] | None,
+    require_url: bool = True,
 ) -> dict[tuple[int, str], list[TwinRow]]:
-    """The matched employers' postings with a URL, by (company, title key).
+    """The matched employers' postings, by (company, title key).
 
     `statuses=None` keeps every status, which the closed-twin rule needs: an open twin means the
     employer relisted and the wrapper is not dead, so it must be visible rather than filtered.
+    `require_url=False` lets the closed-twin rule SEE a twin this pairing leaves no link to use
+    (its URL is null): such a twin still counts for "exactly one place match", and hiding it would
+    queue a wrapper that has two.
     """
+    conditions = [postings.c.company_id.in_(chunk) for chunk in id_chunks(sorted(company_ids))]
+    if not conditions:
+        return {}
     rows: dict[tuple[int, str], list[TwinRow]] = {}
     for chunk in id_chunks(sorted(company_ids)):
         for row in conn.execute(
@@ -229,7 +239,7 @@ def _postings_by_company_title(
                 postings.c.status,
             ).where(
                 postings.c.company_id.in_(chunk),
-                postings.c.url.is_not(None),
+                *( [postings.c.url.is_not(None)] if require_url else [] ),
                 *( [] if statuses is None else [postings.c.status.in_(statuses)] ),
             )
         ):
@@ -237,8 +247,8 @@ def _postings_by_company_title(
                 (int(row.company_id), _title_key(str(row.normalized_title))), []
             ).append(
                 (
-                    int(row.id), str(row.url), row.locations_json, str(row.remote_policy),
-                    str(row.status),
+                    int(row.id), str(row.url or ""), row.locations_json,
+                    str(row.remote_policy), str(row.status),
                 )
             )
     return rows
@@ -280,7 +290,10 @@ def find_local_twins(
     company_ids = {row.id: direct.matching(str(row.name)) for row in wrappers}
     # One read of the matched employers' open postings, by company, through `ix_postings_corpus`.
     by_company_title = _postings_by_company_title(
-        conn, {cid for ids in company_ids.values() for cid in ids}, statuses=("open",)
+        conn,
+        {cid for ids in company_ids.values() for cid in ids},
+        statuses=("open",),
+        require_url=True,
     )
 
     matches: list[TwinMatch] = []
@@ -321,8 +334,13 @@ def find_closed_twin_wrappers(
         return ()
     direct = _direct_index(conn)
     company_ids = {row.id: direct.matching(str(row.name)) for row in wrappers}
+    # Both statuses, so the `(status, company_id, ...)` index answers the seek; a URL is not
+    # required, because a twin with no URL still makes the "exactly one" answer what it is.
     by_company_title = _postings_by_company_title(
-        conn, {cid for ids in company_ids.values() for cid in ids}, statuses=None
+        conn,
+        {cid for ids in company_ids.values() for cid in ids},
+        statuses=("open", "closed"),
+        require_url=False,
     )
     queued: list[int] = []
     for row in wrappers:

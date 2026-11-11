@@ -122,6 +122,37 @@ def test_two_matching_twins_are_not_one_even_when_both_are_closed(engine: Engine
     assert _queued(engine, [wrapper]) == ()
 
 
+def test_a_closed_twin_with_no_url_still_counts_as_the_second_match(engine: Engine) -> None:
+    """An unlinkable twin is still a twin; hiding it would queue a wrapper that has two."""
+    with engine.begin() as conn:
+        board = _company(conn, "Acme", "greenhouse")
+        _posting(conn, board, "t1", locations=["US,TX,Austin"], status="closed")
+        # A second requisition, same title and city, with no URL the writer could use.
+        job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
+        conn.execute(
+            insert(postings).values(
+                company_id=board,
+                job_id=job,
+                provider_posting_id="t2",
+                title="Software Engineer",
+                normalized_title="software engineer",
+                url=None,
+                locations_json=["Austin, Texas, United States"],
+                remote_policy="unknown",
+                first_seen_at=NOW,
+                last_seen_at=NOW,
+                status="closed",
+                closed_at=NOW,
+                consecutive_missing=0,
+                death_strikes=0,
+                content_hash="hash-t2",
+                body_text="body",
+            )
+        )
+        wrapper = _wrapper(conn)
+    assert _queued(engine, [wrapper]) == ()
+
+
 def test_a_closed_twin_in_another_city_is_not_a_match(engine: Engine) -> None:
     with engine.begin() as conn:
         board = _company(conn, "Acme", "greenhouse")
@@ -233,6 +264,71 @@ def test_the_priority_reorders_the_budget_and_never_widens_it(engine: Engine) ->
         )
     _sweep(engine, probe, priority_ids=frozenset({priority}), budget=1)
     assert probed == [priority]
+
+
+def test_an_empty_priority_set_leaves_the_existing_order_alone(engine: Engine) -> None:
+    first = _unwatched_posting(engine, "first")
+    second = _unwatched_posting(engine, "second")
+    probed: list[int] = []
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        probed.append(posting_id)
+        return Liveness(posting_id=posting_id, verdict="alive", signal="refetch_ok")
+
+    _sweep(engine, probe, priority_ids=frozenset(), budget=1)
+    assert probed == [first]  # least-recently-probed NULL rows, then id ascending
+    assert second != first
+
+
+def test_a_priority_set_larger_than_the_budget_still_spends_it_on_priority_rows(
+    engine: Engine,
+) -> None:
+    ordinary = _unwatched_posting(engine, "ordinary")
+    priority_a = _unwatched_posting(engine, "priority-a")
+    priority_b = _unwatched_posting(engine, "priority-b")
+    probed: list[int] = []
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        probed.append(posting_id)
+        return Liveness(posting_id=posting_id, verdict="alive", signal="refetch_ok")
+
+    _sweep(engine, probe, priority_ids=frozenset({priority_a, priority_b}), budget=1)
+    assert len(probed) == 1
+    assert probed[0] in {priority_a, priority_b}
+    assert ordinary not in probed
+
+
+def test_a_row_that_cannot_close_stays_behind_one_that_can(engine: Engine) -> None:
+    """With the LinkedIn guest check off, the priority must not promote an unclosable page above
+    a row that can close (the `PROBED_LAST_PROVIDERS` invariant)."""
+    with engine.begin() as conn:
+        linkedin_company = _company(conn, "Linked In Co", "linkedin", watched=False)
+        unclosable = _posting(
+            conn,
+            linkedin_company,
+            "li",
+            url="https://www.linkedin.com/jobs/view/4000000009",
+        )
+        other_company = _company(conn, "Other Co", "jobapps", watched=False)
+        closeable = _posting(conn, other_company, "ok", url="https://jobs.example.test/ok")
+    probed: list[int] = []
+
+    def probe(posting_id: int, url: str) -> Liveness:
+        probed.append(posting_id)
+        return Liveness(posting_id=posting_id, verdict="alive", signal="refetch_ok")
+
+    sweep_unwatched_deaths(
+        engine,
+        prober=probe,
+        listing_prober=None,
+        run_id=insert_run(engine),
+        budget=1,
+        company_budget=0,
+        ttl_hours=24,
+        linkedin_can_close=False,
+        priority_ids=frozenset({unclosable}),
+    )
+    assert probed == [closeable]
 
 
 def test_an_alive_probe_still_serves_a_prioritised_wrapper(engine: Engine) -> None:

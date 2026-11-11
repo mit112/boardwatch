@@ -460,7 +460,13 @@ def sweep_unwatched_deaths(
             # that is due now in favour of a smaller id that is not, and the rows past the budget
             # are ranked by the ordinary keys below rather than by id. The caller's set is bounded
             # by the standing queue (delivery-sized), so this `IN` stays small.
-            url_order.insert(0, case((postings.c.id.in_(sorted(priority_ids)), 0), else_=1))
+            # AFTER `probed_last`: when the LinkedIn guest check is off, those rows cannot close,
+            # and the existing invariant is that a row which cannot close never takes a budget slot
+            # from one that can. The priority reorders within that population.
+            url_order.insert(
+                0 if linkedin_can_close else 1,
+                case((postings.c.id.in_(sorted(priority_ids)), 0), else_=1),
+            )
         company_holds_a_standing_lead = func.max(case((has_a_standing_lead, 1), else_=0))
         # One pass for both URL denominators. `unprobeable` is a row this mechanism can never
         # reach by any future refinement — `postings.url` is nullable — so it is reported rather
