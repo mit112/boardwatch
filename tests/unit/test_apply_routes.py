@@ -334,3 +334,30 @@ def test_the_queue_serves_the_reason_on_the_row_that_has_one(
     assert rows[walled]["apply_route_reason"] == f"needs an account on {WALL_HOST}"
     assert rows[plain]["apply_route"] == "auto"
     assert rows[plain]["apply_route_reason"] is None
+
+
+def test_two_ledgers_that_disagree_about_one_posting_drop_the_candidate(tmp_path: Path) -> None:
+    """A conflict is refused, not guessed: a live-but-wrong posting would pass a liveness check."""
+    first, second = tmp_path / "a.json", tmp_path / "b.json"
+    first.write_text(
+        json.dumps(
+            {str(LIVE_LINK): {"company": "https://a.example.com/jobs/1", "company_status": "live"}}
+        ),
+        encoding="utf-8",
+    )
+    second.write_text(
+        json.dumps(
+            {str(LIVE_LINK): {"company": "https://b.example.com/jobs/2", "company_status": "live"}}
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "apply-routes.toml").write_text(
+        f"""
+auto_hosts = ["ashbyhq.com"]
+link_ledgers = ['{first}', '{second}']
+""",
+        encoding="utf-8",
+    )
+    routes = load_apply_routes(tmp_path)
+    assert routes.problem is None
+    assert LIVE_LINK not in routes.ledger_links

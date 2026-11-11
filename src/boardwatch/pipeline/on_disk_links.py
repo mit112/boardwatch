@@ -45,7 +45,7 @@ from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import yaml
-from sqlalchemy import Engine, select
+from sqlalchemy import Connection, Engine, func, select
 
 from boardwatch.core.liveness import GONE_STATUSES
 from boardwatch.core.politeness import Fetcher, FetchFailure, identifying_user_agent
@@ -63,14 +63,13 @@ from boardwatch.store.application_destinations import (
     read_application_destinations,
     record_application_destination,
 )
-from boardwatch.store.queries import company_exists
 from boardwatch.store.seed_queries import (
     LaneSeed,
     record_seed_attempt,
     unresolved_seed_count,
     unresolved_seeds,
 )
-from boardwatch.store.tables import postings
+from boardwatch.store.tables import companies, postings
 
 EVIDENCE_GRNH_PREFIX = "grnh:v1:"
 
@@ -186,6 +185,10 @@ class OnDiskReport:
     grnh_written: int = 0
     grnh_dead: int = 0
     grnh_unknown: int = 0
+    # A half that had candidates but no client to ask. Distinct from "found nothing": the runner
+    # says so rather than printing a clean zero.
+    ledger_unmeasured: bool = False
+    grnh_unmeasured: bool = False
 
 
 @dataclass(frozen=True)
@@ -208,6 +211,41 @@ class _Write:
     source_url: str
     url: str
     evidence_ref: str
+
+
+def _host(url: str) -> str:
+    """The URL's lower-cased host, `""` for a value `urlsplit` refuses. Never raises: a stored
+    posting URL is data, and one malformed row must not cost the whole step."""
+    try:
+        return (urlsplit(url).hostname or "").lower()
+    except ValueError:
+        return ""
+
+
+def _matches(host: str, entries: Sequence[str]) -> bool:
+    return bool(host) and any(host == entry or host.endswith(f".{entry}") for entry in entries)
+
+
+def _needs_an_employer_link(source_url: str, ledger_url: str, routes: ApplyRoutes) -> bool:
+    """Whether this posting's own URL is a middle link the ledger entry can improve.
+
+    Refused when the source is already a direct employer URL that disagrees with the ledger, for
+    the reason job-apps' `swap_links` refuses it: an aged ledger entry must not replace a current
+    direct link, and the caller cannot tell which is right. A marker-bearing company page counts
+    as a middle link because the employer form is behind it.
+    """
+    config = routes.config
+    if config is None:
+        return False
+    if _matches(_host(source_url), config.unresolved_hosts):
+        return True
+    if _matches(_host(source_url), config.native_fill_hosts):
+        return True
+    lowered = source_url.lower()
+    if any(marker.lower() in lowered for marker in config.unresolved_url_markers):
+        return True
+    # The ledger entry naming the posting's own URL is not a replacement at all.
+    return source_url == ledger_url
 
 
 def _pending_postings(
@@ -240,12 +278,12 @@ def _split_candidates(
     ledger: list[_LedgerCandidate] = []
     grnh: list[_GrnhCandidate] = []
     for posting_id, source_url in sorted(source_urls.items()):
-        host = (urlsplit(source_url).hostname or "").lower()
+        host = _host(source_url)
         if host in _GRNH_HOSTS:
             grnh.append(_GrnhCandidate(posting_id=posting_id, source_url=source_url))
             continue
         link = routes.ledger_links.get(posting_id)
-        if link is not None:
+        if link is not None and _needs_an_employer_link(source_url, link.url, routes):
             ledger.append(
                 _LedgerCandidate(
                     posting_id=posting_id,
@@ -326,7 +364,10 @@ def _grnh_delivery_writes(
             final_url = result.final_url or candidate.source_url
         url = posting_link(final_url)
         if url is None:
-            dead += 1  # landed on a homepage, an aggregator or the shortener itself
+            # Landed on a homepage, an aggregator or the shortener itself. That is not a gone
+            # status and not alive-as-a-posting, so it is UNKNOWN: the link says nothing about
+            # whether the job is open.
+            unknown += 1
             continue
         writes.append(
             _Write(
@@ -341,6 +382,12 @@ def _grnh_delivery_writes(
 
 def _persist(engine: Engine, writes: Sequence[_Write], *, now: datetime) -> frozenset[int]:
     """Write the destinations and read them back; the readback is the verification, not the call.
+
+    **No-clobber.** Every candidate was read before the network work began, and the other writer
+    of this table (job-apps' Stop hook) takes no scan lease, so it can land a browser-verified
+    destination in that window. The write therefore refuses to replace any existing row, and the
+    readback confirms which URLs are actually stored: a row the other writer won is reported as
+    not landed, never as overwritten.
 
     Returns the posting ids whose stored destination URL is the one written. A single transaction,
     after every probe has finished, so the write lock is held for the writes' own duration and not
@@ -358,6 +405,7 @@ def _persist(engine: Engine, writes: Sequence[_Write], *, now: datetime) -> froz
                     source_url=write.source_url,
                     evidence_ref=write.evidence_ref,
                     verified_at=now,
+                    only_if_absent=True,
                 )
             except InvalidApplicationDestinationError:
                 continue  # a URL the writer refuses is a report, not a crash
@@ -389,6 +437,8 @@ def record_on_disk_links(
     if not source_urls:
         return OnDiskReport()
     ledger_candidates, grnh_candidates = _split_candidates(source_urls, routes)
+    ledger_unmeasured = prober is None and bool(ledger_candidates)
+    grnh_unmeasured = fetcher is None and bool(grnh_candidates)
     if prober is None:
         ledger_candidates = []
     if fetcher is None:
@@ -426,6 +476,8 @@ def record_on_disk_links(
         ),
         grnh_dead=grnh_dead,
         grnh_unknown=grnh_unknown,
+        ledger_unmeasured=ledger_unmeasured,
+        grnh_unmeasured=grnh_unmeasured,
     )
 
 
@@ -504,13 +556,16 @@ def _existing_candidates(path: Path) -> list[dict[str, object]] | None:
     rows = loaded.get("companies")
     if not isinstance(rows, list):
         return None
-    return [
-        row
-        for row in rows
-        if isinstance(row, dict)
+    # A row whose shape this step cannot preserve makes the WHOLE file unreadable, rather than
+    # being filtered out: filtering would rewrite the file without the owner's row.
+    if not all(
+        isinstance(row, dict)
         and isinstance(row.get("provider"), str)
         and isinstance(row.get("slug"), str)
-    ]
+        for row in rows
+    ):
+        return None
+    return rows
 
 
 def write_grnh_candidates(
@@ -553,7 +608,7 @@ def write_grnh_candidates(
         "# Greenhouse's own shortener; the redirect target names the board.",
         "#",
         f"# seeds selectable {selectable} | followed this run {followed} "
-        f"| failed {failed} | already watched or stored {already_known}",
+        f"| failed {failed} | already watched {already_known}",
         f"# {expired} of the followed seeds named a posting that has since expired "
         "-- a live board, a dead requisition.",
         f"# {added} board(s) added this run; {len(existing) - added} carried from earlier runs.",
@@ -569,8 +624,37 @@ def write_grnh_candidates(
             for board in boards
         ]
         lines.append("#")
-    path.write_text("\n".join(lines) + "\n" + body, encoding="utf-8")
+    # Atomic: a crash mid-write would leave a truncated file that later runs refuse to touch, and
+    # the boards already resolved would be lost until the owner fixes it.
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text("\n".join(lines) + "\n" + body, encoding="utf-8")
+    tmp.replace(path)
     return added
+
+
+def _watched_boards(
+    conn: Connection, boards: Sequence[ResolvedBoard]
+) -> set[tuple[str, str]]:
+    """The (provider, lower slug) pairs among `boards` that are already WATCHED.
+
+    `company_exists` is the wrong test here: it says "stored, watched or not", and a lane-stored
+    but unwatched board is exactly a board this file exists to propose — `companies import` watches
+    an existing row. Excluding it would retire the seed while the board could never be armed.
+    """
+    keys: set[tuple[str, str]] = set()
+    for board in boards:
+        row = conn.execute(
+            select(companies.c.id)
+            .where(
+                companies.c.provider == board.provider,
+                func.lower(companies.c.slug) == board.slug.lower(),
+                companies.c.watched.is_(True),
+            )
+            .limit(1)
+        ).first()
+        if row is not None:
+            keys.add((board.provider, board.slug.lower()))
+    return keys
 
 
 def drain_grnh_seeds(
@@ -606,13 +690,9 @@ def drain_grnh_seeds(
     outcomes = follow_seeds(seeds, fetcher=fetcher)
     boards = _distinct_boards(outcomes)
     with engine.connect() as conn:
-        known_keys = {
-            (board.provider, board.slug.lower())
-            for board in boards
-            if company_exists(conn, provider=board.provider, slug=board.slug)
-        }
+        watched_keys = _watched_boards(conn, boards)
     new_boards = [
-        board for board in boards if (board.provider, board.slug.lower()) not in known_keys
+        board for board in boards if (board.provider, board.slug.lower()) not in watched_keys
     ]
     already_known = len(boards) - len(new_boards)
     failed = sum(1 for outcome in outcomes if outcome.board is None)

@@ -1696,6 +1696,7 @@ def _record_on_disk_links(
     *,
     prober: LivenessProber | None,
     fetcher: Fetcher | None,
+    skip_scan: bool,
     console: Console,
 ) -> list[str]:
     """Record employer links the ledgers and stored short links already name (D-690).
@@ -1704,6 +1705,10 @@ def _record_on_disk_links(
     the link. A failure costs the link and nothing else: the lead is delivered with the aggregator
     wrapper exactly as every run before this step did, and the error line says so.
     """
+    # `--no-scan` is the documented offline switch, so the short-link half must not reach the
+    # network when it is on; the ledger half is already gated on the caller's prober.
+    if skip_scan:
+        fetcher = None
     try:
         routes = load_apply_routes(settings.config_dir)
         with engine.connect() as conn:
@@ -1722,9 +1727,9 @@ def _record_on_disk_links(
         return [f"on-disk links: no employer link recorded this run ({type(exc).__name__}: {exc})"]
     if report.ledger_considered or report.grnh_considered:
         skipped = []
-        if prober is None:
+        if report.ledger_unmeasured:
             skipped.append("ledger half unmeasured: no liveness prober")
-        if fetcher is None:
+        if report.grnh_unmeasured:
             skipped.append("short-link half unmeasured: no fetcher")
         console.print(
             f"on-disk links: {report.ledger_written} ledger link(s) and "
@@ -2817,7 +2822,7 @@ def _run_pipeline_leased(
         # D-690: the grnh.se backlog drain, on full runs only — a daytime delivery pass must not
         # spend five minutes of its window on board discovery. Placed before the death sweep so a
         # board resolved here is proposed in the same run it was fetched.
-        if fresh_hours is None:
+        if fresh_hours is None and not skip_scan:
             drain_errors = _drain_grnh_backlog(
                 engine, settings, run_id=run_id, fetcher=seed_fetcher, console=console
             )
@@ -2972,6 +2977,7 @@ def _run_pipeline_leased(
             [posting.posting_id for posting in ranked.visible],
             prober=liveness_prober,
             fetcher=seed_fetcher,
+            skip_scan=skip_scan,
             console=console,
         )
         stage_errors.extend(link_errors)

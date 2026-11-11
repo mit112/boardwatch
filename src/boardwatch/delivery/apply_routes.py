@@ -218,6 +218,12 @@ def load_apply_routes(config_dir: Path) -> ApplyRoutes:
     problems: list[str] = []
     link_status: dict[int, str] = {}
     ledger_links: dict[int, LedgerLink] = {}
+    # A posting two ledgers disagree about is dropped rather than guessed. The write step probes
+    # the URL and keeps a wrong link from being stored only if it is dead; a live but wrong posting
+    # would still be stored, so the conflict itself has to refuse the candidate. Recency is not
+    # used to pick a winner: the write step asks about the URL now, and a stale-but-live entry is
+    # fine, while a stale-but-wrong one is not — so neither entry survives the disagreement.
+    conflicted: set[int] = set()
     for ledger in config.link_ledgers:
         try:
             entries = _read_ledger(ledger)
@@ -238,7 +244,15 @@ def load_apply_routes(config_dir: Path) -> ApplyRoutes:
             ):
                 url = entry.get("company")
                 if isinstance(url, str) and url.strip():
-                    ledger_links[int(key)] = LedgerLink(
+                    posting_id = int(key)
+                    if posting_id in conflicted:
+                        continue
+                    prior = ledger_links.get(posting_id)
+                    if prior is not None and prior.url != url.strip():
+                        conflicted.add(posting_id)
+                        ledger_links.pop(posting_id, None)
+                        continue
+                    ledger_links[posting_id] = LedgerLink(
                         url=url.strip(), evidence_ref=f"ledger:{ledger.name}:{key}"
                     )
     return ApplyRoutes(

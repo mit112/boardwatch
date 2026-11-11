@@ -43,7 +43,9 @@ def engine(tmp_path: Path) -> Engine:
     return eng
 
 
-def _company(conn: Connection, name: str = "Acme", provider: str = "greenhouse") -> int:
+def _company(
+    conn: Connection, name: str = "Acme", provider: str = "greenhouse", *, watched: bool = True
+) -> int:
     return int(
         conn.execute(
             insert(companies).values(
@@ -51,7 +53,7 @@ def _company(conn: Connection, name: str = "Acme", provider: str = "greenhouse")
                 provider=provider,
                 slug=name.lower().replace(" ", "-"),
                 source="user",
-                watched=True,
+                watched=watched,
             )
         ).inserted_primary_key[0]
     )
@@ -94,6 +96,7 @@ def _routes(config_dir: Path, links: dict[str, dict[str, object]]) -> ApplyRoute
     (config_dir / "apply-routes.toml").write_text(
         f"""
 auto_hosts = ["ashbyhq.com"]
+unresolved_hosts = ["linkedin.com", "indeed.com", "jobright.ai"]
 link_ledgers = ['{config_dir / "links.json"}']
 no_employer_statuses = ["none", "aggregator", "linkedin_is_channel"]
 """,
@@ -330,6 +333,67 @@ def test_a_browser_verified_destination_is_never_overwritten(
     assert _destination(engine, posting) == ("https://employer.example.com/job/999", "browser:verified")
 
 
+def test_a_destination_written_during_the_probe_window_is_never_overwritten(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """The other writer (job-apps' Stop hook) takes no scan lease. Its link must win.
+
+    The table is read before the network work and written after it, so a destination landing in
+    between is what `only_if_absent` exists for; the readback is what reports the loss as "not
+    landed" rather than as a successful write.
+    """
+    from boardwatch.store.application_destinations import record_application_destination
+
+    with engine.begin() as conn:
+        company = _company(conn)
+        posting = _posting(conn, company, "https://www.linkedin.com/jobs/view/race")
+    routes = _routes(
+        tmp_path / "config",
+        {str(posting): {"company": POSTING_URL, "company_status": "unknown"}},
+    )
+
+    def prober_that_races(posting_id: int, url: str) -> Liveness:
+        with engine.begin() as conn:
+            record_application_destination(
+                conn,
+                posting_id=posting_id,
+                url="https://employer.example.com/browser-verified",
+                source_url="https://www.linkedin.com/jobs/view/race",
+                evidence_ref="browser:verified",
+                verified_at=NOW,
+            )
+        return _alive(posting_id, url)
+
+    report = _record(engine, [posting], routes, prober=prober_that_races)
+    assert report.ledger_written == 0  # type: ignore[attr-defined]
+    assert _destination(engine, posting) == (
+        "https://employer.example.com/browser-verified",
+        "browser:verified",
+    )
+
+
+def test_a_ledger_url_never_replaces_a_direct_employer_source(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """An aged ledger entry must not swap out a current direct employer URL."""
+    with engine.begin() as conn:
+        company = _company(conn)
+        posting = _posting(
+            conn, company, "https://jobs.apple.com/en-us/details/200682058/x"
+        )
+    routes = _routes(
+        tmp_path / "config",
+        {str(posting): {"company": "https://other.example.com/job/2", "company_status": "live"}},
+    )
+
+    def boom(posting_id: int, url: str) -> Liveness:
+        raise AssertionError("a direct employer source is not a middle link")
+
+    report = _record(engine, [posting], routes, prober=boom)
+    assert report.ledger_considered == 0  # type: ignore[attr-defined]
+    assert _destination(engine, posting) is None
+
+
 def test_a_second_run_writes_nothing(engine: Engine, tmp_path: Path) -> None:
     with engine.begin() as conn:
         company = _company(conn)
@@ -429,6 +493,27 @@ def test_the_drain_does_not_propose_a_board_already_watched(engine: Engine, tmp_
     )
     assert (report.resolved, report.already_known, report.proposed) == (1, 1, 0)
     assert not (tmp_path / GRNH_CANDIDATE_FILENAME).exists()
+
+
+def test_the_drain_proposes_a_stored_but_unwatched_board(engine: Engine, tmp_path: Path) -> None:
+    """`companies import` watches an existing row, so a stored-unwatched board is still a proposal.
+
+    Excluding it (`company_exists`) would retire the seed while the board could never be armed.
+    """
+    with engine.begin() as conn:
+        _company(conn, "Acme", "greenhouse", watched=False)
+    _seed(engine, "https://grnh.se/stored")
+    run = insert_run(engine)
+    report = drain_grnh_seeds(
+        engine,
+        fetcher=_StubFetcher(landing={"https://grnh.se/stored": "https://job-boards.greenhouse.io/acme/jobs/1"}),  # type: ignore[arg-type]
+        run_id=run,
+        now=NOW,
+        data_dir=tmp_path,
+    )
+    assert (report.resolved, report.already_known, report.proposed) == (1, 0, 1)
+    payload = yaml.safe_load((tmp_path / GRNH_CANDIDATE_FILENAME).read_text(encoding="utf-8"))
+    assert [row["slug"] for row in payload["companies"]] == ["acme"]
 
 
 def test_the_drain_charges_a_failed_seed_and_retires_it_over_runs(
