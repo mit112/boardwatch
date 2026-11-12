@@ -257,3 +257,14 @@ def test_an_unreported_link_change_still_fails_the_recount(
     assert relinked == {"to_direct": 0, "off_direct": 0}
     assert _direct_checks(payload) == (1, 2, False)
     assert payload["reconciles"] is False
+
+
+def test_relinked_routes_classify_nothing_without_a_routes_file(env: Path) -> None:
+    from boardwatch.pipeline.runner import _relinked_routes
+
+    settings = load_settings(data_dir=env)
+    settings.config_dir.mkdir(parents=True, exist_ok=True)
+    links = {1: _direct(1), 2: _other(2)}
+    assert _relinked_routes(settings, links) == {}
+    (settings.config_dir / "apply-routes.toml").write_text(_ROUTES, encoding="utf-8")
+    assert _relinked_routes(settings, links) == {1: True, 2: False}

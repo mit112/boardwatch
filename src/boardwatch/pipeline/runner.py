@@ -4598,6 +4598,10 @@ def _relinked_routes(settings: Settings, urls: Mapping[int, str]) -> dict[int, b
     if not urls:
         return {}
     routes = load_apply_routes(settings.config_dir)
+    if not routes.configured:
+        # Unreadable now though the ranker read it: classifying would call every link
+        # non-direct. The store recount is skipped on the same condition.
+        return {}
     return {posting_id: routes.is_direct_auto(url) for posting_id, url in urls.items()}
 
 
