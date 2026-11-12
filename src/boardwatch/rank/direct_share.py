@@ -172,6 +172,11 @@ class DirectShareReport:
     detail: str
     steps: tuple[str, ...] = ()
     tiers: Mapping[int, TierCounts] = field(default_factory=dict)
+    #: Delivered leads whose link was written AFTER the ranker classified them (D-689/D-690) and
+    #: whose new link changed the route: counted under the ranker's route above, delivered under
+    #: the other. The store recount sees the new route, so these are the known difference.
+    relinked_to_direct: int = 0
+    relinked_off_direct: int = 0
 
     @property
     def measured(self) -> bool:
@@ -223,6 +228,7 @@ def attribute(
     projection_failed_ids: Iterable[int],
     tailor_failed_ids: Iterable[int],
     delivered: Mapping[int, bool],
+    relinked: Mapping[int, bool] | None = None,
 ) -> DirectShareReport:
     """Give every lead that survived the ranker one fate and total it by tier and route.
 
@@ -232,6 +238,10 @@ def attribute(
     are meant to be disjoint and this does not repair them. A step the run did not take (no
     liveness probe, gate off, no `--project`) is absent from the report, never a column of zeros.
     A survivor in no set at all is `unaccounted`.
+
+    `relinked` maps a posting id whose link was written after the ranker ran to whether the new
+    link is direct, as the caller classified it. It moves no lead between routes here; it only
+    counts the delivered leads it re-routed, so the funnel can account for them.
     """
     if tally is None:
         return not_measured("the ranker did not run")
@@ -259,6 +269,7 @@ def attribute(
     delivered_count: Counter[tuple[int, bool]] = Counter()
     review_count: Counter[tuple[int, bool]] = Counter()
     unplaced: Counter[tuple[int, bool]] = Counter()
+    to_direct = off_direct = 0
     for posting_id, (tier, direct) in tally.survivors.items():
         key = (tier, direct)
         for step, ids in run_fates:
@@ -271,6 +282,9 @@ def attribute(
             if posting_id in delivered:
                 delivered_count[key] += 1
                 review_count[key] += int(delivered[posting_id])
+                now_direct = (relinked or {}).get(posting_id, direct)
+                to_direct += int(now_direct and not direct)
+                off_direct += int(direct and not now_direct)
             else:
                 unplaced[key] += 1
 
@@ -303,7 +317,8 @@ def attribute(
             reserved=tally.reserved.get(tier, 0), direct=counts(True), non_direct=counts(False)
         )
     return DirectShareReport(
-        state="measured", share=tally.share, detail="", steps=steps, tiers=tiers
+        state="measured", share=tally.share, detail="", steps=steps, tiers=tiers,
+        relinked_to_direct=to_direct, relinked_off_direct=off_direct,
     )
 
 
@@ -348,6 +363,9 @@ def direct_share_to_dict(report: DirectShareReport | None) -> dict[str, object]:
         "steps": list(report.steps),
         "reconciles": report.reconciles,
         "reserved": report.reserved,
+        "relinked": {
+            "to_direct": report.relinked_to_direct, "off_direct": report.relinked_off_direct
+        },
         "totals": {"direct": totals("direct"), "non_direct": totals("non_direct")},
         "tiers": {
             str(tier): {
@@ -407,6 +425,13 @@ def direct_share_lines(report: DirectShareReport | None) -> list[str]:
         "ranker's cutoff and `beyond_slate` the cut after the judge; the funnel's "
         "`capped_by_top_n` drop is their sum.*",
     ]
+    if report.relinked_to_direct or report.relinked_off_direct:
+        lines += [
+            "",
+            f"Re-linked after ranking: {report.relinked_to_direct} delivered lead(s) counted "
+            f"non-direct above were delivered with a direct link, {report.relinked_off_direct} "
+            "the other way. The link steps run after the ranker (D-689, D-690).",
+        ]
     if report.reconciles is False:
         lines += [
             "",

@@ -2181,9 +2181,13 @@ def _direct_share_cross_checks(
     ))
     if delivered_from_store is not None:
         checks.append(check(
-            "delivered_direct", report.total("direct", "delivered"), delivered_from_store[0],
-            "direct leads delivered vs the delivered leads' stored links, each routed afresh "
-            "through the same `is_direct_auto`",
+            "delivered_direct",
+            report.total("direct", "delivered")
+            + report.relinked_to_direct - report.relinked_off_direct,
+            delivered_from_store[0],
+            "direct leads delivered, plus those a link step re-routed after ranking "
+            "(`relinked`), vs the delivered leads' stored links, each routed afresh through the "
+            "same `is_direct_auto`",
         ))
     checks.append(check(
         "unaccounted", report.unaccounted, 0,

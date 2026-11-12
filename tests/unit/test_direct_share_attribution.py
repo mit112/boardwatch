@@ -893,3 +893,30 @@ def test_an_unreconciled_report_warns_in_the_markdown(env: Path) -> None:
     short = {ids[n]: n == "a2n2" for n in RUN_FATES["delivered"] if n != "c2d2"}
     text = "\n".join(direct_share_lines(_attribute(ids, tally, delivered=short)))
     assert "DOES NOT RECONCILE: 1 lead(s)" in text
+
+
+def test_a_relink_after_ranking_is_counted_both_ways_for_delivered_leads_only(env: Path) -> None:
+    # D-689/D-690 write links after the ranker classified each lead. The recount sees the new
+    # route, so the cross-check adds `to_direct` and subtracts `off_direct`.
+    ids, tally, _ = _report(env)
+    delivered = {ids[n] for n in RUN_FATES["delivered"]}
+    direct = sorted(p for p in delivered if tally.survivors[p][1])
+    other = sorted(p for p in delivered if not tally.survivors[p][1])
+    dead = [ids[n] for n in RUN_FATES["dead"]]
+    report = _attribute(ids, tally, relinked={
+        direct[0]: False,  # a direct lead re-linked to a non-direct URL
+        other[0]: True, other[1]: True,  # two non-direct leads re-linked to direct ones
+        dead[0]: not tally.survivors[dead[0]][1],  # re-routed but never delivered: not counted
+    })
+    assert (report.relinked_to_direct, report.relinked_off_direct) == (2, 1)
+    # Route totals stay the ranker's: 4 direct delivered, as before.
+    assert report.total("direct", "delivered") == 4
+    # 4 + 2 - 1 = 5 direct by the stored links: agrees. A recount of 4 (the ranker's count
+    # alone) or 7 (the difference added the wrong way) disagrees.
+    assert _checks(_funnel(report, delivered_direct_from_store=(5, 5)))[
+        "direct_share:delivered_direct"
+    ] == (5, 5)
+    assert _funnel(report, delivered_direct_from_store=(5, 5)).reconciles
+    for wrong in (4, 7):
+        funnel = _funnel(report, delivered_direct_from_store=(wrong, 10 - wrong))
+        assert [c.name for c in funnel.disagreements] == ["direct_share:delivered_direct"]

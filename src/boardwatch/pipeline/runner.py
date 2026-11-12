@@ -652,6 +652,9 @@ class PipelineSummary:
     # D-674's share, as the ranker tallied it, and the post-gate cut the tally cannot see. Both
     # feed `rank.direct_share.attribute`; `None` / empty where the ranker did not run.
     direct_share_tally: DirectShareTally | None = None
+    # posting id -> the employer link a link step wrote for it AFTER the ranker classified it
+    # (D-689, D-690). The funnel counts the delivered leads this re-routed (`relinked`).
+    relinked_urls: dict[int, str] = field(default_factory=dict)
     beyond_slate_ids: list[int] = field(default_factory=list)
     # Wall clock per stage, in the order the stages ran, filled in by `_StageClock` below.
     # Empty means the run never reached its first mark; the funnel reports that as timed-with-
@@ -1699,7 +1702,7 @@ def _record_on_disk_links(
     fetcher: Fetcher | None,
     skip_scan: bool,
     console: Console,
-) -> list[str]:
+) -> tuple[list[str], Mapping[int, str]]:
     """Record employer links the ledgers and stored short links already name (D-690).
 
     Runs after the slate is chosen and before any route is computed, so this run's delivery uses
@@ -1725,7 +1728,10 @@ def _record_on_disk_links(
             now=utcnow(),
         )
     except Exception as exc:  # a link is an improvement to a lead, never a condition of the run
-        return [f"on-disk links: no employer link recorded this run ({type(exc).__name__}: {exc})"]
+        return (
+            [f"on-disk links: no employer link recorded this run ({type(exc).__name__}: {exc})"],
+            {},
+        )
     if report.ledger_considered or report.grnh_considered:
         skipped = []
         if report.ledger_unmeasured:
@@ -1741,7 +1747,7 @@ def _record_on_disk_links(
             + (f"; {'; '.join(skipped)}" if skipped else "")
             + ")"
         )
-    return []
+    return [], report.links
 
 
 def _drain_grnh_backlog(
@@ -1785,7 +1791,7 @@ def _drain_grnh_backlog(
 
 def _link_local_twins(
     engine: Engine, shortlist_ids: Sequence[int], console: Console
-) -> list[str]:
+) -> tuple[list[str], Mapping[int, str]]:
     """Record employer links for this slate's and the standing queue's lane leads (D-689).
 
     Never fatal: a run that cannot write a link delivers the lead with the lane's own link, as
@@ -1801,12 +1807,15 @@ def _link_local_twins(
                 exclude_job_ids=frozenset(applied_job_ids(conn)),
             )
     except Exception as exc:  # a link is an improvement to a lead, never a condition of the run
-        return [f"local twins: no employer link recorded this run ({type(exc).__name__}: {exc})"]
+        return (
+            [f"local twins: no employer link recorded this run ({type(exc).__name__}: {exc})"],
+            {},
+        )
     console.print(
         f"local twins: {report.written} employer link(s) recorded "
         f"({report.considered} lane lead(s) checked, {report.company_matched} with a watched board)"
     )
-    return []
+    return [], report.links
 
 
 def _closed_twin_priority(engine: Engine, console: Console) -> frozenset[int]:
@@ -3028,7 +3037,7 @@ def _run_pipeline_leased(
         summary.errors.extend(regroup_errors)
         # D-690: after the slate is chosen and before the route each lead is delivered with is
         # computed, so a link already on disk reaches this run's queue.
-        link_errors = _record_on_disk_links(
+        link_errors, disk_links = _record_on_disk_links(
             engine,
             settings,
             [posting.posting_id for posting in ranked.visible],
@@ -3042,9 +3051,10 @@ def _run_pipeline_leased(
         # D-689: after the ranker chose the slate and before admission reads each lead's link
         # evidence, so a lane lead whose employer posting is already delivered or applied to is
         # withheld by the requisition hold this run, and the rest are delivered with the link.
-        twin_errors = _link_local_twins(
+        twin_errors, twin_links = _link_local_twins(
             engine, [posting.posting_id for posting in ranked.visible], console
         )
+        summary.relinked_urls = {**disk_links, **twin_links}
         stage_errors.extend(twin_errors)
         summary.errors.extend(twin_errors)
         clock.mark("eligibility")
@@ -4583,6 +4593,18 @@ def _capture_run_start(
         console.print(f"  ! run identity not read at start, drift unmeasured: {exc}", markup=False)
 
 
+def _relinked_routes(settings: Settings, urls: Mapping[int, str]) -> dict[int, bool]:
+    """posting id -> whether the link written after ranking is direct, by the ranker's own rule."""
+    if not urls:
+        return {}
+    routes = load_apply_routes(settings.config_dir)
+    if not routes.configured:
+        # Unreadable now though the ranker read it: classifying would call every link
+        # non-direct. The store recount is skipped on the same condition.
+        return {}
+    return {posting_id: routes.is_direct_auto(url) for posting_id, url in urls.items()}
+
+
 def _emit_funnel(
     engine: Engine,
     settings: Settings,
@@ -4756,6 +4778,7 @@ def _emit_funnel(
             projection_failed_ids=summary.projection_failed_ids,
             tailor_failed_ids=summary.tailor_failed_ids,
             delivered={lead.posting_id: lead.pending_tailor for lead in summary.tailored},
+            relinked=_relinked_routes(settings, summary.relinked_urls),
         ),
         errors=summary.errors,
         board_moves=summary.board_moves,

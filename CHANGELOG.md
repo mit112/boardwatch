@@ -326,6 +326,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The funnel no longer fails B6 when a link step re-routes a delivered lead after ranking.** The on-disk link
+  (D-690) and local-twin (D-689) steps write employer links after the ranker has classified each lead as direct or
+  not, so the D-683 store recount of delivered direct leads read 48 where the ranker counted 46 on run 1022 (two
+  local-twin links), and `reconciles` went false with every stage reconciled. Each step now
+  returns the links it wrote; the direct-share section reports `relinked` (`to_direct`, `off_direct`) for the
+  delivered leads whose route changed, and `direct_share:delivered_direct` compares the ranker's count plus that
+  difference against the recount. A link change no step reports still disagrees. No schema change, no config key.
+
 - **Shortlist dispositions no longer fail when another writer commits during their reads.** The
   pipeline takes the SQLite write lock before reading and waits for other writers at transaction start.
 - **LinkedIn guest counters record over-cap rate limits as responses.** A 429 or 503 with an

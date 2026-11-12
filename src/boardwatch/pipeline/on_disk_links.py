@@ -38,8 +38,8 @@ held across it would refuse the web viewer's own writes for that long.
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -189,6 +189,8 @@ class OnDiskReport:
     # says so rather than printing a clean zero.
     ledger_unmeasured: bool = False
     grnh_unmeasured: bool = False
+    #: posting id -> the link this pass wrote for it, both halves (see `TwinReport.links`).
+    links: Mapping[int, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -478,6 +480,7 @@ def record_on_disk_links(
         grnh_unknown=grnh_unknown,
         ledger_unmeasured=ledger_unmeasured,
         grnh_unmeasured=grnh_unmeasured,
+        links={write.posting_id: write.url for write in writes if write.posting_id in stored},
     )
 
 

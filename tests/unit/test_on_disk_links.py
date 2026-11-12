@@ -406,6 +406,8 @@ def test_a_second_run_writes_nothing(engine: Engine, tmp_path: Path) -> None:
     first = _record(engine, [posting], routes)
     second = _record(engine, [posting], routes)
     assert (first.ledger_written, second.ledger_written) == (1, 0)  # type: ignore[attr-defined]
+    assert first.links == {posting: POSTING_URL}  # type: ignore[attr-defined]
+    assert second.links == {}  # type: ignore[attr-defined]
 
 
 def test_a_grnh_short_link_resolves_to_the_employer_posting(
@@ -421,6 +423,7 @@ def test_a_grnh_short_link_resolves_to_the_employer_posting(
     report = _record(engine, [posting], routes, prober=None, fetcher=_StubFetcher(landing={seed_url: landing}))
     assert report.grnh_written == 1  # type: ignore[attr-defined]
     assert _destination(engine, posting) == (landing, f"{EVIDENCE_GRNH_PREFIX}{posting}")
+    assert report.links == {posting: landing}  # type: ignore[attr-defined]
 
 
 def test_a_grnh_short_link_whose_posting_has_expired_is_dead(
