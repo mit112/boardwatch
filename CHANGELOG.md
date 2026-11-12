@@ -47,6 +47,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A higher degree offered with `or` keeps the listed bachelor's qualification.** A bachelor's
+  holder in the named field now meets "Bachelor's degree in Computer Science or a Master's
+  degree in Computer Science." A higher degree still stands the bare bachelor rule down unless
+  directly preceded by `or` and an optional article. Any other higher mention stands it down,
+  including a preference after a semicolon.
+  This rules change invalidates cached eligibility inputs (D-672).
+
 - **The morning report and the web queue list leads in the ranker's order: tier first, then score (D-688).** Both sorted by score
   alone, so an entry-level role the ranker had placed first could be listed under an off-target lead that scored higher. Each
   morning lead now shows its tier. No lead changes list, lane or verdict; only the order inside a list changes.
