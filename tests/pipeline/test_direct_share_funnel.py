@@ -190,3 +190,70 @@ def test_with_the_share_off_the_artifact_says_off_and_carries_no_counts(
     text = summary.funnel.markdown_path.read_text(encoding="utf-8")
     assert "## Direct share\n\n*OFF." in text
     assert [lead.posting_id for lead in summary.tailored] == [ids[1], ids[2], ids[3]]
+
+
+def _relink_after_ranking(
+    monkeypatch: pytest.MonkeyPatch, data_dir: Path, *, report: bool
+) -> None:
+    """Stand in for D-689's step: write a DIRECT employer link for `ids[1]` (non-direct, delivered)
+    after the ranker has classified it, the way the real step does, and say so only when `report`.
+    The slate is ids[0..3] in id order (module docstring), so `ids[1]` is its second id."""
+    from datetime import datetime
+
+    from boardwatch.pipeline import runner
+    from boardwatch.store.application_destinations import record_application_destination
+
+    def fake(
+        engine: object, shortlist_ids: list[int], console: object
+    ) -> tuple[list[str], dict[int, str]]:
+        posting = sorted(shortlist_ids)[1]
+        url = _direct(100)
+        with get_engine(data_dir).begin() as conn:
+            record_application_destination(
+                conn, posting_id=posting, url=url, source_url=URLS[1],
+                evidence_ref="local-twin:v1:test", verified_at=datetime(2026, 11, 11),
+            )
+        return [], ({posting: url} if report else {})
+
+    monkeypatch.setattr(runner, "_link_local_twins", fake)
+
+
+def _direct_checks(payload: dict[str, object]) -> tuple[int, int, bool]:
+    (check,) = [c for c in payload["cross_checks"]  # type: ignore[attr-defined]
+                if c["name"] == "direct_share:delivered_direct"]
+    return check["in_memory"], check["from_store"], check["agrees"]
+
+
+def test_a_link_written_after_ranking_is_counted_and_reconciles(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Run 1022: two lane leads got an employer link from the local-twin step after the ranker
+    # had counted them non-direct, so the store recount found 48 direct where the ranker had 46.
+    _relink_after_ranking(monkeypatch, env, report=True)
+    summary, ids = _run(env, tmp_path / "apps", 0.5)
+    assert ids[1] in [lead.posting_id for lead in summary.tailored]
+    payload = _payload(summary)
+    section = payload["direct_share"]
+    assert isinstance(section, dict)
+    assert section["relinked"] == {"to_direct": 1, "off_direct": 0}
+    # The route totals stay the ranker's: re-routing is reported beside them, not folded in.
+    assert section["totals"]["direct"]["delivered"] == 1  # type: ignore[index]
+    assert _direct_checks(payload) == (2, 2, True)
+    assert payload["reconciles"] is True
+    assert summary.funnel is not None
+    assert "Re-linked after ranking: 1 delivered lead(s)" in (
+        summary.funnel.markdown_path.read_text(encoding="utf-8")
+    )
+
+
+def test_an_unreported_link_change_still_fails_the_recount(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The same store write with nothing reported: the check must still catch it.
+    _relink_after_ranking(monkeypatch, env, report=False)
+    summary, _ = _run(env, tmp_path / "apps", 0.5)
+    payload = _payload(summary)
+    relinked = payload["direct_share"]["relinked"]  # type: ignore[index]
+    assert relinked == {"to_direct": 0, "off_direct": 0}
+    assert _direct_checks(payload) == (1, 2, False)
+    assert payload["reconciles"] is False

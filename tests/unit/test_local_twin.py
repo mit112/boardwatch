@@ -256,3 +256,18 @@ def test_a_job_the_owner_applied_to_is_not_linked(engine: Engine) -> None:
     assert _run(engine, [wrapper], exclude_job_ids={job_id}) == 0
     with engine.connect() as conn:
         assert conn.execute(select(application_destinations)).all() == []
+
+
+def test_the_report_names_each_link_it_wrote(engine: Engine) -> None:
+    # The funnel needs the ids: a link written after ranking re-routes a delivered lead.
+    with engine.begin() as conn:
+        board = _company(conn, "Acme", "greenhouse")
+        _posting(conn, board, "t1", locations=["US,TX,Austin"])
+        wrapper = _wrapper(conn)
+    with engine.begin() as conn:
+        first = record_local_twins(conn, [wrapper], now=NOW)
+    with engine.begin() as conn:
+        second = record_local_twins(conn, [wrapper], now=NOW)
+    assert first.links == {wrapper: "https://boards.example.com/acme/jobs/t1"}
+    assert first.written == 1
+    assert (second.links, second.written) == ({}, 0)

@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -75,6 +75,9 @@ class TwinReport:
     considered: int = 0
     company_matched: int = 0
     written: int = 0
+    #: posting id -> the link this pass wrote for it. The funnel needs the ids, not the count:
+    #: a link written after the ranker classified a lead changes that lead's route (D-683).
+    links: Mapping[int, str] = field(default_factory=dict)
 
 
 def _without_generic_tail(name: str) -> str:
@@ -364,17 +367,20 @@ def record_local_twins(
     matches, considered, company_matched = find_local_twins(
         conn, posting_ids, exclude_job_ids=exclude_job_ids
     )
-    written = 0
+    links: dict[int, str] = {}
     for match in matches:
         try:
-            written += record_application_destination(
+            if record_application_destination(
                 conn,
                 posting_id=match.posting_id,
                 url=match.url,
                 source_url=match.source_url,
                 evidence_ref=f"{EVIDENCE_PREFIX}{match.twin_posting_id}",
                 verified_at=now,
-            )
+            ):
+                links[match.posting_id] = match.url
         except InvalidApplicationDestinationError:
             continue  # the twin's stored URL is not one a destination may hold
-    return TwinReport(considered=considered, company_matched=company_matched, written=written)
+    return TwinReport(
+        considered=considered, company_matched=company_matched, written=len(links), links=links
+    )
