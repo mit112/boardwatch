@@ -259,12 +259,51 @@ def test_an_unreported_link_change_still_fails_the_recount(
     assert payload["reconciles"] is False
 
 
-def test_relinked_routes_classify_nothing_without_a_routes_file(env: Path) -> None:
+def test_relinked_routes_classify_nothing_without_the_rankers_routes(env: Path) -> None:
+    from boardwatch.delivery.apply_routes import load_apply_routes
     from boardwatch.pipeline.runner import _relinked_routes
 
     settings = load_settings(data_dir=env)
     settings.config_dir.mkdir(parents=True, exist_ok=True)
     links = {1: _direct(1), 2: _other(2)}
-    assert _relinked_routes(settings, links) == {}
+    assert _relinked_routes(None, links) == {}
     (settings.config_dir / "apply-routes.toml").write_text(_ROUTES, encoding="utf-8")
-    assert _relinked_routes(settings, links) == {1: True, 2: False}
+    routes = load_apply_routes(settings.config_dir)
+    assert _relinked_routes(routes, links) == {1: True, 2: False}
+
+
+def test_a_routes_file_edited_mid_run_changes_no_count(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # After ranking, the owner's routes file stops naming Ashby and names the other host instead.
+    # Every count must still use the routes the ranker classified with: read afresh, the re-link
+    # to an Ashby link would count as non-direct and the recount would route all three delivered
+    # leads the other way.
+    from datetime import datetime
+
+    from boardwatch.pipeline import runner
+    from boardwatch.store.application_destinations import record_application_destination
+
+    def fake(
+        engine: object, shortlist_ids: list[int], console: object
+    ) -> tuple[list[str], dict[int, str]]:
+        posting = sorted(shortlist_ids)[1]
+        url = _direct(100)
+        with get_engine(env).begin() as conn:
+            record_application_destination(
+                conn, posting_id=posting, url=url, source_url=URLS[1],
+                evidence_ref="local-twin:v1:test", verified_at=datetime(2026, 11, 11),
+            )
+        (load_settings(data_dir=env).config_dir / "apply-routes.toml").write_text(
+            'auto_hosts = ["example.test"]\n', encoding="utf-8"
+        )
+        return [], {posting: url}
+
+    monkeypatch.setattr(runner, "_link_local_twins", fake)
+    summary, _ = _run(env, tmp_path / "apps", 0.5)
+    payload = _payload(summary)
+    assert payload["direct_share"]["relinked"] == {  # type: ignore[index]
+        "to_direct": 1, "off_direct": 0
+    }
+    assert _direct_checks(payload) == (2, 2, True)
+    assert payload["reconciles"] is True

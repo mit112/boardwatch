@@ -326,6 +326,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A routes file edited during a run no longer moves the direct-share counts.** The ranker classified each
+  lead with the `apply-routes.toml` it read, but the `relinked` classification and the D-683 store recount each read the
+  file again at funnel time, so an edit mid-run could miscount a re-linked lead and fail `direct_share:delivered_direct`
+  with every link unchanged. Both now route by the routes the ranker classified with. No config key, no schema change.
+
 - **The funnel no longer fails B6 when a link step re-routes a delivered lead after ranking.** The on-disk link
   (D-690) and local-twin (D-689) steps write employer links after the ranker has classified each lead as direct or
   not, so the D-683 store recount of delivered direct leads read 48 where the ranker counted 46 on run 1022 (two

@@ -418,6 +418,9 @@ class RankedResults:
     # never read back into a decision. `None` from a caller that never ranked. Excluded from `==`:
     # it is a record of how the ranking went, not part of what was ranked.
     direct_share: DirectShareTally | None = field(default=None, compare=False)
+    # The routes the share classified with; `None` where it classified nothing. A caller that
+    # routes a lead again later in the same run uses these, not a fresh read of the file.
+    direct_routes: ApplyRoutes | None = field(default=None, compare=False)
     # The canonical jobs this call put in front of the user, in rank order. Populated whether or
     # not the `seen` write actually happened, so a caller that ranked with `record_surfaced=False`
     # can record the decision at the point it genuinely takes one (the pipeline, after tailoring).
@@ -1532,6 +1535,7 @@ def rank_open_postings(
         suppressions=tuple(suppressions.values()),
         tenant_assumptions=tenant,
         direct_share=direct_share,
+        direct_routes=direct_routes,
     )
 
 
