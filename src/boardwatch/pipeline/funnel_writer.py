@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import Connection, Engine, Row, select
 
 from boardwatch.core.settings import Settings, load_settings
-from boardwatch.delivery.apply_routes import load_apply_routes
+from boardwatch.delivery.apply_routes import ApplyRoutes
 from boardwatch.delivery.form_questions import FormQuestionSweep
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.eligibility.engine import (
@@ -309,6 +309,9 @@ def collect_run_funnel(
     tenant_assumptions: TenantAssumptionReport | None = None,
     # D-674. `None` means no attribution was collected, and the section says so.
     direct_share: DirectShareReport | None = None,
+    # The routes that attribution classified with. The store recount routes by these, so a routes
+    # file edited mid-run cannot make the two disagree.
+    direct_routes: ApplyRoutes | None = None,
     errors: list[str],
     board_moves: Sequence[str] = (),
     fatal: str | None,
@@ -416,16 +419,14 @@ def collect_run_funnel(
         provenance = lead_provenance(conn, posting_ids)
         stub_postings = count_stub_postings(conn)
         # D-683. The delivered leads' stored links routed afresh, not the ranking-time
-        # classification the attribution was built from. Only when the attribution measured
-        # something, and only when the routes file is still readable: a share that was inert or
-        # off classified nothing to compare against.
+        # classification the attribution was built from, through the routes the ranker read (a
+        # mid-run edit of the file must not move the count). Only when the attribution measured
+        # something: a share that was inert or off classified nothing to compare against.
         delivered_direct_from_store: tuple[int, int] | None = None
-        if direct_share is not None and direct_share.measured:
-            routes = load_apply_routes(settings.config_dir)
-            if routes.configured:
-                urls = delivered_apply_urls(conn, posting_ids)
-                direct_count = sum(routes.is_direct_auto(url) for url in urls.values())
-                delivered_direct_from_store = (direct_count, len(urls) - direct_count)
+        if direct_share is not None and direct_share.measured and direct_routes is not None:
+            urls = delivered_apply_urls(conn, posting_ids)
+            direct_count = sum(direct_routes.is_direct_auto(url) for url in urls.values())
+            delivered_direct_from_store = (direct_count, len(urls) - direct_count)
         row = conn.execute(
             select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
                 runs.c.id == run_id

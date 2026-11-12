@@ -46,7 +46,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
 from boardwatch.delivery.api import resolve_owner_name
-from boardwatch.delivery.apply_routes import load_apply_routes
+from boardwatch.delivery.apply_routes import ApplyRoutes, load_apply_routes
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
     DEFAULT_QUEUE_ROOT,
@@ -652,6 +652,9 @@ class PipelineSummary:
     # D-674's share, as the ranker tallied it, and the post-gate cut the tally cannot see. Both
     # feed `rank.direct_share.attribute`; `None` / empty where the ranker did not run.
     direct_share_tally: DirectShareTally | None = None
+    # The routes that tally classified with, so every later count of this run routes a link by
+    # the same file the ranker read, not by an edit made mid-run.
+    direct_routes: ApplyRoutes | None = None
     # posting id -> the employer link a link step wrote for it AFTER the ranker classified it
     # (D-689, D-690). The funnel counts the delivered leads this re-routed (`relinked`).
     relinked_urls: dict[int, str] = field(default_factory=dict)
@@ -2997,6 +3000,7 @@ def _run_pipeline_leased(
             return summary
         summary.tenant_ranker = ranked.tenant_assumptions
         summary.direct_share_tally = ranked.direct_share
+        summary.direct_routes = ranked.direct_routes
         summary.shortlist = ShortlistCounts(
             considered=ranked.considered,
             shortlisted=len(ranked.visible),
@@ -4593,14 +4597,12 @@ def _capture_run_start(
         console.print(f"  ! run identity not read at start, drift unmeasured: {exc}", markup=False)
 
 
-def _relinked_routes(settings: Settings, urls: Mapping[int, str]) -> dict[int, bool]:
-    """posting id -> whether the link written after ranking is direct, by the ranker's own rule."""
-    if not urls:
-        return {}
-    routes = load_apply_routes(settings.config_dir)
-    if not routes.configured:
-        # Unreadable now though the ranker read it: classifying would call every link
-        # non-direct. The store recount is skipped on the same condition.
+def _relinked_routes(
+    routes: ApplyRoutes | None, urls: Mapping[int, str]
+) -> dict[int, bool]:
+    """posting id -> whether the link written after ranking is direct, by the routes the ranker
+    classified with. `None` (the share classified nothing) classifies nothing."""
+    if routes is None:
         return {}
     return {posting_id: routes.is_direct_auto(url) for posting_id, url in urls.items()}
 
@@ -4778,8 +4780,9 @@ def _emit_funnel(
             projection_failed_ids=summary.projection_failed_ids,
             tailor_failed_ids=summary.tailor_failed_ids,
             delivered={lead.posting_id: lead.pending_tailor for lead in summary.tailored},
-            relinked=_relinked_routes(settings, summary.relinked_urls),
+            relinked=_relinked_routes(summary.direct_routes, summary.relinked_urls),
         ),
+        direct_routes=summary.direct_routes,
         errors=summary.errors,
         board_moves=summary.board_moves,
         fatal=summary.fatal,
