@@ -10,7 +10,9 @@ def toks(s: str) -> list[str]:
 
 
 def _pat(frm: str) -> re.Pattern[str]:
-    return re.compile(rf"(?<!\w){re.escape(frm)}(?!\w)", re.IGNORECASE)
+    # `(?<!\w\.)`: a token glued to a word by a dot is a name suffix, not the token
+    # ("Next.js" is not "Next.JavaScript").
+    return re.compile(rf"(?<!\w)(?<!\w\.){re.escape(frm)}(?!\w)", re.IGNORECASE)
 
 
 def has_whole_token(text: str, frm: str) -> bool:

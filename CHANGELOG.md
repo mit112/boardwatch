@@ -333,6 +333,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An equivalence swap no longer rewrites a dotted name suffix.** The `JS` → `JavaScript` pair matched the `js` in
+  `Next.js`, so 23 PDFs on 2026-11-13 read "React/Next.JavaScript". A token glued to a word by a dot is no longer a match.
+
 - **A routes file edited during a run no longer moves the direct-share counts.** The ranker classified each
   lead with the `apply-routes.toml` it read, but the `relinked` classification and the D-683 store recount each read the
   file again at funnel time, so an edit mid-run could miscount a re-linked lead and fail `direct_share:delivered_direct`
