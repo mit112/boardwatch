@@ -715,6 +715,8 @@ export interface AgingSummary {
 export interface LeadAging {
   leads: number;
   still_waiting: number;
+  /** Applied, but only an import's date is known, so no wait is measured. Absent on older servers. */
+  applied_date_unknown?: number;
   outcomes: { applied: AgingSummary; closed: AgingSummary; skipped: AgingSummary };
   /** Discovery provider -> delivered leads whose posting closed before any application. */
   closed_before_applied_by_board: Record<string, number>;

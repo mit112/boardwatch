@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Lead aging no longer reads an import's date as when an application was sent, or takes the earliest attempt by
+  text (T298, T306).** An imported application (`source = 'import'`) carries the import time, so it still counts as
+  applied but is left out of the waits and reported as `applied_date_unknown`. The earliest submission is now taken
+  after normalising to UTC; SQL `MIN()` compared the mixed naive and offset text and could pick a later instant.
+
 ### Added
 
 - **The Runs page shows discovery yield per source (T306).** One row per source (Greenhouse, Ashby, LinkedIn, Indeed,
