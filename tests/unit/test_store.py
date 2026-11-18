@@ -486,3 +486,42 @@ def test_the_fast_schema_path_refuses_a_database_that_is_not_empty(
     ensure_schema(eng)  # idempotent, and now goes through alembic
     with eng.connect() as conn:
         assert db_revision(conn) == schema_revision()
+
+
+def test_schema_upgrades_from_two_processes_never_overlap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T321: two openers of the same store run their upgrades one after the other. Each opener
+    gets its own engine (as two processes would), and the upgrade is stubbed to hold for 0.3 s
+    and record when it ran. Without the lock both intervals overlap."""
+    import threading
+    import time
+
+    from alembic import command
+
+    from boardwatch.store.db import FAST_SCHEMA_ENV
+
+    monkeypatch.delenv(FAST_SCHEMA_ENV, raising=False)
+    spans: list[tuple[float, float]] = []
+
+    def slow_upgrade(*_a: object, **_k: object) -> None:
+        start = time.monotonic()
+        time.sleep(0.3)
+        spans.append((start, time.monotonic()))
+
+    monkeypatch.setattr(command, "upgrade", slow_upgrade)
+    barrier = threading.Barrier(2)
+
+    def open_store() -> None:
+        engine = get_engine(tmp_path)
+        barrier.wait()
+        ensure_schema(engine)
+
+    threads = [threading.Thread(target=open_store) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    (a_start, a_end), (b_start, b_end) = sorted(spans)
+    assert b_start >= a_end, spans
+

@@ -21,6 +21,7 @@ from typing import Any
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from filelock import FileLock
 from sqlalchemy import Connection, Engine, create_engine, event, text
 from sqlalchemy.exc import OperationalError
 
@@ -173,7 +174,19 @@ def ensure_schema(engine: Engine) -> None:
     # Alembic's own engine carries neither listener, so migrations keep the driver's default
     # transaction handling. That is deliberate: `command.upgrade` runs alone, one migration at a
     # time, and owns its transactions -- there is no read-then-write to interleave with.
-    command.upgrade(_alembic_config(engine), "head")
+    #
+    # Alone within a process, but not across processes (T321): two processes opening an
+    # un-migrated store at once (the nightly run and `boardwatch stats`, say) both read the old
+    # revision, and the loser of an `ADD COLUMN` fails with "duplicate column name". A lock file
+    # beside the store serialises the revision check and the upgrade, so the second process
+    # reads the head revision once it gets the lock and its upgrade does nothing. An in-memory
+    # store has no file and no second process to race.
+    database = engine.url.database
+    if not database or database == ":memory:":
+        command.upgrade(_alembic_config(engine), "head")
+        return
+    with FileLock(f"{database}.schema.lock"):
+        command.upgrade(_alembic_config(engine), "head")
 
 
 #: Test-only switch for the fresh-schema shortcut below. Set by `tests/conftest.py` and by
