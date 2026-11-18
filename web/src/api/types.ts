@@ -902,6 +902,20 @@ export interface JudgeAgreement {
   splits: { posting_id: number; title: string; company: string; deterministic: string; llm: string }[];
 }
 
+/* `GET /api/withdrawals` (T311): one row per withdrawn application, newest first. */
+export interface Withdrawal {
+  application_id: number;
+  kind: "after_applying" | "before_applying";
+  withdrawn_at: string;
+  /** Only for `after_applying`. */
+  days_after_applying: number | null;
+  note: string | null;
+  job_id: number;
+  posting_id: number | null;
+  title: string | null;
+  company: string | null;
+}
+
 export interface FunnelSource {
   provider: string;
   board_slug: string;
