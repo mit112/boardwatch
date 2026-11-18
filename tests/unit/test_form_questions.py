@@ -380,3 +380,25 @@ def test_an_unreadable_body_reads_as_no_questions_known_too() -> None:
     changed its payload shape must not cost the owner the folder tree."""
     fetcher = _StubFetcher(_Result(b"<html>we moved</html>"))
     assert fetch_questions(fetcher, slug="tenet3", posting_ref="1") is None  # type: ignore[arg-type]
+
+
+def test_the_export_surface_is_linear_on_a_long_question() -> None:
+    """Unanchored, the export surface's two `[\\s\\S]*` lookaheads were retried at every offset,
+    each rescanning the rest of the text: 3.6 s for 20k characters, ~14 s for this 40k. Anchored,
+    it is milliseconds. The bound is loose on purpose, so a slow runner never trips it while the
+    quadratic pattern always does. The late pair proves the anchor still finds a hit at the end.
+    """
+    import time  # noqa: PLC0415 - local to the one test that times anything
+
+    filler = "word " * 8_000
+    late = FormQuestion(
+        label=filler + "Are you a U.S. person under the export control regulations?",
+        description=None,
+        options=(),
+    )
+    miss = FormQuestion(label=filler, description=None, options=())
+    started = time.perf_counter()
+    hit = match_questions((late,))
+    assert match_questions((miss,)) is None
+    assert time.perf_counter() - started < 1.0
+    assert hit is not None and hit.surface_id == "us_person_export_control"
