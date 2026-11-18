@@ -488,40 +488,72 @@ def test_the_fast_schema_path_refuses_a_database_that_is_not_empty(
         assert db_revision(conn) == schema_revision()
 
 
+_SLOW_OPENER = """
+import sys, time
+from pathlib import Path
+from alembic import command
+from boardwatch.store.db import ensure_schema, get_engine
+
+store, spans, go = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+
+def slow_upgrade(*_a, **_k):
+    start = time.time()
+    time.sleep(0.5)
+    with spans.open("a") as fh:
+        fh.write(f"{start} {time.time()}\\n")
+
+command.upgrade = slow_upgrade
+engine = get_engine(store)
+deadline = time.time() + 30
+while not go.exists() and time.time() < deadline:
+    time.sleep(0.01)
+ensure_schema(engine)
+"""
+
+
 def test_schema_upgrades_from_two_processes_never_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """T321: two openers of the same store run their upgrades one after the other. Each opener
-    gets its own engine (as two processes would), and the upgrade is stubbed to hold for 0.3 s
-    and record when it ran. Without the lock both intervals overlap."""
-    import threading
-    import time
-
-    from alembic import command
+    """T321: two processes opening the same store run their upgrades one after the other. Each
+    child stubs the upgrade to hold for 0.5 s and record when it ran, waits for a shared start
+    signal, then calls `ensure_schema`. Without the lock both intervals overlap."""
+    import subprocess
+    import sys
 
     from boardwatch.store.db import FAST_SCHEMA_ENV
 
     monkeypatch.delenv(FAST_SCHEMA_ENV, raising=False)
-    spans: list[tuple[float, float]] = []
+    store, spans, go = tmp_path / "store", tmp_path / "spans", tmp_path / "go"
+    # The store already exists, as in the race T321 names: creating a fresh one from two
+    # processes at once is the separate journal-mode race `ensure_schema`'s first lines address.
+    ensure_schema(get_engine(store))
+    children = [
+        subprocess.Popen(
+            [sys.executable, "-c", _SLOW_OPENER, str(store), str(spans), str(go)],
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(2)
+    ]
+    go.touch()
+    outcomes = [
+        (child.wait(timeout=60), child.stderr.read() if child.stderr else "") for child in children
+    ]
+    assert [code for code, _ in outcomes] == [0, 0], outcomes
+    (a_start, a_end), (b_start, b_end) = sorted(
+        tuple(float(x) for x in line.split()) for line in spans.read_text().splitlines()
+    )
+    assert b_start >= a_end, (a_start, a_end, b_start, b_end)
 
-    def slow_upgrade(*_a: object, **_k: object) -> None:
-        start = time.monotonic()
-        time.sleep(0.3)
-        spans.append((start, time.monotonic()))
 
-    monkeypatch.setattr(command, "upgrade", slow_upgrade)
-    barrier = threading.Barrier(2)
-
-    def open_store() -> None:
-        engine = get_engine(tmp_path)
-        barrier.wait()
-        ensure_schema(engine)
-
-    threads = [threading.Thread(target=open_store) for _ in range(2)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    (a_start, a_end), (b_start, b_end) = sorted(spans)
-    assert b_start >= a_end, spans
-
+def test_ensuring_the_schema_of_a_read_only_engine_writes_no_lock_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T321 review: the read-only opener's URL is a `file:` URI; a lock path built from it would
+    land under `./file:` in the working directory."""
+    ensure_schema(get_engine(tmp_path))
+    work = tmp_path / "cwd"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    ensure_schema(get_readonly_engine(tmp_path))  # already at head: the upgrade is a no-op
+    assert list(work.iterdir()) == []

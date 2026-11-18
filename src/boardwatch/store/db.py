@@ -180,9 +180,11 @@ def ensure_schema(engine: Engine) -> None:
     # revision, and the loser of an `ADD COLUMN` fails with "duplicate column name". A lock file
     # beside the store serialises the revision check and the upgrade, so the second process
     # reads the head revision once it gets the lock and its upgrade does nothing. An in-memory
-    # store has no file and no second process to race.
+    # store has no file and no second process to race. A URI URL is only ever the read-only
+    # opener (`get_readonly_engine`): it cannot migrate, alembic refuses it, and its `database`
+    # is `file:///...`, which as a lock path would land under `./file:` in the working directory.
     database = engine.url.database
-    if not database or database == ":memory:":
+    if not database or database == ":memory:" or engine.url.query.get("uri"):
         command.upgrade(_alembic_config(engine), "head")
         return
     with FileLock(f"{database}.schema.lock"):
