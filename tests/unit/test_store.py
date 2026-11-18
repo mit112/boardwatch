@@ -494,7 +494,7 @@ from pathlib import Path
 from alembic import command
 from boardwatch.store.db import ensure_schema, get_engine
 
-store, spans, go = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+store, spans, go, ready = (Path(arg) for arg in sys.argv[1:5])
 
 def slow_upgrade(*_a, **_k):
     start = time.time()
@@ -504,6 +504,7 @@ def slow_upgrade(*_a, **_k):
 
 command.upgrade = slow_upgrade
 engine = get_engine(store)
+ready.touch()
 deadline = time.time() + 30
 while not go.exists() and time.time() < deadline:
     time.sleep(0.01)
@@ -519,6 +520,7 @@ def test_schema_upgrades_from_two_processes_never_overlap(
     signal, then calls `ensure_schema`. Without the lock both intervals overlap."""
     import subprocess
     import sys
+    import time
 
     from boardwatch.store.db import FAST_SCHEMA_ENV
 
@@ -527,18 +529,29 @@ def test_schema_upgrades_from_two_processes_never_overlap(
     # The store already exists, as in the race T321 names: creating a fresh one from two
     # processes at once is the separate journal-mode race `ensure_schema`'s first lines address.
     ensure_schema(get_engine(store))
+    ready = [tmp_path / f"ready-{i}" for i in range(2)]
     children = [
         subprocess.Popen(
-            [sys.executable, "-c", _SLOW_OPENER, str(store), str(spans), str(go)],
+            [sys.executable, "-c", _SLOW_OPENER, str(store), str(spans), str(go), str(flag)],
             stderr=subprocess.PIPE,
             text=True,
         )
-        for _ in range(2)
+        for flag in ready
     ]
-    go.touch()
-    outcomes = [
-        (child.wait(timeout=60), child.stderr.read() if child.stderr else "") for child in children
-    ]
+    try:
+        # Release both only once both are waiting, so neither can finish before the other starts.
+        deadline = time.monotonic() + 60
+        while not all(flag.exists() for flag in ready) and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert all(flag.exists() for flag in ready), "a child never got ready"
+        go.touch()
+        outcomes = [
+            (child.wait(timeout=60), child.stderr.read() if child.stderr else "")
+            for child in children
+        ]
+    finally:
+        for child in children:
+            child.kill()
     assert [code for code, _ in outcomes] == [0, 0], outcomes
     (a_start, a_end), (b_start, b_end) = sorted(
         tuple(float(x) for x in line.split()) for line in spans.read_text().splitlines()
