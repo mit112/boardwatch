@@ -9,12 +9,18 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Connection, Engine, insert, update
+from sqlalchemy import Connection, Engine, insert, text, update
 
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.lead_aging_queries import lead_aging, source_yield
 from boardwatch.store.queue_state import SKIP_KEY_PREFIX
-from boardwatch.store.tables import app_state, applications, artifacts, postings
+from boardwatch.store.tables import (
+    app_state,
+    application_events,
+    applications,
+    artifacts,
+    postings,
+)
 from tests.unit.test_web_server import _deliver
 
 D0 = datetime(2026, 11, 1, 12, 0, 0)
@@ -136,3 +142,63 @@ def test_source_yield_credits_each_job_to_its_first_delivered_source(engine: Eng
         "ashby": {"built": 2, "applied": 1},
         "greenhouse": {"built": 1, "applied": 1},
     }
+
+
+def _imported(conn: Connection, job: int, at: datetime) -> None:
+    app = conn.execute(
+        insert(applications).values(
+            job_id=job,
+            attempt_no=1,
+            status="applied",
+            created_at=at,
+            updated_at=at,
+            submitted_at=at,
+        )
+    ).inserted_primary_key[0]
+    conn.execute(
+        insert(application_events).values(
+            application_id=app,
+            event_type="created",
+            from_status=None,
+            to_status="applied",
+            occurred_at=at,
+            recorded_at=at,
+            source="import",
+        )
+    )
+
+
+def test_an_imported_application_is_applied_with_no_measured_wait(engine: Engine) -> None:
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "i1")
+        _imported(conn, job, D0 + timedelta(days=30))  # the import's own date, not the real one
+        _close(conn, posting, D0 + timedelta(days=2))  # closing after does not make it "closed"
+        got = lead_aging(conn)
+        yielded = source_yield(conn)
+    assert got["applied_date_unknown"] == 1
+    assert got["outcomes"]["applied"]["count"] == 0
+    assert got["outcomes"]["closed"]["count"] == 0
+    assert got["still_waiting"] == 0
+    assert yielded == {"ashby": {"built": 1, "applied": 1}}
+
+
+def test_the_earliest_attempt_is_the_earliest_instant_not_the_smallest_text(
+    engine: Engine,
+) -> None:
+    """Text order and UTC order disagree: naive '...T12:00' sorts before '...T13:00+02:00', but
+    the offset one is 11:00 UTC. The wait must use 11:00."""
+    with engine.begin() as conn:
+        _, job = _lead(conn, "m1")
+        _apply(conn, job, D0 + timedelta(days=1))  # day 1, 12:00 naive UTC
+        _apply(conn, job, D0, attempt=2)
+        # Stored as offset-carrying TEXT, the way the live store holds some rows (the DateTime type
+        # would drop the offset on a normal insert): 13:00+02:00 is 11:00 UTC on day 1.
+        conn.execute(
+            text(
+                "UPDATE applications SET submitted_at = '2026-11-02 13:00:00.000000+02:00'"
+                " WHERE job_id = :job AND attempt_no = 2"
+            ),
+            {"job": job},
+        )
+        got = lead_aging(conn)
+    assert got["outcomes"]["applied"]["median_days"] == round(23 / 24, 2)

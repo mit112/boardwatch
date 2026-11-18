@@ -16,11 +16,21 @@ from datetime import UTC, datetime
 from statistics import median, quantiles
 from typing import Any
 
-from sqlalchemy import Connection, func, select
+from sqlalchemy import Connection, select
 
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
-from boardwatch.store.tables import applications, artifacts, companies, posting_versions, postings
+from boardwatch.store.tables import (
+    application_events,
+    applications,
+    artifacts,
+    companies,
+    posting_versions,
+    postings,
+)
+
+#: `application_events.source` on an imported application (`application_history.import_history`).
+IMPORT_SOURCE = "import"
 
 OUTCOMES = ("applied", "closed", "skipped")
 
@@ -86,23 +96,48 @@ def _first_deliveries(conn: Connection) -> dict[int, _Lead]:
     return first
 
 
-def _first_applied(conn: Connection) -> dict[int, datetime]:
-    """job id -> its first submitted application."""
-    return {
-        int(r.job_id): _naive(r.at)
+def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
+    """job id -> its first submitted application, and the jobs whose ONLY submission date is an
+    import's (unknown).
+
+    The earliest is taken in Python after normalising, never with SQL `MIN()`: the column holds
+    both naive-UTC and offset-carrying text, and SQLite compares the text, so `MIN()` can pick a
+    later instant. An imported application's `submitted_at` is the import time, not when it was
+    sent (`jobapps_history`); its created event says `source = 'import'`. Such a job still counts
+    as applied, but it has no measured date unless a non-imported attempt supplies one.
+    """
+    imported = {
+        int(r.application_id)
         for r in conn.execute(
-            select(applications.c.job_id, func.min(applications.c.submitted_at).label("at"))
-            .where(applications.c.submitted_at.is_not(None))
-            .group_by(applications.c.job_id)
+            select(application_events.c.application_id).where(
+                application_events.c.event_type == "created",
+                application_events.c.source == IMPORT_SOURCE,
+            )
         )
     }
+    dated: dict[int, datetime] = {}
+    undated: set[int] = set()
+    for r in conn.execute(
+        select(applications.c.id, applications.c.job_id, applications.c.submitted_at).where(
+            applications.c.submitted_at.is_not(None)
+        )
+    ):
+        job = int(r.job_id)
+        if int(r.id) in imported:
+            undated.add(job)
+            continue
+        at = _naive(r.submitted_at)
+        if job not in dated or at < dated[job]:
+            dated[job] = at
+    return dated, undated - set(dated)
 
 
 def source_yield(conn: Connection) -> dict[str, dict[str, int]]:
     """T306: per discovery source, all time — leads with a résumé built, and how many of those
     were applied to. A job is credited to the source of its FIRST delivered posting, the same
     attribution `lead_aging` uses, so a lead found twice is counted once."""
-    applied = _first_applied(conn)
+    dated, undated = _first_applied(conn)
+    applied = set(dated) | undated
     out: dict[str, dict[str, int]] = {}
     for job_id, lead in _first_deliveries(conn).items():
         row = out.setdefault(lead.board, {"built": 0, "applied": 0})
@@ -113,7 +148,7 @@ def source_yield(conn: Connection) -> dict[str, dict[str, int]]:
 
 def lead_aging(conn: Connection) -> dict[str, Any]:
     first = _first_deliveries(conn)
-    applied = _first_applied(conn)
+    applied, undated = _first_applied(conn)
     skipped = {
         job: stamp
         for job, raw in skipped_job_ids(conn).items()
@@ -123,6 +158,7 @@ def lead_aging(conn: Connection) -> dict[str, Any]:
     waits: dict[str, list[float]] = {name: [] for name in OUTCOMES}
     closed_first_by_board: dict[str, int] = {}
     waiting = 0
+    applied_undated = 0
     for job_id, lead in first.items():
         events = [
             (when, name)
@@ -131,9 +167,14 @@ def lead_aging(conn: Connection) -> dict[str, Any]:
                 ("skipped", skipped.get(job_id)),
                 ("closed", lead.closed_at),
             )
-            # An application recorded before the first delivery (an import) still ends the wait.
+            # An application recorded before the first delivery still ends the wait (at 0 days).
             if when is not None
         ]
+        if job_id in undated:
+            # Applied, on a date nobody recorded: that is its outcome, whatever closed after,
+            # but there is no wait to measure.
+            applied_undated += 1
+            continue
         if not events:
             waiting += 1
             continue
@@ -145,6 +186,7 @@ def lead_aging(conn: Connection) -> dict[str, Any]:
     return {
         "leads": len(first),
         "still_waiting": waiting,
+        "applied_date_unknown": applied_undated,
         "outcomes": {name: _summary(sorted(waits[name])) for name in OUTCOMES},
         "closed_before_applied_by_board": dict(
             sorted(closed_first_by_board.items(), key=lambda kv: (-kv[1], kv[0]))

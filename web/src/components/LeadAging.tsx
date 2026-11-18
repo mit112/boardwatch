@@ -51,6 +51,9 @@ export function LeadAging() {
       <p className="mt-1 text-sm text-fg-2">
         {data.leads.toLocaleString()} delivered leads, each counted once from its first delivery;{" "}
         {data.still_waiting.toLocaleString()} have no outcome yet.
+        {(data.applied_date_unknown ?? 0) > 0
+          ? ` ${data.applied_date_unknown!.toLocaleString()} were applied on a date nobody recorded (imported), so they are not in the waits.`
+          : ""}
       </p>
       <table className="mt-3 text-sm">
         <thead className="text-fg-3">
