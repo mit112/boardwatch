@@ -20,6 +20,7 @@ import type {
   QueueRow,
 } from "../api/types";
 import { ANSWERS } from "./answers";
+import { BOARD_HEALTH } from "./boardHealth";
 import { LATE_ROWS, QUEUE_ROWS, byRank, detailFor } from "./data";
 import { FUNNELS, RUNS, TRENDS } from "./runs";
 
@@ -420,6 +421,7 @@ function route(method: string, path: string, body: unknown): unknown {
       closed_before_applied_by_board: {},
     };
   if (method === "GET" && path === "/api/runs/trends") return TRENDS;
+  if (method === "GET" && path === "/api/board-health") return BOARD_HEALTH;
 
   // The fixture's `application_id` IS the job id (one attempt per job), so the two maps above
   // answer for it directly.

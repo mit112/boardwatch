@@ -25,6 +25,7 @@ import type {
   ApplicationStatusResponse,
   AppliedHistoryResponse,
   AppliedResponse,
+  BoardHealthResponse,
   DisputeResponse,
   RejectedResponse,
   BatchManualResponse,
@@ -234,6 +235,9 @@ export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");
 
 export const getRuns = (): Promise<RunsResponse> => request<RunsResponse>("/api/runs");
+
+export const getBoardHealth = (): Promise<BoardHealthResponse> =>
+  request<BoardHealthResponse>("/api/board-health");
 
 export const getRunTrends = (): Promise<RunTrends> => request<RunTrends>("/api/runs/trends");
 
