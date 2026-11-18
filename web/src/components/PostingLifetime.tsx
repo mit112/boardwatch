@@ -72,8 +72,9 @@ export function PostingLifetime() {
         {formatFraction(data.reopen.rate)} of closed), so a closed lead is not final.
       </p>
       <p className="mt-1 text-sm text-fg-2">
-        Applications created by an import carry the import date, not the application date, so{" "}
-        {formatCount(data.to_apply.excluded_imports)} imported jobs are left out of time to apply.
+        An import that gave no application date carries the import time instead, so{" "}
+        {formatCount(data.to_apply.excluded_imports)} imported jobs with no date are left out of
+        time to apply.
       </p>
       {data.providers.length === 0 ? null : (
         <table className="mt-3 text-sm">

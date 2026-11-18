@@ -19,8 +19,9 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from boardwatch.store.applications import APPLIED_STATUSES
+from boardwatch.store.delivery_queries import applied_rows
 from boardwatch.store.param_chunks import id_chunks
-from boardwatch.store.tables import application_events, applications, companies, postings
+from boardwatch.store.tables import application_events, applications
 
 
 def _naive(stamp: datetime) -> datetime:
@@ -89,23 +90,19 @@ def withdrawals(conn: Connection) -> dict[str, Any]:
             return _naive(e.submitted_at)
         return at
 
-    # The newest posting per job names it, looked up for these jobs only.
-    label: dict[int, tuple[int, str, str]] = {}
-    for chunk in id_chunks(sorted({int(e.job_id) for e in first.values()})):
-        for p in conn.execute(
-            select(postings.c.id, postings.c.job_id, postings.c.title, companies.c.name)
-            .join(companies, companies.c.id == postings.c.company_id)
-            .where(postings.c.job_id.in_(chunk))
-            .order_by(postings.c.id)
-        ):
-            label[int(p.job_id)] = (int(p.id), str(p.title), str(p.name))
+    # Named by the SAME posting the Applied page shows for that application (`applied_rows`:
+    # the posting the application names, else the delivered one, else a fallback), so the panel
+    # and the row above it never disagree.
+    label: dict[int, tuple[int | None, str | None, str | None]] = {
+        row.application_id: (row.posting_id, row.title, row.company) for row in applied_rows(conn)
+    }
 
     out = []
     for e in sorted(first.values(), key=lambda e: (_naive(e.occurred_at), e.id), reverse=True):
         after = e.from_status in APPLIED_STATUSES
         app_id = int(e.application_id)
         since = applied_on(e) if after else None
-        named = label.get(int(e.job_id))
+        named = label.get(app_id)
         out.append(
             {
                 "application_id": app_id,

@@ -50,6 +50,31 @@ class OwnerClose(StrEnum):
     MISSING = "missing"  # no such posting
 
 
+#: posting id -> JSON list of the run ids under which the owner UNDID a closure. A scan reopen and
+#: an owner's undo both write a plain `reopened` event; this is what tells the undo apart, so a
+#: reader can treat the closure it undid as a mistake rather than as the posting closing.
+OWNER_UNDO_KEY_PREFIX = "posting.ownerundo."
+
+
+def owner_undo_runs(conn: Connection) -> dict[int, set[int]]:
+    """posting_id -> the run ids of every owner undo recorded for it."""
+    found: dict[int, set[int]] = {}
+    for row in conn.execute(
+        select(app_state.c.key, app_state.c.value).where(
+            app_state.c.key.like(f"{OWNER_UNDO_KEY_PREFIX}%")
+        )
+    ):
+        suffix = str(row.key)[len(OWNER_UNDO_KEY_PREFIX) :]
+        if not suffix.isdecimal() or row.value is None:
+            continue
+        try:
+            runs = json.loads(str(row.value))
+        except ValueError:
+            continue
+        found[int(suffix)] = {int(r) for r in runs if isinstance(r, int)}
+    return found
+
+
 def _key(posting_id: int) -> str:
     return f"{OWNER_CLOSED_KEY_PREFIX}{posting_id}"
 
@@ -119,6 +144,12 @@ def reopen_postings(
         )
         append_event(conn, pid, "reopened", run_id)
         conn.execute(delete(app_state).where(app_state.c.key == _key(pid)))
+        undo_key = f"{OWNER_UNDO_KEY_PREFIX}{pid}"
+        held = conn.execute(
+            select(app_state.c.value).where(app_state.c.key == undo_key)
+        ).scalar()
+        undone = json.loads(str(held)) if held else []
+        set_state(conn, undo_key, json.dumps([*undone, run_id]))
     return outcome
 
 

@@ -289,3 +289,25 @@ def test_a_dated_rejected_import_is_applied_not_closed_first(engine: Engine) -> 
     assert got["outcomes"]["applied"] == {"count": 1, "median_days": 1.0, "p90_days": 1.0}
     assert got["outcomes"]["closed"]["count"] == 0
     assert yielded == {"ashby": {"built": 1, "applied": 1}}
+
+
+def test_a_closure_the_owner_undid_is_not_a_closure(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Owner-closed day 2 by mistake, undone day 3 (`postings reopen`), applied day 5: applied
+    first. A scan reopen (no undo recorded) still counts the closure, per the test above."""
+    from boardwatch.store import events
+    from boardwatch.store.owner_close import close_postings, reopen_postings
+
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "u1")
+        monkeypatch.setattr(events, "utcnow", lambda: D0 + timedelta(days=2))
+        close_postings(
+            conn, [posting], run_id=_run(conn), evidence="looked closed", at=D0 + timedelta(days=2)
+        )
+        monkeypatch.setattr(events, "utcnow", lambda: D0 + timedelta(days=3))
+        reopen_postings(conn, [posting], run_id=_run(conn))
+        _apply(conn, job, D0 + timedelta(days=5))
+        got = lead_aging(conn)
+    assert got["outcomes"]["closed"]["count"] == 0
+    assert got["outcomes"]["applied"]["count"] == 1

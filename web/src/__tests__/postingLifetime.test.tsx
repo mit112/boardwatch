@@ -44,7 +44,7 @@ it("prints lifetimes by provider and company, the never-closed count and the reo
   expect(
     within(section).getByText(/1 postings have never closed and are not in the medians/),
   ).toBeDefined();
-  expect(within(section).getByText(/61 imported jobs are left out of time to apply/)).toBeDefined();
+  expect(within(section).getByText(/61 imported jobs with no date are left out of/)).toBeDefined();
   expect(within(section).getByText(/Postings close faster than we apply/)).toBeDefined();
   expect(within(section).getByRole("row", { name: /^ashby/ }).textContent).toBe(
     "ashby212.0 d2.8 d5.0 d0%Yes",

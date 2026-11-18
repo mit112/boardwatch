@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import Connection, select
 
 from boardwatch.store.applications import APPLIED_STATUSES
+from boardwatch.store.owner_close import owner_undo_runs
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import (
@@ -100,13 +101,33 @@ def _first_deliveries(conn: Connection) -> dict[int, _Lead]:
 
     # A scan clears `closed_at` on a reopen, so the posting's `closed` events are read too: a lead
     # that closed after delivery and later reopened still closed first (Codex #658).
-    close_events: dict[int, list[datetime]] = {}
+    # A closure the owner then UNDID (`postings reopen`, recorded in `owner_undo_runs`) was a
+    # mistake, not the posting closing: the closed event just before that undo is dropped.
+    undo = owner_undo_runs(conn)
+    history: dict[int, list[tuple[tuple[datetime, int], str, int]]] = {}
     for r in conn.execute(
-        select(posting_events.c.posting_id, posting_events.c.created_at).where(
-            posting_events.c.kind == "closed"
-        )
+        select(
+            posting_events.c.id,
+            posting_events.c.posting_id,
+            posting_events.c.kind,
+            posting_events.c.run_id,
+            posting_events.c.created_at,
+        ).where(posting_events.c.kind.in_(("closed", "reopened")))
     ):
-        close_events.setdefault(int(r.posting_id), []).append(_naive(r.created_at))
+        history.setdefault(int(r.posting_id), []).append(
+            ((_naive(r.created_at), int(r.id)), str(r.kind), int(r.run_id))
+        )
+    close_events: dict[int, list[datetime]] = {}
+    for pid, events in history.items():
+        events.sort()
+        undone = undo.get(pid, set())
+        for i, (order, kind, _) in enumerate(events):
+            if kind != "closed":
+                continue
+            following = events[i + 1] if i + 1 < len(events) else None
+            if following is not None and following[1] == "reopened" and following[2] in undone:
+                continue
+            close_events.setdefault(pid, []).append(order[0])
 
     first: dict[int, _Lead] = {}
     for job_id, row in picked.items():
