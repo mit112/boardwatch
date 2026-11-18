@@ -545,3 +545,25 @@ def test_a_near_miss_failure_whose_error_record_also_fails_still_finishes_the_ru
     summary = _pipeline(env, out_root)
     assert "near-miss report not written: probe" in summary.errors
     assert summary.morning is not None  # the digest after it was still written
+
+
+def test_a_funnel_failure_whose_error_record_also_fails_still_finishes_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T314: every finalize-block error record is guarded, not only the near-miss one. The
+    funnel write fails AND the store refuses every error record: the queue sync, the soft
+    alerts and the morning digest after it still run."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    def broken(*_a: object, **_k: object) -> object:
+        raise RuntimeError("funnel probe")
+
+    def refusing(*_a: object, **_k: object) -> None:
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(runner, "_emit_funnel", broken)
+    monkeypatch.setattr(runner, "append_run_error", refusing)
+    summary = _pipeline(env, out_root)
+    assert any("funnel probe" in e for e in summary.errors)
+    assert summary.morning is not None

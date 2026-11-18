@@ -22,6 +22,7 @@ id rather than minting its own; run standalone, each still mints one, which is w
 from __future__ import annotations
 
 import json
+import sys
 from collections import Counter
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -280,6 +281,18 @@ DEFAULT_TOP_N = 10
 # lane's request budget.
 LaneFactory = Callable[[LaneContext], Lane]
 
+
+
+def _record_run_error(engine: Engine, run_id: int, note: str) -> None:
+    """`append_run_error`, guarded (T314). Every caller is a finalize-block handler that has
+    already caught one failure; if the store refuses this write too (`SQLITE_BUSY`), a second
+    exception escaping here would skip the rest of the block — the queue sync, the soft alerts,
+    `_emit_morning` and the heartbeat. The note still reaches the digest through
+    `summary.errors`, which every caller appends to first."""
+    try:
+        append_run_error(engine, run_id, note)
+    except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+        print(f"  ! could not record a run error ({exc}): {note}", file=sys.stderr)
 
 def _linkedin_lane(ctx: LaneContext) -> LinkedInLane:
     """The LinkedIn lane for one run. `ctx.rotation_index` selects this run's slice of the matrix.
@@ -3936,7 +3949,7 @@ def _run_pipeline_leased(
             note = f"funnel artifact not written: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         clock.mark("funnel", console=console)
         # T303: the near-miss report, computed once here because over every open posting's
         # current evaluation it costs about two minutes, far too long for a page load (owner
@@ -3955,13 +3968,7 @@ def _run_pipeline_leased(
                 note = f"near-miss report not written: {exc}"
                 console.print(f"  ! {note}", markup=False)
                 summary.errors.append(note)
-                # Guarded: a store refusing this write too (SQLITE_BUSY) must not escape and skip
-                # the queue sync, the soft alerts, `_emit_morning` and the heartbeat below. The
-                # note still reaches the digest through `summary.errors`.
-                try:
-                    append_run_error(engine, run_id, note)
-                except Exception as nested:  # noqa: BLE001 - never mask the run's own outcome
-                    console.print(f"  ! could not record that: {nested}", markup=False)
+                _record_run_error(engine, run_id, note)
             clock.mark("near_miss", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
@@ -4001,14 +4008,14 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {note}", markup=False)
                 summary.errors.append(note)
-                append_run_error(engine, run_id, note)
+                _record_run_error(engine, run_id, note)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery queue not synced: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
             # Durable, like the funnel and morning handlers: this runs after `finish_run`,
             # so `summary.errors` alone never reaches `runs.errors_json` (D-287).
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         clock.mark("queue_sync", console=console)
         # F4 intake-death detector. The heartbeat below fires on any clean outcome, so a
         # run that scans fine but finds NOTHING new — a dead fleet, a silent fetch
@@ -4023,12 +4030,12 @@ def _run_pipeline_leased(
             if intake_alert is not None:
                 console.print(f"  ! {intake_alert}", markup=False)
                 summary.errors.append(intake_alert)
-                append_run_error(engine, run_id, intake_alert)
+                _record_run_error(engine, run_id, intake_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"intake-death check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # Partial scan-outage soft alert. `is_systemic_scan_outage` only fatals when EVERY
         # board fails; a provider or IP block can dark most of the fleet while a few boards
         # complete, which is not systemic — the heartbeat stays green and F4 cannot see it
@@ -4048,7 +4055,7 @@ def _run_pipeline_leased(
                 if outage is not None:
                     console.print(f"  ! {outage}", markup=False)
                     summary.errors.append(outage)
-                    append_run_error(engine, run_id, outage)
+                    _record_run_error(engine, run_id, outage)
             except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
                 console.print(f"  ! scan-outage alert not recorded: {exc}", markup=False)
         # Degraded-scan soft alert (T130), and it is the other half of narrowing the fatal
@@ -4070,7 +4077,7 @@ def _run_pipeline_leased(
                 if degraded is not None:
                     console.print(f"  ! {degraded}", markup=False)
                     summary.errors.append(degraded)
-                    append_run_error(engine, run_id, degraded)
+                    _record_run_error(engine, run_id, degraded)
             except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
                 console.print(f"  ! degraded-scan alert not recorded: {exc}", markup=False)
         # Delivery-drought soft alert. Intake can be healthy while the tailor, rank, or delivery
@@ -4082,12 +4089,12 @@ def _run_pipeline_leased(
             if drought is not None:
                 console.print(f"  ! {drought}", markup=False)
                 summary.errors.append(drought)
-                append_run_error(engine, run_id, drought)
+                _record_run_error(engine, run_id, drought)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"delivery-drought check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # Apply-lane drought soft alert, and it sits HERE, immediately below its sibling, because
         # the sibling is blind to exactly one fault: `check_delivery_drought` counts
         # `resume_tailored` artifacts, which are written whichever lane the lead routes to. So a
@@ -4105,12 +4112,12 @@ def _run_pipeline_leased(
             if lane_alert is not None:
                 console.print(f"  ! {lane_alert}", markup=False)
                 summary.errors.append(lane_alert)
-                append_run_error(engine, run_id, lane_alert)
+                _record_run_error(engine, run_id, lane_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"apply-lane-drought check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # B8's volume half, and it sits HERE for the same reason the drought check sits below
         # `check_delivery_drought`: the sibling above cannot see this fault. That one fires only
         # when NO lead reaches the apply lane across a window, so a run that placed 19 against
@@ -4133,14 +4140,14 @@ def _run_pipeline_leased(
             if volume_alert is not None:
                 console.print(f"  ! {volume_alert}", markup=False)
                 summary.errors.append(volume_alert)
-                append_run_error(engine, run_id, volume_alert)
+                _record_run_error(engine, run_id, volume_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             # The FAILURE is an ordinary soft alert and is escalatable like every other one: a
             # detector that has silently stopped working is a fault, whatever it was measuring.
             note = f"apply-lane-volume check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # Buried-good-lead soft alert: a posting the judge cleared (eligible, seniority fit yes)
         # that was never delivered closed since the previous pipeline run — a good job lost below
         # the `--top` cut, which no delivery or lane detector above can see because the lead was
@@ -4154,12 +4161,12 @@ def _run_pipeline_leased(
             if buried_alert is not None:
                 console.print(f"  ! {buried_alert}", markup=False)
                 summary.errors.append(buried_alert)
-                append_run_error(engine, run_id, buried_alert)
+                _record_run_error(engine, run_id, buried_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"buried-good-lead check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # Liveness-blindness soft alert. The liveness stage is fail-open by design — any
         # transport fault is `unknown`, and `unknown` is served — so a prober whose egress has
         # broken (DNS, a proxy, a blocked IP) returns `unknown` for the whole shortlist, drops
@@ -4177,12 +4184,12 @@ def _run_pipeline_leased(
             if blind_alert is not None:
                 console.print(f"  ! {blind_alert}", markup=False)
                 summary.errors.append(blind_alert)
-                append_run_error(engine, run_id, blind_alert)
+                _record_run_error(engine, run_id, blind_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"liveness-blindness check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # Corpus-regression detector (D-371) — the one collapse the checks above cannot
         # see. Intake death stays quiet because postings keep arriving; a delivery drought
         # abstains BY CONSTRUCTION, because its honest guard is "did this run judge a
@@ -4200,12 +4207,12 @@ def _run_pipeline_leased(
             if corpus_alert is not None:
                 console.print(f"  ! {corpus_alert}", markup=False)
                 summary.errors.append(corpus_alert)
-                append_run_error(engine, run_id, corpus_alert)
+                _record_run_error(engine, run_id, corpus_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             note = f"corpus-regression check not run: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         # T42 gate-failed-open soft alert. The gate stage itself never raises — every seam
         # fails open and is tallied on `summary` — so this is not a try/except like its
         # siblings above, only the read of a count the stage already produced. ABOVE
@@ -4224,7 +4231,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {gate_alert}", markup=False)
                 summary.errors.append(gate_alert)
-                append_run_error(engine, run_id, gate_alert)
+                _record_run_error(engine, run_id, gate_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate failed-open alert not recorded: {exc}", markup=False)
         # T107 — the ITEM-level half of the same alert, which the batch count above cannot
@@ -4253,7 +4260,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {coverage_alert}", markup=False)
                 summary.errors.append(coverage_alert)
-                append_run_error(engine, run_id, coverage_alert)
+                _record_run_error(engine, run_id, coverage_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate coverage alert not recorded: {exc}", markup=False)
         # T107 — the FIELD-level half, and the degradation with no signal whatsoever today.
@@ -4287,7 +4294,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {seniority_alert}", markup=False)
                 summary.errors.append(seniority_alert)
-                append_run_error(engine, run_id, seniority_alert)
+                _record_run_error(engine, run_id, seniority_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate seniority alert not recorded: {exc}", markup=False)
         # T151. THE GATE READING WENT BLIND, and this is the alert D-537 had no instrument for.
@@ -4330,7 +4337,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {staleness_alert}", markup=False)
                 summary.errors.append(staleness_alert)
-                append_run_error(engine, run_id, staleness_alert)
+                _record_run_error(engine, run_id, staleness_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! gate staleness alert not recorded: {exc}", markup=False)
         # T137. THE RUN'S IDENTITY MOVED UNDER IT. The funnel compared the identity read before
@@ -4348,7 +4355,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {drift_alert}", markup=False)
                 summary.errors.append(drift_alert)
-                append_run_error(engine, run_id, drift_alert)
+                _record_run_error(engine, run_id, drift_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! identity drift alert not recorded: {exc}", markup=False)
         # T203. THE FUNNEL COUNTED ONE QUANTITY TWICE AND GOT TWO ANSWERS. The funnel records every
@@ -4369,7 +4376,7 @@ def _run_pipeline_leased(
                 )
                 console.print(f"  ! {cross_check_alert}", markup=False)
                 summary.errors.append(cross_check_alert)
-                append_run_error(engine, run_id, cross_check_alert)
+                _record_run_error(engine, run_id, cross_check_alert)
         except Exception as exc:  # noqa: BLE001 - a mute alert beats a lost finalize
             console.print(f"  ! cross-check alert not recorded: {exc}", markup=False)
         # LAST thing the finalize block writes, and deliberately so: the morning digest now
@@ -4395,7 +4402,7 @@ def _run_pipeline_leased(
             note = f"morning artifact not written: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         clock.mark("morning", console=console)
         # Dead-man's-switch: ping the monitor ONLY on a clean outcome, so a failed or
         # crashed run (fatal set above, or set-before-raise on the crash path) stays silent
@@ -4473,7 +4480,7 @@ def _run_pipeline_leased(
                 if heartbeat_alert is not None:
                     console.print(f"  ! {heartbeat_alert}", markup=False)
                     summary.errors.append(heartbeat_alert)
-                    append_run_error(engine, run_id, heartbeat_alert)
+                    _record_run_error(engine, run_id, heartbeat_alert)
             except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
                 console.print(f"  ! heartbeat not sent: {exc}", markup=False)
         clock.mark("heartbeat", console=console)
@@ -4507,7 +4514,7 @@ def _run_pipeline_leased(
             if escalation_alert is not None:
                 console.print(f"  ! {escalation_alert}", markup=False)
                 summary.errors.append(escalation_alert)
-                append_run_error(engine, run_id, escalation_alert)
+                _record_run_error(engine, run_id, escalation_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             # Durable, not print-only like the heartbeat's fallback next door. A permanently
             # misconfigured URL — a typo'd port raises `httpx.InvalidURL`, which is NOT an
@@ -4518,7 +4525,7 @@ def _run_pipeline_leased(
             note = f"alert escalation not sent: {exc}"
             console.print(f"  ! {note}", markup=False)
             summary.errors.append(note)
-            append_run_error(engine, run_id, note)
+            _record_run_error(engine, run_id, note)
         clock.mark("escalation", console=console)
         summary.stage_durations = list(clock.durations)
 
