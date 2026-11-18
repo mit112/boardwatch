@@ -13,8 +13,12 @@ Four readings, each cheap on the 50 GB live store:
   survivor (`regroup.apply_merges`). Counted by method and algorithm version and per week, and
   as a rate per 1000 postings ever stored. Postings come from the largest-tables reading below:
   exact when `COUNT(*)` finishes inside its budget, the highest rowid otherwise.
-* **Store size.** The db file and its `-wal`, by `os.stat`. Nothing in the store or a run report
-  records the size per run, so growth is reported as unrecorded; this adds no write path.
+* **Store size.** The db file and its `-wal`, by `os.stat`, now. Each nightly run's funnel
+  artifact records both at assembly (T317), so the last runs' sizes are read back from those files
+  (`api.run_trends_payload` hands them in) and growth is the db file's change since the run
+  before. A run whose funnel predates the field, or whose stat failed, has no figure and no
+  growth, never 0; so has the first run of the series. The WAL is shown, not differenced: it
+  swings with checkpoints. This adds no write path.
 * **Largest tables.** `COUNT(*)` per table, each given `COUNT_BUDGET_SECONDS` and then
   interrupted. A table that cannot be counted in time (the big ones: a full count is minutes
   on the 50 GB store) falls back to `MAX(rowid)` and is marked not exact: the rowid counts rows
@@ -201,11 +205,42 @@ def _table_rows(
     return sizes
 
 
-def store_hygiene(conn: Connection, db_path: Path, now: datetime | None = None) -> dict[str, Any]:
+def _size_series(recorded: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per run, oldest first, with the db file's growth since the run before it.
+
+    `recorded` is the nightly runs as `api.run_trends_payload` returns them. Growth needs both
+    this run and the one before it to have a db size; otherwise it is `None`, never 0.
+    """
+    series: list[dict[str, Any]] = []
+    previous: int | None = None
+    for point in recorded:
+        size = point.get("store_size")
+        db = size.get("db_bytes") if isinstance(size, dict) else None
+        wal = size.get("wal_bytes") if isinstance(size, dict) else None
+        series.append(
+            {
+                "run_id": point["id"],
+                "finished": point.get("finished"),
+                "db_bytes": db,
+                "wal_bytes": wal,
+                "growth_bytes": db - previous if db is not None and previous is not None else None,
+            }
+        )
+        previous = db
+    return series
+
+
+def store_hygiene(
+    conn: Connection,
+    db_path: Path,
+    now: datetime | None = None,
+    recorded: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     at = _naive(now) if now is not None else datetime.now(UTC).replace(tzinfo=None)
     sizes = _table_rows(conn)
     db_bytes = _file_bytes(db_path)
     wal_bytes = _file_bytes(db_path.with_name(db_path.name + "-wal"))
+    series = _size_series(recorded or [])
     largest = sorted(sizes.items(), key=lambda kv: (-kv[1][0], kv[0]))[:TABLE_ROWS]
     return {
         "quarantine": _quarantine(conn, at),
@@ -214,8 +249,9 @@ def store_hygiene(conn: Connection, db_path: Path, now: datetime | None = None) 
             "db_bytes": db_bytes,
             "wal_bytes": wal_bytes,
             "total_bytes": db_bytes + wal_bytes,
-            # Neither `runs` nor a run report records the size, so there is no series to draw.
-            "growth_recorded": False,
+            # True once at least one of the runs shown has a recorded db size.
+            "growth_recorded": any(row["db_bytes"] is not None for row in series),
+            "series": series,
         },
         # `exact` is per row: a table counted in time is a count, the rest are a highest rowid.
         "tables": {

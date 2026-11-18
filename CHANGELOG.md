@@ -57,6 +57,13 @@ All notable changes to this project are documented here. The format follows
   column is "Rows", and an estimate is shown with a leading "≈". The top-level `tables.approximate` flag is gone. On
   the live store 15 of 29 tables count exactly (the 14 big ones are estimates) and the panel query takes about 1.4 s.
 
+- **Each run's funnel records the store file's size, and store hygiene shows growth per run (T317).** The funnel
+  artifact has a new top-level `store_size` key, `{db_bytes, wal_bytes}`, read by `os.stat` when the funnel is
+  assembled; a field is `null` if the stat failed, an absent `-wal` is `0`, and the whole key is `null` on a funnel
+  written before this. `artifact_version` stays at 9 (a new top-level key that changes no existing key's meaning, as
+  `buried` and `direct_share`). The Runs page's store-size panel lists the last 30 nightly runs with the database size,
+  the log size and the database's change since the run before; a run without a recorded size, or whose predecessor
+  has none, shows a dash and never 0. `GET /api/runs/trends` points carry the same `store_size`.
 - **The Runs page shows résumé build economics (T310).** A new read-only `GET /api/build-economics` counts, from
   `artifacts`, the résumés each nightly run built (CLI rows left out; review-lane stubs, which render nothing, counted
   apart) and where every built résumé ended up, each job once at its first delivery, in total and per board: applied,

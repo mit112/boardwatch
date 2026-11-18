@@ -199,7 +199,7 @@ def test_grouping_with_no_postings_has_no_rate(engine: Engine) -> None:
     assert (got["merges"], got["postings_approx"], got["per_1000_postings"]) == (0, 0, None)
 
 
-def test_store_size_is_the_database_plus_its_wal_and_says_growth_is_unrecorded(
+def test_store_size_is_the_database_plus_its_wal_and_says_no_growth_is_recorded(
     engine: Engine, tmp_path: Path
 ) -> None:
     db = tmp_path / "sized" / "boardwatch.db"
@@ -213,9 +213,55 @@ def test_store_size_is_the_database_plus_its_wal_and_says_growth_is_unrecorded(
             "wal_bytes": 56,
             "total_bytes": 1290,
             "growth_recorded": False,
+            "series": [],
         }
         (db.parent / "boardwatch.db-wal").unlink()  # no WAL yet: zero, not an error
         assert store_hygiene(conn, db, now=NOW)["store"]["total_bytes"] == 1234
+
+
+def _point(run_id: int, db: int | None, wal: int | None = 0, *, old: bool = False) -> dict:
+    """A nightly run as `run_trends_payload` returns it; `old` is a funnel from before T317."""
+    size = None if old else {"db_bytes": db, "wal_bytes": wal}
+    return {"id": run_id, "finished": f"2026-11-{run_id:02d}T04:00:00Z", "store_size": size}
+
+
+def test_growth_is_the_db_change_since_the_run_before_and_never_zero_where_unrecorded(
+    engine: Engine,
+) -> None:
+    """Runs 1..6, db bytes written by hand:
+    1: 1000 (first: no run before, growth None)   2: 1500 (+500)
+    3: before T317 (None, and None growth)         4: 1800 (the run before has no figure: None)
+    5: 1700 (-100: a shrink is shown as is)        6: stat failed (db None): None
+    """
+    recorded = [
+        _point(1, 1000),
+        _point(2, 1500, 40),
+        _point(3, None, old=True),
+        _point(4, 1800),
+        _point(5, 1700, None),
+        _point(6, None),
+    ]
+    with engine.begin() as conn:
+        store = store_hygiene(conn, UNUSED, now=NOW, recorded=recorded)["store"]
+    assert [(r["run_id"], r["db_bytes"], r["growth_bytes"]) for r in store["series"]] == [
+        (1, 1000, None),
+        (2, 1500, 500),
+        (3, None, None),
+        (4, 1800, None),
+        (5, 1700, -100),
+        (6, None, None),
+    ]
+    assert [r["wal_bytes"] for r in store["series"]] == [0, 40, None, 0, None, 0]
+    assert store["series"][1]["finished"] == "2026-11-02T04:00:00Z"
+    assert store["growth_recorded"] is True
+
+
+def test_runs_that_all_predate_the_field_leave_growth_unrecorded(engine: Engine) -> None:
+    recorded = [_point(1, None, old=True), _point(2, None, old=True)]
+    with engine.begin() as conn:
+        store = store_hygiene(conn, UNUSED, now=NOW, recorded=recorded)["store"]
+    assert store["growth_recorded"] is False
+    assert [r["growth_bytes"] for r in store["series"]] == [None, None]
 
 
 def test_sparse_and_deleting_tables_are_counted_exactly(engine: Engine) -> None:

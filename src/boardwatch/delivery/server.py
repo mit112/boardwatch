@@ -560,7 +560,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if path == "/api/store-hygiene":
                 db_path = (deps.ctx.settings.data_dir / DB_FILENAME).resolve()
                 self._json(
-                    HTTPStatus.OK, self._read(lambda conn, _ctx: store_hygiene(conn, db_path))
+                    HTTPStatus.OK,
+                    self._read(
+                        lambda conn, ctx: store_hygiene(
+                            conn, db_path, recorded=run_trends_payload(conn, ctx)["runs"]
+                        )
+                    ),
                 )
                 return
             if path == "/api/jd-changes":

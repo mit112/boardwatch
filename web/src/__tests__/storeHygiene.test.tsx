@@ -9,6 +9,7 @@ import { StoreHygiene } from "../components/StoreHygiene";
 
 function data(
   over: Partial<StoreHygieneData["quarantine"]> = {},
+  store: Partial<StoreHygieneData["store"]> = {},
 ): StoreHygieneData {
   return {
     quarantine: {
@@ -36,6 +37,8 @@ function data(
       wal_bytes: 0,
       total_bytes: 49982316544,
       growth_recorded: false,
+      series: [],
+      ...store,
     },
     tables: {
       rows: [
@@ -46,7 +49,7 @@ function data(
   };
 }
 
-it("shows the drain, the grouping rate, the size and says growth is not recorded", async () => {
+it("shows the drain, the grouping rate, the size and says no growth is recorded", async () => {
   vi.mocked(getStoreHygiene).mockResolvedValue(data());
   render(<StoreHygiene />);
   const section = await screen.findByRole("region", { name: "Store hygiene" });
@@ -61,7 +64,7 @@ it("shows the drain, the grouping rate, the size and says growth is not recorded
   ).toBeDefined();
   expect(within(section).getByText(/50\.0 GB on disk/)).toBeDefined();
   expect(
-    within(section).getByText(/Growth per run is not recorded/),
+    within(section).getByText(/No run shown has a recorded size yet/),
   ).toBeDefined();
   expect(within(section).getByText("eligibility_requirements")).toBeDefined();
 });
@@ -78,6 +81,69 @@ it("marks only the estimated table sizes with an approximate sign", async () => 
       ?.textContent;
   expect(cell("eligibility_requirements")).toBe("≈ 8,882,657");
   expect(cell("quarantined_bodies")).toBe("1,172");
+});
+
+it("shows growth per run and a dash, never 0, where a run recorded no size", async () => {
+  vi.mocked(getStoreHygiene).mockResolvedValue(
+    data(
+      {},
+      {
+        growth_recorded: true,
+        series: [
+          {
+            run_id: 7,
+            finished: null,
+            db_bytes: 1000000000,
+            wal_bytes: 0,
+            growth_bytes: null,
+          },
+          {
+            run_id: 8,
+            finished: null,
+            db_bytes: 1500000000,
+            wal_bytes: 4000000,
+            growth_bytes: 500000000,
+          },
+          {
+            run_id: 9,
+            finished: null,
+            db_bytes: null,
+            wal_bytes: null,
+            growth_bytes: null,
+          },
+          {
+            run_id: 10,
+            finished: null,
+            db_bytes: 1400000000,
+            wal_bytes: 0,
+            growth_bytes: -100000000,
+          },
+        ],
+      },
+    ),
+  );
+  render(<StoreHygiene />);
+  const section = await screen.findByRole("region", { name: "Store hygiene" });
+  expect(
+    within(section).queryByText(/No run shown has a recorded size/),
+  ).toBeNull();
+  const table = within(section).getByRole("table", {
+    name: "Store size by run",
+  });
+  const body = table.querySelectorAll("tbody tr");
+  const cells = (i: number) =>
+    Array.from(body[i]?.children ?? []).map((c) => c.textContent);
+  // One row per run; the Finished cell is a dash because the fixture has no time.
+  expect(cells(0)).toEqual(["7", "\u2014", "1.0 GB", "0.0 MB", "\u2014"]);
+  expect(cells(1)).toEqual(["8", "\u2014", "1.5 GB", "4.0 MB", "+500.0 MB"]);
+  expect(cells(2)).toEqual(["9", "\u2014", "\u2014", "\u2014", "\u2014"]);
+  expect(cells(3)).toEqual([
+    "10",
+    "\u2014",
+    "1.4 GB",
+    "0.0 MB",
+    "\u2212100.0 MB",
+  ]);
 });
 
 it("raises an alert when held bodies have stopped draining", async () => {

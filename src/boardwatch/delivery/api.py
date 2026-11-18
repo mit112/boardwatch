@@ -1624,16 +1624,29 @@ def _count_or_none(value: object) -> int | None:
 
 
 def _funnel_trend_facts(funnel: dict[str, Any] | None) -> dict[str, Any]:
-    """The three things a run's trend point reads out of its funnel artifact.
+    """The things a run's trend point reads out of its funnel artifact.
 
     `newly_eligible` is the shortlist stage's run-scoped `judged`: candidate (eligible or
     uncertain) verdicts this run itself produced, which excludes cache hits on earlier runs.
     `resumes_built` is the tailor stage's `advanced`. Each is `None` when the artifact is gone,
     predates the measurement or did not instrument the stage, so a trend draws a gap, not a 0.
+    `store_size` (T317) is the funnel's `{db_bytes, wal_bytes}`, each `None` when unreadable, and
+    `None` itself for a funnel written before it was recorded.
     """
-    facts: dict[str, Any] = {"stage_seconds": None, "newly_eligible": None, "resumes_built": None}
+    facts: dict[str, Any] = {
+        "stage_seconds": None,
+        "newly_eligible": None,
+        "resumes_built": None,
+        "store_size": None,
+    }
     if funnel is None:
         return facts
+    size = funnel.get("store_size")
+    if isinstance(size, dict):
+        facts["store_size"] = {
+            "db_bytes": _count_or_none(size.get("db_bytes")),
+            "wal_bytes": _count_or_none(size.get("wal_bytes")),
+        }
     durations = funnel.get("stage_durations")
     if isinstance(durations, list):
         seconds_by_stage: dict[str, float] = {}
