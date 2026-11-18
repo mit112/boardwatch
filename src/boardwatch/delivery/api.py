@@ -108,6 +108,7 @@ from boardwatch.store.applications import (
     get_application,
     get_application_events,
 )
+from boardwatch.store.build_economics_queries import built_per_run, lead_outcomes
 from boardwatch.store.delivery_queries import (
     STATUS_CLOSED,
     AppliedRow,
@@ -1603,6 +1604,35 @@ def run_trends_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     return {"stage_names": stage_names, "runs": points}
 
 
+def build_economics_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/build-economics` (T310): what the résumé builds cost and whether they were used.
+
+    The run rows are `run_trends_payload`'s (nightly delivery runs only, so the CLI's own rows
+    never appear), newest first, each with the résumés the run built from `artifacts`. No run
+    records a per-lead tailor time, so `tailor_seconds` is the whole `tailor` stage and
+    `seconds_per_resume` is that divided by the run's builds: an AVERAGE, and an upper bound,
+    because the stage also delivers review-lane stubs and runs the gate backlog. Both are `None`
+    when the funnel artifact is gone or did not time the stage, never zero.
+    """
+    trend = run_trends_payload(conn, ctx)["runs"]
+    counts = built_per_run(conn, [point["id"] for point in trend])
+    rows: list[dict[str, Any]] = []
+    for point in reversed(trend):
+        built = counts[point["id"]]["built"]
+        seconds = (point["stage_seconds"] or {}).get("tailor")
+        rows.append(
+            {
+                "id": point["id"],
+                "finished": point["finished"],
+                "built": built,
+                "not_rendered": counts[point["id"]]["not_rendered"],
+                "tailor_seconds": seconds,
+                "seconds_per_resume": seconds / built if seconds is not None and built else None,
+            }
+        )
+    return {"runs": rows, **lead_outcomes(conn)}
+
+
 __all__ = [
     "FALLBACK_OWNER_NAME",
     "NOTE_MAX_CHARS",
@@ -1621,6 +1651,7 @@ __all__ = [
     "Runner",
     "answers_payload",
     "application_events_payload",
+    "build_economics_payload",
     "detail_payload",
     "funnel_payload",
     "lead_folder",

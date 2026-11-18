@@ -4048,3 +4048,44 @@ def test_posting_lifetime_is_served_read_only(live: Live, engine: Engine) -> Non
     assert got["closed"] == {"count": 0, "median_days": None, "p90_days": None}
     assert got["urgent"] is None
     assert call(live, "/api/posting-lifetime").status == 401
+
+
+def test_build_economics_joins_each_nightly_run_to_its_tailor_stage(
+    live: Live, ctx: ApiContext, engine: Engine
+) -> None:
+    """T310: per-run builds from `artifacts`, tailor seconds from the funnel, CLI rows left out."""
+    with engine.begin() as conn:
+        timed = _timed_run(conn, minutes=30, new_count=1)
+        untimed = _timed_run(conn, minutes=30, new_count=2)
+        idle = _timed_run(conn, minutes=30, new_count=3)
+        for key in ("e1", "e2", "e3"):
+            _deliver(conn, f"econ-{key}", run_id=timed, judge=False)
+        _deliver(conn, "econ-stub", run_id=timed, judge=False)
+        conn.execute(
+            update(artifacts)
+            .where(artifacts.c.run_id == timed, artifacts.c.uri.like("%econ-stub%"))
+            .values(meta_json={"pending_tailor": True, "pdf_uri": None})
+        )
+        _deliver(conn, "econ-untimed", run_id=untimed, judge=False)
+    maintenance = insert_run(engine, kind="maintenance")
+    with engine.begin() as conn:
+        conn.execute(
+            update(runs).where(runs.c.id == maintenance).values(finished_at=NOW, status="ok")
+        )
+        _deliver(conn, "econ-cli", run_id=maintenance, judge=False)
+    # 90 s over the 3 rendered résumés (the stub is not a build): 30 s each, on average.
+    _write_funnel(ctx, timed, {"stage_durations": [{"name": "tailor", "seconds": 90}]}, day="d1")
+    # Timed, but nothing built that run: no average, not a division by zero.
+    _write_funnel(ctx, idle, {"stage_durations": [{"name": "tailor", "seconds": 40}]}, day="d1")
+
+    got = call(live, "/api/build-economics", bearer=live.token).json()
+
+    assert [row["id"] for row in got["runs"]] == [idle, untimed, timed]  # newest first
+    by_id = {row["id"]: row for row in got["runs"]}
+    assert (by_id[timed]["built"], by_id[timed]["not_rendered"]) == (3, 1)
+    assert (by_id[timed]["tailor_seconds"], by_id[timed]["seconds_per_resume"]) == (90.0, 30.0)
+    assert (by_id[untimed]["built"], by_id[untimed]["tailor_seconds"]) == (1, None)
+    assert by_id[untimed]["seconds_per_resume"] is None
+    assert (by_id[idle]["built"], by_id[idle]["tailor_seconds"]) == (0, 40.0)
+    assert by_id[idle]["seconds_per_resume"] is None
+    assert call(live, "/api/build-economics").status == 401

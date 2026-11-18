@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { getFunnel, getRuns } from "../api/client";
 import { RunTrends } from "../components/RunTrends";
 import { BoardHealth } from "../components/BoardHealth";
+import { BuildEconomics } from "../components/BuildEconomics";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
 import { JudgeAgreementPanel } from "../components/JudgeAgreementPanel";
@@ -805,6 +806,7 @@ export function RunsPage() {
           <JudgeAgreementPanel />
         </>
       )}
+      <BuildEconomics />
       <CompanionHistory />
       <BoardHealth />
     </div>
