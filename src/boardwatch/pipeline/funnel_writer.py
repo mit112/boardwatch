@@ -254,7 +254,13 @@ def read_store_size(engine: Engine) -> StoreSize | None:
     name = engine.url.database
     if not name or name == ":memory:":
         return None
-    path = Path(name)
+    path = Path(name.removeprefix("file:"))
+    try:
+        # SQLite keeps the `-wal` beside the RESOLVED file, so a symlinked store's WAL is beside
+        # its target, not beside the link.
+        path = path.resolve()
+    except OSError:
+        pass
 
     def size(target: Path, *, absent: int | None) -> int | None:
         try:

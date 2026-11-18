@@ -80,3 +80,15 @@ def test_a_new_top_level_key_does_not_bump_the_artifact_version() -> None:
     """Held at 9 on the `buried` / `direct_share` precedent (see the comment above the constant)."""
     assert ARTIFACT_VERSION == 9
     assert funnel_to_dict(funnel())["artifact_version"] == 9
+
+
+def test_a_symlinked_store_reads_the_wal_beside_its_target(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    real.mkdir()
+    (real / "boardwatch.db").write_bytes(b"x" * 10)
+    (real / "boardwatch.db-wal").write_bytes(b"y" * 7)
+    link = tmp_path / "boardwatch.db"
+    link.symlink_to(real / "boardwatch.db")
+
+    got = read_store_size(create_engine(f"sqlite:///{link}"))
+    assert got is not None and (got.db_bytes, got.wal_bytes) == (10, 7)
