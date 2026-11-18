@@ -1090,6 +1090,41 @@ export interface JudgeAgreement {
   splits: { posting_id: number; title: string; company: string; deterministic: string; llm: string }[];
 }
 
+/* `GET /api/near-misses` (T303): open postings blocked by exactly one unmet requirement. */
+export interface NearMissSample {
+  posting_id: number;
+  title: string;
+  company: string;
+  requirement: string;
+  /** The span of the evaluated posting version's frozen body that the requirement quotes. */
+  quote: string;
+}
+
+export interface NearMissRule {
+  rule_id: string;
+  /** Postings whose only blocking unmet requirement is this rule's and that abstain on nothing. */
+  count: number;
+  /** Postings with this one unmet requirement AND an abstain on a blocking rule: never in `count`. */
+  with_abstain: number;
+  requirements: { text: string; count: number }[];
+  samples: NearMissSample[];
+}
+
+export interface NearMisses {
+  /** False when the store has no profile: every number below is then 0. */
+  profile: boolean;
+  /** Open postings whose current verdict is ineligible. */
+  blocked: number;
+  /** Of those, how many hold exactly one blocking unmet requirement, before the title and location gates. */
+  one_unmet: number;
+  /** The cohort: one blocking unmet requirement, no blocking abstain, passes the title and location gates. */
+  near_misses: number;
+  with_abstain: number;
+  /** The one-unmet postings the gates left out, by the clause that vetoed them. */
+  gated_out: { clause: string; count: number }[];
+  rules: NearMissRule[];
+}
+
 /* `GET /api/withdrawals` (T311): one row per withdrawn application, newest first. */
 export interface Withdrawal {
   application_id: number;

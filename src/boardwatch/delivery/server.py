@@ -83,6 +83,7 @@ from boardwatch.delivery.api import (
     form_questions_payload,
     funnel_payload,
     local_today,
+    near_miss_payload,
     queue_payload,
     rejected_payload,
     resolve_pdf,
@@ -563,6 +564,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                     lambda conn, ctx: company_hiring(conn, current_identity(conn, ctx.settings))
                 )
                 self._json(HTTPStatus.OK, hiring)
+                return
+            if path == "/api/near-misses":
+                self._json(HTTPStatus.OK, self._read(near_miss_payload))
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's

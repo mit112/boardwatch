@@ -63,6 +63,17 @@ All notable changes to this project are documented here. The format follows
   "Watched companies only" filter reaches watched companies that rank below the top 50. The eligible pass reads the
   whole evaluation table once (about 37 s on the live store), so the answer is memoised per finished run and day and
   the first view after a run is slow; later views take 0.1 s.
+- **The Runs page lists the near-misses: postings blocked by exactly one unmet requirement (T303).** A new read-only
+  `GET /api/near-misses` finds the open postings whose current deterministic evaluation holds exactly one blocking
+  unmet requirement (`required`, in a family the policy makes a `blocker`) and no blocking abstain, and groups them by
+  `rule_id` with the requirement texts asked and sample postings carrying the quoted span. The cohort is narrowed to
+  postings that would be real leads: the pipeline's own `hard_filter_verdict` (excluded title, foreign ad, location
+  outside the target countries) and the role gate (`out_of_field`) are asked of each, and what they veto is counted by
+  clause and left out. A posting with that one unmet row plus an abstain on a blocking rule is counted apart and never
+  added to the near-miss number. On the live store, of 373,423 blocked postings 219,645 hold one blocking unmet row;
+  the gates leave 37,858 near-misses (and 3,423 with an abstain). Computing it takes 95 to 125 s on the live store
+  (the current evaluation of every open posting is about half of that), so the answer is held in process, keyed by the
+  latest finished run, the newest evaluation and the gate's inputs: 0.01 s once held.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

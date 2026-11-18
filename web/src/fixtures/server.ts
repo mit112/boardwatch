@@ -409,6 +409,16 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
   if (method === "GET" && path === "/api/companions") return { companions: [] };
+  if (method === "GET" && path === "/api/near-misses")
+    return {
+      profile: true,
+      blocked: 0,
+      one_unmet: 0,
+      near_misses: 0,
+      with_abstain: 0,
+      gated_out: [],
+      rules: [],
+    };
   if (method === "GET" && path === "/api/withdrawals") return { withdrawals: [] };
   if (method === "GET" && path === "/api/source-yield") return { sources: {} };
   if (method === "GET" && path === "/api/build-economics")
