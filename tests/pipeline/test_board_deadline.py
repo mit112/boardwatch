@@ -44,6 +44,11 @@ class _StuckProvider:
 
     def __init__(self) -> None:
         self.release = threading.Event()
+        #: Seconds after `stuck`'s fetch STARTS to release it; None leaves it blocked. Timed from
+        #: the fetch, not from before `run_scan`: store and pool setup used to eat the margin over
+        #: the 0.3 s cap, so a slow windows-latest runner released `stuck` before the cap fired
+        #: (`(0, 2)` on the 2026-11-18 nightly).
+        self.release_after: float | None = None
         self.host_lock = threading.Lock()
         self.fetches: dict[str, tuple[float, float]] = {}
 
@@ -56,6 +61,8 @@ class _StuckProvider:
             with self.host_lock:
                 started = time.monotonic()
                 if request.slug == "stuck":
+                    if self.release_after is not None:
+                        threading.Timer(self.release_after, self.release.set).start()
                     self.release.wait(timeout=5.0)
                 self.fetches[request.slug] = (started, time.monotonic())
         return BoardSnapshot(
@@ -136,7 +143,7 @@ def test_a_board_behind_an_abandoned_one_on_its_host_waits_for_that_thread(
         data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=2,
         board_deadline_seconds=0.3,
     )
-    threading.Timer(0.8, provider.release.set).start()  # the stuck fetch ends on its own
+    provider.release_after = 0.8  # the stuck fetch ends on its own
 
     summary = run_scan(engine, settings, providers={"greenhouse": provider})
     returned = time.monotonic()
@@ -182,7 +189,7 @@ def test_a_worker_freed_by_an_abandoned_board_is_reused(
         data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
         board_deadline_seconds=0.3,
     )
-    threading.Timer(0.8, provider.release.set).start()  # the stuck fetch ends on its own
+    provider.release_after = 0.8  # the stuck fetch ends on its own
     summary = run_scan(engine, settings, providers={"greenhouse": provider})
     assert (summary.failed, summary.complete) == (1, 2)
     with engine.connect() as conn:
@@ -423,7 +430,7 @@ def test_an_abandoned_worker_past_every_clock_is_reported_once(
         data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
         board_deadline_seconds=0.3, fetch_deadline_seconds=0.2,
     )
-    threading.Timer(1.2, provider.release.set).start()
+    provider.release_after = 1.2
     summary = run_scan(engine, settings, providers={"greenhouse": provider})
 
     assert (summary.failed, summary.complete) == (1, 1)
