@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Connection, Engine, insert
+from sqlalchemy import Connection, Engine, insert, text
 
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import application_events, applications
@@ -88,3 +88,56 @@ def test_withdrawals_count_once_per_application_and_keep_the_two_kinds_apart(
         (a2, "before_applying", None, "pre-flight: not a real job"),
     ]
     assert got[0]["title"] == "Software Engineer"
+
+
+def test_the_newest_withdrawal_stands_ordered_by_instant_not_text(engine: Engine) -> None:
+    """Declined before sending (day 0), applied day 1 (11-02 12:00), pulled back at '2026-11-04
+    10:00' naive and again at '2026-11-04 07:00-05:00', which is 12:00 UTC: the newer instant,
+    though it sorts BEFORE '10:00' as text. The standing withdrawal is the 12:00 one, 2.0 days."""
+    with engine.begin() as conn:
+        _, job = _deliver(conn, "w3", judge=False)
+        app = _app(conn, job, "withdrawn", D0 + timedelta(days=1))
+        _event(conn, app, "created", None, "withdrawn", D0, "pre-flight: unsure")
+        _event(conn, app, "status_change", "withdrawn", "applied", D0 + timedelta(days=1))
+        _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=2, hours=22))
+        conn.execute(
+            text(
+                "INSERT INTO application_events (application_id, event_type, from_status,"
+                " to_status, occurred_at, recorded_at, source, note) VALUES (:a, 'status_change',"
+                " 'applied', 'withdrawn', '2026-11-04 07:00:00.000000-05:00',"
+                " '2026-11-04 12:00:00.000000', 'user', 'pay too low')"
+            ),
+            {"a": app},
+        )
+        got = withdrawals(conn)["withdrawals"]
+    assert [(w["kind"], w["days_after_applying"], w["note"]) for w in got] == [
+        ("after_applying", 2.0, "pay too low")
+    ]
+
+
+def test_an_import_withdrawal_is_after_applying_and_dated_only_when_the_import_was(
+    engine: Engine,
+) -> None:
+    with engine.begin() as conn:
+        _, j1 = _deliver(conn, "w4", judge=False)
+        undated = _app(conn, j1, "withdrawn", None)  # imported as interviewing, no date given
+        conn.execute(
+            insert(application_events).values(
+                application_id=undated, event_type="created", from_status=None,
+                to_status="interviewing", occurred_at=D0, recorded_at=D0, source="import",
+            )
+        )
+        _event(conn, undated, "status_change", "interviewing", "withdrawn", D0 + timedelta(days=4))
+        _, j2 = _deliver(conn, "w5", judge=False)
+        dated = _app(conn, j2, "withdrawn", None)  # imported on D0, applied 2 days earlier
+        conn.execute(
+            insert(application_events).values(
+                application_id=dated, event_type="created", from_status=None,
+                to_status="rejected", occurred_at=D0 - timedelta(days=2), recorded_at=D0,
+                source="import",
+            )
+        )
+        _event(conn, dated, "status_change", "rejected", "withdrawn", D0 + timedelta(days=1))
+        got = {w["application_id"]: w for w in withdrawals(conn)["withdrawals"]}
+    assert (got[undated]["kind"], got[undated]["days_after_applying"]) == ("after_applying", None)
+    assert (got[dated]["kind"], got[dated]["days_after_applying"]) == ("after_applying", 3.0)

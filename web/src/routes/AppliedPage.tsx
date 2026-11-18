@@ -866,7 +866,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       <ApplicationPace rows={rows} />
       <ApplyReadiness rows={rows} />
       <LeadAging />
-      <Withdrawals />
+      <Withdrawals refresh={rows} />
 
       <label className="flex min-w-64 max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-3">Filter company, title, location</span>

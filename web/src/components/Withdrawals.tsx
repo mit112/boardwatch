@@ -17,7 +17,9 @@ function when(iso: string): string {
   });
 }
 
-export function Withdrawals() {
+/** `refresh` is any value that changes when the applied list reloads (a status change can add a
+ * withdrawal); the panel re-reads on each change. */
+export function Withdrawals({ refresh }: { refresh?: unknown }) {
   const [rows, setRows] = useState<Withdrawal[] | null>(null);
   useEffect(() => {
     let live = true;
@@ -32,7 +34,7 @@ export function Withdrawals() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [refresh]);
   if (rows === null || rows.length === 0) return null;
   const after = rows.filter((r) => r.kind === "after_applying").length;
   const companies = new Set(rows.map((r) => r.company ?? "")).size;

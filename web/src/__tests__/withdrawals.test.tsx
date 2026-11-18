@@ -46,3 +46,13 @@ it("keeps pulled-back and declined withdrawals apart and shows each reason", asy
   expect(within(section).getByText("role filled")).toBeDefined();
   expect(within(section).getByText("No reason recorded.")).toBeDefined();
 });
+
+it("re-reads the withdrawals when the applied list reloads", async () => {
+  vi.mocked(getWithdrawals).mockClear();
+  vi.mocked(getWithdrawals).mockResolvedValue({ withdrawals: [] });
+  const first: unknown[] = [];
+  const { rerender } = render(<Withdrawals refresh={first} />);
+  await vi.waitFor(() => expect(getWithdrawals).toHaveBeenCalledTimes(1));
+  rerender(<Withdrawals refresh={[]} />);
+  await vi.waitFor(() => expect(getWithdrawals).toHaveBeenCalledTimes(2));
+});
