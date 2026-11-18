@@ -40,6 +40,12 @@ All notable changes to this project are documented here. The format follows
   version A with B" is now a button that opens the diff under the row, with a `+` or `−` sign on each added or removed
   line so colour is never the only cue. A sent-against version that was never captured has nothing to compare, so that
   row names the gap instead of offering a button.
+- **Store hygiene counts tables exactly where it can (T318).** The largest-tables list used `MAX(rowid)` for every
+  table, which overstates a sparse one (the quarantine, keyed by posting version id, read 1,467,591 for 1,172 rows).
+  Each table now gets an exact `COUNT(*)` with a 0.1 s budget, cut short with `sqlite3` `interrupt()`; a table that
+  cannot be counted in time falls back to its highest row id. Each row in `tables.rows` carries `exact`, the panel
+  column is "Rows", and an estimate is shown with a leading "≈". The top-level `tables.approximate` flag is gone. On
+  the live store 15 of 29 tables count exactly (the 14 big ones are estimates) and the panel query takes about 1.4 s.
 
 - **The Runs page shows résumé build economics (T310).** A new read-only `GET /api/build-economics` counts, from
   `artifacts`, the résumés each nightly run built (CLI rows left out; review-lane stubs, which render nothing, counted

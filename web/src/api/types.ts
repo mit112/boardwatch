@@ -794,8 +794,8 @@ export interface StoreHygiene {
     /** `false`: no run records the size, so there is no growth to show. */
     growth_recorded: boolean;
   };
-  /** Highest rowid per table, not a count: approximate. */
-  tables: { approximate: boolean; rows: { name: string; rows: number }[] };
+  /** `exact`: `COUNT(*)`; otherwise the highest rowid, an upper bound on the rows. */
+  tables: { rows: { name: string; rows: number; exact: boolean }[] };
 }
 
 /* `GET /api/jd-changes` (T309): postings whose JD changed after a résumé was built or after an

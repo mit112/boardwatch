@@ -490,7 +490,7 @@ function route(method: string, path: string, body: unknown): unknown {
         weekly: [],
       },
       store: { db_bytes: 0, wal_bytes: 0, total_bytes: 0, growth_recorded: false },
-      tables: { approximate: true, rows: [] },
+      tables: { rows: [] },
     };
   if (method === "GET" && path === "/api/posting-lifetime")
     return {

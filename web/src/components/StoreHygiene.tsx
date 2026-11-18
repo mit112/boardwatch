@@ -7,8 +7,9 @@ import { EM_DASH, formatCount } from "../lib/format";
 /*
  * T313: is the quarantine draining, how often does grouping merge duplicates, how big is the store.
  * A bucket that holds bodies and never drains is a leak, so a stalled drain is said in words, not
- * left to a number. Table sizes are the highest row id, which is approximate; store growth per run
- * is not recorded anywhere, and the panel says so instead of drawing an empty chart.
+ * left to a number. Table sizes are counts where one finishes in time and the highest row id
+ * (marked ≈) where not; store growth per run is not recorded anywhere, and the panel says so
+ * instead of drawing an empty chart.
  */
 
 function gigabytes(bytes: number): string {
@@ -146,12 +147,12 @@ export function StoreHygiene() {
       {tables.rows.length === 0 ? null : (
         <table className="mt-2 text-sm">
           <caption className="label-micro pb-1 text-left text-fg-3">
-            Largest tables, by highest row id (approximate)
+            Largest tables, by rows (≈ marks an estimate)
           </caption>
           <thead className="text-fg-3">
             <tr>
               <th className="pr-6 text-left font-normal">Table</th>
-              <th className="text-right font-normal">Highest row id (≈ rows)</th>
+              <th className="text-right font-normal">Rows</th>
             </tr>
           </thead>
           <tbody className="text-fg">
@@ -161,6 +162,7 @@ export function StoreHygiene() {
                   {t.name}
                 </th>
                 <td className="text-right tabular-nums">
+                  {t.exact ? "" : "≈ "}
                   {formatCount(t.rows)}
                 </td>
               </tr>

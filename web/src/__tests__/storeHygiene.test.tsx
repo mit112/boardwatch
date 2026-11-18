@@ -38,8 +38,10 @@ function data(
       growth_recorded: false,
     },
     tables: {
-      approximate: true,
-      rows: [{ name: "eligibility_requirements", rows: 8882657 }],
+      rows: [
+        { name: "eligibility_requirements", rows: 8882657, exact: false },
+        { name: "quarantined_bodies", rows: 1172, exact: true },
+      ],
     },
   };
 }
@@ -62,6 +64,20 @@ it("shows the drain, the grouping rate, the size and says growth is not recorded
     within(section).getByText(/Growth per run is not recorded/),
   ).toBeDefined();
   expect(within(section).getByText("eligibility_requirements")).toBeDefined();
+});
+
+it("marks only the estimated table sizes with an approximate sign", async () => {
+  vi.mocked(getStoreHygiene).mockResolvedValue(data());
+  render(<StoreHygiene />);
+  const section = await screen.findByRole("region", { name: "Store hygiene" });
+  expect(
+    within(section).getByRole("columnheader", { name: "Rows" }),
+  ).toBeDefined();
+  const cell = (name: string) =>
+    within(section).getByText(name).closest("tr")?.querySelector("td")
+      ?.textContent;
+  expect(cell("eligibility_requirements")).toBe("≈ 8,882,657");
+  expect(cell("quarantined_bodies")).toBe("1,172");
 });
 
 it("raises an alert when held bodies have stopped draining", async () => {
