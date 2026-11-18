@@ -78,6 +78,7 @@ from boardwatch.delivery.api import (
     answers_payload,
     application_events_payload,
     applied_payload,
+    build_economics_payload,
     detail_payload,
     funnel_payload,
     local_today,
@@ -551,6 +552,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/runs/trends":
                 self._json(HTTPStatus.OK, self._read(run_trends_payload))
+                return
+            if path == "/api/build-economics":
+                self._json(HTTPStatus.OK, self._read(build_economics_payload))
                 return
             if path == "/api/board-health":
                 # Latest scan per board only (T305): one grouped pass, never the scan history.

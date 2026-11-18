@@ -925,6 +925,40 @@ export interface SourceYieldResponse {
   sources: Record<string, { built: number; applied: number }>;
 }
 
+/* `GET /api/build-economics` (T310). One row per nightly delivery run, newest first. `built` counts
+ * rendered résumés; `not_rendered` counts review-lane stubs, which cost no build. No per-lead tailor
+ * time is stored, so `seconds_per_resume` is the run's whole tailor stage divided by `built`: an
+ * average, and an upper bound. `null` when the run was not timed or built nothing, never 0. */
+export interface BuildEconomicsRun {
+  id: number;
+  finished: string | null;
+  built: number;
+  not_rendered: number;
+  tailor_seconds: number | null;
+  seconds_per_resume: number | null;
+}
+
+/* Where every built résumé (a job, counted once at its first delivery) ended up. `open` is still
+ * waiting and is NOT wasted; closed + skipped are the wasted builds. `settled_rate` leaves `open`
+ * out of the denominator. */
+export interface BuildOutcomes {
+  built: number;
+  applied: number;
+  closed: number;
+  skipped: number;
+  open: number;
+  apply_rate: number | null;
+  settled_rate: number | null;
+}
+
+export interface BuildEconomics {
+  runs: BuildEconomicsRun[];
+  /** Leads first delivered only as an unrendered review-lane stub; outside every count here. */
+  not_rendered_leads: number;
+  totals: BuildOutcomes;
+  boards: (BuildOutcomes & { board: string })[];
+}
+
 /* `GET /api/judge-agreement` (T304). Each LLM verdict paired with the newest deterministic verdict
  * on the SAME input; `none` is an LLM row with no deterministic partner, never folded. */
 export interface JudgeAgreementRun {

@@ -411,6 +411,13 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/companions") return { companions: [] };
   if (method === "GET" && path === "/api/withdrawals") return { withdrawals: [] };
   if (method === "GET" && path === "/api/source-yield") return { sources: {} };
+  if (method === "GET" && path === "/api/build-economics")
+    return {
+      runs: [],
+      not_rendered_leads: 0,
+      totals: { built: 0, applied: 0, closed: 0, skipped: 0, open: 0, apply_rate: null, settled_rate: null },
+      boards: [],
+    };
   if (method === "GET" && path === "/api/judge-agreement")
     return { lanes: {}, final_gate_splits: 0, split_rules: [], splits: [] };
   if (method === "GET" && path === "/api/lead-aging")

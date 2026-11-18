@@ -26,6 +26,7 @@ import type {
   AppliedHistoryResponse,
   AppliedResponse,
   BoardHealthResponse,
+  BuildEconomics,
   DisputeResponse,
   RejectedResponse,
   BatchManualResponse,
@@ -256,6 +257,9 @@ export const getBoardHealth = (): Promise<BoardHealthResponse> =>
   request<BoardHealthResponse>("/api/board-health");
 
 export const getRunTrends = (): Promise<RunTrends> => request<RunTrends>("/api/runs/trends");
+
+export const getBuildEconomics = (): Promise<BuildEconomics> =>
+  request<BuildEconomics>("/api/build-economics");
 
 export const getFunnel =(runId: number): Promise<RunFunnel> =>
   request<RunFunnel>(`/api/runs/${String(runId)}`);

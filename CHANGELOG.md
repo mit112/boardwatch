@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Runs page shows résumé build economics (T310).** A new read-only `GET /api/build-economics` counts, from
+  `artifacts`, the résumés each nightly run built (CLI rows left out; review-lane stubs, which render nothing, counted
+  apart) and where every built résumé ended up, each job once at its first delivery, in total and per board: applied,
+  closed without being applied to, skipped, or still open. Only closed and skipped are wasted builds; a lead still open
+  is waiting and is left out of the settled rate (applied ÷ applied, closed and skipped). No run stores a per-lead
+  tailor time, so the cost is each run's tailor stage seconds divided by its builds, labelled as an average and an
+  upper bound, and a dash when the run was not timed or built nothing. 0.8 s warm on the live store (10 s cold).
+
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a
   repeat, not a second one), split into pulled back after applying (left a submitted status; days since applying when
