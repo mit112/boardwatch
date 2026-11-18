@@ -433,6 +433,11 @@ export interface AppliedRow {
   /** `application_events.source` for the event that set the current status: "web", "import". */
   source: string | null;
   /**
+   * How the posting was DISCOVERED: the company's provider ("greenhouse", "lever", "jobapps").
+   * Not `source`, which is who recorded the application. Optional: an older server omits it.
+   */
+  provider?: string | null;
+  /**
    * Whether `POST /api/queue/<posting_id>/unapplied` would act on THIS attempt.
    *
    * The route is per JOB — it withdraws the job's latest attempt — while this page is one row per
