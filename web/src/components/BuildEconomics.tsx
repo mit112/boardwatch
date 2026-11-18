@@ -127,7 +127,7 @@ export function BuildEconomics() {
                   <th className="pr-5 text-left font-normal">Run</th>
                   <th className="pr-5 text-left font-normal">Finished</th>
                   <th className="pr-5 text-right font-normal">Built</th>
-                  <th className="pr-5 text-right font-normal">Review stubs</th>
+                  <th className="pr-5 text-right font-normal">Not rendered</th>
                   <th className="pr-5 text-right font-normal">Tailor stage</th>
                   <th className="text-right font-normal">Average per résumé</th>
                 </tr>

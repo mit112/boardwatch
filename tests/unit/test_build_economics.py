@@ -252,9 +252,15 @@ def test_built_per_run_counts_renders_and_stubs_apart_for_the_runs_asked(engine:
         _lead(conn, "r1b", run_id=r1)
         p_stub, _ = _lead(conn, "r1c", run_id=r1)
         _stub(conn, p_stub)
+        p_failed, _ = _lead(conn, "r1d", run_id=r1)
+        conn.execute(  # a tailor whose PDF failed to compile: not a stub, and not a build either
+            update(artifacts)
+            .where(artifacts.c.posting_version_id == _version(conn, p_failed))
+            .values(meta_json={"typst_pdf_built": False, "pdf_uri": None})
+        )
         _lead(conn, "r3a", run_id=r3)  # a run that was not asked for
         got = built_per_run(conn, [r1, r2])
-    assert got == {r1: {"built": 2, "not_rendered": 1}, r2: {"built": 0, "not_rendered": 0}}
+    assert got == {r1: {"built": 2, "not_rendered": 2}, r2: {"built": 0, "not_rendered": 0}}
 
 
 def test_a_lead_applied_to_before_its_build_is_counted_apart(engine: Engine) -> None:
