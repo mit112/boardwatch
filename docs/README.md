@@ -5,6 +5,8 @@
 - [Platform support](platform-support.md) — Windows caveats and what's fixed.
 - [Scheduling](scheduling.md) — cron/launchd/systemd scan recipes and notifications.
 - [Running the pipeline unattended](unattended-run.md) — `boardwatch run` as a scheduled daily driver.
+- [Companion status documents](companions.md) — how a tool beside boardwatch shows its state
+  in `boardwatch web`.
 - [Tailoring](tailoring.md) — opt-in LLM résumé rewriting, API and agent lanes.
 - [Provider matrix](provider-matrix.md) — the twelve providers at a glance: bodies, registry
   counts, what `--verify` can catch.

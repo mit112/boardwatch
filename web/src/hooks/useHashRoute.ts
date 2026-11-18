@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 /** Four routes. Hash-based, so the loopback server needs no SPA fallback and no dependency is
  * added for what is a switch between four pages. */
-export type Route = "queue" | "runs" | "applied" | "rejected";
+export type Route = "queue" | "runs" | "applied" | "rejected" | "needs";
 
 /**
  * The queue's ADDRESSABLE state, carried as a query string on the hash:
@@ -42,7 +42,9 @@ function parse(): { route: Route; params: RouteParams } {
           ? "applied"
           : path === "/rejected"
             ? "rejected"
-            : "queue",
+            : path === "/needs"
+              ? "needs"
+              : "queue",
     params: { run: readId(query, "run"), lead: readId(query, "lead") },
   };
 }

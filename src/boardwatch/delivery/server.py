@@ -87,6 +87,7 @@ from boardwatch.delivery.api import (
     reveal,
     runs_payload,
 )
+from boardwatch.delivery.companions import read_companions
 from boardwatch.delivery.queue import reconcile_queue, refresh_queue
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.store.applications import (
@@ -515,6 +516,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/answers":
                 self._answers()
+                return
+            if path == "/api/companions":
+                # Files only, no store connection: a held scan lock cannot hide a companion's
+                # report of the very failure it caused (T294).
+                companions = read_companions(deps.ctx.settings.data_dir)
+                self._json(HTTPStatus.OK, {"companions": companions})
                 return
             if path == "/api/runs":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: runs_payload(conn)))

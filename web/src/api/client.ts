@@ -29,6 +29,7 @@ import type {
   RejectedResponse,
   BatchManualResponse,
   BatchSkipResponse,
+  CompanionsResponse,
   FollowUpResponse,
   QueueDetail,
   QueueResponse,
@@ -224,6 +225,9 @@ export const undisputeRejection = (postingId: number): Promise<DisputeResponse> 
   request<DisputeResponse>(`/api/queue/${String(postingId)}/undispute`, "POST");
 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
+
+export const getCompanions = (): Promise<CompanionsResponse> =>
+  request<CompanionsResponse>("/api/companions");
 
 export const getRuns = (): Promise<RunsResponse> => request<RunsResponse>("/api/runs");
 
