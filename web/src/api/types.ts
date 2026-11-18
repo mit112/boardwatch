@@ -1091,8 +1091,10 @@ export interface BuildOutcomes {
 
 export interface BuildEconomics {
   runs: BuildEconomicsRun[];
-  /** Leads first delivered only as an unrendered review-lane stub; outside every count here. */
+  /** Leads delivered with no rendered PDF (a review-lane stub or a failed compile); outside every count here. */
   not_rendered_leads: number;
+  /** Leads whose first dated application came before their first rendered résumé; outside every count here. */
+  applied_before_build_leads: number;
   totals: BuildOutcomes;
   boards: (BuildOutcomes & { board: string })[];
 }

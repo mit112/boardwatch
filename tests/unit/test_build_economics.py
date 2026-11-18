@@ -255,3 +255,83 @@ def test_built_per_run_counts_renders_and_stubs_apart_for_the_runs_asked(engine:
         _lead(conn, "r3a", run_id=r3)  # a run that was not asked for
         got = built_per_run(conn, [r1, r2])
     assert got == {r1: {"built": 2, "not_rendered": 1}, r2: {"built": 0, "not_rendered": 0}}
+
+
+def test_a_lead_applied_to_before_its_build_is_counted_apart(engine: Engine) -> None:
+    """Built (rendered) on D0. a: applied D0 + 1 day, after the build: applied. b: applied D0 - 1
+    day, before the build existed: outside the cohort, in `applied_before_build_leads`."""
+    with engine.begin() as conn:
+        _, a = _lead(conn, "a")
+        _apply(conn, a, D0 + timedelta(days=1))
+        _, b = _lead(conn, "b")
+        _apply(conn, b, D0 - timedelta(days=1))
+        got = lead_outcomes(conn)
+    assert got["applied_before_build_leads"] == 1
+    assert (got["totals"]["built"], got["totals"]["applied"]) == (1, 1)
+
+
+def test_a_tailor_whose_pdf_failed_is_not_a_build(engine: Engine) -> None:
+    """Not a stub (`pending_tailor` absent), but `typst_pdf_built` false: no PDF reached the owner,
+    so the lead is not rendered, exactly as a stub is."""
+    with engine.begin() as conn:
+        p_a, _ = _lead(conn, "a")
+        conn.execute(
+            update(artifacts)
+            .where(artifacts.c.posting_version_id == _version(conn, p_a))
+            .values(meta_json={"typst_pdf_built": False, "pdf_uri": None})
+        )
+        _lead(conn, "b")
+        got = lead_outcomes(conn)
+    assert got["not_rendered_leads"] == 1
+    assert got["totals"]["built"] == 1
+
+
+def test_a_dated_attempt_before_the_build_counts_apart_even_beside_an_undated_import(
+    engine: Engine,
+) -> None:
+    """T310 review. Built D0. An undated import (event time == import time, day 30) and a dated
+    retry on D0 - 1 day: the dated attempt shows the owner applied before the build existed."""
+    with engine.begin() as conn:
+        _, job = _lead(conn, "u1")
+        at = D0 + timedelta(days=30)
+        app = conn.execute(
+            insert(applications).values(
+                job_id=job, attempt_no=1, status="applied", created_at=at, updated_at=at,
+                submitted_at=at,
+            )
+        ).inserted_primary_key[0]
+        conn.execute(
+            insert(application_events).values(
+                application_id=app, event_type="created", from_status=None, to_status="applied",
+                occurred_at=at, recorded_at=at, source="import",
+            )
+        )
+        early = D0 - timedelta(days=1)
+        conn.execute(
+            insert(applications).values(
+                job_id=job, attempt_no=2, status="applied", created_at=early, updated_at=early,
+                submitted_at=early,
+            )
+        )
+        got = lead_outcomes(conn)
+    assert got["applied_before_build_leads"] == 1
+    assert got["totals"]["built"] == 0
+
+
+def test_the_cutoff_is_the_first_render_as_an_instant_not_text(engine: Engine) -> None:
+    """Rendered twice: D0 (12:00 UTC, naive) and '2026-11-01 13:00:00+08:00' (05:00 UTC, the
+    first). Applied 08:00 UTC, between them: after the first build, so applied. As text the naive
+    D0 sorts first, which would put the cutoff at 12:00 and the application before the build."""
+    with engine.begin() as conn:
+        _, job = _lead(conn, "m1")
+        _deliver(conn, "m1-gh", job_id=job, delivered_at=D0, judge=False, provider="greenhouse")
+        newest = conn.execute(select(artifacts.c.id).order_by(artifacts.c.id.desc())).first()
+        assert newest is not None
+        conn.execute(
+            text("UPDATE artifacts SET created_at = :at WHERE id = :id"),
+            {"at": "2026-11-01 13:00:00.000000+08:00", "id": newest.id},
+        )
+        _apply(conn, job, datetime(2026, 11, 1, 8, 0, 0))
+        got = lead_outcomes(conn)
+    assert got["applied_before_build_leads"] == 0
+    assert got["totals"]["applied"] == 1

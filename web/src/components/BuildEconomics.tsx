@@ -62,8 +62,15 @@ export function BuildEconomics() {
       </p>
       {data.not_rendered_leads === 0 ? null : (
         <p className="mt-1 text-sm text-fg-2">
-          {formatCount(data.not_rendered_leads)} leads were delivered only as an unrendered review
-          stub, so no résumé was built for them and they are in none of these counts.
+          {formatCount(data.not_rendered_leads)} leads were delivered without a rendered PDF (an
+          unrendered review stub or a failed compile), so no résumé was built for them and they are
+          in none of these counts.
+        </p>
+      )}
+      {data.applied_before_build_leads === 0 ? null : (
+        <p className="mt-1 text-sm text-fg-2">
+          {formatCount(data.applied_before_build_leads)} leads were applied to before their résumé
+          was built, so the build was not what was sent and they are in none of these counts.
         </p>
       )}
 
