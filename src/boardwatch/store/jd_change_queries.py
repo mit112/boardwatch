@@ -117,12 +117,16 @@ def _built(conn: Connection) -> tuple[int, list[dict[str, Any]]]:
         select(
             artifacts.c.posting_version_id,
             artifacts.c.created_at,
+            artifacts.c.meta_json,
             posting_versions.c.posting_id,
             posting_versions.c.captured_at,
         )
         .join(posting_versions, artifacts.c.posting_version_id == posting_versions.c.id)
         .where(artifacts.c.kind == TAILORED_KIND)
     ):
+        meta = r.meta_json
+        if isinstance(meta, dict) and meta.get("pending_tailor"):
+            continue  # a review-lane stub renders no résumé, so it is not a build (T310)
         pid = int(r.posting_id)
         order = (_naive(r.captured_at), int(r.posting_version_id))
         built_at = _naive(r.created_at)

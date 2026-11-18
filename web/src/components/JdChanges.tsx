@@ -43,7 +43,8 @@ function revisions(row: JdChangeRow, since: string): string {
   return `${formatCount(n)} ${n === 1 ? "revision" : "revisions"} after ${since}, latest ${when(row.latest_revised_at)}`;
 }
 
-export function JdChanges() {
+/** `refresh` changes whenever the applied list reloads, so a status change shows here too. */
+export function JdChanges({ refresh }: { refresh?: unknown }) {
   const [data, setData] = useState<JdChangesData | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -60,7 +61,7 @@ export function JdChanges() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [refresh]);
 
   if (failed) {
     return (
@@ -118,7 +119,7 @@ export function JdChanges() {
             <li key={r.application_id} className="py-1.5">
               <Title row={r} />{" "}
               <span className="text-fg-2">
-                · {r.status} {when(r.submitted_at)} · {revisions(r, "applying")} · compare version{" "}
+                · sent {when(r.submitted_at)}, now {r.status} · {revisions(r, "applying")} · compare version{" "}
                 {r.sent_version_id === null ? "(none captured)" : r.sent_version_id} with{" "}
                 {r.latest_version_id}
               </span>

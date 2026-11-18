@@ -96,10 +96,16 @@ def _version(conn: Connection, posting: int, at: str, reason: str) -> int:
     )
 
 
-def _build(conn: Connection, version: int, built_at: datetime = D0) -> None:
+def _build(
+    conn: Connection, version: int, built_at: datetime = D0, *, stub: bool = False
+) -> None:
     conn.execute(
         insert(artifacts).values(
-            posting_version_id=version, kind=TAILORED_KIND, uri="file:///r.pdf", created_at=built_at
+            posting_version_id=version,
+            kind=TAILORED_KIND,
+            uri="file:///r.pdf",
+            created_at=built_at,
+            meta_json={"pending_tailor": True} if stub else {},
         )
     )
 
@@ -286,3 +292,14 @@ def test_an_empty_store_reports_zeros(engine: Engine) -> None:
         "no_posting_version": 0,
         "rows": [],
     }
+
+
+def test_a_review_stub_on_the_new_version_does_not_hide_a_stale_resume(engine: Engine) -> None:
+    """P1 was built on v1 and revised to v3; a review-lane stub on v3 renders no résumé, so P1
+    is still stale."""
+    with engine.begin() as conn:
+        ids = _seed(conn)
+        _build(conn, ids["v3"], datetime(2026, 11, 8, 12), stub=True)
+        built = jd_changes(conn)["built"]
+    assert ids["p1"] in [r["posting_id"] for r in built["rows"]]
+    assert built["checked"] == 5
