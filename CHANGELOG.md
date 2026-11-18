@@ -24,6 +24,12 @@ All notable changes to this project are documented here. The format follows
   plan comes from a companion's `fillable:` / `dropped:` / `waiting:` counts (documented in `docs/companions.md`);
   the rate is boardwatch's own, so the pace line shows with no companion installed. Read-only, web only.
 
+- **The Runs page shows why leads are not eligible and every rule's abstain rate (T301, T302).** Both read the
+  per-rule report the run's funnel already stores (no new query): the 15 rules with the most unmet requirement rows as
+  a bar chart, and a table of every rule's met / unmet / abstained in separate columns with its abstain rate (a dash,
+  never 0%, over zero rows). A rule that abstains on every row is called out as a monitoring failure; a rule that never
+  fired is named. Counts are requirement rows over the current evaluation of every open posting, not postings.
+
 - **`boardwatch web` shows pipeline health on every page and a "Needs you" list (T293, T300).** A strip under the
   header reads the last nightly run, the last intraday pass and each companion (T294) as green / amber / red with the
   reason in words: red when the last attempt failed, amber when no nightly started today after 06:00. A new "Needs you"

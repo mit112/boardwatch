@@ -5,6 +5,7 @@ import { getFunnel, getRuns } from "../api/client";
 import { RunTrends } from "../components/RunTrends";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
+import { RuleDispositions } from "../components/RuleDispositions";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
 /*
@@ -793,6 +794,8 @@ export function RunsPage() {
           </section>
 
           <BoardsAccordion funnel={funnel} />
+
+          <RuleDispositions abstain={funnel.abstain} />
         </>
       )}
       <CompanionHistory />

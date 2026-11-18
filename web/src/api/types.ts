@@ -834,6 +834,34 @@ export interface FunnelSource {
   applied: number;
 }
 
+/* The funnel's per-rule abstain report (`run_funnel.funnel_to_dict["abstain"]`), over the CURRENT
+ * evaluation of every open posting. Counts are requirement ROWS, not postings. `abstain_rate` is
+ * `null` over zero rows — undefined, never 0%. */
+export interface FunnelAbstainRule {
+  rule_id: string;
+  family: string;
+  observed: number;
+  met: number;
+  unmet: number;
+  abstained: number;
+  abstain_rate: number | null;
+  never_fired: boolean;
+  fully_abstaining: boolean;
+  not_applicable: boolean;
+}
+
+export interface FunnelAbstain {
+  rules: FunnelAbstainRule[];
+  rule_count: number;
+  never_fired: number;
+  not_applicable: number;
+  fully_abstaining: number;
+  out_of_catalog: string[];
+  out_of_catalog_rows: number;
+  unattributed_rows: number;
+  total_rows: number;
+}
+
 export interface RunFunnel {
   artifact_version: number;
   run_id: number;
@@ -853,6 +881,8 @@ export interface RunFunnel {
   /** `[]` when no lane ran this run — a measured absence, unlike a missing key. */
   lanes: FunnelLane[];
   stages: FunnelStage[];
+  /** Absent on an artifact older than the report. */
+  abstain?: FunnelAbstain;
   coverage: FunnelCoverage;
   scan: {
     ran: boolean;
