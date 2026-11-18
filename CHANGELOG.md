@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Applied page shows apply-lane readiness (T296).** Fillable leads by board, dropped and waiting by reason,
+  and days of capacity: the fillable total divided by the trailing 7-day application rate, flagged under 2 days. The
+  plan comes from a companion's `fillable:` / `dropped:` / `waiting:` counts (documented in `docs/companions.md`);
+  the rate is boardwatch's own, so the pace line shows with no companion installed. Read-only, web only.
+
 - **`boardwatch web` shows pipeline health on every page and a "Needs you" list (T293, T300).** A strip under the
   header reads the last nightly run, the last intraday pass and each companion (T294) as green / amber / red with the
   reason in words: red when the last attempt failed, amber when no nightly started today after 06:00. A new "Needs you"

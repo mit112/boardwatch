@@ -39,6 +39,18 @@ folder, then rename it) so the viewer never reads half a document.
 Items carry no other keys. Do not put private answer text or personal data in a document; the
 viewer shows what it is given.
 
+## Apply-plan counts
+
+A companion that plans applications reports its plan in `counts` with three key prefixes, and
+the Applied page shows them beside boardwatch's own application pace:
+
+- `fillable:<board>` — leads ready to fill on that apply board (`fillable:ashby: 51`);
+- `dropped:<reason>` — leads taken out of the plan, by reason;
+- `waiting:<reason>` — leads held until something happens, by reason.
+
+Days of capacity is the fillable total divided by the trailing 7-day application rate. A
+companion in state `failed` is not read as a plan.
+
 ## What the viewer does
 
 `GET /api/companions` returns `{"companions": [...]}`, sorted by name, with each valid document
