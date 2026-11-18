@@ -18,6 +18,7 @@ function bank(over: Partial<FormQuestionBank> = {}): FormQuestionBank {
       unevaluated: 0,
       closed: 1,
       superseded: 1,
+      no_questions: 0,
     },
     answers_readable: true,
     distinct: 2,
