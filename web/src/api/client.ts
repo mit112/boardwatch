@@ -38,6 +38,7 @@ import type {
   RevealResponse,
   RunFunnel,
   RunsResponse,
+  RunTrends,
   SkipResponse,
   VersionResponse,
 } from "./types";
@@ -234,7 +235,9 @@ export const getCompanions = (): Promise<CompanionsResponse> =>
 
 export const getRuns = (): Promise<RunsResponse> => request<RunsResponse>("/api/runs");
 
-export const getFunnel = (runId: number): Promise<RunFunnel> =>
+export const getRunTrends = (): Promise<RunTrends> => request<RunTrends>("/api/runs/trends");
+
+export const getFunnel =(runId: number): Promise<RunFunnel> =>
   request<RunFunnel>(`/api/runs/${String(runId)}`);
 
 /**

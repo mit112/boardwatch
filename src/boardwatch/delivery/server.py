@@ -85,6 +85,7 @@ from boardwatch.delivery.api import (
     rejected_payload,
     resolve_pdf,
     reveal,
+    run_trends_payload,
     runs_payload,
 )
 from boardwatch.delivery.companions import read_companions
@@ -529,6 +530,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/runs":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: runs_payload(conn)))
+                return
+            if path == "/api/runs/trends":
+                self._json(HTTPStatus.OK, self._read(run_trends_payload))
                 return
             if (app := _APPLICATION.match(path)) is not None and app.group(2) == "events":
                 self._application_events(int(app.group(1)))

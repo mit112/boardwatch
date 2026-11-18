@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RunFunnel, RunSummary } from "../api/types";
 import { funnelStage, runFunnel, runSummary } from "../test/rows";
@@ -15,11 +15,18 @@ import { funnelStage, runFunnel, runSummary } from "../test/rows";
 vi.mock("../api/client", () => ({
   getRuns: vi.fn(),
   getFunnel: vi.fn(),
+  getRunTrends: vi.fn(),
 }));
 
 // Imported AFTER the mock factory, which vitest hoists above both.
-import { getFunnel, getRuns } from "../api/client";
+import { getFunnel, getRunTrends, getRuns } from "../api/client";
 import { RunsPage } from "../routes/RunsPage";
+
+// The trend strip is its own request and has its own suite; this one is about the funnel, so it
+// gets a history with nothing in it, which renders nothing.
+beforeEach(() => {
+  vi.mocked(getRunTrends).mockResolvedValue({ stage_names: [], runs: [] });
+});
 
 async function renderRuns(funnel: RunFunnel, runs: RunSummary[] = [runSummary()]): Promise<void> {
   vi.mocked(getRuns).mockResolvedValue({ runs });

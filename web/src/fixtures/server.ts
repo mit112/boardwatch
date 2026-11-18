@@ -21,7 +21,7 @@ import type {
 } from "../api/types";
 import { ANSWERS } from "./answers";
 import { LATE_ROWS, QUEUE_ROWS, byRank, detailFor } from "./data";
-import { FUNNELS, RUNS } from "./runs";
+import { FUNNELS, RUNS, TRENDS } from "./runs";
 
 const HOLD_MS = 30_000;
 const LATENCY_MS = 140;
@@ -419,6 +419,7 @@ function route(method: string, path: string, body: unknown): unknown {
       },
       closed_before_applied_by_board: {},
     };
+  if (method === "GET" && path === "/api/runs/trends") return TRENDS;
 
   // The fixture's `application_id` IS the job id (one attempt per job), so the two maps above
   // answer for it directly.

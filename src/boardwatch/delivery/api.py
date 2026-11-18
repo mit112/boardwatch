@@ -146,6 +146,8 @@ TAXONOMY_KIND = "taxonomy"
 
 #: How many runs the runs page offers. The picker is for "which recent run", not an archive.
 RUNS_LIMIT = 20
+# How many nightly runs the trend sparklines span (T299).
+TRENDS_LIMIT = 30
 
 #: Hard cap on the `requirement_terms` memo below. The queue renders a few hundred rows and grows
 #: by tens a day, so this is ample — and it is a CAP rather than an absence of one because an
@@ -1495,13 +1497,110 @@ def funnel_payload(ctx: ApiContext, run_id: int) -> dict[str, Any] | None:
         ),
         None,
     )
-    if path is None or not _contained(path, ctx.out_root):
+    return None if path is None else _read_funnel_file(ctx, path)
+
+
+def _read_funnel_file(ctx: ApiContext, path: Path) -> dict[str, Any] | None:
+    if not _contained(path, ctx.out_root):
         return None
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return parsed if isinstance(parsed, dict) else None
+
+
+def _count_or_none(value: object) -> int | None:
+    """A funnel count, or `None` when the artifact did not measure it. Never a stand-in zero."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _funnel_trend_facts(funnel: dict[str, Any] | None) -> dict[str, Any]:
+    """The three things a run's trend point reads out of its funnel artifact.
+
+    `newly_eligible` is the shortlist stage's run-scoped `judged`: candidate (eligible or
+    uncertain) verdicts this run itself produced, which excludes cache hits on earlier runs.
+    `resumes_built` is the tailor stage's `advanced`. Each is `None` when the artifact is gone,
+    predates the measurement or did not instrument the stage, so a trend draws a gap, not a 0.
+    """
+    facts: dict[str, Any] = {"stage_seconds": None, "newly_eligible": None, "resumes_built": None}
+    if funnel is None:
+        return facts
+    durations = funnel.get("stage_durations")
+    if isinstance(durations, list):
+        seconds_by_stage: dict[str, float] = {}
+        for row in durations:
+            if not isinstance(row, dict):
+                continue
+            name, seconds = row.get("name"), row.get("seconds")
+            if isinstance(name, str) and isinstance(seconds, int | float) and not isinstance(
+                seconds, bool
+            ):
+                seconds_by_stage[name] = float(seconds)
+        facts["stage_seconds"] = seconds_by_stage
+    stages = funnel.get("stages")
+    for stage in stages if isinstance(stages, list) else []:
+        if not isinstance(stage, dict):
+            continue
+        if stage.get("name") == "shortlist":
+            attribution = stage.get("run_scoped_attribution")
+            if isinstance(attribution, dict):
+                facts["newly_eligible"] = _count_or_none(attribution.get("judged"))
+        elif stage.get("name") == "tailor":
+            facts["resumes_built"] = _count_or_none(stage.get("advanced"))
+    return facts
+
+
+def run_trends_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/runs/trends`: the last `TRENDS_LIMIT` nightly runs, oldest first, one point each.
+
+    Nightly means what every cross-run query means: a FINISHED, non-incremental `delivery` run
+    (`run_kind`, D-680). The CLI's own rows (`top`, `doctor`, re-renders) are `maintenance` and
+    never appear. Reads only the run rows, one directory listing and at most `TRENDS_LIMIT` small
+    funnel files; no table scan, so it is cheap to call on every page load.
+
+    Per run, `new_count` and `seconds` come from the run row; the stage times and the two counts
+    come from its funnel artifact and are `None` when that is gone or older than the measurement.
+    """
+    rows = conn.execute(
+        select(runs.c.id, runs.c.started_at, runs.c.finished_at, runs.c.new_count)
+        .where(
+            runs.c.finished_at.is_not(None), runs.c.incremental.is_(False), run_kind() == "delivery"
+        )
+        .order_by(runs.c.id.desc())
+        .limit(TRENDS_LIMIT)
+    ).all()
+    wanted = {int(row.id) for row in rows}
+    paths: dict[int, Path] = {}
+    listed = [*ctx.out_root.glob("funnel-*.json"), *ctx.out_root.glob("*/funnel-*.json")]
+    for path in sorted(listed):
+        digits = path.stem.removeprefix("funnel-")
+        if digits.isdecimal() and int(digits) in wanted:
+            paths[int(digits)] = path
+    points: list[dict[str, Any]] = []
+    stage_names: list[str] = []
+    for row in rows:  # newest first, so the newest run's stage order leads the union
+        found = paths.get(int(row.id))
+        facts = _funnel_trend_facts(None if found is None else _read_funnel_file(ctx, found))
+        for name in facts["stage_seconds"] or {}:
+            if name not in stage_names:
+                stage_names.append(name)
+        points.append(
+            {
+                "id": int(row.id),
+                "started": _iso_utc(row.started_at),
+                "finished": _iso_utc(row.finished_at),
+                "seconds": (
+                    None
+                    if row.started_at is None
+                    else (row.finished_at - row.started_at).total_seconds()
+                ),
+                "new_count": row.new_count,
+                **facts,
+            }
+        )
+    points.reverse()
+    return {"stage_names": stage_names, "runs": points}
 
 
 __all__ = [
@@ -1513,6 +1612,7 @@ __all__ = [
     "SETTABLE_STATUSES",
     "TAXONOMY_KIND",
     "TERM_CACHE_MAX",
+    "TRENDS_LIMIT",
     "ApiContext",
     "CacheIdentity",
     "LiveFacts",
@@ -1531,5 +1631,6 @@ __all__ = [
     "reveal",
     "reveal_argv",
     "reveal_supported",
+    "run_trends_payload",
     "runs_payload",
 ]

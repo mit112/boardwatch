@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 
 import { getFunnel, getRuns } from "../api/client";
+import { RunTrends } from "../components/RunTrends";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
@@ -595,6 +596,7 @@ export function RunsPage() {
 
   return (
     <div className="flex flex-col gap-4">
+      <RunTrends />
       <div className="flex flex-wrap items-end gap-4">
         <label className="flex flex-col gap-1.5">
           <span className="label-micro text-fg-3">run</span>
