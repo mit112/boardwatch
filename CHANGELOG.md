@@ -8,7 +8,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- **A closure the owner undid no longer counts in lead aging.** `postings reopen` now records each undo under
+- **A closure the owner undid no longer counts in lead aging.** `postings reopen` now records each undo of an owner close under
   `posting.ownerundo.<posting_id>` in `app_state`, so it can be told from a scan reopen (both write a plain `reopened`
   event); lead aging drops the closed event an undo reverses. Undos made before this change were never recorded.
   The Withdrawals panel names each row by the posting the Applied page shows for that application, and the posting

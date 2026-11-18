@@ -90,6 +90,9 @@ def withdrawals(conn: Connection) -> dict[str, Any]:
             return _naive(e.submitted_at)
         return at
 
+    if not first:
+        return {"withdrawals": []}
+
     # Named by the SAME posting the Applied page shows for that application (`applied_rows`:
     # the posting the application names, else the delivered one, else a fallback), so the panel
     # and the row above it never disagree.

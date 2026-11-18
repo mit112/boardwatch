@@ -50,9 +50,10 @@ class OwnerClose(StrEnum):
     MISSING = "missing"  # no such posting
 
 
-#: posting id -> JSON list of the run ids under which the owner UNDID a closure. A scan reopen and
-#: an owner's undo both write a plain `reopened` event; this is what tells the undo apart, so a
-#: reader can treat the closure it undid as a mistake rather than as the posting closing.
+#: posting id -> JSON list of the run ids under which the owner UNDID their OWN closure
+#: (`close_postings`). A scan reopen and an owner's undo both write a plain `reopened` event;
+#: this is what tells the undo apart, so a reader can treat the closure it undid as a mistake
+#: rather than as the posting closing.
 OWNER_UNDO_KEY_PREFIX = "posting.ownerundo."
 
 
@@ -143,7 +144,11 @@ def reopen_postings(
             update(postings).where(postings.c.id == pid).values(status="open", closed_at=None)
         )
         append_event(conn, pid, "reopened", run_id)
-        conn.execute(delete(app_state).where(app_state.c.key == _key(pid)))
+        owner_closed = conn.execute(delete(app_state).where(app_state.c.key == _key(pid))).rowcount
+        if not owner_closed:
+            # A probe's or scan's closure reopened by hand: the listing is live again, which says
+            # nothing about whether the closure was a mistake, so no undo is recorded.
+            continue
         undo_key = f"{OWNER_UNDO_KEY_PREFIX}{pid}"
         held = conn.execute(
             select(app_state.c.value).where(app_state.c.key == undo_key)
