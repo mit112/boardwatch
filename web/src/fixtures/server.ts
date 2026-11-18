@@ -410,6 +410,8 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
   if (method === "GET" && path === "/api/companions") return { companions: [] };
   if (method === "GET" && path === "/api/source-yield") return { sources: {} };
+  if (method === "GET" && path === "/api/judge-agreement")
+    return { lanes: {}, final_gate_splits: 0, split_rules: [], splits: [] };
   if (method === "GET" && path === "/api/lead-aging")
     return {
       leads: 0,

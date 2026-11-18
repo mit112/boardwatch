@@ -32,6 +32,7 @@ import type {
   BatchSkipResponse,
   CompanionsResponse,
   FollowUpResponse,
+  JudgeAgreement,
   LeadAging,
   QueueDetail,
   QueueResponse,
@@ -234,6 +235,9 @@ export const getLeadAging = (): Promise<LeadAging> => request<LeadAging>("/api/l
 
 export const getSourceYield = (): Promise<SourceYieldResponse> =>
   request<SourceYieldResponse>("/api/source-yield");
+
+export const getJudgeAgreement = (): Promise<JudgeAgreement> =>
+  request<JudgeAgreement>("/api/judge-agreement");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");
