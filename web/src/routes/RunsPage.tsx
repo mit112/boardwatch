@@ -7,6 +7,7 @@ import { BoardHealth } from "../components/BoardHealth";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
 import { RuleDispositions } from "../components/RuleDispositions";
+import { SourceYield } from "../components/SourceYield";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
 /*
@@ -797,6 +798,8 @@ export function RunsPage() {
           <BoardsAccordion funnel={funnel} />
 
           <RuleDispositions abstain={funnel.abstain} />
+
+          <SourceYield boards={funnel.sources} />
         </>
       )}
       <CompanionHistory />

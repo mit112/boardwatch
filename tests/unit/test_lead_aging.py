@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import Connection, Engine, insert, update
 
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.lead_aging_queries import lead_aging
+from boardwatch.store.lead_aging_queries import lead_aging, source_yield
 from boardwatch.store.queue_state import SKIP_KEY_PREFIX
 from boardwatch.store.tables import app_state, applications, artifacts, postings
 from tests.unit.test_web_server import _deliver
@@ -113,3 +113,26 @@ def test_an_empty_store_reports_no_figures(engine: Engine) -> None:
         got = lead_aging(conn)
     assert got["leads"] == 0
     assert got["outcomes"]["applied"] == {"count": 0, "median_days": None, "p90_days": None}
+
+
+def test_source_yield_credits_each_job_to_its_first_delivered_source(engine: Engine) -> None:
+    with engine.begin() as conn:
+        _, a = _lead(conn, "y1", provider="ashby")
+        _apply(conn, a, D0 + timedelta(days=1))
+        _lead(conn, "y2", provider="ashby")
+        _, g = _lead(conn, "y3", provider="greenhouse")
+        # The same job delivered again later from a lane: still credited to greenhouse, once.
+        _deliver(
+            conn,
+            "y3-lane",
+            job_id=g,
+            delivered_at=D0 + timedelta(days=2),
+            judge=False,
+            provider="linkedin",
+        )
+        _apply(conn, g, D0 + timedelta(days=3))
+        got = source_yield(conn)
+    assert got == {
+        "ashby": {"built": 2, "applied": 1},
+        "greenhouse": {"built": 1, "applied": 1},
+    }

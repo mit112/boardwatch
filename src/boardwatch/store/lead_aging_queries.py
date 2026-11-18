@@ -59,7 +59,8 @@ def _summary(values: list[float]) -> dict[str, Any]:
     }
 
 
-def lead_aging(conn: Connection) -> dict[str, Any]:
+def _first_deliveries(conn: Connection) -> dict[int, _Lead]:
+    """job id -> its first tailored delivery, the source that found it, and when it closed."""
     first: dict[int, _Lead] = {}
     rows = conn.execute(
         select(
@@ -82,8 +83,12 @@ def lead_aging(conn: Connection) -> dict[str, Any]:
                 str(row.provider),
                 None if row.closed_at is None else _naive(row.closed_at),
             )
+    return first
 
-    applied = {
+
+def _first_applied(conn: Connection) -> dict[int, datetime]:
+    """job id -> its first submitted application."""
+    return {
         int(r.job_id): _naive(r.at)
         for r in conn.execute(
             select(applications.c.job_id, func.min(applications.c.submitted_at).label("at"))
@@ -91,6 +96,24 @@ def lead_aging(conn: Connection) -> dict[str, Any]:
             .group_by(applications.c.job_id)
         )
     }
+
+
+def source_yield(conn: Connection) -> dict[str, dict[str, int]]:
+    """T306: per discovery source, all time — leads with a résumé built, and how many of those
+    were applied to. A job is credited to the source of its FIRST delivered posting, the same
+    attribution `lead_aging` uses, so a lead found twice is counted once."""
+    applied = _first_applied(conn)
+    out: dict[str, dict[str, int]] = {}
+    for job_id, lead in _first_deliveries(conn).items():
+        row = out.setdefault(lead.board, {"built": 0, "applied": 0})
+        row["built"] += 1
+        row["applied"] += job_id in applied
+    return dict(sorted(out.items(), key=lambda kv: (-kv[1]["built"], kv[0])))
+
+
+def lead_aging(conn: Connection) -> dict[str, Any]:
+    first = _first_deliveries(conn)
+    applied = _first_applied(conn)
     skipped = {
         job: stamp
         for job, raw in skipped_job_ids(conn).items()
