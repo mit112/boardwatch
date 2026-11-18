@@ -93,7 +93,7 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
             <li key={r.posting_id} className="py-1.5">
               <Title row={r} />{" "}
               <span className="text-fg-2">
-                · built {when(r.built_at)} · {revisions(r, "the build")} · compare version{" "}
+                · built {when(r.built_at)} · {revisions(r, "the version it was built from")} · compare version{" "}
                 {r.built_version_id} with {r.latest_version_id}
               </span>
             </li>

@@ -394,6 +394,19 @@ def test_the_aggregate_is_memoised_until_a_new_event(
     with engine.connect() as conn:
         company_hiring(conn, ("PH2", "RH"), NOW + timedelta(days=1))
     assert calls == 4
+    # A refetch adds a version with no run and no event (T320): still a new answer.
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO posting_versions (posting_id, content_hash, body_text, captured_at,"
+                " capture_reason) VALUES (:p, 'refetched', 'body', '2026-11-10 12:00:00',"
+                " 'revised')"
+            ),
+            {"p": seeded["b2"]},
+        )
+    with engine.connect() as conn:
+        company_hiring(conn, ("PH2", "RH"), NOW + timedelta(days=1))
+    assert calls == 5
 
 
 def test_names_and_watched_are_read_fresh_not_memoised(engine: Engine, seeded: dict[str, int]) -> None:

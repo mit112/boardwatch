@@ -303,3 +303,15 @@ def test_a_review_stub_on_the_new_version_does_not_hide_a_stale_resume(engine: E
         built = jd_changes(conn)["built"]
     assert ids["p1"] in [r["posting_id"] for r in built["rows"]]
     assert built["checked"] == 5
+
+
+def test_the_newest_build_is_the_one_that_finished_last(engine: Engine) -> None:
+    """P1: built from v3 (its newest JD) on 11-08, then a build from v1 that finished LATER, on
+    11-09. The standing résumé is the 11-09 one, from v1, so P1 is stale."""
+    with engine.begin() as conn:
+        ids = _seed(conn)
+        _build(conn, ids["v3"], datetime(2026, 11, 8, 12))
+        _build(conn, ids["v1"], datetime(2026, 11, 9, 12))
+        built = jd_changes(conn)["built"]
+    row = next(r for r in built["rows"] if r["posting_id"] == ids["p1"])
+    assert (row["built_version_id"], row["built_at"]) == (ids["v1"], "2026-11-09T12:00:00+00:00")

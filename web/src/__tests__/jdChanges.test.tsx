@@ -52,7 +52,7 @@ it("keeps the build list and the applied list apart, linking the posting and nam
   expect(within(built).getAllByRole("listitem")).toHaveLength(1);
   const link = within(built).getByRole("link", { name: "Acme — SWE" });
   expect(link.getAttribute("href")).toBe("https://boards.test/1");
-  expect(within(built).getByText(/2 revisions after the build/)).toBeDefined();
+  expect(within(built).getByText(/2 revisions after the version it was built from/)).toBeDefined();
   expect(within(built).getByText(/compare version 11 with 30/)).toBeDefined();
   expect(
     within(section).getByText(/2 of 5 postings with a tailored résumé were revised/),

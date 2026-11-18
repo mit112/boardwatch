@@ -111,10 +111,14 @@ def _revisions_after(
 
 def _built(conn: Connection) -> tuple[int, list[dict[str, Any]]]:
     """(postings with a tailored résumé, stale ones as unsorted row dicts with an order key)."""
-    # posting id -> (order of the version it was built from, that version id, newest build time)
+    # posting id -> (order of the version it was built from, that version id, build time). The
+    # newest BUILD is the one that finished last (`artifacts.created_at`, then id), not the one
+    # from the newest JD capture: overlapping builds can finish out of order (T320).
     newest: dict[int, tuple[_Order, int, datetime]] = {}
+    built_order: dict[int, tuple[datetime, int]] = {}
     for r in conn.execute(
         select(
+            artifacts.c.id,
             artifacts.c.posting_version_id,
             artifacts.c.created_at,
             artifacts.c.meta_json,
@@ -130,11 +134,10 @@ def _built(conn: Connection) -> tuple[int, list[dict[str, Any]]]:
         pid = int(r.posting_id)
         order = (_naive(r.captured_at), int(r.posting_version_id))
         built_at = _naive(r.created_at)
-        held = newest.get(pid)
-        if held is None or order > held[0]:
+        key = (built_at, int(r.id))
+        if pid not in built_order or key > built_order[pid]:
+            built_order[pid] = key
             newest[pid] = (order, int(r.posting_version_id), built_at)
-        elif order == held[0] and built_at > held[2]:
-            newest[pid] = (order, held[1], built_at)
 
     versions = _versions(conn, set(newest))
     stale: list[tuple[int, list[tuple[_Order, int, bool]], tuple[_Order, int, datetime]]] = []
