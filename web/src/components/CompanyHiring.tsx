@@ -73,7 +73,7 @@ export function CompanyHiring() {
         {data.eligible === null ? "" : `, ${formatCount(data.eligible)} eligible now`}. Sorted by
         eligible per week, then new per week. Eligible is the current deterministic verdict;
         abstains are neither eligible nor ineligible and are not counted as either. Applied and
-        withdrawn are jobs, all time; a job whose application was withdrawn counts under
+        withdrawn are jobs, all time; a job whose only application was withdrawn counts under
         withdrawn, not applied.
       </p>
       {data.eligible_known ? null : (
