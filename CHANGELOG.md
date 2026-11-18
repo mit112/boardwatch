@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Runs page shows each companion's recent nights (T295).** A companion document may now carry an optional
+  `history` (at most 31 rows of `label` and flat `counts`, validated like the rest; `docs/companions.md`). Each
+  companion with one gets a table on the Runs page: its current state and summary, one row per night, one column per
+  count label, a dash where a night did not report a count. The page computes nothing; a nightly reviewer reports its
+  asked / answered / closed / held / agreed counts itself.
+
 - **The Applied page shows lead aging and leads lost before applying (T298).** A new read-only `GET /api/lead-aging`
   counts every delivered lead once, from its first delivery, and takes its first outcome: applied, skipped or the
   posting closing. Median and 90th-percentile days per outcome, how many have no outcome yet, and how many closed before

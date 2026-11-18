@@ -78,3 +78,18 @@ def test_documents_are_sorted_by_name_and_one_bad_file_does_not_hide_the_rest(
         ("alpha", "failed"),
         ("zeta", "ok"),
     ]
+
+
+def test_history_rows_are_served_and_bounded(tmp_path: Path) -> None:
+    rows = [{"label": f"2026-11-{d:02d}", "counts": {"asked": d}} for d in range(1, 15)]
+    _write(tmp_path, "reviewer", _doc(history=rows))
+    assert read_companions(tmp_path)[0]["history"] == rows
+
+    for bad in (
+        [{"label": "x", "counts": {"a": "1"}}],
+        [{"counts": {"a": 1}}],
+        [{"label": "x", "counts": {}, "extra": 1}],
+        [{"label": str(d), "counts": {}} for d in range(32)],
+    ):
+        _write(tmp_path, "reviewer", _doc(history=bad))
+        assert read_companions(tmp_path)[0]["state"] == "failed", bad

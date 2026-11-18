@@ -35,9 +35,19 @@ folder, then rename it) so the viewer never reads half a document.
 | `summary` | yes | one plain sentence, not empty |
 | `counts` | no | a flat object of `label: integer` |
 | `items` | no | rows with a string `label`, and optional string `reason` and `link` and boolean `needs_owner` |
+| `history` | no | at most 31 rows of `{"label": "2026-11-17", "counts": {...}}`, newest first, shown as a table on the Runs page |
 
 Items carry no other keys. Do not put private answer text or personal data in a document; the
 viewer shows what it is given.
+
+## History
+
+A companion that runs nightly (a reviewer, say) can keep its last nights in `history`. Each row
+is one night: a `label` (the date) and flat `counts` (asked, answered, closed, held, the store
+write's result as a count of rows written). The Runs page shows one table per companion with a
+history, one column per count label. Put a rate you want shown, such as a second judge's
+agreement, in as a count over its denominator (`agreed` beside `proposed`); the page prints the
+numbers it is given and computes nothing.
 
 ## Apply-plan counts
 

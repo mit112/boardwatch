@@ -697,6 +697,8 @@ export interface Companion {
   summary: string;
   counts: Record<string, number>;
   items: CompanionItem[];
+  /** Newest first; one row per night (T295). Absent on a companion that keeps none. */
+  history?: { label: string; counts: Record<string, number> }[];
 }
 
 export interface CompanionsResponse {
