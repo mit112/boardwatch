@@ -25,12 +25,13 @@ which posting it was sent against, so it is counted in `no_posting_version`.
 Timestamps in the store mix naive-UTC and offset-carrying text, so every comparison and sort here
 normalises in Python (`_naive`); no SQL orders or compares a raw timestamp.
 
-Read-only. There is no version-diff view in the web app, so each row carries the board's own posting
-URL and both version ids.
+Read-only. Each row carries the board's own posting URL and both version ids; `version_diff` is the
+line diff between two of them (T316).
 """
 
 from __future__ import annotations
 
+import difflib
 from datetime import UTC, datetime
 from typing import Any
 
@@ -247,3 +248,38 @@ def jd_changes(conn: Connection) -> dict[str, Any]:
             "rows": _top(applied, "application_id"),
         },
     }
+
+
+DIFF_CONTEXT = 2
+
+
+def version_diff(
+    conn: Connection, posting_id: int, from_id: int, to_id: int
+) -> dict[str, Any] | None:
+    """A line diff of two versions' body text, or None unless BOTH belong to `posting_id`.
+
+    Only the two named rows are read (by primary key), so the heavy table is never scanned. Each
+    line is `{"kind": "add" | "del" | "same" | "hunk", "text": ...}`: `hunk` is the `@@` marker that
+    opens a run of changes with up to `DIFF_CONTEXT` unchanged lines around it.
+    """
+    bodies = {
+        int(r.id): str(r.body_text)
+        for r in conn.execute(
+            select(posting_versions.c.id, posting_versions.c.body_text).where(
+                posting_versions.c.id.in_({from_id, to_id}),
+                posting_versions.c.posting_id == posting_id,
+            )
+        )
+    }
+    if from_id not in bodies or to_id not in bodies:
+        return None
+    kinds = {"+": "add", "-": "del", " ": "same", "@": "hunk"}
+    # The first two rows are the `---`/`+++` file headers (absent when nothing differs); dropped by
+    # position, since a removed line whose text starts with `-- ` reads exactly like a header.
+    rows = list(
+        difflib.unified_diff(
+            bodies[from_id].splitlines(), bodies[to_id].splitlines(), n=DIFF_CONTEXT, lineterm=""
+        )
+    )[2:]
+    lines = [{"kind": kinds[r[0]], "text": r if r[0] == "@" else r[1:]} for r in rows]
+    return {"posting_id": posting_id, "from": from_id, "to": to_id, "lines": lines}

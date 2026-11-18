@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-import { getJdChanges } from "../api/client";
-import type { JdChangeRow, JdChanges as JdChangesData } from "../api/types";
+import { getJdChanges, getVersionDiff } from "../api/client";
+import type { JdChangeRow, JdChanges as JdChangesData, VersionDiff } from "../api/types";
 import { formatCount, isSafeHttpUrl } from "../lib/format";
 
 /*
@@ -9,8 +9,8 @@ import { formatCount, isSafeHttpUrl } from "../lib/format";
  * two lists are never merged: a changed JD after a build means the tailored résumé may be stale;
  * after applying, a requirement may have been added that the application never answered.
  *
- * There is no version-diff view in the app, so the title links to the board's own posting and the
- * row names both version ids to compare. Imports with no recorded applied date are counted apart and
+ * The title links to the board's own posting; "Compare version A with B" opens the line diff of the
+ * two versions under the row (T316). Added and removed lines carry a + or − sign, never colour alone. Imports with no recorded applied date are counted apart and
  * never compared.
  */
 
@@ -41,6 +41,85 @@ function Title({ row }: { row: JdChangeRow }) {
 function revisions(row: JdChangeRow, since: string): string {
   const n = row.revisions;
   return `${formatCount(n)} ${n === 1 ? "revision" : "revisions"} after ${since}, latest ${when(row.latest_revised_at)}`;
+}
+
+const SIGN = { add: "+", del: "−", same: " ", hunk: "" } as const;
+const SIGN_NAME = { add: "added: ", del: "removed: ", same: "", hunk: "" } as const;
+
+function DiffLines({ diff }: { diff: VersionDiff }) {
+  if (diff.lines.length === 0) {
+    return <p className="mt-1 text-fg-2">No line differs between the two versions.</p>;
+  }
+  return (
+    <ul
+      aria-label={`Changes from version ${String(diff.from)} to ${String(diff.to)}`}
+      className="mt-1 overflow-x-auto rounded-sm bg-surface-2 p-2 font-mono text-xs"
+    >
+      {diff.lines.map((l, i) => (
+        <li
+          key={i}
+          className={`whitespace-pre-wrap break-words ${
+            l.kind === "add" ? "text-ok" : l.kind === "del" ? "text-bad" : "text-fg-2"
+          }`}
+        >
+          {l.kind === "hunk" ? (
+            l.text
+          ) : (
+            <>
+              <span aria-hidden="true">{SIGN[l.kind]} </span>
+              <span className="sr-only">{SIGN_NAME[l.kind]}</span>
+              {l.text}
+            </>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The compare button and, once opened, the diff under the row. Fetched on first open only. */
+function Compare({ row, from }: { row: JdChangeRow; from: number }) {
+  const [open, setOpen] = useState(false);
+  const [diff, setDiff] = useState<VersionDiff | null>(null);
+  const [failed, setFailed] = useState(false);
+  const to = row.latest_version_id;
+
+  function toggle() {
+    const next = !open;
+    setOpen(next);
+    if (!next || diff !== null) return;
+    setFailed(false);
+    void Promise.resolve()
+      .then(() => getVersionDiff(row.posting_id, from, to))
+      .then(setDiff)
+      .catch(() => {
+        setFailed(true);
+      });
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={toggle}
+        className="rounded-sm text-accent underline underline-offset-2"
+      >
+        Compare version {from} with {to}
+      </button>
+      {open ? (
+        <div className="mt-1 text-xs">
+          {failed ? (
+            <p className="text-fg-2">The diff could not be loaded.</p>
+          ) : diff === null ? (
+            <p className="text-fg-2">Loading the diff…</p>
+          ) : (
+            <DiffLines diff={diff} />
+          )}
+        </div>
+      ) : null}
+    </>
+  );
 }
 
 /** `refresh` changes whenever the applied list reloads, so a status change shows here too. */
@@ -93,9 +172,9 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
             <li key={r.posting_id} className="py-1.5">
               <Title row={r} />{" "}
               <span className="text-fg-2">
-                · built {when(r.built_at)} · {revisions(r, "the version it was built from")} · compare version{" "}
-                {r.built_version_id} with {r.latest_version_id}
+                · built {when(r.built_at)} · {revisions(r, "the version it was built from")} ·{" "}
               </span>
+              <Compare row={r} from={r.built_version_id} />
             </li>
           ))}
         </ul>
@@ -121,10 +200,12 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
             <li key={r.application_id} className="py-1.5">
               <Title row={r} />{" "}
               <span className="text-fg-2">
-                · sent {when(r.submitted_at)}, now {r.status} · {revisions(r, "applying")} · compare version{" "}
-                {r.sent_version_id === null ? "(none captured)" : r.sent_version_id} with{" "}
-                {r.latest_version_id}
+                · sent {when(r.submitted_at)}, now {r.status} · {revisions(r, "applying")} ·{" "}
+                {r.sent_version_id === null
+                  ? `no version was captured when it was sent (latest is version ${String(r.latest_version_id)})`
+                  : null}
               </span>
+              {r.sent_version_id === null ? null : <Compare row={r} from={r.sent_version_id} />}
             </li>
           ))}
         </ul>

@@ -1,9 +1,9 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
-vi.mock("../api/client", () => ({ getJdChanges: vi.fn() }));
+vi.mock("../api/client", () => ({ getJdChanges: vi.fn(), getVersionDiff: vi.fn() }));
 
-import { getJdChanges } from "../api/client";
+import { getJdChanges, getVersionDiff } from "../api/client";
 import { JdChanges } from "../components/JdChanges";
 
 const BASE = {
@@ -53,7 +53,7 @@ it("keeps the build list and the applied list apart, linking the posting and nam
   const link = within(built).getByRole("link", { name: "Acme — SWE" });
   expect(link.getAttribute("href")).toBe("https://boards.test/1");
   expect(within(built).getByText(/2 revisions after the version it was built from/)).toBeDefined();
-  expect(within(built).getByText(/compare version 11 with 30/)).toBeDefined();
+  expect(within(built).getByRole("button", { name: "Compare version 11 with 30" })).toBeDefined();
   expect(
     within(section).getByText(/2 of 5 postings with a tailored résumé were revised/),
   ).toBeDefined();
@@ -65,7 +65,9 @@ it("keeps the build list and the applied list apart, linking the posting and nam
   expect(within(applied).queryByRole("link")).toBeNull();
   expect(within(applied).getByText("Acme — Backend")).toBeDefined();
   expect(within(applied).getByText(/1 revision after applying/)).toBeDefined();
-  expect(within(applied).getByText(/compare version \(none captured\) with 30/)).toBeDefined();
+  // No version was live when it was sent: nothing to compare, so no button.
+  expect(within(applied).queryByRole("button")).toBeNull();
+  expect(within(applied).getByText(/no version was captured when it was sent/)).toBeDefined();
   expect(
     within(section).getByText(
       /1 of 4 dated applications are on a posting revised after they were sent/,
@@ -96,4 +98,76 @@ it("reports a failed load instead of vanishing", async () => {
   vi.mocked(getJdChanges).mockRejectedValue(new Error("down"));
   render(<JdChanges />);
   expect(await screen.findByText("JD changes could not be loaded.")).toBeDefined();
+});
+
+const ONE_BUILT = {
+  limit: 50,
+  built: {
+    checked: 1,
+    stale: 1,
+    rows: [{ ...BASE, built_at: "2026-11-01T12:00:00+00:00", built_version_id: 11 }],
+  },
+  applied: { checked: 0, changed: 0, excluded_imports: 0, no_posting_version: 0, rows: [] },
+};
+
+it("opens the version diff under the row, with a sign on every added and removed line", async () => {
+  vi.mocked(getJdChanges).mockResolvedValue(ONE_BUILT);
+  vi.mocked(getVersionDiff).mockResolvedValue({
+    posting_id: 1,
+    from: 11,
+    to: 30,
+    lines: [
+      { kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+      { kind: "same", text: "Requirements" },
+      { kind: "del", text: "3+ years of Python" },
+      { kind: "add", text: "5+ years of Python" },
+    ],
+  });
+  render(<JdChanges />);
+  const button = await screen.findByRole("button", { name: "Compare version 11 with 30" });
+  expect(button.getAttribute("aria-expanded")).toBe("false");
+  expect(getVersionDiff).not.toHaveBeenCalled();
+
+  fireEvent.click(button);
+  const list = await screen.findByRole("list", { name: "Changes from version 11 to 30" });
+  expect(getVersionDiff).toHaveBeenCalledWith(1, 11, 30);
+  expect(button.getAttribute("aria-expanded")).toBe("true");
+  const items = within(list).getAllByRole("listitem");
+  // The sign is visible text on each changed line, not colour alone.
+  expect(items.map((i) => i.textContent)).toEqual([
+    "@@ -1,3 +1,3 @@",
+    "  Requirements",
+    "− removed: 3+ years of Python",
+    "+ added: 5+ years of Python",
+  ]);
+
+  // Closing hides it; opening again does not fetch twice.
+  fireEvent.click(button);
+  expect(screen.queryByRole("list", { name: /Changes from version/ })).toBeNull();
+  fireEvent.click(button);
+  await screen.findByRole("list", { name: "Changes from version 11 to 30" });
+  expect(getVersionDiff).toHaveBeenCalledTimes(1);
+});
+
+it("says so when the two versions have no differing line", async () => {
+  vi.mocked(getJdChanges).mockResolvedValue(ONE_BUILT);
+  vi.mocked(getVersionDiff).mockResolvedValue({ posting_id: 1, from: 11, to: 30, lines: [] });
+  render(<JdChanges />);
+  fireEvent.click(await screen.findByRole("button", { name: "Compare version 11 with 30" }));
+  expect(await screen.findByText("No line differs between the two versions.")).toBeDefined();
+});
+
+it("says so when the diff fails to load, and retries on the next open", async () => {
+  vi.mocked(getJdChanges).mockResolvedValue(ONE_BUILT);
+  vi.mocked(getVersionDiff).mockRejectedValue(new Error("down"));
+  render(<JdChanges />);
+  const button = await screen.findByRole("button", { name: "Compare version 11 with 30" });
+  fireEvent.click(button);
+  await waitFor(() => {
+    expect(screen.getByText("The diff could not be loaded.")).toBeDefined();
+  });
+  vi.mocked(getVersionDiff).mockResolvedValue({ posting_id: 1, from: 11, to: 30, lines: [] });
+  fireEvent.click(button);
+  fireEvent.click(button);
+  expect(await screen.findByText("No line differs between the two versions.")).toBeDefined();
 });

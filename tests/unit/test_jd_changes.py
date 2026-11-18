@@ -34,13 +34,14 @@ from sqlalchemy import Connection, Engine, insert, text
 
 from boardwatch.store import jd_change_queries
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.jd_change_queries import jd_changes
+from boardwatch.store.jd_change_queries import jd_changes, version_diff
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import (
     application_events,
     artifacts,
     companies,
     jobs,
+    posting_versions,
     postings,
 )
 
@@ -315,3 +316,113 @@ def test_the_newest_build_is_the_one_that_finished_last(engine: Engine) -> None:
         built = jd_changes(conn)["built"]
     row = next(r for r in built["rows"] if r["posting_id"] == ids["p1"])
     assert (row["built_version_id"], row["built_at"]) == (ids["v1"], "2026-11-09T12:00:00+00:00")
+
+
+def _body_version(conn: Connection, posting: int, body: str, at: str, reason: str) -> int:
+    return int(
+        conn.execute(
+            insert(posting_versions).values(
+                posting_id=posting,
+                content_hash=f"h-{posting}-{at}",
+                body_text=body,
+                captured_at=datetime.fromisoformat(at),
+                capture_reason=reason,
+            )
+        ).inserted_primary_key[0]
+    )
+
+
+def test_version_diff_is_a_line_diff_with_two_lines_of_context(engine: Engine) -> None:
+    old = "\n".join(f"line {n}" for n in range(1, 11))
+    # Line 3 changed, a line added after 8, line 10 dropped, and a removed line whose text starts
+    # with "-- " (it must not be mistaken for the "---" file header).
+    new_lines = [f"line {n}" for n in range(1, 10)]
+    new_lines[2] = "line three"
+    new_lines.insert(8, "inserted")
+    new = "\n".join(new_lines)
+    old_dash = old.replace("line 5", "-- line 5")
+    with engine.begin() as conn:
+        acme = int(
+            conn.execute(
+                insert(companies).values(
+                    name="Acme", provider="ashby", slug="acme", source="user", watched=True
+                )
+            ).inserted_primary_key[0]
+        )
+        p = _posting(conn, acme, "d1")
+        a = _body_version(conn, p, old_dash, "2026-11-01 12:00:00", "new")
+        b = _body_version(conn, p, new, "2026-11-02 12:00:00", "revised")
+        out = version_diff(conn, p, a, b)
+    assert out is not None
+    assert (out["posting_id"], out["from"], out["to"]) == (p, a, b)
+    got = [(x["kind"], x["text"]) for x in out["lines"]]
+    # Worked out by hand: one hunk (the changes are close enough that the 2-line contexts merge),
+    # from line 1 to the end.
+    assert got == [
+        ("hunk", "@@ -1,10 +1,10 @@"),
+        ("same", "line 1"),
+        ("same", "line 2"),
+        ("del", "line 3"),
+        ("add", "line three"),
+        ("same", "line 4"),
+        ("del", "-- line 5"),
+        ("add", "line 5"),
+        ("same", "line 6"),
+        ("same", "line 7"),
+        ("same", "line 8"),
+        ("add", "inserted"),
+        ("same", "line 9"),
+        ("del", "line 10"),
+    ]
+
+
+def test_version_diff_of_identical_bodies_is_empty_and_far_changes_split_into_hunks(
+    engine: Engine,
+) -> None:
+    far = "\n".join(f"l{n}" for n in range(1, 21))
+    far2 = far.replace("l2\n", "L2\n").replace("l19", "L19")
+    with engine.begin() as conn:
+        acme = int(
+            conn.execute(
+                insert(companies).values(
+                    name="Acme", provider="ashby", slug="acme", source="user", watched=True
+                )
+            ).inserted_primary_key[0]
+        )
+        p = _posting(conn, acme, "d2")
+        a = _body_version(conn, p, far, "2026-11-01 12:00:00", "new")
+        b = _body_version(conn, p, far2, "2026-11-02 12:00:00", "revised")
+        same = version_diff(conn, p, a, a)
+        split = version_diff(conn, p, a, b)
+    assert same is not None and same["lines"] == []
+    assert split is not None
+    assert [x["text"] for x in split["lines"] if x["kind"] == "hunk"] == [
+        "@@ -1,4 +1,4 @@",
+        "@@ -17,4 +17,4 @@",
+    ]
+    assert [(x["kind"], x["text"]) for x in split["lines"] if x["kind"] in ("add", "del")] == [
+        ("del", "l2"),
+        ("add", "L2"),
+        ("del", "l19"),
+        ("add", "L19"),
+    ]
+
+
+def test_version_diff_needs_both_versions_on_that_posting(engine: Engine) -> None:
+    with engine.begin() as conn:
+        acme = int(
+            conn.execute(
+                insert(companies).values(
+                    name="Acme", provider="ashby", slug="acme", source="user", watched=True
+                )
+            ).inserted_primary_key[0]
+        )
+        p, q = _posting(conn, acme, "d3"), _posting(conn, acme, "d4")
+        a = _body_version(conn, p, "x", "2026-11-01 12:00:00", "new")
+        b = _body_version(conn, p, "y", "2026-11-02 12:00:00", "revised")
+        c = _body_version(conn, q, "z", "2026-11-01 12:00:00", "new")
+        assert version_diff(conn, p, a, b) is not None
+        assert version_diff(conn, p, a, c) is None  # c belongs to the other posting
+        assert version_diff(conn, p, c, b) is None
+        assert version_diff(conn, q, a, b) is None
+        assert version_diff(conn, p, a, 99999) is None
