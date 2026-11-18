@@ -53,7 +53,9 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
     void Promise.resolve()
       .then(() => getJdChanges())
       .then((d) => {
-        if (live) setData(d);
+        if (!live) return;
+        setData(d);
+        setFailed(false);
       })
       .catch(() => {
         if (live) setFailed(true);
