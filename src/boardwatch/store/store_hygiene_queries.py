@@ -5,10 +5,12 @@ Four readings, each cheap on the 50 GB live store:
 * **Quarantine and its drain.** `quarantined_bodies` holds a body withheld from the rules until
   the drain sets `reopened_at`; every quarantine needs a drain, so this shows whether it runs.
   Held is `reopened_at IS NULL`; drained is set. The drain stamps no run id, so drained-per-week
-  is by `reopened_at`, beside quarantined-per-week by `quarantined_at`. A re-quarantine clears
-  `reopened_at` (`quarantine_queries.record_quarantine`), so a version drained and held again
-  counts as held only: the weekly drained column is a floor, not a full history. `stalled` is
-  set when anything is held and nothing has drained for `STALL_DAYS`.
+  is by `reopened_at`, beside quarantined-per-week by `quarantined_at` (the FIRST time a version was
+  held: a re-record never resets it). A re-quarantine clears `reopened_at`
+  (`quarantine_queries.record_quarantine`) but copies it to `last_drained_at` first, so a version
+  drained and held again counts as held, and its drain still counts in the last-drain time, the
+  stall test and the weekly drained column. Only the latest drain of a re-held version is kept.
+  `stalled` is set when anything is held and nothing has drained for `STALL_DAYS`.
 * **Duplicate grouping.** `job_grouping_events` rows are postings moved from one job into a
   survivor (`regroup.apply_merges`). Counted by method and algorithm version and per week, and
   as a rate per 1000 postings ever stored. Postings come from the largest-tables reading below:
@@ -71,13 +73,26 @@ def _weekly(stamps: list[datetime], now: datetime) -> list[tuple[str, int]]:
 
 
 def _quarantine(conn: Connection, now: datetime) -> dict[str, Any]:
-    rows = conn.execute(
-        select(quarantined_bodies.c.quarantined_at, quarantined_bodies.c.reopened_at)
-    ).all()
+    # `last_drained_at` arrives with migration p_quarantine_last_drained, which runs on the next
+    # pipeline start; a viewer restarted on the new code before that reads a store without it.
+    # Read-only, so it cannot migrate: it reads without the column and keeps the current drains.
+    migrated = any(
+        str(r[1]) == "last_drained_at"
+        for r in conn.exec_driver_sql("PRAGMA table_info(quarantined_bodies)")
+    )
+    columns = [quarantined_bodies.c.quarantined_at, quarantined_bodies.c.reopened_at]
+    if migrated:
+        columns.append(quarantined_bodies.c.last_drained_at)
+    rows = conn.execute(select(*columns)).all()
     held = [_naive(r.quarantined_at) for r in rows if r.reopened_at is None]
     drained = [_naive(r.reopened_at) for r in rows if r.reopened_at is not None]
+    # Every drain still on record: the current ones, plus the earlier drain of a version that was
+    # held again. `drained` (the count) stays the versions drained NOW.
+    drains = drained + [
+        _naive(r.last_drained_at) for r in rows if migrated and r.last_drained_at is not None
+    ]
     oldest = min(held) if held else None
-    last_drain = max(drained) if drained else None
+    last_drain = max(drains) if drains else None
     since_drain = (now - last_drain).total_seconds() / _SECONDS_PER_DAY if last_drain else None
     return {
         "held": len(held),
@@ -97,7 +112,7 @@ def _quarantine(conn: Connection, now: datetime) -> dict[str, Any]:
             {"week_start": week, "quarantined": q, "drained": d}
             for (week, q), (_, d) in zip(
                 _weekly([_naive(r.quarantined_at) for r in rows], now),
-                _weekly(drained, now),
+                _weekly(drains, now),
                 strict=True,
             )
         ],

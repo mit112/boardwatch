@@ -36,7 +36,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Protocol, TypeVar
 
-from sqlalchemy import Connection, select, tuple_, update
+from sqlalchemy import Connection, func, select, tuple_, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.lanes.quality import (
@@ -86,7 +86,14 @@ def record_quarantine(
 
     Upserted rather than inserted, and the conflict branch clears `reopened_at`: a version the
     drain released under an older catalog, which the current catalog refuses again, is back in
-    the bucket. The row's history survives either way — nothing here deletes.
+    the bucket. The row's history survives either way — nothing here deletes, and (T319):
+
+    * `quarantined_at` is the FIRST time the version was held and is never rewritten. Every
+      gate seam re-records a body it already holds on each call; resetting the stamp made an old
+      body read as newly held.
+    * The drain being cleared is first copied to `last_drained_at`, so a drained-then-re-held
+      version keeps the record that it was drained. A re-record of a body that is already held
+      has no drain in `reopened_at`, and `coalesce` keeps the earlier `last_drained_at` as is.
     """
     stmt = sqlite_insert(quarantined_bodies).values(
         posting_version_id=posting_version_id,
@@ -103,8 +110,12 @@ def record_quarantine(
             set_={
                 "markers_json": stmt.excluded.markers_json,
                 "catalog_version": stmt.excluded.catalog_version,
-                "quarantined_at": stmt.excluded.quarantined_at,
                 "run_id": stmt.excluded.run_id,
+                # SQLite evaluates every right-hand side against the row as it was BEFORE the
+                # update, so this reads the drain that `reopened_at: None` below is clearing.
+                "last_drained_at": func.coalesce(
+                    quarantined_bodies.c.reopened_at, quarantined_bodies.c.last_drained_at
+                ),
                 "reopened_at": None,
             },
         )

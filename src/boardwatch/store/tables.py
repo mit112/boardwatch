@@ -636,6 +636,10 @@ quarantined_bodies = Table(
     # for the same reason: draining a bucket must not erase the record that it ever held
     # anything.
     Column("reopened_at", DateTime, nullable=True),
+    # The most recent drain of a body that has since been held AGAIN. `record_quarantine` clears
+    # `reopened_at` on a re-quarantine (readers key on it being NULL to mean "held"), so without
+    # this the drain would vanish from the store. NULL = never re-held after a drain (T319).
+    Column("last_drained_at", DateTime, nullable=True),
     Index("ix_quarantined_bodies_reopened_at", "reopened_at"),
 )
 
