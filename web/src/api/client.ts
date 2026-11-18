@@ -37,6 +37,7 @@ import type {
   JdChanges,
   JudgeAgreement,
   LeadAging,
+  CompanyHiring,
   PostingLifetime,
   StoreHygiene,
   QueueDetail,
@@ -258,6 +259,9 @@ export const getStoreHygiene = (): Promise<StoreHygiene> =>
   request<StoreHygiene>("/api/store-hygiene");
 
 export const getJdChanges = (): Promise<JdChanges> => request<JdChanges>("/api/jd-changes");
+
+export const getCompanyHiring = (): Promise<CompanyHiring> =>
+  request<CompanyHiring>("/api/company-hiring");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

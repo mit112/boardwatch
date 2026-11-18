@@ -7,6 +7,7 @@ import { BoardHealth } from "../components/BoardHealth";
 import { BuildEconomics } from "../components/BuildEconomics";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
+import { CompanyHiring } from "../components/CompanyHiring";
 import { JudgeAgreementPanel } from "../components/JudgeAgreementPanel";
 import { RuleDispositions } from "../components/RuleDispositions";
 import { SourceYield } from "../components/SourceYield";
@@ -811,6 +812,7 @@ export function RunsPage() {
       <StoreHygiene />
       <CompanionHistory />
       <BoardHealth />
+      <CompanyHiring />
     </div>
   );
 }

@@ -496,6 +496,16 @@ function route(method: string, path: string, body: unknown): unknown {
       built: { checked: 0, stale: 0, rows: [] },
       applied: { checked: 0, changed: 0, excluded_imports: 0, no_posting_version: 0, rows: [] },
     };
+  if (method === "GET" && path === "/api/company-hiring")
+    return {
+      window_days: 56,
+      eligible_known: true,
+      new: 0,
+      eligible: 0,
+      companies: 0,
+      rows: [],
+      watched_rows: [],
+    };
   if (method === "GET" && path === "/api/runs/trends") return TRENDS;
   if (method === "GET" && path === "/api/board-health") return BOARD_HEALTH;
 

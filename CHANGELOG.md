@@ -48,6 +48,15 @@ All notable changes to this project are documented here. The format follows
   so each row links the board's posting and names the two version ids to compare. Driven from the artifacts and
   applications, then the versions of those postings only: 3.6 s cold, 0.07 s warm on the live store. Lists are capped
   at 50 rows; the counts cover all.
+- **The Runs page shows which companies hire steadily (T308).** A new read-only `GET /api/company-hiring` ranks
+  companies by eligible postings per week over the trailing 56 days (8 weeks, stated on the panel): new postings per
+  week from the `new` events, how many of those are eligible now, jobs applied to and withdrawn (all time), and the
+  newest open eligible role. Eligible is the posting's current deterministic verdict under the live profile, found by
+  reading the evaluations that say `eligible` and keeping the postings whose newest version they evaluated; an abstain
+  is never counted as eligible or as ineligible, and with no profile the eligible columns are dashes, not zero. A
+  "Watched companies only" filter reaches watched companies that rank below the top 50. The eligible pass reads the
+  whole evaluation table once (about 37 s on the live store), so the answer is memoised per finished run and day and
+  the first view after a run is slow; later views take 0.1 s.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

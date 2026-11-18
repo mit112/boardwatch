@@ -93,6 +93,7 @@ from boardwatch.delivery.api import (
 from boardwatch.delivery.companions import read_companions
 from boardwatch.delivery.queue import reconcile_queue, refresh_queue
 from boardwatch.eligibility.facts import ProfileRowInvalid
+from boardwatch.eligibility.preflight import current_identity
 from boardwatch.store.applications import (
     ApplicationStatus,
     MarkOutcome,
@@ -105,6 +106,7 @@ from boardwatch.store.applications import (
     set_application_status,
 )
 from boardwatch.store.board_health_queries import load_board_health
+from boardwatch.store.company_hiring_queries import company_hiring
 from boardwatch.store.db import (
     DB_FILENAME,
     WalUnsafeFilesystemError,
@@ -555,6 +557,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/jd-changes":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: jd_changes(conn)))
+                return
+            if path == "/api/company-hiring":
+                hiring = self._read(
+                    lambda conn, ctx: company_hiring(conn, current_identity(conn, ctx.settings))
+                )
+                self._json(HTTPStatus.OK, hiring)
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's

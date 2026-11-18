@@ -841,6 +841,41 @@ export interface JdChanges {
   };
 }
 
+/*
+ * `GET /api/company-hiring` (T308). Per company, over the trailing `window_days`: postings first seen
+ * (`new`) and how many of those are ELIGIBLE NOW (the posting's current deterministic verdict).
+ * `applied` and `withdrawn` are jobs, all time. Abstain (`uncertain`) is not eligible and is not
+ * counted as ineligible: `new` minus `eligible` is not an ineligible count. With no profile there
+ * is no verdict at all, so every `eligible*` is `null` and `eligible_known` is false: never 0.
+ */
+export interface CompanyHiringRow {
+  company_id: number;
+  company: string;
+  provider: string;
+  watched: boolean;
+  new: number;
+  new_per_week: number;
+  eligible: number | null;
+  eligible_per_week: number | null;
+  applied: number;
+  withdrawn: number;
+  /** The open, eligible-now posting first seen most recently; `null`: none, or eligibility unknown. */
+  newest_open_eligible: { posting_id: number; title: string; age_days: number } | null;
+}
+
+export interface CompanyHiring {
+  window_days: number;
+  eligible_known: boolean;
+  new: number;
+  eligible: number | null;
+  /** Companies with at least one new posting in the window. */
+  companies: number;
+  /** Top companies overall, by eligible per week. */
+  rows: CompanyHiringRow[];
+  /** Top watched companies, by the same order: a watched company can rank below the top overall. */
+  watched_rows: CompanyHiringRow[];
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }
