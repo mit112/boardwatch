@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Runs page shows discovery yield per source (T306).** One row per source (Greenhouse, Ashby, LinkedIn, Indeed,
+  the job-apps lane, ...): open and eligible postings from the run's own per-board snapshot, beside résumés built and
+  applications made all time, from a new read-only `GET /api/source-yield` that credits each lead once to the source
+  that first delivered it. Only applied ÷ built is shown as a rate, because the two scopes do not divide into each
+  other. 0.05 s warm on the live store.
+
 - **The Runs page shows each companion's recent nights (T295).** A companion document may now carry an optional
   `history` (at most 31 rows of `label` and flat `counts`, validated like the rest; `docs/companions.md`). Each
   companion with one gets a table on the Runs page: its current state and summary, one row per night, one column per

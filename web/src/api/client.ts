@@ -39,6 +39,7 @@ import type {
   RevealResponse,
   RunFunnel,
   RunsResponse,
+  SourceYieldResponse,
   RunTrends,
   SkipResponse,
   VersionResponse,
@@ -230,6 +231,9 @@ export const undisputeRejection = (postingId: number): Promise<DisputeResponse> 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
 
 export const getLeadAging = (): Promise<LeadAging> => request<LeadAging>("/api/lead-aging");
+
+export const getSourceYield = (): Promise<SourceYieldResponse> =>
+  request<SourceYieldResponse>("/api/source-yield");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

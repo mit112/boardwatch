@@ -877,6 +877,12 @@ export interface FunnelCoverage {
   top_missing: { term: string; count: number }[];
 }
 
+/* `GET /api/source-yield` (T306): per discovery source, all time. A job counts once, for the
+ * source of its first delivered posting. */
+export interface SourceYieldResponse {
+  sources: Record<string, { built: number; applied: number }>;
+}
+
 export interface FunnelSource {
   provider: string;
   board_slug: string;
