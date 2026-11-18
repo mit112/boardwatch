@@ -270,10 +270,11 @@ def read_store_size(engine: Engine) -> StoreSize | None:
         except OSError:
             return None
 
-    return StoreSize(
-        db_bytes=size(path, absent=None),
-        wal_bytes=size(path.with_name(path.name + "-wal"), absent=0),
-    )
+    try:
+        wal = path.with_name(path.name + "-wal")
+    except ValueError:  # a path with no name (`/`): there is no store file to size
+        return None
+    return StoreSize(db_bytes=size(path, absent=None), wal_bytes=size(wal, absent=0))
 
 
 def collect_run_funnel(

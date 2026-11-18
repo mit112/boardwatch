@@ -92,3 +92,7 @@ def test_a_symlinked_store_reads_the_wal_beside_its_target(tmp_path: Path) -> No
 
     got = read_store_size(create_engine(f"sqlite:///{link}"))
     assert got is not None and (got.db_bytes, got.wal_bytes) == (10, 7)
+
+
+def test_a_path_with_no_file_name_is_unmeasured_not_an_error() -> None:
+    assert read_store_size(create_engine("sqlite:////")) is None
