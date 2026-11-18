@@ -523,3 +523,25 @@ def test_a_near_miss_failure_is_recorded_and_never_fails_the_run(
     assert "near-miss report not written: probe" in summary.errors
     assert not list(out_root.glob("*/near-miss-*.json"))
     assert list(out_root.glob("*/funnel-*.json"))  # the run went on to finish its reports
+
+
+def test_a_near_miss_failure_whose_error_record_also_fails_still_finishes_the_run(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _ready(env)
+    out_root = tmp_path / "apps"
+    real_append = runner.append_run_error
+
+    def broken(*_a: object, **_k: object) -> dict[str, object]:
+        raise RuntimeError("probe")
+
+    def refusing(engine: object, run_id: int, note: str) -> None:
+        if note.startswith("near-miss"):
+            raise RuntimeError("database is locked")
+        real_append(engine, run_id, note)
+
+    monkeypatch.setattr(runner, "compute_near_miss_report", broken)
+    monkeypatch.setattr(runner, "append_run_error", refusing)
+    summary = _pipeline(env, out_root)
+    assert "near-miss report not written: probe" in summary.errors
+    assert summary.morning is not None  # the digest after it was still written

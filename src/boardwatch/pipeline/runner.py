@@ -3955,7 +3955,13 @@ def _run_pipeline_leased(
                 note = f"near-miss report not written: {exc}"
                 console.print(f"  ! {note}", markup=False)
                 summary.errors.append(note)
-                append_run_error(engine, run_id, note)
+                # Guarded: a store refusing this write too (SQLITE_BUSY) must not escape and skip
+                # the queue sync, the soft alerts, `_emit_morning` and the heartbeat below. The
+                # note still reaches the digest through `summary.errors`.
+                try:
+                    append_run_error(engine, run_id, note)
+                except Exception as nested:  # noqa: BLE001 - never mask the run's own outcome
+                    console.print(f"  ! could not record that: {nested}", markup=False)
             clock.mark("near_miss", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
