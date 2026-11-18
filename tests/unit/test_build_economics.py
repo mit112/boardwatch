@@ -319,9 +319,9 @@ def test_a_dated_attempt_before_the_build_counts_apart_even_beside_an_undated_im
 
 
 def test_the_cutoff_is_the_first_render_as_an_instant_not_text(engine: Engine) -> None:
-    """Rendered twice: '2026-11-01 10:00:00+05:00' (05:00 UTC) and then D0 (12:00 UTC, naive).
-    Applied 08:00 UTC, between them: after the first build, so applied. As text the naive D0
-    sorts first, which would put the cutoff at 12:00 and the application before the build."""
+    """Rendered twice: D0 (12:00 UTC, naive) and '2026-11-01 13:00:00+08:00' (05:00 UTC, the
+    first). Applied 08:00 UTC, between them: after the first build, so applied. As text the naive
+    D0 sorts first, which would put the cutoff at 12:00 and the application before the build."""
     with engine.begin() as conn:
         _, job = _lead(conn, "m1")
         _deliver(conn, "m1-gh", job_id=job, delivered_at=D0, judge=False, provider="greenhouse")
@@ -329,7 +329,7 @@ def test_the_cutoff_is_the_first_render_as_an_instant_not_text(engine: Engine) -
         assert newest is not None
         conn.execute(
             text("UPDATE artifacts SET created_at = :at WHERE id = :id"),
-            {"at": "2026-11-01 10:00:00.000000+05:00", "id": newest.id},
+            {"at": "2026-11-01 13:00:00.000000+08:00", "id": newest.id},
         )
         _apply(conn, job, datetime(2026, 11, 1, 8, 0, 0))
         got = lead_outcomes(conn)
