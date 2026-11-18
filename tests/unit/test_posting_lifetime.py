@@ -121,14 +121,16 @@ def _apply(
     attempt: int = 1,
     imported_recorded: str | None = None,
 ) -> None:
-    """A submitted application. `imported_recorded` adds a `track import` created event whose
-    `recorded_at` is that stamp (equal to `stamp` for an import-time submission)."""
+    """A submitted application. `imported_recorded` makes it a `track import` row made at that
+    stamp, `create_application`'s shape: `created_at` is the import time, `submitted_at` the
+    applied date (equal to it when the file gave no date)."""
+    made = imported_recorded or stamp
     app_id = conn.execute(
         text(
             "INSERT INTO applications (job_id, attempt_no, status, created_at, updated_at,"
-            " submitted_at) VALUES (:j, :n, 'applied', :s, :s, :s)"
+            " submitted_at) VALUES (:j, :n, 'applied', :c, :c, :s)"
         ),
-        {"j": job, "n": attempt, "s": stamp},
+        {"j": job, "n": attempt, "s": stamp, "c": made},
     ).lastrowid
     if imported_recorded is not None:
         conn.execute(
@@ -359,7 +361,7 @@ def test_import_stamped_applications_are_left_out_and_counted(engine: Engine) ->
         _, only_import = _posting(conn, acme, "a", run=run)
         _, mixed = _posting(conn, acme, "b", run=run)
         _, dated = _posting(conn, acme, "c", run=run)
-        # a: submitted_at is the import time (occurred_at == recorded_at, source "import").
+        # a: submitted_at is the import time (equal to created_at, source "import").
         stamp = "2026-11-06 12:00:00"
         _apply(conn, only_import, stamp, imported_recorded=stamp)
         # b: an import-stamped attempt 1, then a real attempt 2 on day 3 -> 3.0 days.
@@ -471,3 +473,15 @@ def test_a_renamed_company_shows_at_once_without_recomputing(
 
     assert [row["company"] for row in again["companies"]] == ["Renamed"]
     assert len(calls) == 1
+
+
+def test_an_import_with_a_date_seconds_before_the_import_is_measured(engine: Engine) -> None:
+    """Applied day 1 12:00:00, imported 15 s later with that date: the date is real, 1.0 day."""
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        _, job = _posting(conn, acme, "a", run=run)
+        _apply(conn, job, "2026-11-02 12:00:00", imported_recorded="2026-11-02 12:00:15")
+        got = posting_lifetime(conn)
+    assert (got["to_apply"]["count"], got["to_apply"]["median_days"]) == (1, 1.0)
+    assert got["to_apply"]["excluded_imports"] == 0

@@ -49,11 +49,10 @@ COMPANY_MIN_CLOSED = 5
 COMPANY_ROWS = 25
 _CHUNK = 500
 
-# `import_history`'s `source` (its only caller, `track import`, passes "import"). The created event
-# of such an application has `occurred_at` equal to `recorded_at` when the file gave no date; a row
-# with a real applied date has the two days apart and is kept.
+# `import_history`'s `source` (its only caller, `track import`, passes "import"). With no date in
+# the file, `create_application` stamps `submitted_at` with the same instant as `created_at`, the
+# import time; an explicit date, or a submission recorded later, differs and is kept.
 _IMPORT_SOURCE = "import"
-_IMPORT_STAMP_SECONDS = 60
 
 # `INDEXED BY` is the point: without it the planner joins by primary key and reads every posting
 # row (the 69 s plan). The expression must name the index declared in `store/tables.py`.
@@ -203,6 +202,10 @@ def _memo_key(conn: Connection, provider_of: dict[int, str]) -> _Key:
 
 def _cached_aggregate(conn: Connection, provider_of: dict[int, str]) -> _Aggregate:
     global _memo
+    if _inode(conn.engine) is None:
+        # No stat-able store file (in memory, or a path the URL escapes): nothing tells one store
+        # from another, so never memoise.
+        return _aggregate(conn, provider_of)
     key = _memo_key(conn, provider_of)
     held = _memo  # one read: the key and the payload tested and returned are the same tuple
     if held is not None and held[0] == key:
@@ -219,22 +222,20 @@ def _applied_waits(conn: Connection) -> tuple[list[tuple[str, float]], int]:
         application_events.c.application_id == applications.c.id,
         application_events.c.event_type == "created",
         application_events.c.source == _IMPORT_SOURCE,
-        func.abs(
-            func.julianday(application_events.c.occurred_at)
-            - func.julianday(application_events.c.recorded_at)
-        )
-        * 86_400
-        < _IMPORT_STAMP_SECONDS,
     )
     submitted: dict[int, datetime] = {}
     seen_jobs: set[int] = set()
     for r in conn.execute(
-        select(applications.c.job_id, applications.c.submitted_at, imported.label("imported"))
-        .where(applications.c.submitted_at.is_not(None))
+        select(
+            applications.c.job_id,
+            applications.c.created_at,
+            applications.c.submitted_at,
+            imported.label("imported"),
+        ).where(applications.c.submitted_at.is_not(None))
     ):
         job = int(r.job_id)
         seen_jobs.add(job)
-        if r.imported:
+        if r.imported and _naive(r.submitted_at) == _naive(r.created_at):
             continue
         stamp = _naive(r.submitted_at)
         if job not in submitted or stamp < submitted[job]:
