@@ -21,7 +21,9 @@ evaluated. The two readings agree by construction, and a test checks that on a f
 
 That pass is too slow to repeat, so the id-keyed aggregate is memoised in process. Its key is the
 store file (path and inode), the latest finished run, the newest event id, the current identity and
-engine version, and the UTC day (the window moves). The first view after a run pays the pass; every
+engine version, and the UTC day. The window opens `WINDOW_DAYS` before the start of that day, so
+the answer is the same all day and the memo never serves one computed for an earlier hour. The
+first view after a run pays the pass; every
 later view is instant. Company names, the watched flag, applied and withdrawn counts and the
 newest-role lookups are never memoised: they are read fresh for the rows shown.
 
@@ -40,7 +42,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from typing import Any
 
 from sqlalchemy import Connection, func, select, text
@@ -155,6 +157,9 @@ def _cached_aggregate(
     conn: Connection, identity: tuple[str, str] | None, now: datetime
 ) -> _Aggregate:
     global _memo
+    # The window opens 56 days before the start of `now`'s UTC day (T308 follow-up), not before
+    # `now`: the memo is keyed on that day, so every answer it serves is the one it would compute.
+    now = datetime.combine(now.date(), time())
     if _inode(conn.engine) is None:
         # No stat-able store file (in memory, or a path the URL escapes): nothing tells one store
         # from another, so never memoise.

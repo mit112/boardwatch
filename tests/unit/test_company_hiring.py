@@ -2,17 +2,18 @@
 
 Expected values are worked out by hand from the fixture below, not from the query.
 
-NOW is 2026-11-17 12:00 UTC and the window is 56 days, so it opens 2026-09-22 12:00 UTC (8 weeks).
+NOW is 2026-11-17 12:00 UTC and the window is 56 days before the start of that UTC day, so it opens
+2026-09-22 00:00 UTC (8 weeks), whatever the hour.
 Identity is ("PH", "RH"); "eligible" is a deterministic `eligible` evaluation of the posting's
 NEWEST version under that identity and the current engine version.
 
   Acme (unwatched)  new in window: a1 (eligible), a2 (eligible), a3 (uncertain), a4 (ineligible),
-                    a6 (eligible; event "2026-09-22 08:00:00-05:00" = 13:00 UTC, INSIDE the window
+                    a6 (eligible; event "2026-09-21 20:00:00-05:00" = 09-22 01:00 UTC, INSIDE the window
                     although its text sorts before the cutoff text), a7 (eligible only on a version
                     since replaced), a8 (eligible under another profile), a9 (eligible under another
                     engine version), a10 (uncertain, two `new` events), a11 (eligible, CLOSED).
-                    a5 and a5b (uncertain) have events "2026-09-22 14:00:00+05:00" and "...15:00..."
-                    = 09:00 and 10:00 UTC: OUTSIDE, though their text sorts after the cutoff text.
+                    a5 and a5b (uncertain) have events "2026-09-22 03:00:00+05:00" and "...04:00..."
+                    = 09-21 22:00 and 23:00 UTC: OUTSIDE, though their text sorts after the cutoff text.
                     => new 10, eligible 4 (a1 a2 a6 a11).
                     Open eligible now: a1 a2 a6; the newest by id is a6 (a11 is newer but closed).
   Birch (watched)   b1 (eligible), b2, b3 (uncertain)            => new 3, eligible 1.
@@ -217,10 +218,10 @@ def seeded(engine: Engine) -> dict[str, int]:
         add("a2", acme, new=_day(10), verdict="eligible")
         add("a3", acme, new=_day(20), verdict="uncertain")
         add("a4", acme, new=_day(30), verdict="ineligible")
-        add("a5", acme, new="2026-09-22 14:00:00+05:00", verdict="uncertain")
-        add("a5b", acme, new="2026-09-22 15:00:00+05:00", verdict="uncertain")
+        add("a5", acme, new="2026-09-22 03:00:00+05:00", verdict="uncertain")
+        add("a5b", acme, new="2026-09-22 04:00:00+05:00", verdict="uncertain")
         add(
-            "a6", acme, new="2026-09-22 08:00:00-05:00", verdict="eligible",
+            "a6", acme, new="2026-09-21 20:00:00-05:00", verdict="eligible",
             seen=NOW - timedelta(days=3),
         )
         a7, _ = add("a7", acme, new=_day(5), verdict="eligible")
@@ -284,7 +285,7 @@ def test_sorted_by_eligible_then_new_then_id(engine: Engine, seeded: dict[str, i
 def test_window_edge_uses_the_instant_not_the_text(engine: Engine, seeded: dict[str, int]) -> None:
     got = _hiring(engine)
     acme = got["rows"][0]  # type: ignore[index]
-    # a6 is inside (13:00 UTC) though its text sorts before the cutoff text; a5 and a5b are
+    # a6 is inside (09-22 01:00 UTC) though its text sorts before the cutoff text; a5 and a5b are
     # outside though their text sorts after it. 10 new includes a6 and excludes both; a text
     # compare would read 11 new (a5, a5b in, a6 out) and 3 eligible.
     assert acme["new"] == 10
