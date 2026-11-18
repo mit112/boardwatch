@@ -722,6 +722,46 @@ export interface LeadAging {
   closed_before_applied_by_board: Record<string, number>;
 }
 
+/*
+ * `GET /api/posting-lifetime` (T307). Lifetime is first seen to the posting's first close. A posting
+ * that never closed is `never_closed` (a reopened, currently open posting is NOT one: it is in the
+ * closed cohort at its first close) and is in no median. `count` on a lifetime row is CLOSED postings.
+ */
+export interface LifetimeSummary {
+  count: number;
+  median_days: number | null;
+  p90_days: number | null;
+}
+
+export interface PostingLifetimeProvider extends LifetimeSummary {
+  provider: string;
+  never_closed: number;
+  /** Postings that reopened after closing, over postings that closed. `null`: none closed. */
+  reopen_rate: number | null;
+  /** First seen to the earliest submitted application, for this provider's applied jobs. */
+  to_apply: LifetimeSummary;
+  /** `true`: postings close faster than we apply. `null`: either side is unmeasured. */
+  urgent: boolean | null;
+}
+
+export interface PostingLifetimeCompany extends LifetimeSummary {
+  company: string;
+  provider: string;
+  never_closed: number;
+}
+
+export interface PostingLifetime {
+  closed: LifetimeSummary;
+  never_closed: number;
+  reopen: { events: number; postings: number; rate: number | null };
+  /** `excluded_imports`: applied jobs left out because `track import` stamped the import time. */
+  to_apply: LifetimeSummary & { excluded_imports: number };
+  urgent: boolean | null;
+  providers: PostingLifetimeProvider[];
+  /** At least five closed postings each, most closed first, capped. */
+  companies: PostingLifetimeCompany[];
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }

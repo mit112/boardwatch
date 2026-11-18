@@ -424,6 +424,16 @@ function route(method: string, path: string, body: unknown): unknown {
       },
       closed_before_applied_by_board: {},
     };
+  if (method === "GET" && path === "/api/posting-lifetime")
+    return {
+      closed: { count: 0, median_days: null, p90_days: null },
+      never_closed: 0,
+      reopen: { events: 0, postings: 0, rate: null },
+      to_apply: { count: 0, median_days: null, p90_days: null, excluded_imports: 0 },
+      urgent: null,
+      providers: [],
+      companies: [],
+    };
   if (method === "GET" && path === "/api/runs/trends") return TRENDS;
   if (method === "GET" && path === "/api/board-health") return BOARD_HEALTH;
 

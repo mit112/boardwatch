@@ -85,6 +85,7 @@ from boardwatch.store.tables import (
     board_scans,
     companies,
     jobs,
+    posting_events,
     posting_versions,
     postings,
     runs,
@@ -4031,3 +4032,19 @@ def test_lead_aging_is_served_read_only(live: Live, engine: Engine) -> None:
         _deliver(conn, "aging", judge=False)
     got = call(live, "/api/lead-aging", bearer=live.token).json()
     assert (got["leads"], got["still_waiting"]) == (1, 1)
+
+
+def test_posting_lifetime_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T307: `/api/posting-lifetime` answers from the event log and needs the bearer."""
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "lifetime", judge=False)
+        run = int(conn.execute(insert(runs).values(started_at=NOW, finished_at=NOW)).inserted_primary_key[0])
+        conn.execute(
+            insert(posting_events).values(posting_id=posting, kind="new", run_id=run, created_at=NOW)
+        )
+    got = call(live, "/api/posting-lifetime", bearer=live.token).json()
+    # One posting that never closed: counted so, and no median (null, never 0).
+    assert got["never_closed"] == 1
+    assert got["closed"] == {"count": 0, "median_days": None, "p90_days": None}
+    assert got["urgent"] is None
+    assert call(live, "/api/posting-lifetime").status == 401

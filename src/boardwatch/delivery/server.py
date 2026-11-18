@@ -114,6 +114,7 @@ from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
 from boardwatch.store.judge_agreement_queries import judge_agreement
 from boardwatch.store.lead_aging_queries import lead_aging, source_yield
+from boardwatch.store.posting_lifetime_queries import posting_lifetime
 from boardwatch.store.queue_state import (
     clear_job_followup,
     mark_job_disputed,
@@ -535,6 +536,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if path == "/api/source-yield":
                 by_source = self._read(lambda conn, _ctx: {"sources": source_yield(conn)})
                 self._json(HTTPStatus.OK, by_source)
+                return
+            if path == "/api/posting-lifetime":
+                self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: posting_lifetime(conn)))
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's
