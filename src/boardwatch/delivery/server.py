@@ -129,6 +129,7 @@ from boardwatch.store.queue_state import (
     unmark_job_reported,
     unmark_job_skipped,
 )
+from boardwatch.store.store_hygiene_queries import store_hygiene
 from boardwatch.store.withdrawal_queries import withdrawals
 
 #: The one address this server may bind. A frozenset so the refusal reads as a closed catalog
@@ -544,6 +545,12 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/posting-lifetime":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: posting_lifetime(conn)))
+                return
+            if path == "/api/store-hygiene":
+                db_path = (deps.ctx.settings.data_dir / DB_FILENAME).resolve()
+                self._json(
+                    HTTPStatus.OK, self._read(lambda conn, _ctx: store_hygiene(conn, db_path))
+                )
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's

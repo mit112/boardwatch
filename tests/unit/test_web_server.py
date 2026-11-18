@@ -4160,3 +4160,17 @@ def test_build_economics_joins_each_nightly_run_to_its_tailor_stage(
     assert (by_id[idle]["built"], by_id[idle]["tailor_seconds"]) == (0, 40.0)
     assert by_id[idle]["seconds_per_resume"] is None
     assert call(live, "/api/build-economics").status == 401
+
+
+def test_store_hygiene_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T313: `/api/store-hygiene` reports the store file and needs the bearer."""
+    with engine.begin() as conn:
+        _deliver(conn, "hygiene", judge=False)
+    got = call(live, "/api/store-hygiene", bearer=live.token).json()
+    # Nothing quarantined: zero held, no oldest age (null, never 0), no stall.
+    assert (got["quarantine"]["held"], got["quarantine"]["oldest_held_days"]) == (0, None)
+    assert got["quarantine"]["stalled"] is False
+    assert got["grouping"]["postings_approx"] == 1
+    assert got["store"]["db_bytes"] > 0
+    assert got["store"]["growth_recorded"] is False
+    assert call(live, "/api/store-hygiene").status == 401
