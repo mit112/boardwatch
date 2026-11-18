@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format follows
   rest of the block, the morning digest and the heartbeat included. All 30 records now go through one guarded helper;
   the note still reaches the digest through the run's errors.
 
+- **T315: the near-miss stage has a time budget.** Its statements run under a SQLite progress handler that aborts them
+  past 600 s (six times the measured 98.7 s), so a pathological pass stops holding the scan lease and its read
+  snapshot; the abort is recorded as "near-miss report not written" and the run finishes. The WAL concern needs nothing
+  more: the stage runs synchronously in the run's own finalize, so no run write competes with its read snapshot.
+
 - **T320: company hiring and JD-change edge cases.** The company-hiring memo also keys on the newest posting version,
   so `postings refetch --apply` (which adds a version with no run or event) is not served from the superseded verdict.
   JD changes take a posting's newest build by when it finished, not by which JD it was built from, and the panel says

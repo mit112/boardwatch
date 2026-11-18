@@ -567,3 +567,38 @@ def test_a_funnel_failure_whose_error_record_also_fails_still_finishes_the_run(
     summary = _pipeline(env, out_root)
     assert any("funnel probe" in e for e in summary.errors)
     assert summary.morning is not None
+
+
+def test_a_near_miss_pass_past_its_budget_is_stopped_and_recorded(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T315: with no budget left, the pass's first statement is aborted; the run records it and
+    finishes, and no report is written."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+    monkeypatch.setattr(runner, "NEAR_MISS_BUDGET_SECONDS", -1.0)
+    monkeypatch.setattr(runner, "NEAR_MISS_CHECK_STEPS", 1)
+    summary = _pipeline(env, out_root)
+    assert any(e.startswith("near-miss report not written") for e in summary.errors), summary.errors
+    assert not list(out_root.glob("*/near-miss-*.json"))
+    assert summary.morning is not None
+
+
+def test_a_near_miss_report_finished_past_its_budget_is_not_published(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T315: the SQL finished, but the Python work after it crossed the budget."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+    real = runner.compute_near_miss_report
+
+    def slow(*args: object, **kwargs: object) -> object:
+        out = real(*args, **kwargs)  # type: ignore[arg-type]
+        later = runner.perf_counter() + 10_000  # the clock moves past the 600 s budget
+        monkeypatch.setattr(runner, "perf_counter", lambda: later)
+        return out
+
+    monkeypatch.setattr(runner, "compute_near_miss_report", slow)
+    summary = _pipeline(env, out_root)
+    assert any("past its" in e for e in summary.errors), summary.errors
+    assert not list(out_root.glob("*/near-miss-*.json"))
