@@ -303,3 +303,40 @@ def test_a_statement_past_its_budget_is_interrupted_and_the_connection_survives(
 def test_a_database_error_that_is_not_our_timeout_is_not_swallowed(engine: Engine) -> None:
     with engine.begin() as conn, pytest.raises(OperationalError):
         hygiene._scalar_within(conn, 'SELECT COUNT(*) FROM "no_such_table"', 5)
+
+
+def test_a_late_timer_never_interrupts_the_next_statement(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The race Codex reproduced: the count finishes, but the timer's callback was already past
+    `cancel()` and fires DURING the next statement on the same connection. Simulated by keeping
+    the callback and firing it from another thread while a long statement runs."""
+    import threading
+
+    real_timer = threading.Timer  # `hygiene.threading` IS this module: keep the real one
+    held: list[object] = []
+
+    class LateTimer:
+        def __init__(self, _interval: float, fn: object) -> None:
+            held.append(fn)
+
+        def start(self) -> None:
+            pass
+
+        def cancel(self) -> None:
+            pass
+
+        def join(self) -> None:
+            pass
+
+    monkeypatch.setattr(hygiene.threading, "Timer", LateTimer)
+    with engine.connect() as conn:
+        assert hygiene._scalar_within(conn, "SELECT 7", 0.1) == 7
+        fire = real_timer(0.05, held[0])  # type: ignore[arg-type]
+        fire.start()
+        got = conn.exec_driver_sql(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 3000000)"
+            " SELECT COUNT(*) FROM n"
+        ).scalar()
+        fire.join()
+    assert got == 3000000

@@ -28,6 +28,7 @@ SQL orders or compares a raw timestamp: they are read whole and normalised in Py
 from __future__ import annotations
 
 import os
+import sqlite3
 import threading
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -148,21 +149,33 @@ def _scalar_within(conn: Connection, sql: str, budget: float) -> int | None:
     """
     raw = conn.connection.driver_connection
     timed_out = threading.Event()
+    # The statement and the timer race: a callback already past `cancel()` could interrupt the
+    # NEXT statement on this connection (Codex T318). `done` is set under the lock before this
+    # returns, and the callback interrupts only while holding it and seeing `done` unset.
+    lock = threading.Lock()
+    done = False
 
     def _stop() -> None:
-        timed_out.set()
-        raw.interrupt()  # type: ignore[union-attr]
+        with lock:
+            if done:
+                return
+            timed_out.set()
+            raw.interrupt()  # type: ignore[union-attr]
 
     timer = threading.Timer(budget, _stop)
     timer.start()
     try:
         return int(conn.exec_driver_sql(sql).scalar() or 0)
-    except OperationalError:
-        if not timed_out.is_set():
+    except OperationalError as exc:
+        code = getattr(exc.orig, "sqlite_errorcode", None)
+        if not timed_out.is_set() or code != sqlite3.SQLITE_INTERRUPT:
             raise
         return None
     finally:
+        with lock:
+            done = True
         timer.cancel()
+        timer.join()
 
 
 def _table_rows(
