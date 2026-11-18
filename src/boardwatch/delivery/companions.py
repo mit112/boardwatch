@@ -18,6 +18,7 @@ from typing import Any
 SCHEMA = "boardwatch.companion/1"
 STATES = frozenset({"ok", "running", "failed", "stale"})
 _ITEM_KEYS = frozenset({"label", "reason", "link", "needs_owner"})
+HISTORY_LIMIT = 31
 
 
 class _Invalid(ValueError):
@@ -29,6 +30,12 @@ def _str(doc: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value:
         raise _Invalid(f"{key} must be a non-empty string")
     return value
+
+
+def _flat_counts(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(k, str) and type(v) is int for k, v in value.items()
+    )
 
 
 def _validate(doc: object, stem: str) -> dict[str, Any]:
@@ -47,11 +54,21 @@ def _validate(doc: object, stem: str) -> dict[str, Any]:
     if doc.get("state") not in STATES:
         raise _Invalid(f"state must be one of {sorted(STATES)}")
     _str(doc, "summary")
-    counts = doc.get("counts", {})
-    if not isinstance(counts, dict) or not all(
-        isinstance(k, str) and type(v) is int for k, v in counts.items()
-    ):
+    if not _flat_counts(doc.get("counts", {})):
         raise _Invalid("counts must be a flat {label: int} object")
+    history = doc.get("history", [])
+    if (
+        not isinstance(history, list)
+        or len(history) > HISTORY_LIMIT
+        or not all(
+            isinstance(h, dict)
+            and set(h) <= {"label", "counts"}
+            and isinstance(h.get("label"), str)
+            and _flat_counts(h.get("counts"))
+            for h in history
+        )
+    ):
+        raise _Invalid(f"history must be at most {HISTORY_LIMIT} rows of label and flat counts")
     items = doc.get("items", [])
     if not isinstance(items, list):
         raise _Invalid("items must be a list")

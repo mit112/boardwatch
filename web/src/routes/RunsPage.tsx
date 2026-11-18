@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { getFunnel, getRuns } from "../api/client";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
+import { CompanionHistory } from "../components/CompanionHistory";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
 /*
@@ -792,6 +793,7 @@ export function RunsPage() {
           <BoardsAccordion funnel={funnel} />
         </>
       )}
+      <CompanionHistory />
     </div>
   );
 }

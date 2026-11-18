@@ -13,6 +13,8 @@ import {
 import type { AppliedCounts, AppliedRow } from "../api/types";
 import { ApplicationHistory } from "../components/ApplicationHistory";
 import { ApplicationPace } from "../components/ApplicationPace";
+import { ApplyReadiness } from "../components/ApplyReadiness";
+import { LeadAging } from "../components/LeadAging";
 import { Badge } from "../components/Badge";
 import { FollowUpBadge } from "../components/FollowUpBadge";
 import type { ToastRequest } from "../hooks/useToasts";
@@ -861,6 +863,8 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       />
 
       <ApplicationPace rows={rows} />
+      <ApplyReadiness rows={rows} />
+      <LeadAging />
 
       <label className="flex min-w-64 max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-3">Filter company, title, location</span>
