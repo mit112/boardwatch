@@ -6,9 +6,9 @@ import { EM_DASH, formatCount, formatFraction } from "../lib/format";
 
 /*
  * T307: how long postings stay open, against how fast we apply. Lifetime is first seen to the
- * posting's first close, so postings still open are NOT in any median here: they are counted
- * apart. That makes the lifetime read short, which is the cautious direction for an urgency
- * signal. "Reopened" is the share of closed postings that came back, i.e. how far a "closed"
+ * posting's first close, so postings that never closed are NOT in any median here: they are
+ * counted apart (a posting that reopened is in the closed group, at its first close). That makes
+ * the lifetime read short, which is the cautious direction for an urgency signal. "Reopened" is the share of closed postings that came back, i.e. how far a "closed"
  * lead can be trusted. A missing median is a dash, never zero days.
  */
 
@@ -67,9 +67,13 @@ export function PostingLifetime() {
         </span>
       </p>
       <p className="mt-1 text-sm text-fg-2">
-        {formatCount(data.open)} postings are still open and are not in the medians.{" "}
+        {formatCount(data.never_closed)} postings have never closed and are not in the medians.{" "}
         {formatCount(data.reopen.postings)} closed postings later reopened (
         {formatFraction(data.reopen.rate)} of closed), so a closed lead is not final.
+      </p>
+      <p className="mt-1 text-sm text-fg-2">
+        Applications created by an import carry the import date, not the application date, so{" "}
+        {formatCount(data.to_apply.excluded_imports)} imported jobs are left out of time to apply.
       </p>
       {data.providers.length === 0 ? null : (
         <table className="mt-3 text-sm">
@@ -78,7 +82,7 @@ export function PostingLifetime() {
             <tr>
               <th className="pr-6 text-left font-normal">Provider</th>
               <th className="pr-6 text-right font-normal">Closed</th>
-              <th className="pr-6 text-right font-normal">Open</th>
+              <th className="pr-6 text-right font-normal">Never closed</th>
               <th className="pr-6 text-right font-normal">Median life</th>
               <th className="pr-6 text-right font-normal">90th percentile</th>
               <th className="pr-6 text-right font-normal">Median to apply</th>
@@ -93,7 +97,7 @@ export function PostingLifetime() {
                   {p.provider}
                 </th>
                 <td className="pr-6 text-right tabular-nums">{formatCount(p.count)}</td>
-                <td className="pr-6 text-right tabular-nums">{formatCount(p.open)}</td>
+                <td className="pr-6 text-right tabular-nums">{formatCount(p.never_closed)}</td>
                 <td className="pr-6 text-right tabular-nums">{days(p.median_days)}</td>
                 <td className="pr-6 text-right tabular-nums">{days(p.p90_days)}</td>
                 <td className="pr-6 text-right tabular-nums">{days(p.to_apply.median_days)}</td>
@@ -114,7 +118,7 @@ export function PostingLifetime() {
               <th className="pr-6 text-left font-normal">Company</th>
               <th className="pr-6 text-left font-normal">Provider</th>
               <th className="pr-6 text-right font-normal">Closed</th>
-              <th className="pr-6 text-right font-normal">Open</th>
+              <th className="pr-6 text-right font-normal">Never closed</th>
               <th className="pr-6 text-right font-normal">Median life</th>
               <th className="text-right font-normal">90th percentile</th>
             </tr>
@@ -127,7 +131,7 @@ export function PostingLifetime() {
                 </th>
                 <td className="pr-6 text-fg-2">{c.provider}</td>
                 <td className="pr-6 text-right tabular-nums">{formatCount(c.count)}</td>
-                <td className="pr-6 text-right tabular-nums">{formatCount(c.open)}</td>
+                <td className="pr-6 text-right tabular-nums">{formatCount(c.never_closed)}</td>
                 <td className="pr-6 text-right tabular-nums">{days(c.median_days)}</td>
                 <td className="text-right tabular-nums">{days(c.p90_days)}</td>
               </tr>

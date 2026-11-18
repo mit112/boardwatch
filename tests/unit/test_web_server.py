@@ -4043,8 +4043,8 @@ def test_posting_lifetime_is_served_read_only(live: Live, engine: Engine) -> Non
             insert(posting_events).values(posting_id=posting, kind="new", run_id=run, created_at=NOW)
         )
     got = call(live, "/api/posting-lifetime", bearer=live.token).json()
-    # One posting that never closed: counted as open, and no median (null, never 0).
-    assert got["open"] == 1
+    # One posting that never closed: counted so, and no median (null, never 0).
+    assert got["never_closed"] == 1
     assert got["closed"] == {"count": 0, "median_days": None, "p90_days": None}
     assert got["urgent"] is None
     assert call(live, "/api/posting-lifetime").status == 401

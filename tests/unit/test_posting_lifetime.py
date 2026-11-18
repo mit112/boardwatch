@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Connection, Engine, insert, text
+from sqlalchemy import Connection, Engine, func, insert, select, text, update
 
 from boardwatch.store import posting_lifetime_queries as plq
 from boardwatch.store.db import ensure_schema, get_engine
@@ -102,14 +102,43 @@ def _event(conn: Connection, posting: int, kind: str, at: datetime, run: int) ->
     )
 
 
-def _apply(conn: Connection, job: int, stamp: str) -> None:
+def _event_text(conn: Connection, posting: int, kind: str, stamp: str, run: int) -> None:
+    """An event whose timestamp is written as text, so it can carry a UTC offset."""
     conn.execute(
         text(
-            "INSERT INTO applications (job_id, attempt_no, status, created_at, updated_at,"
-            " submitted_at) VALUES (:j, 1, 'applied', :s, :s, :s)"
+            "INSERT INTO posting_events (posting_id, kind, run_id, created_at)"
+            " VALUES (:p, :k, :r, :s)"
         ),
-        {"j": job, "s": stamp},
+        {"p": posting, "k": kind, "r": run, "s": stamp},
     )
+
+
+def _apply(
+    conn: Connection,
+    job: int,
+    stamp: str,
+    *,
+    attempt: int = 1,
+    imported_recorded: str | None = None,
+) -> None:
+    """A submitted application. `imported_recorded` adds a `track import` created event whose
+    `recorded_at` is that stamp (equal to `stamp` for an import-time submission)."""
+    app_id = conn.execute(
+        text(
+            "INSERT INTO applications (job_id, attempt_no, status, created_at, updated_at,"
+            " submitted_at) VALUES (:j, :n, 'applied', :s, :s, :s)"
+        ),
+        {"j": job, "n": attempt, "s": stamp},
+    ).lastrowid
+    if imported_recorded is not None:
+        conn.execute(
+            text(
+                "INSERT INTO application_events (application_id, event_type, to_status,"
+                " occurred_at, recorded_at, source) VALUES (:a, 'created', 'applied', :o, :r,"
+                " 'import')"
+            ),
+            {"a": app_id, "o": stamp, "r": imported_recorded},
+        )
 
 
 def _seed(conn: Connection) -> int:
@@ -133,14 +162,14 @@ def _seed(conn: Connection) -> int:
     return j2
 
 
-def test_lifetimes_open_count_and_reopen_rate(engine: Engine) -> None:
+def test_lifetimes_never_closed_count_and_reopen_rate(engine: Engine) -> None:
     with engine.begin() as conn:
         _seed(conn)
         got = posting_lifetime(conn)
 
     # Closed lifetimes [1, 3, 2, 10]: median (2 + 3) / 2; p90 3 + 0.7 * (10 - 3) = 7.9.
     assert got["closed"] == {"count": 4, "median_days": 2.5, "p90_days": 7.9}
-    assert got["open"] == 1
+    assert got["never_closed"] == 1
     # One reopen event on one posting, of four postings that ever closed.
     assert got["reopen"] == {"events": 1, "postings": 1, "rate": 0.25}
 
@@ -153,7 +182,7 @@ def test_providers_split_lifetime_reopen_and_time_to_apply(engine: Engine) -> No
     by = {row["provider"]: row for row in got["providers"]}
     assert [row["provider"] for row in got["providers"]] == ["ashby", "greenhouse"]
     ashby, greenhouse = by["ashby"], by["greenhouse"]
-    assert (ashby["count"], ashby["median_days"], ashby["p90_days"], ashby["open"]) == (
+    assert (ashby["count"], ashby["median_days"], ashby["p90_days"], ashby["never_closed"]) == (
         2,
         2.0,
         2.8,
@@ -163,7 +192,7 @@ def test_providers_split_lifetime_reopen_and_time_to_apply(engine: Engine) -> No
     # Applied on day 5 -> a 5.0-day wait, longer than the 2.0-day median lifetime: urgent.
     assert ashby["to_apply"] == {"count": 1, "median_days": 5.0, "p90_days": 5.0}
     assert ashby["urgent"] is True
-    assert (greenhouse["count"], greenhouse["median_days"], greenhouse["open"]) == (2, 6.0, 0)
+    assert (greenhouse["count"], greenhouse["median_days"], greenhouse["never_closed"]) == (2, 6.0, 0)
     assert greenhouse["p90_days"] == 9.2
     assert greenhouse["reopen_rate"] == 0.5
     assert greenhouse["to_apply"]["median_days"] == 1.0
@@ -177,7 +206,12 @@ def test_time_to_apply_normalises_offset_stamps_and_flags_urgency(engine: Engine
 
     # Waits [5.0, 1.0]: median 3.0; p90 1 + 0.9 * 4 = 4.6. The 5.0 only comes out right if the
     # "+02:00" stamp is read as 12:00 UTC (read as 14:00 it would be 5.08).
-    assert got["to_apply"] == {"count": 2, "median_days": 3.0, "p90_days": 4.6}
+    assert got["to_apply"] == {
+        "count": 2,
+        "median_days": 3.0,
+        "p90_days": 4.6,
+        "excluded_imports": 0,
+    }
     # Median lifetime 2.5 < median wait 3.0.
     assert got["urgent"] is True
 
@@ -191,10 +225,15 @@ def test_an_offset_first_seen_is_compared_as_utc(engine: Engine) -> None:
         _apply(conn, job, "2026-11-03 12:00:00")
         got = posting_lifetime(conn)
 
-    assert got["to_apply"] == {"count": 1, "median_days": 2.0, "p90_days": 2.0}
+    assert got["to_apply"] == {
+        "count": 1,
+        "median_days": 2.0,
+        "p90_days": 2.0,
+        "excluded_imports": 0,
+    }
 
 
-def test_open_postings_are_not_in_the_median_and_nothing_closed_is_a_dash(engine: Engine) -> None:
+def test_never_closed_postings_are_not_in_the_median_and_nothing_closed_is_a_dash(engine: Engine) -> None:
     with engine.begin() as conn:
         run = _run(conn)
         acme = _company(conn, "Acme", "ashby")
@@ -203,10 +242,15 @@ def test_open_postings_are_not_in_the_median_and_nothing_closed_is_a_dash(engine
         got = posting_lifetime(conn)
 
     assert got["closed"] == {"count": 0, "median_days": None, "p90_days": None}
-    assert got["open"] == 2
+    assert got["never_closed"] == 2
     assert got["reopen"]["rate"] is None
     assert got["urgent"] is None
-    assert got["to_apply"] == {"count": 0, "median_days": None, "p90_days": None}
+    assert got["to_apply"] == {
+        "count": 0,
+        "median_days": None,
+        "p90_days": None,
+        "excluded_imports": 0,
+    }
 
 
 def test_companies_need_five_closed_postings_and_are_capped_by_count(
@@ -224,8 +268,8 @@ def test_companies_need_five_closed_postings_and_are_capped_by_count(
                 _posting(conn, company, f"{name}open{i}", run=run)
         got = posting_lifetime(conn)
 
-    # Small has 4 closed (< 5). Of the rest, the two with the most; Mid and Tie tie on 5, by name.
-    assert [(row["company"], row["count"], row["open"]) for row in got["companies"]] == [
+    # Small has 4 closed (< 5). Of the rest, the two with the most; Mid and Tie tie on 5, by id.
+    assert [(row["company"], row["count"], row["never_closed"]) for row in got["companies"]] == [
         ("Big", 6, 1),
         ("Mid", 5, 0),
     ]
@@ -241,34 +285,189 @@ def test_a_posting_with_no_new_event_is_left_out(engine: Engine) -> None:
         got = posting_lifetime(conn)
 
     assert got["closed"]["count"] == 0
-    assert got["open"] == 0
+    assert got["never_closed"] == 0
 
 
-def test_the_event_aggregate_is_memoised_per_store_state_but_applications_are_not(
+
+
+def test_first_close_is_the_earliest_instant_not_the_smallest_text(engine: Engine) -> None:
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        p, _ = _posting(conn, acme, "p1", run=run)
+        # Day 2 12:00 UTC written naive, and 13:00+02:00 the same day = 11:00 UTC, one hour
+        # EARLIER. As text the naive one sorts first (" " < "T"), so a text MIN picks day 2.0.
+        _event_text(conn, p, "closed", "2026-11-03 12:00:00", run)
+        _event_text(conn, p, "closed", "2026-11-03T13:00:00+02:00", run)
+        got = posting_lifetime(conn)
+
+    # 1 day 23 hours = 1.9583 days, rounded to 1.96.
+    assert got["closed"] == {"count": 1, "median_days": 1.96, "p90_days": 1.96}
+
+
+def test_the_earliest_application_is_the_earliest_instant_not_the_smallest_text(
+    engine: Engine,
+) -> None:
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        _, job = _posting(conn, acme, "p1", run=run)
+        # Attempt 1: day 1 12:00 UTC (naive). Attempt 2: 13:00+02:00 = 11:00 UTC, an hour earlier,
+        # though its text sorts after attempt 1's.
+        _apply(conn, job, "2026-11-02 12:00:00", attempt=1)
+        _apply(conn, job, "2026-11-02T13:00:00+02:00", attempt=2)
+        got = posting_lifetime(conn)
+
+    # 23 hours = 0.9583 days, rounded to 0.96 (the text MIN gives 1.0).
+    assert got["to_apply"]["median_days"] == 0.96
+
+
+def test_a_reclosed_posting_counts_once_at_its_first_close(engine: Engine) -> None:
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        p, _ = _posting(conn, acme, "p1", run=run)
+        _event(conn, p, "closed", D0 + timedelta(days=2), run)
+        _event(conn, p, "reopened", D0 + timedelta(days=3), run)
+        _event(conn, p, "closed", D0 + timedelta(days=6), run)
+        got = posting_lifetime(conn)
+
+    assert got["closed"] == {"count": 1, "median_days": 2.0, "p90_days": 2.0}
+    assert got["never_closed"] == 0
+    assert got["reopen"] == {"events": 1, "postings": 1, "rate": 1.0}
+
+
+def test_a_reopened_posting_that_is_open_now_is_not_counted_as_never_closed(
+    engine: Engine,
+) -> None:
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        p, _ = _posting(conn, acme, "p1", run=run)
+        _event(conn, p, "closed", D0 + timedelta(days=4), run)
+        _event(conn, p, "reopened", D0 + timedelta(days=5), run)
+        got = posting_lifetime(conn)
+
+    assert got["closed"]["count"] == 1
+    assert got["never_closed"] == 0
+
+
+def test_import_stamped_applications_are_left_out_and_counted(engine: Engine) -> None:
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        _, only_import = _posting(conn, acme, "a", run=run)
+        _, mixed = _posting(conn, acme, "b", run=run)
+        _, dated = _posting(conn, acme, "c", run=run)
+        # a: submitted_at is the import time (occurred_at == recorded_at, source "import").
+        stamp = "2026-11-06 12:00:00"
+        _apply(conn, only_import, stamp, imported_recorded=stamp)
+        # b: an import-stamped attempt 1, then a real attempt 2 on day 3 -> 3.0 days.
+        _apply(conn, mixed, "2026-11-07 12:00:00", attempt=1, imported_recorded="2026-11-07 12:00:00")
+        _apply(conn, mixed, "2026-11-04 12:00:00", attempt=2)
+        # c: imported WITH a real date (recorded 17 days after it happened) -> kept, 2.0 days.
+        _apply(conn, dated, "2026-11-03 12:00:00", imported_recorded="2026-11-20 09:00:00")
+        got = posting_lifetime(conn)
+
+    # Waits [3.0, 2.0] -> median 2.5, p90 2 + 0.9 * 1 = 2.9. Job a is the one left out.
+    assert got["to_apply"] == {
+        "count": 2,
+        "median_days": 2.5,
+        "p90_days": 2.9,
+        "excluded_imports": 1,
+    }
+
+
+def _counting(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    calls: list[int] = []
+    real = plq._aggregate
+
+    def counting(conn: Connection, provider_of: dict[int, str]) -> plq._Aggregate:
+        calls.append(1)
+        return real(conn, provider_of)
+
+    monkeypatch.setattr(plq, "_aggregate", counting)
+    return calls
+
+
+def test_applications_do_not_invalidate_the_memo_but_show_at_once(
     engine: Engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls = 0
-    real = plq._events_view
-
-    def counting(conn: Connection) -> dict[str, object]:
-        nonlocal calls
-        calls += 1
-        return real(conn)
-
-    monkeypatch.setattr(plq, "_events_view", counting)
+    calls = _counting(monkeypatch)
     with engine.begin() as conn:
         j2 = _seed(conn)
         first = posting_lifetime(conn)
-        again = posting_lifetime(conn)
-        assert calls == 1
-        assert again == first
-        # A new application shows at once; the cached lifetimes are not recomputed.
+        assert posting_lifetime(conn) == first
+        assert len(calls) == 1
         _apply(conn, j2, "2026-11-02 12:00:00")
         third = posting_lifetime(conn)
-        assert calls == 1
-        assert third["to_apply"]["count"] == first["to_apply"]["count"] + 1
-        assert third["closed"] == first["closed"]
-        # A new posting event is a new store state, so the aggregate is recomputed.
-        _posting(conn, _company(conn, "Cedar", "lever"), "p6", run=_run(conn))
-        assert posting_lifetime(conn)["open"] == first["open"] + 1
-        assert calls == 2
+
+    assert len(calls) == 1
+    assert third["to_apply"]["count"] == first["to_apply"]["count"] + 1
+    assert third["closed"] == first["closed"]
+
+
+def test_a_new_run_alone_invalidates_the_memo(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _counting(monkeypatch)
+    with engine.begin() as conn:
+        _seed(conn)
+        posting_lifetime(conn)
+        _run(conn)  # a finished run, and no new event
+        posting_lifetime(conn)
+
+    assert len(calls) == 2
+
+
+def test_a_new_event_alone_invalidates_the_memo(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _counting(monkeypatch)
+    with engine.begin() as conn:
+        _seed(conn)
+        before = posting_lifetime(conn)
+        # Same latest run, one more event.
+        run = conn.execute(select(func.max(runs.c.id))).scalar_one()
+        late, _ = _posting(conn, _company(conn, "Cedar", "lever"), "late", run=run)
+        _event(conn, late, "closed", D0 + timedelta(days=1), run)
+        after = posting_lifetime(conn)
+
+    assert len(calls) == 2
+    assert after["closed"]["count"] == before["closed"]["count"] + 1
+
+
+def test_a_changed_provider_or_store_file_invalidates_the_memo(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _counting(monkeypatch)
+    with engine.begin() as conn:
+        _seed(conn)
+        posting_lifetime(conn)
+        conn.execute(update(companies).where(companies.c.name == "Birch").values(provider="lever"))
+        moved = posting_lifetime(conn)
+        assert len(calls) == 2
+        assert [row["provider"] for row in moved["providers"]] == ["ashby", "lever"]
+        # The same path under a different inode is a different store.
+        monkeypatch.setattr(plq, "_inode", lambda _engine: 987_654_321)
+        posting_lifetime(conn)
+
+    assert len(calls) == 3
+
+
+def test_a_renamed_company_shows_at_once_without_recomputing(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = _counting(monkeypatch)
+    with engine.begin() as conn:
+        run = _run(conn)
+        company = _company(conn, "Acme", "ashby")
+        for i in range(5):
+            p, _ = _posting(conn, company, f"p{i}", run=run)
+            _event(conn, p, "closed", D0 + timedelta(days=2), run)
+        assert [row["company"] for row in posting_lifetime(conn)["companies"]] == ["Acme"]
+        conn.execute(update(companies).where(companies.c.id == company).values(name="Renamed"))
+        again = posting_lifetime(conn)
+
+    assert [row["company"] for row in again["companies"]] == ["Renamed"]
+    assert len(calls) == 1
