@@ -141,3 +141,35 @@ def test_an_import_withdrawal_is_after_applying_and_dated_only_when_the_import_w
         got = {w["application_id"]: w for w in withdrawals(conn)["withdrawals"]}
     assert (got[undated]["kind"], got[undated]["days_after_applying"]) == ("after_applying", None)
     assert (got[dated]["kind"], got[dated]["days_after_applying"]) == ("after_applying", 3.0)
+
+
+def test_days_count_from_the_standing_cycles_submission(engine: Engine) -> None:
+    """Applied day 0, withdrawn day 1, reapplied day 9, withdrawn day 10: 1.0 day, not 10."""
+    with engine.begin() as conn:
+        _, job = _deliver(conn, "w6", judge=False)
+        app = _app(conn, job, "withdrawn", D0)
+        _event(conn, app, "created", None, "applied", D0)
+        _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=1))
+        _event(conn, app, "status_change", "withdrawn", "applied", D0 + timedelta(days=9))
+        _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=10))
+        (got,) = withdrawals(conn)["withdrawals"]
+    assert (got["kind"], got["days_after_applying"]) == ("after_applying", 1.0)
+
+
+def test_an_undated_interested_import_is_dated_by_its_later_move_to_applied(
+    engine: Engine,
+) -> None:
+    """Imported as `interested` on D0 (no date), moved to applied day 2, withdrawn day 3."""
+    with engine.begin() as conn:
+        _, job = _deliver(conn, "w7", judge=False)
+        app = _app(conn, job, "withdrawn", D0 + timedelta(days=2))
+        conn.execute(
+            insert(application_events).values(
+                application_id=app, event_type="created", from_status=None,
+                to_status="interested", occurred_at=D0, recorded_at=D0, source="import",
+            )
+        )
+        _event(conn, app, "status_change", "interested", "applied", D0 + timedelta(days=2))
+        _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=3))
+        (got,) = withdrawals(conn)["withdrawals"]
+    assert (got["kind"], got["days_after_applying"]) == ("after_applying", 1.0)

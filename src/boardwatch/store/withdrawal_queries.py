@@ -50,19 +50,44 @@ def withdrawals(conn: Connection) -> dict[str, Any]:
     for e in sorted(events, key=lambda e: (_naive(e.occurred_at), e.id)):
         first[int(e.application_id)] = e
 
-    # When each was applied to. An import's created event dates it when the row gave a date (it
-    # then differs from the application's `created_at`, the import time); an undated import has
-    # no applied date at all. Anything else uses `submitted_at`.
-    imported: dict[int, datetime | None] = {}
+    # When the standing withdrawal's cycle was applied to: the LAST time, before it, that the
+    # application entered a submitted status (created in one, or moved into one from outside the
+    # set), so an apply -> withdraw -> reapply -> withdraw cycle counts from the reapply. An
+    # import that gave no date (its created event's `occurred_at` equals the application's
+    # `created_at`, the import time) entered on an unknown date. No entering event at all (rows
+    # written before events) falls back to `submitted_at`.
+    history: dict[int, list[Any]] = {}
     for chunk in id_chunks(sorted(first)):
         for r in conn.execute(
-            select(application_events.c.application_id, application_events.c.occurred_at).where(
-                application_events.c.application_id.in_(chunk),
-                application_events.c.event_type == "created",
-                application_events.c.source == "import",
-            )
+            select(
+                application_events.c.id,
+                application_events.c.application_id,
+                application_events.c.event_type,
+                application_events.c.from_status,
+                application_events.c.to_status,
+                application_events.c.occurred_at,
+                application_events.c.source,
+            ).where(application_events.c.application_id.in_(chunk))
         ):
-            imported[int(r.application_id)] = _naive(r.occurred_at)
+            history.setdefault(int(r.application_id), []).append(r)
+
+    def applied_on(e: Any) -> datetime | None:
+        stop = (_naive(e.occurred_at), e.id)
+        seen, at = False, None
+        events = history.get(int(e.application_id), [])
+        for r in sorted(events, key=lambda r: (_naive(r.occurred_at), r.id)):
+            if (_naive(r.occurred_at), r.id) >= stop:
+                break
+            if r.to_status in APPLIED_STATUSES and (
+                r.event_type == "created" or r.from_status not in APPLIED_STATUSES
+            ):
+                seen = True
+                when = _naive(r.occurred_at)
+                undated = r.source == "import" and when == _naive(e.created_at)
+                at = None if undated else when
+        if not seen and e.submitted_at is not None:
+            return _naive(e.submitted_at)
+        return at
 
     # The newest posting per job names it, looked up for these jobs only.
     label: dict[int, tuple[int, str, str]] = {}
@@ -79,11 +104,7 @@ def withdrawals(conn: Connection) -> dict[str, Any]:
     for e in sorted(first.values(), key=lambda e: (_naive(e.occurred_at), e.id), reverse=True):
         after = e.from_status in APPLIED_STATUSES
         app_id = int(e.application_id)
-        if app_id in imported:
-            at = imported[app_id]
-            applied_on = None if at == _naive(e.created_at) else at
-        else:
-            applied_on = None if e.submitted_at is None else _naive(e.submitted_at)
+        since = applied_on(e) if after else None
         named = label.get(int(e.job_id))
         out.append(
             {
@@ -91,8 +112,8 @@ def withdrawals(conn: Connection) -> dict[str, Any]:
                 "kind": "after_applying" if after else "before_applying",
                 "withdrawn_at": _naive(e.occurred_at).replace(tzinfo=UTC).isoformat(),
                 "days_after_applying": (
-                    round((_naive(e.occurred_at) - applied_on).total_seconds() / 86_400, 2)
-                    if after and applied_on is not None
+                    round((_naive(e.occurred_at) - since).total_seconds() / 86_400, 2)
+                    if since is not None
                     else None
                 ),
                 "note": e.note,
