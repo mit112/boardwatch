@@ -73,6 +73,7 @@ from boardwatch.eligibility.final_gate import record_gate_verdict
 from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
+from boardwatch.store import company_hiring_queries as chq
 from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
 from boardwatch.store.queries import insert_run, save_eligibility, save_profile
@@ -4185,3 +4186,27 @@ def test_jd_changes_is_served_read_only(live: Live, engine: Engine) -> None:
     assert got["built"] == {"checked": 1, "stale": 0, "rows": []}
     assert got["applied"]["changed"] == 0
     assert call(live, "/api/jd-changes").status == 401
+
+
+def test_company_hiring_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T308: `/api/company-hiring` counts eligible under the live identity and needs the bearer."""
+    chq._memo = None
+    with engine.begin() as conn:
+        run = int(conn.execute(insert(runs).values(started_at=NOW, finished_at=NOW)).inserted_primary_key[0])
+        for key, body in (("hire-ok", JD_ELIGIBLE), ("hire-abstain", JD_UNCERTAIN)):
+            posting, _ = _deliver(conn, key, body=body)
+            conn.execute(
+                insert(posting_events).values(
+                    posting_id=posting, kind="new", run_id=run, created_at=utcnow()
+                )
+            )
+    got = call(live, "/api/company-hiring", bearer=live.token).json()
+    assert got["eligible_known"] is True
+    # Two companies, one new posting each; only the first reads `eligible`. The abstain is not
+    # counted as eligible, and nothing here counts it as ineligible.
+    assert (got["new"], got["eligible"]) == (2, 1)
+    by_name = {r["company"]: r for r in got["rows"]}
+    assert by_name["Acme hire-ok"]["eligible"] == 1
+    assert by_name["Acme hire-abstain"]["eligible"] == 0
+    assert got["rows"][0]["company"] == "Acme hire-ok"
+    assert call(live, "/api/company-hiring").status == 401
