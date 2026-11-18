@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A closure the owner undid no longer counts in lead aging.** `postings reopen` now records each undo of an owner close under
+  `posting.ownerundo.<posting_id>` in `app_state`, so it can be told from a scan reopen (both write a plain `reopened`
+  event); lead aging drops the closed event an undo reverses. Undos made before this change were never recorded.
+  The Withdrawals panel names each row by the posting the Applied page shows for that application, and the posting
+  lifetime panel no longer says every import carries the import date (only undated ones are left out).
+
 - **Lead aging no longer reads an import's date as when an application was sent, or takes the earliest attempt by
   text (T298, T306).** An imported application (`source = 'import'`) carries the import time, so it still counts as
   applied but is left out of the waits and reported as `applied_date_unknown`. The earliest submission is now taken

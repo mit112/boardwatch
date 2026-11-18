@@ -173,3 +173,31 @@ def test_an_undated_interested_import_is_dated_by_its_later_move_to_applied(
         _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=3))
         (got,) = withdrawals(conn)["withdrawals"]
     assert (got["kind"], got["days_after_applying"]) == ("after_applying", 1.0)
+
+
+def test_a_withdrawal_is_named_by_the_posting_its_application_names(engine: Engine) -> None:
+    """One job, two delivered postings. The application was made against the FIRST; the newer
+    one is a sibling. The row names the first, as the Applied page does."""
+    from boardwatch.store.tables import posting_versions
+
+    with engine.begin() as conn:
+        first, job = _deliver(conn, "n1", judge=False, title="Platform Engineer")
+        second, _ = _deliver(conn, "n2", job_id=job, judge=False, title="Platform Engineer II")
+        version = conn.execute(
+            posting_versions.select()
+            .with_only_columns(posting_versions.c.id)
+            .where(posting_versions.c.posting_id == first)
+        ).scalar_one()
+        app = int(
+            conn.execute(
+                insert(applications).values(
+                    job_id=job, posting_version_id=version, attempt_no=1, status="withdrawn",
+                    created_at=D0, updated_at=D0, submitted_at=D0,
+                )
+            ).inserted_primary_key[0]
+        )
+        _event(conn, app, "created", None, "applied", D0)
+        _event(conn, app, "status_change", "applied", "withdrawn", D0 + timedelta(days=1))
+        (got,) = withdrawals(conn)["withdrawals"]
+    assert (got["posting_id"], got["title"]) == (first, "Platform Engineer")
+    assert second > first
