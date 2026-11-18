@@ -14,6 +14,13 @@ All notable changes to this project are documented here. The format follows
   that first delivered it. Only applied ÷ built is shown as a rate, because the two scopes do not divide into each
   other. 0.05 s warm on the live store.
 
+- **The Runs page shows where the deterministic engine and the LLM judge disagree (T304).** A new read-only
+  `GET /api/judge-agreement` pairs every LLM verdict with the newest deterministic verdict on the SAME input (same
+  posting version, profile and rules), per lane (the final gate apart from the advisory extraction lane), per run. The
+  page draws the newest run's verdict matrix, the agreement over the last 14 runs, the final gate's current splits
+  linked to their postings, and the engine rules unmet on them. An LLM verdict with no engine partner is its own row.
+  0.36 s warm on the live store (16.5k LLM rows).
+
 - **The Runs page shows each companion's recent nights (T295).** A companion document may now carry an optional
   `history` (at most 31 rows of `label` and flat `counts`, validated like the rest; `docs/companions.md`). Each
   companion with one gets a table on the Runs page: its current state and summary, one row per night, one column per

@@ -883,6 +883,23 @@ export interface SourceYieldResponse {
   sources: Record<string, { built: number; applied: number }>;
 }
 
+/* `GET /api/judge-agreement` (T304). Each LLM verdict paired with the newest deterministic verdict
+ * on the SAME input; `none` is an LLM row with no deterministic partner, never folded. */
+export interface JudgeAgreementRun {
+  run_id: number | null;
+  total: number;
+  agree: number;
+  cells: { deterministic: string; llm: string; count: number }[];
+}
+
+export interface JudgeAgreement {
+  /** `final_gate` (can block) and `advisory` (cannot), newest run first, at most 14 each. */
+  lanes: Record<string, JudgeAgreementRun[]>;
+  final_gate_splits: number;
+  split_rules: { rule_id: string; count: number }[];
+  splits: { posting_id: number; title: string; company: string; deterministic: string; llm: string }[];
+}
+
 export interface FunnelSource {
   provider: string;
   board_slug: string;

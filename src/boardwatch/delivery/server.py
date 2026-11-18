@@ -112,6 +112,7 @@ from boardwatch.store.db import (
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
+from boardwatch.store.judge_agreement_queries import judge_agreement
 from boardwatch.store.lead_aging_queries import lead_aging, source_yield
 from boardwatch.store.queue_state import (
     clear_job_followup,
@@ -519,6 +520,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/answers":
                 self._answers()
+                return
+            if path == "/api/judge-agreement":
+                agreement = self._read(lambda conn, _ctx: judge_agreement(conn))
+                self._json(HTTPStatus.OK, agreement)
                 return
             if path == "/api/lead-aging":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: lead_aging(conn)))

@@ -6,6 +6,7 @@ import { RunTrends } from "../components/RunTrends";
 import { BoardHealth } from "../components/BoardHealth";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
+import { JudgeAgreementPanel } from "../components/JudgeAgreementPanel";
 import { RuleDispositions } from "../components/RuleDispositions";
 import { SourceYield } from "../components/SourceYield";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
@@ -800,6 +801,8 @@ export function RunsPage() {
           <RuleDispositions abstain={funnel.abstain} />
 
           <SourceYield boards={funnel.sources} />
+
+          <JudgeAgreementPanel />
         </>
       )}
       <CompanionHistory />
