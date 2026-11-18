@@ -3862,6 +3862,10 @@ def _run_pipeline_leased(
         # Both belong in it: a run row left `running` is the most consequential thing this block
         # can report, and a sweep that asked no board anything is the second.
         escalatable_from = len(summary.errors)
+        # Positions in `summary.errors` that the digest carries but the escalation does not: a
+        # READING the owner looks at when at the machine, not a fault to act on while away
+        # (D-695). Kept by index, never by matching the text.
+        not_escalated: set[int] = set()
         try:
             _finish_run_with_one_retry(
                 engine,
@@ -4176,6 +4180,12 @@ def _run_pipeline_leased(
         # the `--top` cut, which no delivery or lane detector above can see because the lead was
         # never delivered. Reads the population the funnel read. Non-fatal. Above `_emit_morning`
         # like every soft alert here.
+        #
+        # Digest-only, NOT escalated (D-695): it is a ranking outcome, not a fault, and while the
+        # owner's queue holds hundreds of delivered, unapplied leads a closed buried one is not a
+        # lost job. Escalated, it drove the healthchecks monitor DOWN after nearly every run (it
+        # was the only escalated alert of run 2855), which teaches the owner to ignore DOWN. A
+        # FAILURE of the check below stays escalatable: a detector that stopped working is a fault.
         try:
             buried_alert = (
                 check_buried_good_lead(engine, summary.buried, run_id=run_id)
@@ -4183,6 +4193,7 @@ def _run_pipeline_leased(
             )
             if buried_alert is not None:
                 console.print(f"  ! {buried_alert}", markup=False)
+                not_escalated.add(len(summary.errors))
                 summary.errors.append(buried_alert)
                 _record_run_error(engine, run_id, buried_alert)
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
@@ -4533,7 +4544,13 @@ def _run_pipeline_leased(
             # The SLICE, never the whole list — see `escalatable_from` above. A stage error is
             # not an alert, and escalating one is how this channel would train its reader to
             # ignore it.
-            escalation_alert = escalate_alerts(run_id, tuple(summary.errors[escalatable_from:]))
+            escalation_alert = escalate_alerts(
+                run_id,
+                tuple(
+                    alert for i, alert in enumerate(summary.errors)
+                    if i >= escalatable_from and i not in not_escalated
+                ),
+            )
             if escalation_alert is not None:
                 console.print(f"  ! {escalation_alert}", markup=False)
                 summary.errors.append(escalation_alert)

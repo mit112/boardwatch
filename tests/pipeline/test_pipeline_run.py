@@ -1787,6 +1787,69 @@ def test_a_stage_error_is_NOT_escalated(
     )
 
 
+def test_the_buried_reading_reaches_the_digest_but_is_NOT_escalated(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-695: a closed buried lead is a ranking outcome, not a fault. It was the only escalated
+    alert of run 2855 and drove the monitor DOWN after nearly every run. The digest keeps it; the
+    escalation payload must not, while an alert raised beside it still goes out."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "check_buried_good_lead", lambda *_a, **_k: "MARKER-buried")
+    monkeypatch.setattr(runner_mod, "check_intake_death", lambda *_a, **_k: "MARKER-alert")
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    summary = _pipeline(env, tmp_path / "apps")
+
+    assert captured, "escalation was never called"
+    assert "MARKER-alert" in captured[-1], "guard: a real alert must still be escalated"
+    assert "MARKER-buried" not in captured[-1], (
+        "the buried reading reached the escalation payload — it drives the monitor DOWN daily"
+    )
+    assert summary.morning is not None
+    assert "MARKER-buried" in summary.morning.markdown_path.read_text(encoding="utf-8"), (
+        "the buried reading must stay in the morning digest"
+    )
+
+
+def test_a_FAILED_buried_check_is_still_escalated(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A detector that stopped working is a fault, whatever it measured (D-695 keeps it out only
+    when it RAN)."""
+    _ready(env)
+
+    import boardwatch.pipeline.runner as runner_mod
+
+    def boom(*_a: object, **_k: object) -> str:
+        raise RuntimeError("MARKER-broken")
+
+    monkeypatch.setattr(runner_mod, "check_buried_good_lead", boom)
+    monkeypatch.setattr(runner_mod, "send_heartbeat", lambda: None)
+    captured: list[tuple[str, ...]] = []
+
+    def spy(run_id: int, alerts: tuple[str, ...], **_k: object) -> None:
+        captured.append(tuple(alerts))
+        return None
+
+    monkeypatch.setattr(runner_mod, "escalate_alerts", spy)
+
+    _pipeline(env, tmp_path / "apps")
+
+    assert captured and any("MARKER-broken" in a for a in captured[-1]), (
+        "a buried check that raised must reach the escalation payload"
+    )
+
+
 def test_the_runner_lets_escalation_read_the_REAL_environment(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
