@@ -12,6 +12,12 @@ from sqlalchemy.exc import OperationalError
 
 from boardwatch.store import store_hygiene_queries as hygiene
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.quarantine_queries import (
+    drain_quarantine,
+    is_quarantined,
+    live_quarantine,
+    record_quarantine,
+)
 from boardwatch.store.store_hygiene_queries import store_hygiene
 from boardwatch.store.tables import jobs, posting_versions, runs
 from tests.unit.test_web_server import _deliver
@@ -386,3 +392,143 @@ def test_a_late_timer_never_interrupts_the_next_statement(
         ).scalar()
         fire.join()
     assert got == 3000000
+
+
+# --- T319: a re-quarantine keeps the first hold time and the last drain -------------------------
+
+T1 = datetime(2026, 11, 1, 12, 0, 0)  # first held
+T2 = datetime(2026, 11, 10, 12, 0, 0)  # drained, or re-recorded
+T3 = datetime(2026, 11, 15, 12, 0, 0)  # held again
+T4 = datetime(2026, 11, 16, 12, 0, 0)  # drained a second time
+
+
+def _hold(conn: Connection, version: int, posting: int, at: datetime) -> None:
+    record_quarantine(
+        conn, posting_version_id=version, posting_id=posting, markers=["m"], now=at
+    )
+
+
+def _row(conn: Connection, version: int) -> tuple[object, ...]:
+    r = conn.execute(
+        text(
+            "SELECT quarantined_at, reopened_at, last_drained_at FROM quarantined_bodies"
+            " WHERE posting_version_id = :v"
+        ),
+        {"v": version},
+    ).one()
+    return tuple(r)
+
+
+def _drain_by_supersession(conn: Connection, posting: int, n: int, at: datetime) -> int:
+    """A newer version of the same posting exists, so the real drain releases the older one."""
+    _version(conn, posting, n)
+    return drain_quarantine(conn, now=at)
+
+
+def test_re_recording_a_held_body_keeps_its_first_quarantine_time(engine: Engine) -> None:
+    """A held body re-recorded 9 days later (every gate seam does this) is still held since T1.
+
+    Hand-worked: held at 2026-11-01 12:00, now 2026-11-17 12:00 -> oldest held is 16.0 days, and
+    the one quarantine falls in the week of 10-26. Reset to T2 it would read 7.0 days / week 11-09.
+    """
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "t319a", judge=False)
+        version = _version(conn, posting, 1)
+        _hold(conn, version, posting, T1)
+        _hold(conn, version, posting, T2)
+        stamps = _row(conn, version)
+        got = store_hygiene(conn, UNUSED, now=NOW)["quarantine"]
+    assert stamps == ("2026-11-01 12:00:00.000000", None, None)
+    assert (got["held"], got["drained"]) == (1, 0)
+    assert got["oldest_held_days"] == 16.0
+    assert [w["quarantined"] for w in got["weekly"]] == [0, 0, 0, 0, 1, 0, 0, 0]
+
+
+def test_a_drained_then_re_held_body_keeps_its_drain_visible(engine: Engine) -> None:
+    """Held T1, drained T2 (11-10), held again T3 (11-15). Today is 11-17.
+
+    `reopened_at` is cleared (the body is held), but the 11-10 drain is 7.0 days ago: the drain
+    ran, so the panel is NOT stalled and shows it. With the drain lost (the old behaviour) the
+    only held row has no drain anywhere: last drain None, stalled True.
+    """
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "t319b", judge=False)
+        version = _version(conn, posting, 1)
+        _hold(conn, version, posting, T1)
+        assert _drain_by_supersession(conn, posting, 2, T2) == 1
+        _hold(conn, version, posting, T3)
+        stamps = _row(conn, version)
+        got = store_hygiene(conn, UNUSED, now=NOW)["quarantine"]
+    assert stamps == (
+        "2026-11-01 12:00:00.000000",
+        None,
+        "2026-11-10 12:00:00.000000",
+    )
+    assert (got["held"], got["drained"]) == (1, 0)
+    assert got["last_drained_at"] == "2026-11-10T12:00:00"
+    assert got["days_since_drain"] == 7.0
+    assert got["stalled"] is False
+    # The drain is on record in the week of 11-09; the quarantine stays in the week of 10-26.
+    assert [w["drained"] for w in got["weekly"]] == [0, 0, 0, 0, 0, 0, 1, 0]
+    assert [w["quarantined"] for w in got["weekly"]] == [0, 0, 0, 0, 1, 0, 0, 0]
+
+
+def test_re_recording_a_re_held_body_does_not_wipe_the_earlier_drain(engine: Engine) -> None:
+    """Held, drained, held (T3), then re-recorded again (T4): the drain from T2 must survive the
+    second conflict, whose `reopened_at` is already NULL (a plain overwrite would store NULL)."""
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "t319c", judge=False)
+        version = _version(conn, posting, 1)
+        _hold(conn, version, posting, T1)
+        _drain_by_supersession(conn, posting, 2, T2)
+        _hold(conn, version, posting, T3)
+        _hold(conn, version, posting, T4)
+        assert _row(conn, version) == (
+            "2026-11-01 12:00:00.000000",
+            None,
+            "2026-11-10 12:00:00.000000",
+        )
+
+
+def test_the_second_drain_is_the_live_one_and_the_first_stays_on_record(engine: Engine) -> None:
+    """Drained T2, held T3, drained again T4: `reopened_at` = T4 means drained NOW (readers), and
+    `last_drained_at` = T2 is the earlier drain. Both count in the weekly drained column
+    (T2 in week 11-09, T4 in week 11-16); the drained count is versions drained now: 1."""
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "t319d", judge=False)
+        version = _version(conn, posting, 1)
+        _hold(conn, version, posting, T1)
+        _drain_by_supersession(conn, posting, 2, T2)
+        _hold(conn, version, posting, T3)
+        assert drain_quarantine(conn, now=T4) == 1
+        stamps = _row(conn, version)
+        got = store_hygiene(conn, UNUSED, now=NOW)["quarantine"]
+        live = live_quarantine(conn)
+        held_now = is_quarantined(conn, version)
+    assert stamps == (
+        "2026-11-01 12:00:00.000000",
+        "2026-11-16 12:00:00.000000",
+        "2026-11-10 12:00:00.000000",
+    )
+    assert live == {} and held_now is False
+    assert (got["held"], got["drained"]) == (0, 1)
+    assert got["last_drained_at"] == "2026-11-16T12:00:00"
+    assert [w["drained"] for w in got["weekly"]] == [0, 0, 0, 0, 0, 0, 1, 1]
+
+
+def test_the_drain_readers_still_key_on_reopened_at_alone(engine: Engine) -> None:
+    """`live_quarantine` / `is_quarantined` mean "reopened_at IS NULL" and ignore the new column:
+    a re-held row that has `last_drained_at` set is live. And a plain drain never writes it."""
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "t319e", judge=False)
+        version = _version(conn, posting, 1)
+        _hold(conn, version, posting, T1)
+        assert is_quarantined(conn, version) is True
+        assert live_quarantine(conn) == {version: ("m",)}
+        _drain_by_supersession(conn, posting, 2, T2)
+        assert is_quarantined(conn, version) is False
+        assert live_quarantine(conn) == {}
+        assert _row(conn, version)[2] is None  # a plain drain never writes the new column
+        _hold(conn, version, posting, T3)
+        assert is_quarantined(conn, version) is True  # re-held, with last_drained_at set
+        assert live_quarantine(conn) == {version: ("m",)}

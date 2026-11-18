@@ -22,6 +22,12 @@ All notable changes to this project are documented here. The format follows
   so `postings refetch --apply` (which adds a version with no run or event) is not served from the superseded verdict.
   JD changes take a posting's newest build by when it finished, not by which JD it was built from, and the panel says
   revisions are counted after the version a résumé was built from.
+- **A quarantined body keeps its history when it is held again (T319).** Re-recording a body that is already held no
+  longer resets `quarantined_at`, so the store-hygiene panel stops showing an old body as newly held. Re-quarantining a
+  drained body clears `reopened_at` as before (readers use it to mean held) but first copies the drain to a new
+  nullable column, `quarantined_bodies.last_drained_at`, and the panel counts it in the last-drain time, the stall test
+  and the weekly drained column, so a drain that ran no longer reads as a stalled drain. Additive migration
+  `p_quarantine_last_drained`.
 
 - **Review follow-ups from T303–T313.** Lead aging and source yield count an application only while its status is in
   the applied set, so an accidental mark undone on the Applied page (status `withdrawn`, `submitted_at` kept) no
