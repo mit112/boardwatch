@@ -4202,6 +4202,50 @@ def test_build_economics_joins_each_nightly_run_to_its_tailor_stage(
     assert call(live, "/api/build-economics").status == 401
 
 
+
+def test_withdrawals_are_served_with_their_reason_and_need_the_token(
+    live: Live, engine: Engine
+) -> None:
+    """T311 follow-up: the panel's own test mocks the client, so this goes through the route.
+    Applied at NOW, withdrawn 2 days later with a note: one row, "after_applying", 2.0 days."""
+    with engine.begin() as conn:
+        _, job = _deliver(conn, "withdrawn-route", judge=False)
+        app = int(
+            conn.execute(
+                insert(applications).values(
+                    job_id=job,
+                    attempt_no=1,
+                    status="withdrawn",
+                    created_at=NOW,
+                    updated_at=NOW,
+                    submitted_at=NOW,
+                )
+            ).inserted_primary_key[0]
+        )
+        for kind, frm, to, at, note in (
+            ("created", None, "applied", NOW, None),
+            ("status_change", "applied", "withdrawn", NOW + timedelta(days=2), "role filled"),
+        ):
+            conn.execute(
+                insert(application_events).values(
+                    application_id=app,
+                    event_type=kind,
+                    from_status=frm,
+                    to_status=to,
+                    occurred_at=at,
+                    recorded_at=at,
+                    source="user",
+                    note=note,
+                )
+            )
+
+    got = call(live, "/api/withdrawals", bearer=live.token).json()["withdrawals"]
+
+    assert [(w["application_id"], w["kind"], w["days_after_applying"], w["note"]) for w in got] == [
+        (app, "after_applying", 2.0, "role filled")
+    ]
+    assert call(live, "/api/withdrawals").status == 401
+
 def test_store_hygiene_is_served_read_only(live: Live, engine: Engine) -> None:
     """T313: `/api/store-hygiene` reports the store file and needs the bearer."""
     with engine.begin() as conn:
