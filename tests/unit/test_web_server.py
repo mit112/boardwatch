@@ -3843,3 +3843,15 @@ def test_untagged_or_running_work_is_not_assumed_daily(live: Live, engine: Engin
     by_id = {r["id"]: r for r in call(live, "/api/runs", bearer=live.token).json()["runs"]}
     assert by_id[legacy]["kind"] == "unknown"
     assert by_id[running]["kind"] == "delivery" and by_id[running]["finished"] is None
+
+
+def test_companions_are_served_from_the_data_dir(live: Live, ctx: ApiContext) -> None:
+    """T294: `/api/companions` reads `<data_dir>/companions/*.json`; a bad file reads as failed."""
+    assert call(live, "/api/companions", bearer=live.token).json() == {"companions": []}
+    folder = ctx.settings.data_dir / "companions"
+    folder.mkdir(parents=True)
+    (folder / "planner.json").write_text("{", encoding="utf-8")
+
+    (got,) = call(live, "/api/companions", bearer=live.token).json()["companions"]
+    assert (got["name"], got["state"]) == ("planner", "failed")
+    assert call(live, "/api/companions").status == 401

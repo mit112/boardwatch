@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Companion tools can report their state to `boardwatch web` (T294).** A tool beside boardwatch writes
+  `<data_dir>/companions/<name>.json` (schema `boardwatch.companion/1`: state, summary, counts, items); the new
+  read-only `GET /api/companions` validates and serves them, reading files only, never the store. A malformed document
+  is served as `failed: unreadable status`, never dropped. Contract in `docs/companions.md`. No schema change, no
+  config key.
+
 - **Boards named by the store's verified application links can be proposed for watching (D-692).** A new read-only
   `boardwatch companies discover-destinations [--out PATH]` parses every verified destination in
   `application_destinations` to a supported provider and board, drops boards already watched, and writes the registry
