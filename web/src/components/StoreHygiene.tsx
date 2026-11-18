@@ -100,7 +100,7 @@ export function StoreHygiene() {
 
       <h3 className="label-micro mt-4 text-fg-3">Duplicate grouping</h3>
       <p className="mt-1 text-sm text-fg-2">
-        {formatCount(g.merges)} postings merged into another job
+        {formatCount(g.merges)} merge events (a posting can move more than once)
         {g.per_1000_postings === null
           ? "."
           : `, ${g.per_1000_postings.toFixed(2)} per 1,000 of about ${formatCount(g.postings_approx)} postings stored.`}{" "}
