@@ -148,8 +148,9 @@ def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
     later instant. An import (created event `source = 'import'`) is dated only when its row
     supplied `applied_at`: `create_application` otherwise stamps the event's `occurred_at` with
     the same instant as `created_at`, the import time. A job with an undated import was applied
-    to on a date nobody recorded, which may precede any later dated retry, so it is reported as
-    applied with no measured wait whatever else it carries.
+    to on a date nobody recorded, which may precede any later dated retry, so lead aging reports it
+    as applied with no measured wait whatever else it carries. Its dated attempts are still in
+    `dated`: build economics needs them (a dated attempt before the build is evidence enough).
     """
     dated: dict[int, datetime] = {}
     undated: set[int] = set()
@@ -193,8 +194,6 @@ def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
         at = _naive(r.submitted_at)
         if job not in dated or at < dated[job]:
             dated[job] = at
-    for job in undated:
-        dated.pop(job, None)
     return dated, undated
 
 

@@ -110,12 +110,10 @@ def lead_outcomes(conn: Connection) -> dict[str, Any]:
     rendered = _rendered_jobs(conn)
     dated, undated = _first_applied(conn)
     applied = set(dated) | undated
-    # An undated import may precede or follow the build: nobody recorded when, so it stays applied.
-    before_build = {
-        job
-        for job, at in dated.items()
-        if job in rendered and job not in undated and at < rendered[job]
-    }
+    # A dated attempt before the first build is evidence the owner applied without it, even when
+    # the job also has an undated import. An undated import alone may precede or follow the build:
+    # nobody recorded when, so it stays applied.
+    before_build = {job for job, at in dated.items() if job in rendered and at < rendered[job]}
     skipped = {
         job: stamp
         for job, raw in skipped_job_ids(conn).items()
