@@ -56,6 +56,7 @@ from boardwatch.store.tables import (
     applications,
     companies,
     posting_events,
+    posting_versions,
     postings,
     runs,
 )
@@ -129,7 +130,9 @@ def _aggregate(conn: Connection, identity: tuple[str, str] | None, now: datetime
     return _Aggregate(dict(new), dict(eligible_new), eligible)
 
 
-_Key = tuple[str, int | None, int | None, int | None, tuple[str, str] | None, str, str]
+_Key = tuple[
+    str, int | None, int | None, int | None, int | None, tuple[str, str] | None, str, str
+]
 _memo: tuple[_Key, _Aggregate] | None = None
 
 
@@ -139,6 +142,9 @@ def _memo_key(conn: Connection, identity: tuple[str, str] | None, now: datetime)
         _inode(conn.engine),
         conn.execute(select(func.max(runs.c.id)).where(runs.c.finished_at.is_not(None))).scalar(),
         conn.execute(select(func.max(posting_events.c.id))).scalar(),
+        # `postings refetch --apply` adds a version with no run and no event (T320): without
+        # this the warm memo could keep counting the verdict of the version it superseded.
+        conn.execute(select(func.max(posting_versions.c.id))).scalar(),
         identity,
         engine_version(),
         now.date().isoformat(),

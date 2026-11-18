@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **T320: company hiring and JD-change edge cases.** The company-hiring memo also keys on the newest posting version,
+  so `postings refetch --apply` (which adds a version with no run or event) is not served from the superseded verdict.
+  JD changes take a posting's newest build by when it finished, not by which JD it was built from, and the panel says
+  revisions are counted after the version a résumé was built from.
+
 - **Review follow-ups from T303–T313.** Lead aging and source yield count an application only while its status is in
   the applied set, so an accidental mark undone on the Applied page (status `withdrawn`, `submitted_at` kept) no
   longer counts as applied. A malformed local `rules.yaml` is answered as a 503 naming the parser's message instead of
