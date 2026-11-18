@@ -16,9 +16,10 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
-  row per withdrawn application, from its first withdrawal (a later `withdrawn -> withdrawn` event is a repeat, not a
-  second one), split into pulled back after applying (with days since applying) and declined before sending, with the
-  recorded note. The live store holds 39, all declined before sending; the 40 other `withdrawn` events are repeats.
+  row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a
+  repeat, not a second one), split into pulled back after applying (left a submitted status; days since applying when
+  the applied date is known) and declined before sending, with the recorded note. The panel re-reads on every Applied
+  reload. The live store holds 39, all declined before sending; the 40 other `withdrawn` events are repeats.
   Outcomes past applied stay out of scope.
 
 - **The Runs page shows discovery yield per source (T306).** One row per source (Greenhouse, Ashby, LinkedIn, Indeed,
