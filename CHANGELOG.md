@@ -45,6 +45,14 @@ All notable changes to this project are documented here. The format follows
   server change is a read-only `provider` field on each `/api/applied` row (`applications` joined to `postings` and
   `companies`); no new route, no write path, no schema change.
 
+- **Run trends on the web app's Runs page (T299).** Sparklines over the last 30 nightly runs (finished, non-incremental
+  `delivery` runs by `run_kind`, so the CLI's own rows never appear) for run length, each stage's length from the stage
+  clock, new postings, newly eligible (the shortlist stage's run-scoped judged count) and résumés built (the tailor
+  stage's `advanced`), with the latest value and the median in text. A line above them names the newest run when it took
+  1.25 times the median or more, and the stage furthest over its own median. A run with no funnel, or one older than the
+  stage clock, is a gap in the line and a "not measured" count, never a zero. New read-only `GET /api/runs/trends`: the
+  run rows plus at most 30 small funnel files, no table scan and no write path.
+
 - **Boards named by the store's verified application links can be proposed for watching (D-692).** A new read-only
   `boardwatch companies discover-destinations [--out PATH]` parses every verified destination in
   `application_destinations` to a supported provider and board, drops boards already watched, and writes the registry

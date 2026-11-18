@@ -51,7 +51,7 @@ from boardwatch.delivery.answers import (
     WORK_AUTH_JURISDICTION_WORDS,
     WORK_AUTH_STATUS_WORDS,
 )
-from boardwatch.delivery.api import ApiContext, local_today
+from boardwatch.delivery.api import TRENDS_LIMIT, ApiContext, local_today
 from boardwatch.delivery.queue import MANUAL_DIR, SKIPPED_DIR, sync_queue
 from boardwatch.delivery.server import (
     CONTENT_SECURITY_POLICY,
@@ -75,7 +75,7 @@ from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
-from boardwatch.store.queries import save_eligibility, save_profile
+from boardwatch.store.queries import insert_run, save_eligibility, save_profile
 from boardwatch.store.queue_state import followup_job_dates, skipped_job_ids
 from boardwatch.store.tables import (
     app_state,
@@ -3178,6 +3178,136 @@ def test_a_runs_funnel_artifact_is_passed_through(
     assert payload == {"run_id": run_id, "stages": [], "reconciles": True}
     # An exact numeric name: `funnel-7.json` must never answer for run 70.
     assert call(live, f"/api/runs/{run_id}0", bearer=live.token).status == 404
+
+
+def _timed_run(conn: Connection, *, minutes: int, new_count: int | None) -> int:
+    """A finished delivery run that lasted `minutes`, with its own `new_count`."""
+    return int(
+        conn.execute(
+            insert(runs).values(
+                started_at=NOW - timedelta(minutes=minutes),
+                finished_at=NOW,
+                boards_attempted=3,
+                corpus_open=120,
+                new_count=new_count,
+                status="ok",
+            )
+        ).inserted_primary_key[0]
+    )
+
+
+def _write_funnel(ctx: ApiContext, run_id: int, body: dict[str, Any], *, day: str) -> None:
+    folder = ctx.out_root / day
+    folder.mkdir(exist_ok=True)
+    (folder / f"funnel-{run_id}.json").write_text(json.dumps(body), encoding="utf-8")
+
+
+def test_run_trends_are_oldest_first_and_read_each_funnel(
+    live: Live, ctx: ApiContext, engine: Engine
+) -> None:
+    with engine.begin() as conn:
+        first = _timed_run(conn, minutes=30, new_count=11)
+        second = _timed_run(conn, minutes=50, new_count=22)
+    _write_funnel(
+        ctx,
+        first,
+        {
+            "stage_durations": [{"name": "scan", "seconds": 600.5}, {"name": "tailor", "seconds": 90}],
+            "stages": [
+                {"name": "shortlist", "advanced": 8, "run_scoped_attribution": {"judged": 345}},
+                {"name": "tailor", "advanced": 6, "run_scoped_attribution": None},
+            ],
+        },
+        day="2026-08-25",
+    )
+    _write_funnel(
+        ctx,
+        second,
+        {
+            "stage_durations": [
+                {"name": "scan", "seconds": 610},
+                {"name": "lanes", "seconds": 5},
+                {"name": "tailor", "seconds": 1500},
+            ],
+            "stages": [
+                {"name": "shortlist", "advanced": 9, "run_scoped_attribution": {"judged": 400}},
+                {"name": "tailor", "advanced": 9, "run_scoped_attribution": None},
+            ],
+        },
+        day="2026-08-26",
+    )
+
+    payload = call(live, "/api/runs/trends", bearer=live.token).json()
+
+    assert [point["id"] for point in payload["runs"]] == [first, second]
+    # The newest run's stage order leads, then any stage only an older run timed.
+    assert payload["stage_names"] == ["scan", "lanes", "tailor"]
+    old, new = payload["runs"]
+    assert (old["seconds"], new["seconds"]) == (30 * 60, 50 * 60)
+    assert (old["new_count"], new["new_count"]) == (11, 22)
+    assert (old["newly_eligible"], new["newly_eligible"]) == (345, 400)
+    assert (old["resumes_built"], new["resumes_built"]) == (6, 9)
+    assert old["stage_seconds"] == {"scan": 600.5, "tailor": 90.0}
+    assert new["stage_seconds"] == {"scan": 610.0, "lanes": 5.0, "tailor": 1500.0}
+
+
+def test_run_trends_leave_a_gap_where_nothing_was_measured(
+    live: Live, ctx: ApiContext, engine: Engine
+) -> None:
+    with engine.begin() as conn:
+        no_file = _timed_run(conn, minutes=10, new_count=None)
+        old_writer = _timed_run(conn, minutes=12, new_count=4)
+        bad_json = _timed_run(conn, minutes=14, new_count=5)
+    # An artifact older than the stage clock and the attribution block.
+    _write_funnel(ctx, old_writer, {"stage_durations": None, "stages": [{"name": "tailor"}]},
+                  day="2026-08-25")
+    folder = ctx.out_root / "2026-08-26"
+    folder.mkdir()
+    (folder / f"funnel-{bad_json}.json").write_text("{not json", encoding="utf-8")
+
+    by_id = {p["id"]: p for p in call(live, "/api/runs/trends", bearer=live.token).json()["runs"]}
+
+    assert set(by_id) == {no_file, old_writer, bad_json}
+    for run_id in (no_file, old_writer, bad_json):
+        point = by_id[run_id]
+        # Absent, never 0: a zero would draw a run that built nothing in a minute.
+        assert point["stage_seconds"] is None
+        assert point["newly_eligible"] is None
+        assert point["resumes_built"] is None
+    assert by_id[no_file]["new_count"] is None
+    assert by_id[old_writer]["new_count"] == 4
+
+
+def test_run_trends_exclude_cli_incremental_and_unfinished_rows(
+    live: Live, engine: Engine
+) -> None:
+    with engine.begin() as conn:
+        nightly = _timed_run(conn, minutes=20, new_count=1)
+        unfinished = _run(conn, finished=None)
+        incremental = _timed_run(conn, minutes=20, new_count=2)
+        conn.execute(update(runs).where(runs.c.id == incremental).values(incremental=True))
+    # A CLI row (`top`, `doctor`, a re-render): finished and non-incremental, but its purpose is
+    # `maintenance`, which is what keeps it out of every cross-run query. A scan-only run too.
+    for kind in ("maintenance", "scan"):
+        other = insert_run(engine, kind=kind)
+        with engine.begin() as conn:
+            conn.execute(
+                update(runs).where(runs.c.id == other).values(finished_at=NOW, status="ok")
+            )
+
+    ids = [p["id"] for p in call(live, "/api/runs/trends", bearer=live.token).json()["runs"]]
+
+    assert ids == [nightly]
+    assert unfinished not in ids
+
+
+def test_run_trends_span_the_last_thirty_nightly_runs(live: Live, engine: Engine) -> None:
+    with engine.begin() as conn:
+        made = [_timed_run(conn, minutes=20, new_count=n) for n in range(TRENDS_LIMIT + 5)]
+
+    ids = [p["id"] for p in call(live, "/api/runs/trends", bearer=live.token).json()["runs"]]
+
+    assert ids == made[5:]
 
 
 # ---------------------------------------------------------------------------------- the token

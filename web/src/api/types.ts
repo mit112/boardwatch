@@ -724,6 +724,31 @@ export interface RunsResponse {
   runs: RunSummary[];
 }
 
+/**
+ * One nightly run's point on the trend sparklines (`GET /api/runs/trends`, oldest first). Every
+ * measurement is `null` when it was not measured — a funnel gone, or older than the stage clock —
+ * and a null is a gap in the line, never a zero.
+ */
+export interface RunTrendPoint {
+  id: number;
+  started: string | null;
+  finished: string | null;
+  /** Wall clock from the run row. */
+  seconds: number | null;
+  new_count: number | null;
+  /** Seconds per stage name, from the run's stage clock. `null`: the run was not timed. */
+  stage_seconds: Record<string, number> | null;
+  /** Candidate (eligible or uncertain) verdicts this run itself produced. */
+  newly_eligible: number | null;
+  resumes_built: number | null;
+}
+
+export interface RunTrends {
+  /** Every stage any listed run timed, in the newest run's order. */
+  stage_names: string[];
+  runs: RunTrendPoint[];
+}
+
 /* The funnel artifact, passed through by `GET /api/runs/{run_id}`. Keys transcribed from
  * `reports/run_funnel.funnel_to_dict`; only what the page renders is typed. */
 

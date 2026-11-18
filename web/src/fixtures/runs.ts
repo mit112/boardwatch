@@ -5,7 +5,7 @@
  * remainder of the others, and `entered`/`advanced` of `null` on a stage that was not instrumented
  * (which is NOT the same as a stage that measured zero).
  */
-import type { RunFunnel, RunSummary } from "../api/types";
+import type { RunFunnel, RunSummary, RunTrends } from "../api/types";
 
 export const RUNS: RunSummary[] = [
   {
@@ -323,4 +323,36 @@ export const FUNNELS: Record<number, RunFunnel> = {
     fatal: "cohort incomplete: 10 shortlisted candidates unaccounted: 4288, 20797, 20798, 20812, 20834, 20841, 20855, 20857, 20861, 20869",
     errors: ["scan aborted: 61 of 124 boards unreachable", "no leads emitted"],
   },
+};
+
+/**
+ * Twelve nightly runs for the trend sparklines, oldest first. Built to show the two things the
+ * strip has to say: a gap (run 107 predates the stage clock, so it has no stage times and no
+ * counts — an absence, not zeros) and a slow night (run 114's tailor stage ran long).
+ */
+export const TRENDS: RunTrends = {
+  stage_names: ["scan", "lanes", "liveness", "eligibility", "shortlist", "tailor", "delivery"],
+  runs: [103, 104, 105, 106, 107, 108, 109, 111, 112, 113, 114].map((id, index) => {
+    const timed = id !== 107;
+    const tailor = id === 114 ? 1071.884 : 300 + (index % 3) * 40;
+    const stages = {
+      scan: 590 + index * 3,
+      lanes: 26 + (index % 2),
+      liveness: 180 + index,
+      eligibility: 12,
+      shortlist: 3,
+      tailor,
+      delivery: 4.6,
+    };
+    return {
+      id,
+      started: `2026-08-${String(index + 14).padStart(2, "0")}T06:00:04Z`,
+      finished: `2026-08-${String(index + 14).padStart(2, "0")}T06:31:52Z`,
+      seconds: Object.values(stages).reduce((sum, value) => sum + value, 0) + 20,
+      new_count: 200 + ((index * 37) % 90),
+      stage_seconds: timed ? stages : null,
+      newly_eligible: timed ? 3200 + ((index * 211) % 700) : null,
+      resumes_built: timed ? 6 + (index % 4) : null,
+    };
+  }),
 };
