@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 vi.mock("../api/client", () => ({ getCompanyHiring: vi.fn() }));
@@ -47,10 +47,20 @@ const DATA: CompanyHiringData = {
   watched_rows: [BIRCH],
 };
 
+
+/** The section once its data has drawn. The loading placeholder carries the same name, so
+ * finding the region alone can return before the rows exist (a CI flake, 2026-11-18). */
+async function loaded(): Promise<HTMLElement> {
+  await waitFor(() => {
+    expect(screen.queryByText(/Loading company hiring/)).toBeNull();
+  });
+  return screen.getByRole("region", { name: "Company hiring" });
+}
+
 it("prints the window, the counts per company and the newest open eligible role", async () => {
   vi.mocked(getCompanyHiring).mockResolvedValue(DATA);
   render(<CompanyHiring />);
-  const section = await screen.findByRole("region", { name: "Company hiring" });
+  const section = await loaded();
   expect(section.textContent).toContain("Postings first seen in the last 56 days (8 weeks)");
   expect(section.textContent).toContain("13 new across 2 companies, 5 eligible now");
   expect(within(section).getByRole("row", { name: /^Acme/ }).textContent).toBe(
@@ -65,7 +75,7 @@ it("prints the window, the counts per company and the newest open eligible role"
 it("filters to watched companies, which can include one the overall list left out", async () => {
   vi.mocked(getCompanyHiring).mockResolvedValue({ ...DATA, rows: [ACME], watched_rows: [BIRCH] });
   render(<CompanyHiring />);
-  const section = await screen.findByRole("region", { name: "Company hiring" });
+  const section = await loaded();
   expect(within(section).queryByRole("row", { name: /^Birch/ })).toBeNull();
   fireEvent.click(within(section).getByRole("checkbox", { name: "Watched companies only" }));
   expect(within(section).getByRole("row", { name: /^Birch/ })).toBeDefined();
@@ -75,7 +85,7 @@ it("filters to watched companies, which can include one the overall list left ou
 it("says so when no watched company has a new posting", async () => {
   vi.mocked(getCompanyHiring).mockResolvedValue({ ...DATA, watched_rows: [] });
   render(<CompanyHiring />);
-  const section = await screen.findByRole("region", { name: "Company hiring" });
+  const section = await loaded();
   fireEvent.click(within(section).getByRole("checkbox", { name: "Watched companies only" }));
   expect(section.textContent).toContain("No watched company has a new posting in this window.");
 });
@@ -91,7 +101,7 @@ it("shows dashes, not zero, for eligible when there is no profile", async () => 
     watched_rows: [],
   });
   render(<CompanyHiring />);
-  const section = await screen.findByRole("region", { name: "Company hiring" });
+  const section = await loaded();
   expect(section.textContent).toContain("eligible is not measured");
   expect(section.textContent).not.toContain("eligible now");
   expect(within(section).getByRole("row", { name: /^Acme/ }).textContent).toBe(
