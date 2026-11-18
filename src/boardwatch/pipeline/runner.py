@@ -294,6 +294,13 @@ def _record_run_error(engine: Engine, run_id: int, note: str) -> None:
     except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
         print(f"  ! could not record a run error ({exc}): {note}", file=sys.stderr)
 
+
+#: T315: the near-miss stage's time budget. Six times its measured cost on the live store
+#: (98.7 s, 2026-11-18); past it the stage records "not written" rather than running on.
+NEAR_MISS_BUDGET_SECONDS = 600.0
+#: How many SQLite VM steps pass between deadline checks: rare enough to cost nothing measurable.
+NEAR_MISS_CHECK_STEPS = 100_000
+
 def _linkedin_lane(ctx: LaneContext) -> LinkedInLane:
     """The LinkedIn lane for one run. `ctx.rotation_index` selects this run's slice of the matrix.
 
@@ -3958,7 +3965,19 @@ def _run_pipeline_leased(
         if fresh_hours is None:
             try:
                 with engine.connect() as conn:
-                    near_miss = compute_near_miss_report(conn, settings)
+                    # T315: bounded. SQLite calls the handler every N VM steps, and a non-zero
+                    # return aborts the statement, so a pass far past its measured cost (98.7 s
+                    # on the live store) stops instead of holding the lease and its read
+                    # snapshot on. The abort lands in the handler below: a run error, no report.
+                    raw = conn.connection.driver_connection
+                    deadline = perf_counter() + NEAR_MISS_BUDGET_SECONDS
+                    raw.set_progress_handler(  # type: ignore[union-attr]
+                        lambda: 1 if perf_counter() > deadline else 0, NEAR_MISS_CHECK_STEPS
+                    )
+                    try:
+                        near_miss = compute_near_miss_report(conn, settings)
+                    finally:
+                        raw.set_progress_handler(None, 0)  # type: ignore[union-attr]
                 day_dir.mkdir(parents=True, exist_ok=True)
                 target = day_dir / f"{NEAR_MISS_PREFIX}{run_id}.json"
                 partial = target.with_suffix(".json.partial")
