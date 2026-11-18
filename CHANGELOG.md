@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The buried-good-lead reading no longer drives the monitor DOWN (D-695).** It stays in the run's errors, the funnel
+  and the morning digest, but is left out of the alert escalation, where it was the only alert of most runs and flipped
+  the healthchecks.io check DOWN after nearly every run. A failure of the check itself is still escalated.
+
 - **Build economics counts only builds the owner could have sent (T310 follow-up).** A tailor whose PDF failed to
   compile (`typst_pdf_built` false, not a stub) is no longer a rendered build; it joins the stubs in
   `not_rendered_leads`. A lead whose first dated application came before its first rendered résumé is taken out of the
