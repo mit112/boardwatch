@@ -332,3 +332,18 @@ def test_reopening_a_probe_closure_by_hand_keeps_the_closure(
         got = lead_aging(conn)
     assert got["outcomes"]["closed"]["count"] == 1
     assert got["outcomes"]["applied"]["count"] == 0
+
+
+def test_an_application_withdrawn_out_of_the_applied_set_is_not_applied(engine: Engine) -> None:
+    """Marked applied day 1 by accident, undone (status `withdrawn`, submitted_at kept); the
+    posting closed day 3. Nobody applied, so it closed first."""
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "x1")
+        _apply(conn, job, D0 + timedelta(days=1))
+        conn.execute(update(applications).values(status="withdrawn"))
+        _close(conn, posting, D0 + timedelta(days=3))
+        got = lead_aging(conn)
+        yielded = source_yield(conn)
+    assert got["outcomes"]["applied"]["count"] == 0
+    assert got["outcomes"]["closed"]["count"] == 1
+    assert yielded == {"ashby": {"built": 1, "applied": 0}}

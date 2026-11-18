@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Review follow-ups from T303–T313.** Lead aging and source yield count an application only while its status is in
+  the applied set, so an accidental mark undone on the Applied page (status `withdrawn`, `submitted_at` kept) no
+  longer counts as applied. A malformed local `rules.yaml` is answered as a 503 naming the parser's message instead of
+  dropping the connection. Labels: build economics names its per-run table as the latest finished nightly runs, the
+  Needs-you line no longer says nothing is waiting above unanswered form questions, store hygiene's row column says it
+  is the highest row id, and company hiring says a withdrawn job counts under withdrawn. The design-sized follow-ups
+  are tickets T314–T320.
+
 - **A closure the owner undid no longer counts in lead aging.** `postings reopen` now records each undo of an owner close under
   `posting.ownerundo.<posting_id>` in `app_state`, so it can be told from a scan reopen (both write a plain `reopened`
   event); lead aging drops the closed event an undo reverses. Undos made before this change were never recorded.

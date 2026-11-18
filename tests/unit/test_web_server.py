@@ -3396,6 +3396,23 @@ def test_an_unusable_profile_row_is_answered_not_dropped(
     assert b"eligibility_facts_json" in response.body
 
 
+
+def test_an_unusable_rules_override_is_answered_not_dropped(
+    live: Live, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A malformed local `rules.yaml` raises `CatalogError` wherever the identity resolves; it
+    used to escape and drop the connection. Answered as 503 with the parser's message."""
+    from boardwatch.eligibility.catalog import CatalogError
+
+    def raiser(*_a: object, **_k: object) -> object:
+        raise CatalogError("rules.yaml: family 'x' unknown")
+
+    monkeypatch.setattr("boardwatch.delivery.api.current_identity", raiser)
+    response = call(live, "/api/form-questions", bearer=live.token)
+    assert response.status == 503, response.body[:400]
+    assert b"family 'x' unknown" in response.body
+
+
 # -------------------------------------------------------------- the web-viewer payload contract
 
 

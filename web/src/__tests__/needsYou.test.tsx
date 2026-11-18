@@ -75,5 +75,5 @@ it("says nothing is waiting when the lists are empty", async () => {
   vi.mocked(getQueue).mockResolvedValue(queueResponse([]));
   vi.mocked(getCompanions).mockResolvedValue({ companions: [] });
   render(<NeedsYouPage />);
-  expect(await screen.findByText("Nothing is waiting on you.")).toBeDefined();
+  expect(await screen.findByText("No lead or companion is waiting on you.")).toBeDefined();
 });

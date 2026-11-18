@@ -106,7 +106,7 @@ export function BuildEconomics() {
       {data.runs.length === 0 ? null : (
         <details className="mt-3">
           <summary className="flex min-h-11 cursor-pointer items-center text-sm text-fg-2 hover:text-fg">
-            Per nightly run ({formatCount(data.runs.length)}, newest first)
+            The latest {formatCount(data.runs.length)} finished nightly runs, newest first (the totals above are all time)
           </summary>
           <p className="text-xs text-fg-3">
             Seconds per résumé is an average: the run&apos;s whole tailor stage divided by the

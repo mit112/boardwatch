@@ -56,7 +56,7 @@ export function NeedsYouPage() {
       <h2 className="text-lg font-semibold text-fg">Needs you</h2>
       <p className="mt-1 text-sm text-fg-2">
         {total === 0
-          ? "Nothing is waiting on you."
+          ? "No lead or companion is waiting on you."
           : `${String(total)} ${total === 1 ? "thing" : "things"} only you can settle. Open a lead to settle it in Jobs.`}
       </p>
       {failed.length > 0 ? (
