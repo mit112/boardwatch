@@ -12,6 +12,7 @@ looks up deterministic rows by `input_id`, which `ix_eligibility_evaluations_inp
 from __future__ import annotations
 
 from collections import Counter
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import Connection, select
@@ -40,39 +41,78 @@ def _lane(engine_version: str) -> str:
     return "final_gate" if engine_version.startswith(GATE_VERSION_PREFIX) else "advisory"
 
 
+def _order(row: Any) -> tuple[datetime, int]:
+    """(instant, id). Ordered in Python: `created_at` mixes naive-UTC and offset-carrying text,
+    and SQLite's `ORDER BY` would compare the text."""
+    at: datetime = row.created_at
+    if at.tzinfo is not None:
+        at = at.astimezone(UTC).replace(tzinfo=None)
+    return at, int(row.id)
+
+
 def judge_agreement(conn: Connection) -> dict[str, Any]:
-    llm = conn.execute(
-        select(ev.c.id, ev.c.input_id, ev.c.engine_version, ev.c.verdict, ev.c.run_id)
-        .where(ev.c.engine_kind == "llm")
-        .order_by(ev.c.created_at, ev.c.id)
-    ).all()
+    llm = sorted(
+        conn.execute(
+            select(
+                ev.c.id, ev.c.input_id, ev.c.engine_version, ev.c.verdict, ev.c.run_id,
+                ev.c.created_at,
+            ).where(ev.c.engine_kind == "llm")
+        ),
+        key=_order,
+    )
     inputs = sorted({int(r.input_id) for r in llm})
 
-    # Newest deterministic evaluation per input: (created_at, id) ascending, last one wins.
+    # Newest deterministic evaluation per input: ascending (instant, id), last one wins.
     det: dict[int, tuple[int, str]] = {}
     for chunk in id_chunks(inputs):
-        for r in conn.execute(
-            select(ev.c.id, ev.c.input_id, ev.c.verdict)
-            .where(ev.c.engine_kind == "deterministic", ev.c.input_id.in_(chunk))
-            .order_by(ev.c.created_at, ev.c.id)
-        ):
+        found = conn.execute(
+            select(ev.c.id, ev.c.input_id, ev.c.verdict, ev.c.created_at).where(
+                ev.c.engine_kind == "deterministic", ev.c.input_id.in_(chunk)
+            )
+        )
+        for r in sorted(found, key=_order):
             det[int(r.input_id)] = (int(r.id), str(r.verdict))
+
+    # input -> (posting id, title, company). A posting's split is tracked per POSTING: a profile
+    # change or JD revision makes a new input, and the newest gate reading of the posting is the
+    # one that stands, so an old input's disagreement cannot outlive a newer agreement.
+    labels: dict[int, tuple[int, str, str]] = {}
+    for chunk in id_chunks(inputs):
+        for r in conn.execute(
+            select(
+                eligibility_inputs.c.id,
+                postings.c.id.label("posting_id"),
+                postings.c.title,
+                companies.c.name,
+            )
+            .join(
+                posting_versions, eligibility_inputs.c.posting_version_id == posting_versions.c.id
+            )
+            .join(postings, posting_versions.c.posting_id == postings.c.id)
+            .join(companies, postings.c.company_id == companies.c.id)
+            .where(eligibility_inputs.c.id.in_(chunk))
+        ):
+            labels[int(r.id)] = (int(r.posting_id), str(r.title), str(r.name))
 
     # (lane, run) -> Counter[(deterministic, llm)]; an LLM row with no deterministic partner is
     # its own cell, `none`, never folded into a verdict.
     matrices: dict[tuple[str, int | None], Counter[tuple[str, str]]] = {}
-    latest_split: dict[int, tuple[str, str, str, int]] = {}  # input -> (lane, det, llm, det id)
+    # posting -> (gate evaluation order, input, det, llm, det id)
+    latest_split: dict[int, tuple[tuple[datetime, int], int, str, str, int]] = {}
     for r in llm:
         lane = _lane(str(r.engine_version))
         pair = det.get(int(r.input_id))
         det_verdict = "none" if pair is None else pair[1]
         run = None if r.run_id is None else int(r.run_id)
         matrices.setdefault((lane, run), Counter())[(det_verdict, str(r.verdict))] += 1
-        if pair is not None and lane == "final_gate":
-            if pair[1] != r.verdict:
-                latest_split[int(r.input_id)] = (lane, pair[1], str(r.verdict), pair[0])
+        label = labels.get(int(r.input_id))
+        if lane == "final_gate" and label is not None:
+            if pair is not None and pair[1] != r.verdict:
+                latest_split[label[0]] = (
+                    _order(r), int(r.input_id), pair[1], str(r.verdict), pair[0]
+                )
             else:
-                latest_split.pop(int(r.input_id), None)
+                latest_split.pop(label[0], None)
 
     runs_by_lane: dict[str, list[dict[str, Any]]] = {}
     for (lane, run), cells in sorted(matrices.items(), key=lambda kv: (kv[0][0], -(kv[0][1] or 0))):
@@ -95,31 +135,15 @@ def judge_agreement(conn: Connection) -> dict[str, Any]:
 
     # Which deterministic rules were unmet on the postings the final gate now reads differently.
     rule_counts: Counter[str] = Counter()
-    det_ids = [split[3] for split in latest_split.values()]
+    det_ids = [split[4] for split in latest_split.values()]
     for chunk in id_chunks(det_ids):
         for r in conn.execute(
             select(er.c.rule_id).where(er.c.evaluation_id.in_(chunk), er.c.disposition == "unmet")
         ):
             rule_counts[str(r.rule_id)] += 1
 
-    split_inputs = sorted(latest_split)[-SPLITS_SHOWN:]
-    labels: dict[int, tuple[int, str, str]] = {}
-    for chunk in id_chunks(split_inputs):
-        for r in conn.execute(
-            select(
-                eligibility_inputs.c.id,
-                postings.c.id.label("posting_id"),
-                postings.c.title,
-                companies.c.name,
-            )
-            .join(
-                posting_versions, eligibility_inputs.c.posting_version_id == posting_versions.c.id
-            )
-            .join(postings, posting_versions.c.posting_id == postings.c.id)
-            .join(companies, postings.c.company_id == companies.c.id)
-            .where(eligibility_inputs.c.id.in_(chunk))
-        ):
-            labels[int(r.id)] = (int(r.posting_id), str(r.title), str(r.name))
+    # Newest gate disagreements first, by when the gate read them.
+    newest = sorted(latest_split.values(), reverse=True)[:SPLITS_SHOWN]
 
     return {
         "lanes": runs_by_lane,
@@ -132,10 +156,9 @@ def judge_agreement(conn: Connection) -> dict[str, Any]:
                 "posting_id": labels[i][0],
                 "title": labels[i][1],
                 "company": labels[i][2],
-                "deterministic": latest_split[i][1],
-                "llm": latest_split[i][2],
+                "deterministic": d,
+                "llm": j,
             }
-            for i in reversed(split_inputs)
-            if i in labels
+            for _, i, d, j, _ in newest
         ],
     }

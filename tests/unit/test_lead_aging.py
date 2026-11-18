@@ -19,9 +19,10 @@ from boardwatch.store.tables import (
     application_events,
     applications,
     artifacts,
+    posting_events,
     postings,
 )
-from tests.unit.test_web_server import _deliver
+from tests.unit.test_web_server import _deliver, _run
 
 D0 = datetime(2026, 11, 1, 12, 0, 0)
 
@@ -202,3 +203,67 @@ def test_the_earliest_attempt_is_the_earliest_instant_not_the_smallest_text(
         )
         got = lead_aging(conn)
     assert got["outcomes"]["applied"]["median_days"] == round(23 / 24, 2)
+
+
+def test_an_import_that_supplied_a_date_is_measured_from_that_date(engine: Engine) -> None:
+    with engine.begin() as conn:
+        _, job = _lead(conn, "i2")
+        _imported(conn, job, D0 + timedelta(days=30))  # imported on day 30 ...
+        conn.execute(  # ... with the row's own applied_at, day 1
+            update(applications)
+            .where(applications.c.job_id == job)
+            .values(submitted_at=D0 + timedelta(days=1))
+        )
+        got = lead_aging(conn)
+    assert got["applied_date_unknown"] == 0
+    assert got["outcomes"]["applied"] == {"count": 1, "median_days": 1.0, "p90_days": 1.0}
+
+
+def test_an_undated_import_stays_undated_when_a_dated_retry_follows(engine: Engine) -> None:
+    """Imported with no date, closed day 2, retried day 5. Whenever the first application was
+    made, nobody can say it closed before anyone applied."""
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "i3")
+        _imported(conn, job, D0 + timedelta(days=1))
+        _close(conn, posting, D0 + timedelta(days=2))
+        _apply(conn, job, D0 + timedelta(days=5), attempt=2)
+        got = lead_aging(conn)
+    assert got["applied_date_unknown"] == 1
+    assert got["outcomes"]["closed"]["count"] == 0
+    assert got["outcomes"]["applied"]["count"] == 0
+
+
+def test_a_reopen_does_not_erase_the_first_closure(engine: Engine) -> None:
+    """Closed day 2 (an event), reopened (closed_at cleared), applied day 5: closed first."""
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "o1")
+        conn.execute(
+            insert(posting_events).values(
+                posting_id=posting, kind="closed", run_id=_run(conn),
+                created_at=D0 + timedelta(days=2),
+            )
+        )
+        _apply(conn, job, D0 + timedelta(days=5))
+        got = lead_aging(conn)
+    assert got["outcomes"]["closed"] == {"count": 1, "median_days": 2.0, "p90_days": 2.0}
+    assert got["outcomes"]["applied"]["count"] == 0
+
+
+def test_the_first_delivery_is_the_earliest_instant_not_the_smallest_text(
+    engine: Engine,
+) -> None:
+    """ashby delivered at 12:00 naive UTC; greenhouse at '13:00+05:00', 08:00 UTC, earlier. Text
+    order would credit ashby."""
+    with engine.begin() as conn:
+        _, job = _lead(conn, "t1", provider="ashby")
+        _deliver(conn, "t1-gh", job_id=job, delivered_at=D0, judge=False, provider="greenhouse")
+        gh_artifact = conn.execute(
+            artifacts.select().with_only_columns(artifacts.c.id).order_by(artifacts.c.id.desc())
+        ).first()
+        assert gh_artifact is not None
+        conn.execute(
+            text("UPDATE artifacts SET created_at = :at WHERE id = :id"),
+            {"at": "2026-11-01 13:00:00.000000+05:00", "id": gh_artifact.id},
+        )
+        got = source_yield(conn)
+    assert got == {"greenhouse": {"built": 1, "applied": 0}}

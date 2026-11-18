@@ -25,6 +25,7 @@ from boardwatch.store.tables import (
     applications,
     artifacts,
     companies,
+    posting_events,
     posting_versions,
     postings,
 )
@@ -70,41 +71,63 @@ def _summary(values: list[float]) -> dict[str, Any]:
 
 
 def _first_deliveries(conn: Connection) -> dict[int, _Lead]:
-    """job id -> its first tailored delivery, the source that found it, and when it closed."""
-    first: dict[int, _Lead] = {}
-    rows = conn.execute(
-        select(
-            postings.c.job_id,
-            artifacts.c.created_at,
-            postings.c.closed_at,
-            companies.c.provider,
-        )
-        .join(posting_versions, artifacts.c.posting_version_id == posting_versions.c.id)
-        .join(postings, posting_versions.c.posting_id == postings.c.id)
-        .join(companies, postings.c.company_id == companies.c.id)
-        .where(artifacts.c.kind == TAILORED_KIND, postings.c.job_id.is_not(None))
-        .order_by(artifacts.c.created_at, artifacts.c.id)
-    )
-    for row in rows:
-        job_id = int(row.job_id)
-        if job_id not in first:
-            first[job_id] = _Lead(
-                _naive(row.created_at),
-                str(row.provider),
-                None if row.closed_at is None else _naive(row.closed_at),
+    """job id -> its first tailored delivery, the source that found it, and when it closed.
+
+    "First" is the earliest instant after normalising, never SQL `ORDER BY created_at`: the
+    column mixes naive-UTC and offset-carrying text, and SQLite would order the text.
+    """
+    rows = sorted(
+        conn.execute(
+            select(
+                postings.c.job_id,
+                postings.c.id.label("posting_id"),
+                artifacts.c.id,
+                artifacts.c.created_at,
+                postings.c.closed_at,
+                companies.c.provider,
             )
+            .join(posting_versions, artifacts.c.posting_version_id == posting_versions.c.id)
+            .join(postings, posting_versions.c.posting_id == postings.c.id)
+            .join(companies, postings.c.company_id == companies.c.id)
+            .where(artifacts.c.kind == TAILORED_KIND, postings.c.job_id.is_not(None))
+        ),
+        key=lambda r: (_naive(r.created_at), int(r.id)),
+    )
+    picked: dict[int, Any] = {}
+    for row in rows:
+        picked.setdefault(int(row.job_id), row)
+
+    # A scan clears `closed_at` on a reopen, so the posting's `closed` events are read too: a lead
+    # that closed after delivery and later reopened still closed first (Codex #658).
+    close_events: dict[int, list[datetime]] = {}
+    for r in conn.execute(
+        select(posting_events.c.posting_id, posting_events.c.created_at).where(
+            posting_events.c.kind == "closed"
+        )
+    ):
+        close_events.setdefault(int(r.posting_id), []).append(_naive(r.created_at))
+
+    first: dict[int, _Lead] = {}
+    for job_id, row in picked.items():
+        delivered = _naive(row.created_at)
+        closes = close_events.get(int(row.posting_id), [])
+        if row.closed_at is not None:
+            closes = [*closes, _naive(row.closed_at)]
+        after = [c for c in closes if c >= delivered]
+        first[job_id] = _Lead(delivered, str(row.provider), min(after) if after else None)
     return first
 
 
 def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
-    """job id -> its first submitted application, and the jobs whose ONLY submission date is an
-    import's (unknown).
+    """job id -> its first dated submitted application, and the jobs with an undated import.
 
     The earliest is taken in Python after normalising, never with SQL `MIN()`: the column holds
     both naive-UTC and offset-carrying text, and SQLite compares the text, so `MIN()` can pick a
-    later instant. An imported application's `submitted_at` is the import time, not when it was
-    sent (`jobapps_history`); its created event says `source = 'import'`. Such a job still counts
-    as applied, but it has no measured date unless a non-imported attempt supplies one.
+    later instant. An import (created event `source = 'import'`) is dated only when its row
+    supplied `applied_at`: `create_application` otherwise stamps `submitted_at` with the same
+    instant as `created_at`, the import time. A job with an undated import was applied to on a
+    date nobody recorded, which may precede any later dated retry, so it is reported as applied
+    with no measured wait whatever else it carries.
     """
     imported = {
         int(r.application_id)
@@ -118,18 +141,23 @@ def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
     dated: dict[int, datetime] = {}
     undated: set[int] = set()
     for r in conn.execute(
-        select(applications.c.id, applications.c.job_id, applications.c.submitted_at).where(
-            applications.c.submitted_at.is_not(None)
-        )
+        select(
+            applications.c.id,
+            applications.c.job_id,
+            applications.c.created_at,
+            applications.c.submitted_at,
+        ).where(applications.c.submitted_at.is_not(None))
     ):
         job = int(r.job_id)
-        if int(r.id) in imported:
+        at = _naive(r.submitted_at)
+        if int(r.id) in imported and at == _naive(r.created_at):
             undated.add(job)
             continue
-        at = _naive(r.submitted_at)
         if job not in dated or at < dated[job]:
             dated[job] = at
-    return dated, undated - set(dated)
+    for job in undated:
+        dated.pop(job, None)
+    return dated, undated
 
 
 def source_yield(conn: Connection) -> dict[str, dict[str, int]]:
