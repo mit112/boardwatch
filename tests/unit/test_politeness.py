@@ -557,8 +557,12 @@ def test_two_fetcher_instances_on_different_hosts_still_overlap(tmp_path: Path) 
         respx.get("https://one.example/x").mock(side_effect=handler)
         respx.get("https://two.example/x").mock(side_effect=handler)
         settings = _settings(tmp_path, delay=1.0)
-        Fetcher(settings).get("https://one.example/x")
-        Fetcher(settings).get("https://two.example/x")
+        # Both built BEFORE either request, so the gap is the second request's wait alone. Built
+        # between them, a `Fetcher`'s own setup counted: 0.593 s on a windows-latest runner
+        # (2026-11-15 nightly), over the bound with no pacing at all.
+        first, second = Fetcher(settings), Fetcher(settings)
+        first.get("https://one.example/x")
+        second.get("https://two.example/x")
 
     gap = starts[1] - starts[0]
     assert gap < 0.5, gap
