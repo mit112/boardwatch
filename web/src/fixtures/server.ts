@@ -406,6 +406,7 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/version") return { bundle: null, code_changed: false };
   if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
+  if (method === "GET" && path === "/api/companions") return { companions: [] };
 
   // The fixture's `application_id` IS the job id (one attempt per job), so the two maps above
   // answer for it directly.

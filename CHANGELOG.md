@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch web` shows pipeline health on every page and a "Needs you" list (T293, T300).** A strip under the
+  header reads the last nightly run, the last intraday pass and each companion (T294) as green / amber / red with the
+  reason in words: red when the last attempt failed, amber when no nightly started today after 06:00. A new "Needs you"
+  tab lists held leads grouped by hold reason with what to do, apply-lane leads the rules left `uncertain`, and companion
+  items marked `needs_owner`. Read-only; settling a lead still happens in Jobs. The count is not in the strip yet: it
+  would load the queue a second time on every page.
+
 - **Companion tools can report their state to `boardwatch web` (T294).** A tool beside boardwatch writes
   `<data_dir>/companions/<name>.json` (schema `boardwatch.companion/1`: state, summary, counts, items); the new
   read-only `GET /api/companions` validates and serves them, reading files only, never the store. A malformed document

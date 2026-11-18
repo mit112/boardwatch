@@ -5,11 +5,13 @@ import { effectiveTheme, setTheme } from "./lib/theme";
 
 import { FIXTURE_MODE } from "./api/client";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { PipelineHealthStrip } from "./components/PipelineHealthStrip";
 import { StaleViewerBanner } from "./components/StaleViewerBanner";
 import { Toaster } from "./components/Toaster";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { useToasts } from "./hooks/useToasts";
 import { AppliedPage } from "./routes/AppliedPage";
+import { NeedsYouPage } from "./routes/NeedsYouPage";
 import { QueuePage } from "./routes/QueuePage";
 import { RejectedPage } from "./routes/RejectedPage";
 import { RunsPage } from "./routes/RunsPage";
@@ -137,6 +139,13 @@ export function App() {
               }}
             />
             <NavTab
+              label="Needs you"
+              active={route === "needs"}
+              onClick={() => {
+                setRoute("needs");
+              }}
+            />
+            <NavTab
               label="Runs"
               active={route === "runs"}
               onClick={() => {
@@ -164,6 +173,7 @@ export function App() {
       {/* Under the header and inert with it while the sheet is up: it is page-level advice, and
           covered by the sheet like everything else the reader cannot reach there. */}
       <div inert={sheet}>
+        <PipelineHealthStrip />
         <StaleViewerBanner />
       </div>
 
@@ -195,6 +205,8 @@ export function App() {
             <AppliedPage push={push} />
           ) : route === "rejected" ? (
             <RejectedPage push={push} />
+          ) : route === "needs" ? (
+            <NeedsYouPage />
           ) : (
             <RunsPage />
           )}

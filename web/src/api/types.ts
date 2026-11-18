@@ -675,6 +675,29 @@ export interface RunSummary {
   leads: number | null;
 }
 
+/* A companion status document (T294, `docs/companions.md`), served as validated. */
+export interface CompanionItem {
+  label: string;
+  reason?: string;
+  link?: string;
+  needs_owner?: boolean;
+}
+
+export interface Companion {
+  schema: string;
+  name: string;
+  /** `null` only on the stand-in for an unreadable document. */
+  updated_at: string | null;
+  state: "ok" | "running" | "failed" | "stale";
+  summary: string;
+  counts: Record<string, number>;
+  items: CompanionItem[];
+}
+
+export interface CompanionsResponse {
+  companions: Companion[];
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }
