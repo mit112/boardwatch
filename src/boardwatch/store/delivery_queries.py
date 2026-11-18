@@ -1003,7 +1003,12 @@ def requisition_holder_urls(
     return holders, frozenset(delivered)
 
 
-def requisition_copy_posting_ids(conn: Connection) -> set[int]:
+def requisition_copy_posting_ids(
+    conn: Connection,
+    *,
+    standing: Sequence[QueueRow] | None = None,
+    lane_copy: set[int] | None = None,
+) -> set[int]:
     """Delivered copies deferred by employer requisition, across DISTINCT jobs (D-655).
 
     Applied requisitions hold permanently, including closed or never-delivered postings.
@@ -1018,6 +1023,12 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
     Recomputed on every read, so releasing a holder restores its copy without changing the
     built ledger, artifacts, verdicts or reopened_at. Consumers reuse the existing lane-copy
     drain and count; this adds no bucket.
+
+    `standing` and `lane_copy` let a caller that already read them hand them in, so the page does
+    not run the whole `delivered_unapplied` read twice (~10 s each on the live store). `standing`
+    may exclude fewer jobs than `withheld`; the filter below finishes the exclusion, and since
+    `delivered_unapplied` picks each job's winner from that job's rows alone, the result is the
+    same as reading with `withheld`.
     """
     applied = applied_job_ids(conn)
     withheld = (
@@ -1029,9 +1040,13 @@ def requisition_copy_posting_ids(conn: Connection) -> set[int]:
         if int(row.job_id) in applied
         if (key := posting_requisition_key(row.url, row.employer_url, row.verified_url)) is not None
     }
-    lane_copy = lane_copy_posting_ids(conn)
+    if lane_copy is None:
+        lane_copy = lane_copy_posting_ids(conn)
+    if standing is None:
+        standing = delivered_unapplied(conn, skipped=withheld)
     representatives = {
-        row.posting_id for row in delivered_unapplied(conn, skipped=withheld)
+        row.posting_id for row in standing
+        if row.job_id not in withheld
         if not row.closed and row.verdict != "ineligible" and row.posting_id not in lane_copy
     }
     deliveries = _deliveries(conn)

@@ -326,7 +326,8 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     # Lane and requisition copies share `_lane_copy` on disk (D-655) and leave both page lists.
     # Below `ineligible`, as `_wanted_location` ranks it, and asked of the ONE predicate the folder
     # tree asks, so the two cannot disagree about which leads it names.
-    lane_copy = lane_copy_posting_ids(conn) | requisition_copy_posting_ids(conn)
+    lane_only = lane_copy_posting_ids(conn)
+    lane_copy = lane_only | requisition_copy_posting_ids(conn, standing=every, lane_copy=lane_only)
     open_rows = [row for row in rest if not _rejected(row)]
     kept = [row for row in open_rows if row.posting_id not in lane_copy]
     drained = len(rest) - len(open_rows)

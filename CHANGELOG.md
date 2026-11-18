@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The web queue loads about three times faster.** A warm `GET /api/queue` on the live store went from 18.3 s to
+  6.4 s with the same payload. The form-question export pattern was quadratic in the question's length (11.4 s over the
+  store's 8,327 stored questions; 0.025 s anchored, same 22 hits), and the page ran the whole standing-queue read twice,
+  once more inside the requisition-copy check, which now reuses the page's own read.
+
 - **The buried-good-lead reading no longer drives the monitor DOWN (D-695).** It stays in the run's errors, the funnel
   and the morning digest, but is left out of the alert escalation, where it was the only alert of most runs and flipped
   the healthchecks.io check DOWN after nearly every run. A failure of the check itself is still escalated.

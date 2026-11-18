@@ -149,8 +149,12 @@ CATALOG: tuple[FormSurface, ...] = (
         # own is a company description. It is the pair that is a hard stop. `persons?` rather than
         # `person`: the live relativity description says "U.S. Persons" before it says
         # "U.S. person", and a form that only used the plural would otherwise read as no hit.
+        # `\A` anchors the two lookaheads to the start. Unanchored, `search` retried them at every
+        # offset, each rescanning the rest of the text: quadratic, 11.4 s over the live store's
+        # 8,327 questions against 0.025 s anchored, with the same 22 hits. Position 0 is the
+        # weakest place for both to hold, so the anchor changes no answer.
         pattern=re.compile(
-            r"(?=[\s\S]*\bU\.?S\.?\s+persons?\b)(?=[\s\S]*(?:\bITAR\b|export\s+control))",
+            r"\A(?=[\s\S]*\bU\.?S\.?\s+persons?\b)(?=[\s\S]*(?:\bITAR\b|export\s+control))",
             re.IGNORECASE,
         ),
         requirement="ITAR/export-control US-person status, on the application form only",
