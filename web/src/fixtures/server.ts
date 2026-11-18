@@ -441,6 +441,7 @@ function route(method: string, path: string, body: unknown): unknown {
         unevaluated: 0,
         closed: 0,
         superseded: 0,
+        no_questions: 0,
       },
       answers_readable: true,
       distinct: 2,

@@ -128,11 +128,16 @@ def form_question_bank(
         "unevaluated": 0,
         "closed": 0,
         "superseded": 0,
+        # A cached `questions: null` (the board has no application form) is stored as `[]`: not
+        # a form, so it is in no count below.
+        "no_questions": 0,
     }
     live: list[int] = []  # open postings whose form is their newest version's
     for vid in version_ids:
         pid = posting_of.get(vid)
-        if pid is None or newest[pid][1] != vid:
+        if not forms[vid]:
+            scope["no_questions"] += 1
+        elif pid is None or newest[pid][1] != vid:
             scope["superseded"] += 1
         elif status.get(pid) != "open":
             scope["closed"] += 1

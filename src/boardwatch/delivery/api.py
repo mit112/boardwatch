@@ -1132,7 +1132,7 @@ def form_questions_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     try:
         panel = load_answers(config_dir=ctx.settings.config_dir, conn=conn)
         answered: list[str] | None = [question.q for question in panel.questions]
-    except AnswersError:
+    except (AnswersError, ValueError):  # PyYAML raises ValueError on an impossible date
         answered = None
     return form_question_bank(
         conn, identity=current_identity(conn, ctx.settings), answered=answered

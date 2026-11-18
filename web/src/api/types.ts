@@ -1009,6 +1009,7 @@ export interface FormQuestionBank {
     unevaluated: number;
     closed: number;
     superseded: number;
+    no_questions: number;
   };
   answers_readable: boolean;
   distinct: number;

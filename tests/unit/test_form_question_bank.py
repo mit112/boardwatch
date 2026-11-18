@@ -183,6 +183,7 @@ def test_counts_and_orders_the_bank_by_hand(engine: Engine) -> None:
         "unevaluated": 1,
         "closed": 1,
         "superseded": 1,
+        "no_questions": 0,
     }
     # "Are you authorized?" is asked by A and B (C abstains and is not counted); "How did you hear
     # about us?" by A, B and H, once each even though B repeats it. "First Name" is a built-in.
@@ -267,3 +268,18 @@ def test_the_payload_has_no_room_for_answer_text(engine: Engine) -> None:
     }
     assert all(set(row) == {"question", "count", "answered"} for row in got["questions"])
     json.dumps(got)  # serialisable as-is
+
+
+def test_a_board_with_no_form_is_not_counted_as_a_form(engine: Engine) -> None:
+    """One eligible posting with a form (one question), one whose cached form is `[]`."""
+    with engine.begin() as conn:
+        company = _company(conn)
+        real = _version(conn, _posting(conn, company, "r"), "2026-11-01 12:00:00")
+        _form(conn, real, ["Why us?"])
+        _verdict(conn, real, "eligible")
+        empty = _version(conn, _posting(conn, company, "e"), "2026-11-01 12:00:00")
+        _form(conn, empty, [])
+        _verdict(conn, empty, "eligible")
+    with engine.connect() as conn:
+        got = form_question_bank(conn, identity=IDENTITY, answered=[])
+    assert (got["forms"]["eligible"], got["forms"]["no_questions"]) == (1, 1)
