@@ -34,6 +34,7 @@ import type {
   CompanionsResponse,
   FollowUpResponse,
   FormQuestionBank,
+  JdChanges,
   JudgeAgreement,
   LeadAging,
   PostingLifetime,
@@ -255,6 +256,8 @@ export const getPostingLifetime =(): Promise<PostingLifetime> =>
 
 export const getStoreHygiene = (): Promise<StoreHygiene> =>
   request<StoreHygiene>("/api/store-hygiene");
+
+export const getJdChanges = (): Promise<JdChanges> => request<JdChanges>("/api/jd-changes");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

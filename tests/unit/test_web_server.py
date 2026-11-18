@@ -4174,3 +4174,14 @@ def test_store_hygiene_is_served_read_only(live: Live, engine: Engine) -> None:
     assert got["store"]["db_bytes"] > 0
     assert got["store"]["growth_recorded"] is False
     assert call(live, "/api/store-hygiene").status == 401
+
+
+def test_jd_changes_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T309: `/api/jd-changes` answers from versions and applications and needs the bearer."""
+    with engine.begin() as conn:
+        _deliver(conn, "jdchange", judge=False)
+    got = call(live, "/api/jd-changes", bearer=live.token).json()
+    # One tailored résumé, built from the posting's only version: nothing changed after it.
+    assert got["built"] == {"checked": 1, "stale": 0, "rows": []}
+    assert got["applied"]["changed"] == 0
+    assert call(live, "/api/jd-changes").status == 401

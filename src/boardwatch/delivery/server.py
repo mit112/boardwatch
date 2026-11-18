@@ -114,6 +114,7 @@ from boardwatch.store.db import (
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
+from boardwatch.store.jd_change_queries import jd_changes
 from boardwatch.store.judge_agreement_queries import judge_agreement
 from boardwatch.store.lead_aging_queries import lead_aging, source_yield
 from boardwatch.store.posting_lifetime_queries import posting_lifetime
@@ -551,6 +552,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self._json(
                     HTTPStatus.OK, self._read(lambda conn, _ctx: store_hygiene(conn, db_path))
                 )
+                return
+            if path == "/api/jd-changes":
+                self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: jd_changes(conn)))
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's
