@@ -21,6 +21,7 @@ id rather than minting its own; run standalone, each still mints one, which is w
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,7 +46,7 @@ from boardwatch.core.models import CONVERGED_SECONDHAND, RawPosting
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.regroup import plan_regrouping
 from boardwatch.core.settings import Settings
-from boardwatch.delivery.api import resolve_owner_name
+from boardwatch.delivery.api import NEAR_MISS_PREFIX, compute_near_miss_report, resolve_owner_name
 from boardwatch.delivery.apply_routes import ApplyRoutes, load_apply_routes
 from boardwatch.delivery.form_questions import FormQuestionSweep, sweep_form_questions
 from boardwatch.delivery.queue import (
@@ -3937,6 +3938,31 @@ def _run_pipeline_leased(
             summary.errors.append(note)
             append_run_error(engine, run_id, note)
         clock.mark("funnel", console=console)
+        # T303: the near-miss report, computed once here because over every open posting's
+        # current evaluation it costs about two minutes, far too long for a page load (owner
+        # ruling 2026-11-17). Full runs only. Written beside the funnel; the web page reads the
+        # newest. Non-fatal, recorded like every report failure, and above `_emit_morning`.
+        if fresh_hours is None:
+            try:
+                with engine.connect() as conn:
+                    near_miss = compute_near_miss_report(conn, settings)
+                day_dir.mkdir(parents=True, exist_ok=True)
+                target = day_dir / f"{NEAR_MISS_PREFIX}{run_id}.json"
+                partial = target.with_suffix(".json.partial")
+                partial.write_text(json.dumps(near_miss) + "\n", encoding="utf-8")
+                partial.replace(target)  # atomic: a page never reads a half-written report
+            except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                note = f"near-miss report not written: {exc}"
+                console.print(f"  ! {note}", markup=False)
+                summary.errors.append(note)
+                # Guarded: a store refusing this write too (SQLITE_BUSY) must not escape and skip
+                # the queue sync, the soft alerts, `_emit_morning` and the heartbeat below. The
+                # note still reaches the digest through `summary.errors`.
+                try:
+                    append_run_error(engine, run_id, note)
+                except Exception as nested:  # noqa: BLE001 - never mask the run's own outcome
+                    console.print(f"  ! could not record that: {nested}", markup=False)
+            clock.mark("near_miss", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
         # file the owner actually reads. The queue holds COPIES of what the run already

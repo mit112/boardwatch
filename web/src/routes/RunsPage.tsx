@@ -9,6 +9,7 @@ import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
 import { CompanyHiring } from "../components/CompanyHiring";
 import { JudgeAgreementPanel } from "../components/JudgeAgreementPanel";
+import { NearMissPanel } from "../components/NearMissPanel";
 import { RuleDispositions } from "../components/RuleDispositions";
 import { SourceYield } from "../components/SourceYield";
 import { StoreHygiene } from "../components/StoreHygiene";
@@ -802,6 +803,8 @@ export function RunsPage() {
           <BoardsAccordion funnel={funnel} />
 
           <RuleDispositions abstain={funnel.abstain} />
+
+          <NearMissPanel />
 
           <SourceYield boards={funnel.sources} />
 

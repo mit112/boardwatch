@@ -86,7 +86,9 @@ from boardwatch.delivery.answers import (
 from boardwatch.delivery.apply_routes import ApplyRoute, load_apply_routes
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
-from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
+from boardwatch.eligibility.catalog import load_rules
+from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
+from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts, parse_policy
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
@@ -94,6 +96,7 @@ from boardwatch.projection.shell import load_shell
 from boardwatch.rank.explain import why_summary
 from boardwatch.rank.heuristic import (
     generic_title_tokens_for,
+    hard_filter_verdict,
     profile_view_from_row,
     score_posting,
 )
@@ -124,6 +127,7 @@ from boardwatch.store.delivery_queries import (
     requisition_copy_posting_ids,
 )
 from boardwatch.store.form_question_bank_queries import form_question_bank
+from boardwatch.store.near_miss_queries import near_misses
 from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile, run_kind
@@ -1500,6 +1504,89 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
             }
             for row in rows
         ]
+    }
+
+
+NEAR_MISS_PREFIX = "near-miss-"
+
+
+def near_miss_payload(ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/near-misses` (T303): the newest run's stored near-miss report.
+
+    Computed at the end of each nightly run (`compute_near_miss_report`, written beside the
+    funnel as `near-miss-<run_id>.json`), never on a page load: over every open posting's current
+    evaluation it takes about two minutes on the live store (owner ruling 2026-11-17). Before the
+    first such run there is nothing to show, said as `available: false`, never as zero.
+    """
+    listed = [
+        *ctx.out_root.glob(f"{NEAR_MISS_PREFIX}*.json"),
+        *ctx.out_root.glob(f"*/{NEAR_MISS_PREFIX}*.json"),
+    ]
+
+    def run_of(path: Path) -> int:
+        stem = path.stem.removeprefix(NEAR_MISS_PREFIX)
+        return int(stem) if stem.isdecimal() else -1
+
+    for path in sorted(listed, key=run_of, reverse=True):
+        if run_of(path) < 0:
+            continue
+        report = _read_funnel_file(ctx, path)
+        if report is not None:
+            return {"available": True, "run_id": run_of(path), **report}
+    return {"available": False}
+
+
+def compute_near_miss_report(conn: Connection, settings: Settings) -> dict[str, Any]:
+    """T303: open postings blocked by exactly one unmet requirement, for the run to store.
+
+    The cohort is the postings that would be real leads but for that requirement, decided by the
+    pipeline's own gates and never a filter of this module's: `hard_filter_verdict` (an excluded
+    title, a foreign ad, a location outside the profile's target countries) and the role gate,
+    where only `out_of_field` vetoes (a title it cannot place passes, as it does for the ranker).
+    The location clauses are asked ARMED whatever `location_filter_mode` says, because the lane
+    holds a lead outside the target countries either way (`review_gate.classify`).
+    """
+    profile_row = get_profile(conn)
+    catalog = load_rules(settings.config_dir)
+    identity = current_identity(conn, settings, catalog=catalog)
+    if profile_row is None or identity is None:
+        return {
+            "profile": False,
+            "blocked": 0,
+            "one_unmet": 0,
+            "near_misses": 0,
+            "with_abstain": 0,
+            "gated_out": [],
+            "rules": [],
+        }
+    profile = profile_view_from_row(profile_row)
+    role_taxonomy = load_role_taxonomy(settings.config_dir)
+    blocking = frozenset(
+        family
+        for family, severity in catalog.materialised_policy(
+            parse_policy(profile_row.eligibility_policy_json)
+        ).items()
+        if severity == "blocker"
+    )
+
+    def gate(title: str, locations: Sequence[str], remote_policy: str) -> str | None:
+        veto = hard_filter_verdict(title, locations, remote_policy, profile, "hard")
+        if veto is not None:
+            return veto.clause
+        role, _ = taxonomy_role_verdict(title, role_taxonomy)
+        return "out_of_field" if role == "out_of_field" else None
+
+    return {
+        "profile": True,
+        **near_misses(
+            conn,
+            profile_hash=identity[0],
+            rules_hash=identity[1],
+            engine_kind=ENGINE_KIND,
+            engine_version=engine_version(),
+            blocking=blocking,
+            gate=gate,
+        ),
     }
 
 
