@@ -73,18 +73,24 @@ def _weekly(stamps: list[datetime], now: datetime) -> list[tuple[str, int]]:
 
 
 def _quarantine(conn: Connection, now: datetime) -> dict[str, Any]:
-    rows = conn.execute(
-        select(
-            quarantined_bodies.c.quarantined_at,
-            quarantined_bodies.c.reopened_at,
-            quarantined_bodies.c.last_drained_at,
-        )
-    ).all()
+    # `last_drained_at` arrives with migration p_quarantine_last_drained, which runs on the next
+    # pipeline start; a viewer restarted on the new code before that reads a store without it.
+    # Read-only, so it cannot migrate: it reads without the column and keeps the current drains.
+    migrated = any(
+        str(r[1]) == "last_drained_at"
+        for r in conn.exec_driver_sql("PRAGMA table_info(quarantined_bodies)")
+    )
+    columns = [quarantined_bodies.c.quarantined_at, quarantined_bodies.c.reopened_at]
+    if migrated:
+        columns.append(quarantined_bodies.c.last_drained_at)
+    rows = conn.execute(select(*columns)).all()
     held = [_naive(r.quarantined_at) for r in rows if r.reopened_at is None]
     drained = [_naive(r.reopened_at) for r in rows if r.reopened_at is not None]
     # Every drain still on record: the current ones, plus the earlier drain of a version that was
     # held again. `drained` (the count) stays the versions drained NOW.
-    drains = drained + [_naive(r.last_drained_at) for r in rows if r.last_drained_at is not None]
+    drains = drained + [
+        _naive(r.last_drained_at) for r in rows if migrated and r.last_drained_at is not None
+    ]
     oldest = min(held) if held else None
     last_drain = max(drains) if drains else None
     since_drain = (now - last_drain).total_seconds() / _SECONDS_PER_DAY if last_drain else None

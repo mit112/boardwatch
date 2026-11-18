@@ -532,3 +532,13 @@ def test_the_drain_readers_still_key_on_reopened_at_alone(engine: Engine) -> Non
         _hold(conn, version, posting, T3)
         assert is_quarantined(conn, version) is True  # re-held, with last_drained_at set
         assert live_quarantine(conn) == {version: ("m",)}
+
+
+def test_the_panel_reads_a_store_not_yet_migrated_for_last_drained_at(engine: Engine) -> None:
+    """A viewer on the new code can meet a store the next run has not migrated yet: no
+    `last_drained_at` column. It must still answer, from the current drains."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql("ALTER TABLE quarantined_bodies DROP COLUMN last_drained_at")
+    with engine.connect() as conn:
+        got = store_hygiene(conn, Path("/nonexistent/boardwatch.db"))
+    assert got["quarantine"]["held"] == 0
