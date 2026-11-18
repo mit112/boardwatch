@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Company hiring's window no longer drifts within a day (T308 follow-up).** The 8-week window opens before the
+  start of the current UTC day instead of before the moment of the request, so the in-process memo, which is keyed on
+  that day, always serves the answer it would compute; before, a view late in the day could reuse a window cut up to a
+  day earlier.
+
 - **T314: every end-of-run error record is guarded.** The finalize block's report handlers record a failure with
   `append_run_error`; if the store refused that write too (`SQLITE_BUSY`), the second exception escaped and skipped the
   rest of the block, the morning digest and the heartbeat included. All 30 records now go through one guarded helper;
