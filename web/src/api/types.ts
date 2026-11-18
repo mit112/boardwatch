@@ -990,6 +990,33 @@ export interface Withdrawal {
   company: string | null;
 }
 
+/* `GET /api/form-questions` (T312). `answered` says only that a standing answer exists; the answer
+ * text is never sent. `answered` is `null` on every row (and `answers_readable` false) when
+ * `answers.yaml` could not be read. `forms` splits the stored forms by why each did or did not
+ * count and sums to `stored`. Abstain is its own number and never in a question's count. */
+export interface FormQuestion {
+  question: string;
+  count: number;
+  answered: boolean | null;
+}
+
+export interface FormQuestionBank {
+  forms: {
+    stored: number;
+    eligible: number;
+    abstain: number;
+    ineligible: number;
+    unevaluated: number;
+    closed: number;
+    superseded: number;
+  };
+  answers_readable: boolean;
+  distinct: number;
+  unanswered: number | null;
+  standard_fields: string[];
+  questions: FormQuestion[];
+}
+
 export interface FunnelSource {
   provider: string;
   board_slug: string;

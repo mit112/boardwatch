@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { getCompanions, getQueue } from "../api/client";
 import type { Companion, QueueResponse } from "../api/types";
+import { FormQuestionBankPanel } from "../components/FormQuestionBank";
 import { type NeedsGroup, needsCount, needsYou } from "../lib/needsYou";
 
 /*
@@ -66,6 +67,7 @@ export function NeedsYouPage() {
       {groups.map((g) => (
         <Group key={g.key} group={g} />
       ))}
+      <FormQuestionBankPanel />
     </div>
   );
 }

@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format follows
   is waiting and is left out of the settled rate (applied ÷ applied, closed and skipped). No run stores a per-lead
   tailor time, so the cost is each run's tailor stage seconds divided by its builds, labelled as an average and an
   upper bound, and a dash when the run was not timed or built nothing. 0.8 s warm on the live store (10 s cold).
+- **The Needs-you page shows a bank of the questions employers ask most (T312).** A new read-only
+  `GET /api/form-questions` counts, across the stored Greenhouse application forms, how many open postings with a
+  current `eligible` verdict ask each question (once per form, grouped by whitespace-collapsed, case-folded text, with
+  no fuzzier match), and marks each answered or not by whether the owner's `answers.yaml` holds a question with the
+  same text. Only that yes/no is sent: the route reads each answered question's text and never its answer or note. The
+  top 30 are shown, unanswered first. A form whose version has been replaced, a closed posting, and an `ineligible` or
+  unevaluated one are not counted; `uncertain` (abstain) forms are reported as their own number. Greenhouse's six
+  built-in fields (name, email, phone, résumé, cover letter) are left out. An unreadable answers file shows every row
+  as unknown instead of unanswered. 0.5 s on the live store.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

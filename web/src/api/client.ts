@@ -33,6 +33,7 @@ import type {
   BatchSkipResponse,
   CompanionsResponse,
   FollowUpResponse,
+  FormQuestionBank,
   JudgeAgreement,
   LeadAging,
   PostingLifetime,
@@ -245,7 +246,10 @@ export const getJudgeAgreement = (): Promise<JudgeAgreement> =>
 export const getWithdrawals = (): Promise<{ withdrawals: Withdrawal[] }> =>
   request<{ withdrawals: Withdrawal[] }>("/api/withdrawals");
 
-export const getPostingLifetime = (): Promise<PostingLifetime> =>
+export const getFormQuestionBank = (): Promise<FormQuestionBank> =>
+  request<FormQuestionBank>("/api/form-questions");
+
+export const getPostingLifetime =(): Promise<PostingLifetime> =>
   request<PostingLifetime>("/api/posting-lifetime");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
