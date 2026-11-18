@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **T314: every end-of-run error record is guarded.** The finalize block's report handlers record a failure with
+  `append_run_error`; if the store refused that write too (`SQLITE_BUSY`), the second exception escaped and skipped the
+  rest of the block, the morning digest and the heartbeat included. All 30 records now go through one guarded helper;
+  the note still reaches the digest through the run's errors.
+
 - **T320: company hiring and JD-change edge cases.** The company-hiring memo also keys on the newest posting version,
   so `postings refetch --apply` (which adds a version with no run or event) is not served from the superseded verdict.
   JD changes take a posting's newest build by when it finished, not by which JD it was built from, and the panel says
