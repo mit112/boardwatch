@@ -3893,3 +3893,11 @@ def test_companions_are_served_from_the_data_dir(live: Live, ctx: ApiContext) ->
     (got,) = call(live, "/api/companions", bearer=live.token).json()["companions"]
     assert (got["name"], got["state"]) == ("planner", "failed")
     assert call(live, "/api/companions").status == 401
+
+
+def test_lead_aging_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T298: `/api/lead-aging` counts each delivered lead once."""
+    with engine.begin() as conn:
+        _deliver(conn, "aging", judge=False)
+    got = call(live, "/api/lead-aging", bearer=live.token).json()
+    assert (got["leads"], got["still_waiting"]) == (1, 1)

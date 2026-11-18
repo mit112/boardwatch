@@ -110,6 +110,7 @@ from boardwatch.store.db import (
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
+from boardwatch.store.lead_aging_queries import lead_aging
 from boardwatch.store.queue_state import (
     clear_job_followup,
     mark_job_disputed,
@@ -516,6 +517,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/answers":
                 self._answers()
+                return
+            if path == "/api/lead-aging":
+                self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: lead_aging(conn)))
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's

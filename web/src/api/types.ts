@@ -703,6 +703,21 @@ export interface CompanionsResponse {
   companions: Companion[];
 }
 
+/* `GET /api/lead-aging` (T298). Days are from a lead's FIRST delivery to its first outcome. */
+export interface AgingSummary {
+  count: number;
+  median_days: number | null;
+  p90_days: number | null;
+}
+
+export interface LeadAging {
+  leads: number;
+  still_waiting: number;
+  outcomes: { applied: AgingSummary; closed: AgingSummary; skipped: AgingSummary };
+  /** Discovery provider -> delivered leads whose posting closed before any application. */
+  closed_before_applied_by_board: Record<string, number>;
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }

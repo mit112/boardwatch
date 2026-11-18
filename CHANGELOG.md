@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Applied page shows lead aging and leads lost before applying (T298).** A new read-only `GET /api/lead-aging`
+  counts every delivered lead once, from its first delivery, and takes its first outcome: applied, skipped or the
+  posting closing. Median and 90th-percentile days per outcome, how many have no outcome yet, and how many closed before
+  anyone applied, by discovery source. One pass over `artifacts`; 0.05 s on the 50 GB live store (5,797 leads).
+
 - **The Applied page shows apply-lane readiness (T296).** Fillable leads by board, dropped and waiting by reason,
   and days of capacity: the fillable total divided by the trailing 7-day application rate, flagged under 2 days. The
   plan comes from a companion's `fillable:` / `dropped:` / `waiting:` counts (documented in `docs/companions.md`);

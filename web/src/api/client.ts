@@ -31,6 +31,7 @@ import type {
   BatchSkipResponse,
   CompanionsResponse,
   FollowUpResponse,
+  LeadAging,
   QueueDetail,
   QueueResponse,
   ReportResponse,
@@ -225,6 +226,8 @@ export const undisputeRejection = (postingId: number): Promise<DisputeResponse> 
   request<DisputeResponse>(`/api/queue/${String(postingId)}/undispute`, "POST");
 
 export const getAnswers = (): Promise<Answers> => request<Answers>("/api/answers");
+
+export const getLeadAging = (): Promise<LeadAging> => request<LeadAging>("/api/lead-aging");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

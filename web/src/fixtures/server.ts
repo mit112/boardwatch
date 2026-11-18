@@ -408,6 +408,17 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/rejected") return rejectedResponse();
   if (method === "GET" && path === "/api/runs") return { runs: RUNS };
   if (method === "GET" && path === "/api/companions") return { companions: [] };
+  if (method === "GET" && path === "/api/lead-aging")
+    return {
+      leads: 0,
+      still_waiting: 0,
+      outcomes: {
+        applied: { count: 0, median_days: null, p90_days: null },
+        closed: { count: 0, median_days: null, p90_days: null },
+        skipped: { count: 0, median_days: null, p90_days: null },
+      },
+      closed_before_applied_by_board: {},
+    };
 
   // The fixture's `application_id` IS the job id (one attempt per job), so the two maps above
   // answer for it directly.
