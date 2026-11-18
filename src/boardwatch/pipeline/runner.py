@@ -3978,6 +3978,10 @@ def _run_pipeline_leased(
                         near_miss = compute_near_miss_report(conn, settings)
                     finally:
                         raw.set_progress_handler(None, 0)  # type: ignore[union-attr]
+                if perf_counter() > deadline:
+                    # The handler sees only SQLite's own steps; Python work after the last
+                    # statement could still cross the line, and a late report is not published.
+                    raise TimeoutError(f"past its {NEAR_MISS_BUDGET_SECONDS:.0f} s budget")
                 day_dir.mkdir(parents=True, exist_ok=True)
                 target = day_dir / f"{NEAR_MISS_PREFIX}{run_id}.json"
                 partial = target.with_suffix(".json.partial")
