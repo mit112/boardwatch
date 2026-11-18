@@ -34,6 +34,7 @@ import type {
   FollowUpResponse,
   JudgeAgreement,
   LeadAging,
+  PostingLifetime,
   QueueDetail,
   QueueResponse,
   ReportResponse,
@@ -242,6 +243,9 @@ export const getJudgeAgreement = (): Promise<JudgeAgreement> =>
 
 export const getWithdrawals = (): Promise<{ withdrawals: Withdrawal[] }> =>
   request<{ withdrawals: Withdrawal[] }>("/api/withdrawals");
+
+export const getPostingLifetime = (): Promise<PostingLifetime> =>
+  request<PostingLifetime>("/api/posting-lifetime");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

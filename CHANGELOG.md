@@ -34,6 +34,14 @@ All notable changes to this project are documented here. The format follows
   page draws the newest run's verdict matrix, the agreement over the last 14 runs, the final gate's current splits
   linked to their postings, and the engine rules unmet on them. An LLM verdict with no engine partner is its own row.
   0.36 s warm on the live store (16.5k LLM rows).
+- **The Applied page shows how long postings stay open against how fast we apply (T307).** A new read-only
+  `GET /api/posting-lifetime` gives median and 90th-percentile posting lifetime (first seen to first close, from
+  `posting_events`) overall, by provider and for the 25 companies with the most closed postings (at least five),
+  beside the median time from first seen to the first submitted application. Where the median lifetime is shorter than
+  the time to apply, the provider is flagged urgent. Postings still open are counted apart and are in no median; the
+  reopen rate (reopened postings over closed ones) says how far a "closed" lead can be trusted. The event log is used
+  rather than `postings`, whose rows carry the body text; one `posting_events` pass takes 1.6 s warm (8.6 s with a cold
+  OS cache) on the live store (1.35M postings, 2.1M events) and is memoised per latest run and newest event.
 
 - **The Runs page shows each companion's recent nights (T295).** A companion document may now carry an optional
   `history` (at most 31 rows of `label` and flat `counts`, validated like the rest; `docs/companions.md`). Each
