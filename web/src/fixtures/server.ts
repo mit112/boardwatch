@@ -431,6 +431,31 @@ function route(method: string, path: string, body: unknown): unknown {
       },
       closed_before_applied_by_board: {},
     };
+  if (method === "GET" && path === "/api/form-questions")
+    return {
+      forms: {
+        stored: 3,
+        eligible: 2,
+        abstain: 1,
+        ineligible: 0,
+        unevaluated: 0,
+        closed: 0,
+        superseded: 0,
+        no_questions: 0,
+      },
+      answers_readable: true,
+      distinct: 2,
+      unanswered: 1,
+      standard_fields: ["first name", "last name", "email", "phone", "resume/cv", "cover letter"],
+      questions: [
+        { question: "What is your desired salary?", count: 2, answered: false },
+        {
+          question: "Are you legally authorized to work in the United States?",
+          count: 2,
+          answered: true,
+        },
+      ],
+    };
   if (method === "GET" && path === "/api/posting-lifetime")
     return {
       closed: { count: 0, median_days: null, p90_days: null },

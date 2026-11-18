@@ -80,6 +80,7 @@ from boardwatch.delivery.api import (
     applied_payload,
     build_economics_payload,
     detail_payload,
+    form_questions_payload,
     funnel_payload,
     local_today,
     queue_payload,
@@ -523,6 +524,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/answers":
                 self._answers()
+                return
+            if path == "/api/form-questions":
+                self._json(HTTPStatus.OK, self._read(form_questions_payload))
                 return
             if path == "/api/judge-agreement":
                 agreement = self._read(lambda conn, _ctx: judge_agreement(conn))

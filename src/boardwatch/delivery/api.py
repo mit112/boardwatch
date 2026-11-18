@@ -79,6 +79,7 @@ from boardwatch.delivery.answers import (
     IDENTITY_FIELDS,
     RESUME_FILENAME,
     WORK_AUTH_FIELDS,
+    AnswersError,
     AnswersPanel,
     load_answers,
 )
@@ -86,6 +87,7 @@ from boardwatch.delivery.apply_routes import ApplyRoute, load_apply_routes
 from boardwatch.delivery.names import NameBudgetError, plan_lead_names
 from boardwatch.delivery.queue import _identity_hash, _index
 from boardwatch.eligibility.facts import ProfileRowInvalid, parse_facts
+from boardwatch.eligibility.preflight import current_identity
 from boardwatch.extract.taxonomy import Taxonomy, TaxonomyError, load_taxonomy
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.shell import load_shell
@@ -121,6 +123,7 @@ from boardwatch.store.delivery_queries import (
     queue_detail,
     requisition_copy_posting_ids,
 )
+from boardwatch.store.form_question_bank_queries import form_question_bank
 from boardwatch.store.owner_holds import owner_holds
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import CurrentVersion, current_posting_versions, get_profile, run_kind
@@ -1119,6 +1122,23 @@ def answers_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     }
 
 
+def form_questions_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/form-questions` (T312). Whether an answer exists, never the answer.
+
+    Only each answered question's TEXT (`Question.q`) leaves `load_answers`; `a` and `note` are not
+    read here, so no answer text can reach the payload. An unreadable `answers.yaml` is not "all
+    unanswered": the bank is told `None` and its rows claim neither state.
+    """
+    try:
+        panel = load_answers(config_dir=ctx.settings.config_dir, conn=conn)
+        answered: list[str] | None = [question.q for question in panel.questions]
+    except (AnswersError, ValueError):  # PyYAML raises ValueError on an impossible date
+        answered = None
+    return form_question_bank(
+        conn, identity=current_identity(conn, ctx.settings), answered=answered
+    )
+
+
 def resolve_owner_name(conn: Connection | None, config_dir: Path) -> str:
     """The owner's name for the résumé filename, from their own data and never hardcoded.
 
@@ -1653,6 +1673,7 @@ __all__ = [
     "application_events_payload",
     "build_economics_payload",
     "detail_payload",
+    "form_questions_payload",
     "funnel_payload",
     "lead_folder",
     "queue_payload",

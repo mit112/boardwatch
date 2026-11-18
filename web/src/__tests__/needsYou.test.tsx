@@ -5,7 +5,12 @@ import type { Companion } from "../api/types";
 import { needsCount, needsYou } from "../lib/needsYou";
 import { queueResponse, queueRow } from "../test/rows";
 
-vi.mock("../api/client", () => ({ getQueue: vi.fn(), getCompanions: vi.fn() }));
+// The form-question panel has its own test; here it stays loading so it adds nothing to the page.
+vi.mock("../api/client", () => ({
+  getQueue: vi.fn(),
+  getCompanions: vi.fn(),
+  getFormQuestionBank: vi.fn(() => new Promise(() => undefined)),
+}));
 
 import { getCompanions, getQueue } from "../api/client";
 import { NeedsYouPage } from "../routes/NeedsYouPage";

@@ -86,6 +86,7 @@ from boardwatch.store.tables import (
     companies,
     jobs,
     posting_events,
+    posting_form_questions,
     posting_versions,
     postings,
     runs,
@@ -4032,6 +4033,76 @@ def test_lead_aging_is_served_read_only(live: Live, engine: Engine) -> None:
         _deliver(conn, "aging", judge=False)
     got = call(live, "/api/lead-aging", bearer=live.token).json()
     assert (got["leads"], got["still_waiting"]) == (1, 1)
+
+
+SECRET_ANSWER = "ZZ-private-answer-text-9f3"
+SECRET_NOTE = "ZZ-private-note-text-4c1"
+
+
+def _store_form(conn: Connection, posting_id: int, labels: list[str]) -> None:
+    version = int(
+        conn.execute(
+            select(posting_versions.c.id).where(posting_versions.c.posting_id == posting_id)
+        ).scalar_one()
+    )
+    conn.execute(
+        insert(posting_form_questions).values(
+            posting_version_id=version,
+            questions_json=[{"label": x, "description": None, "options": []} for x in labels],
+            fetched_at=NOW,
+        )
+    )
+
+
+def test_form_questions_say_whether_an_answer_exists_and_never_send_it(
+    live: Live, engine: Engine, tmp_path: Path
+) -> None:
+    """T312: the answered flag comes from `answers.yaml`, and the answer and note never travel.
+
+    The answers file is the owner's, so the secrets below are in it and must be absent from every
+    byte of the response, while the question they answer is marked answered.
+    """
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "forms")
+        _store_form(conn, posting, ["Are you authorized?", "Desired salary?"])
+    config = tmp_path / "config"
+    config.mkdir(exist_ok=True)
+    (config / "answers.yaml").write_text(
+        "questions:\n"
+        f"  - q: 'Are you  AUTHORIZED?'\n    a: {SECRET_ANSWER}\n    note: {SECRET_NOTE}\n",
+        "utf-8",
+    )
+
+    response = call(live, "/api/form-questions", bearer=live.token)
+
+    assert response.status == 200, response.body[:400]
+    assert SECRET_ANSWER.encode() not in response.body
+    assert SECRET_NOTE.encode() not in response.body
+    got = response.json()
+    assert got["forms"]["eligible"] == 1
+    assert got["answers_readable"] is True
+    # Unanswered first.
+    assert got["questions"] == [
+        {"question": "Desired salary?", "count": 1, "answered": False},
+        {"question": "Are you authorized?", "count": 1, "answered": True},
+    ]
+    assert call(live, "/api/form-questions").status == 401
+
+
+def test_form_questions_with_an_unreadable_answers_file_claim_neither_state(
+    live: Live, engine: Engine, tmp_path: Path
+) -> None:
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "forms-bad")
+        _store_form(conn, posting, ["Desired salary?"])
+    config = tmp_path / "config"
+    config.mkdir(exist_ok=True)
+    (config / "answers.yaml").write_text("questions: [not a mapping]\n", "utf-8")
+
+    got = call(live, "/api/form-questions", bearer=live.token).json()
+
+    assert got["answers_readable"] is False
+    assert got["questions"] == [{"question": "Desired salary?", "count": 1, "answered": None}]
 
 
 def test_posting_lifetime_is_served_read_only(live: Live, engine: Engine) -> None:
