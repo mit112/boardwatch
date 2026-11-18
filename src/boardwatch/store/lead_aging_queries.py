@@ -18,6 +18,7 @@ from typing import Any
 
 from sqlalchemy import Connection, select
 
+from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.queue_state import skipped_job_ids
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import (
@@ -124,35 +125,47 @@ def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
     The earliest is taken in Python after normalising, never with SQL `MIN()`: the column holds
     both naive-UTC and offset-carrying text, and SQLite compares the text, so `MIN()` can pick a
     later instant. An import (created event `source = 'import'`) is dated only when its row
-    supplied `applied_at`: `create_application` otherwise stamps `submitted_at` with the same
-    instant as `created_at`, the import time. A job with an undated import was applied to on a
-    date nobody recorded, which may precede any later dated retry, so it is reported as applied
-    with no measured wait whatever else it carries.
+    supplied `applied_at`: `create_application` otherwise stamps the event's `occurred_at` with
+    the same instant as `created_at`, the import time. A job with an undated import was applied
+    to on a date nobody recorded, which may precede any later dated retry, so it is reported as
+    applied with no measured wait whatever else it carries.
     """
-    imported = {
-        int(r.application_id)
-        for r in conn.execute(
-            select(application_events.c.application_id).where(
-                application_events.c.event_type == "created",
-                application_events.c.source == IMPORT_SOURCE,
-            )
-        )
-    }
     dated: dict[int, datetime] = {}
     undated: set[int] = set()
+    # Imports first, from the created event: an imported `rejected`/`interviewing` row has no
+    # `submitted_at`, but it was still applied to, on the event's `occurred_at` when the row gave
+    # a date (otherwise that equals the application's `created_at`, the import time).
+    imported: set[int] = set()
     for r in conn.execute(
         select(
             applications.c.id,
             applications.c.job_id,
             applications.c.created_at,
-            applications.c.submitted_at,
-        ).where(applications.c.submitted_at.is_not(None))
+            application_events.c.occurred_at,
+        )
+        .join(application_events, application_events.c.application_id == applications.c.id)
+        .where(
+            application_events.c.event_type == "created",
+            application_events.c.source == IMPORT_SOURCE,
+            applications.c.status.in_(APPLIED_STATUSES),
+        )
     ):
+        imported.add(int(r.id))
+        job = int(r.job_id)
+        at = _naive(r.occurred_at)
+        if at == _naive(r.created_at):
+            undated.add(job)
+        elif job not in dated or at < dated[job]:
+            dated[job] = at
+    for r in conn.execute(
+        select(applications.c.id, applications.c.job_id, applications.c.submitted_at).where(
+            applications.c.submitted_at.is_not(None)
+        )
+    ):
+        if int(r.id) in imported:
+            continue
         job = int(r.job_id)
         at = _naive(r.submitted_at)
-        if int(r.id) in imported and at == _naive(r.created_at):
-            undated.add(job)
-            continue
         if job not in dated or at < dated[job]:
             dated[job] = at
     for job in undated:

@@ -145,15 +145,25 @@ def test_source_yield_credits_each_job_to_its_first_delivered_source(engine: Eng
     }
 
 
-def _imported(conn: Connection, job: int, at: datetime) -> None:
+def _imported(
+    conn: Connection,
+    job: int,
+    at: datetime,
+    *,
+    occurred: datetime | None = None,
+    status: str = "applied",
+) -> None:
+    """`create_application`'s shape for an import made at `at`, applied on `occurred` (the
+    row's applied_at; None means the row gave no date, so it is `at`)."""
+    when = occurred or at
     app = conn.execute(
         insert(applications).values(
             job_id=job,
             attempt_no=1,
-            status="applied",
+            status=status,
             created_at=at,
             updated_at=at,
-            submitted_at=at,
+            submitted_at=when if status == "applied" else None,
         )
     ).inserted_primary_key[0]
     conn.execute(
@@ -161,8 +171,8 @@ def _imported(conn: Connection, job: int, at: datetime) -> None:
             application_id=app,
             event_type="created",
             from_status=None,
-            to_status="applied",
-            occurred_at=at,
+            to_status=status,
+            occurred_at=when,
             recorded_at=at,
             source="import",
         )
@@ -208,12 +218,8 @@ def test_the_earliest_attempt_is_the_earliest_instant_not_the_smallest_text(
 def test_an_import_that_supplied_a_date_is_measured_from_that_date(engine: Engine) -> None:
     with engine.begin() as conn:
         _, job = _lead(conn, "i2")
-        _imported(conn, job, D0 + timedelta(days=30))  # imported on day 30 ...
-        conn.execute(  # ... with the row's own applied_at, day 1
-            update(applications)
-            .where(applications.c.job_id == job)
-            .values(submitted_at=D0 + timedelta(days=1))
-        )
+        # Imported on day 30, with the row's own applied_at, day 1.
+        _imported(conn, job, D0 + timedelta(days=30), occurred=D0 + timedelta(days=1))
         got = lead_aging(conn)
     assert got["applied_date_unknown"] == 0
     assert got["outcomes"]["applied"] == {"count": 1, "median_days": 1.0, "p90_days": 1.0}
@@ -267,3 +273,19 @@ def test_the_first_delivery_is_the_earliest_instant_not_the_smallest_text(
         )
         got = source_yield(conn)
     assert got == {"greenhouse": {"built": 1, "applied": 0}}
+
+
+def test_a_dated_rejected_import_is_applied_not_closed_first(engine: Engine) -> None:
+    """A `rejected` import has no submitted_at; its created event dates it (day 1). It closed day
+    3: applied first."""
+    with engine.begin() as conn:
+        posting, job = _lead(conn, "i4")
+        _imported(
+            conn, job, D0 + timedelta(days=30), occurred=D0 + timedelta(days=1), status="rejected"
+        )
+        _close(conn, posting, D0 + timedelta(days=3))
+        got = lead_aging(conn)
+        yielded = source_yield(conn)
+    assert got["outcomes"]["applied"] == {"count": 1, "median_days": 1.0, "p90_days": 1.0}
+    assert got["outcomes"]["closed"]["count"] == 0
+    assert yielded == {"ashby": {"built": 1, "applied": 1}}
