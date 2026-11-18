@@ -93,6 +93,7 @@ from boardwatch.delivery.api import (
 )
 from boardwatch.delivery.companions import read_companions
 from boardwatch.delivery.queue import reconcile_queue, refresh_queue
+from boardwatch.eligibility.catalog import CatalogError
 from boardwatch.eligibility.facts import ProfileRowInvalid
 from boardwatch.eligibility.preflight import current_identity
 from boardwatch.store.applications import (
@@ -469,6 +470,11 @@ class ReviewHandler(BaseHTTPRequestHandler):
             # connection, and the browser then shows a network error for a condition that has a
             # precise explanation the owner needs to read.
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+        except CatalogError as exc:
+            # A malformed local `rules.yaml` override: every route that resolves the current
+            # identity loads it. Answered for the same reason as the two above — the owner needs
+            # the parser's message, not a reset connection.
+            self._error(HTTPStatus.SERVICE_UNAVAILABLE, f"rules.yaml unusable — {exc}")
 
     def _hello(self) -> None:
         nonces = parse_qs(urlsplit(self.path).query).get("nonce", [])

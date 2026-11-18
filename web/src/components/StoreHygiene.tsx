@@ -151,7 +151,7 @@ export function StoreHygiene() {
           <thead className="text-fg-3">
             <tr>
               <th className="pr-6 text-left font-normal">Table</th>
-              <th className="text-right font-normal">Rows</th>
+              <th className="text-right font-normal">Highest row id (≈ rows)</th>
             </tr>
           </thead>
           <tbody className="text-fg">

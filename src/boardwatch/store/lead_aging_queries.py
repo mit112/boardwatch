@@ -178,9 +178,13 @@ def _first_applied(conn: Connection) -> tuple[dict[int, datetime], set[int]]:
             undated.add(job)
         elif job not in dated or at < dated[job]:
             dated[job] = at
+    # Only an application still in the applied set counts, as for the funnel and the ranker
+    # (`APPLIED_STATUSES`): `withdrawn` is the store's drain out of it, and the Applied page's undo
+    # of an accidental mark writes exactly that while `submitted_at` stays set.
     for r in conn.execute(
         select(applications.c.id, applications.c.job_id, applications.c.submitted_at).where(
-            applications.c.submitted_at.is_not(None)
+            applications.c.submitted_at.is_not(None),
+            applications.c.status.in_(APPLIED_STATUSES),
         )
     ):
         if int(r.id) in imported:
