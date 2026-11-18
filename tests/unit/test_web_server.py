@@ -1828,6 +1828,44 @@ def test_the_applied_history_names_a_closed_lead_and_one_that_never_reached_the_
     assert counts["posting_closed"] == 1
 
 
+def test_an_applied_row_names_the_provider_that_discovered_its_posting(
+    live: Live, engine: Engine
+) -> None:
+    """T297: the pace split by discovery source reads `provider` off each row.
+
+    Both shapes the page holds, with providers that differ from the default and from each other:
+    a delivered lead (resolved through `_delivered_select`) and an imported application whose job
+    never reached the queue (resolved through `_job_posting_select`). A provider only the first
+    path carried would leave every imported application in the "not recorded" bucket.
+    """
+    with engine.begin() as conn:
+        _posting, delivered_job = _deliver(conn, "lev", provider="lever")
+        create_application(
+            conn,
+            job_id=delivered_job,
+            status="applied",
+            source="import",
+            occurred_at=NOW - timedelta(days=1),
+        )
+        imported_job = _undelivered(conn, "ash")
+        conn.execute(
+            update(companies).where(companies.c.slug == "acme-ash").values(provider="ashby")
+        )
+        create_application(
+            conn,
+            job_id=imported_job,
+            status="applied",
+            source="import",
+            occurred_at=NOW - timedelta(days=2),
+        )
+
+    rows = call(live, "/api/applied", bearer=live.token).json()["rows"]
+    assert {row["company"]: row["provider"] for row in rows} == {
+        "Acme lev": "lever",
+        "Acme ash": "ashby",
+    }
+
+
 def test_the_applied_row_describes_the_posting_the_application_was_made_against(
     live: Live, engine: Engine
 ) -> None:

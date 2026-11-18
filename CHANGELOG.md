@@ -21,6 +21,14 @@ All notable changes to this project are documented here. The format follows
   is served as `failed: unreadable status`, never dropped. Contract in `docs/companions.md`. No schema change, no
   config key.
 
+- **The Applied page shows application pace (T297).** A bar per local calendar day for the last 30 days, the 7-day
+  average, and the split by apply board (from the application link) and by discovery source (the company's provider).
+  It counts submitted applications only (`applied`, `interviewing`, `offer`, `rejected`, by `submitted_at`), so a
+  withdrawn attempt or a tracked-but-unsent row adds nothing, and a day with none is a zero bar, not a failure. Days are
+  bucketed in the browser, because the server's UTC instant would move an evening application to the next day. The only
+  server change is a read-only `provider` field on each `/api/applied` row (`applications` joined to `postings` and
+  `companies`); no new route, no write path, no schema change.
+
 - **Boards named by the store's verified application links can be proposed for watching (D-692).** A new read-only
   `boardwatch companies discover-destinations [--out PATH]` parses every verified destination in
   `application_destinations` to a supported provider and board, drops boards already watched, and writes the registry

@@ -301,6 +301,9 @@ class AppliedRow:
     #: "emailed the recruiter" is the owner acting on the application, which is what "has this
     #: gone quiet" asks about. `None` only on a row with no event.
     last_activity_at: datetime | None = None
+    #: The company's discovery provider ("greenhouse", "lever", "jobapps", ...) — how the posting
+    #: reached boardwatch, not where it was applied. `None` only when no posting resolved.
+    provider: str | None = None
 
 
 #: Why `QueueDetail.jd_body` is absent. A CLOSED set, declared where the value is produced so
@@ -1575,6 +1578,7 @@ def _job_posting_select() -> Select[Any]:
         verified_application_url().label("verified_url"),
         jobapps_employer_url().label("employer_url"),
         companies.c.name.label("company"),
+        companies.c.provider,
         companies.c.watched,
         ever_complete.c.company_id.is_not(None).label("board_ever_complete"),
         # No artifact, so no delivered résumé. `null()` rather than a missing column: the
@@ -1629,6 +1633,7 @@ def _applied_row(
         ),
         can_unmark=can_unmark,
         last_activity_at=last_activity_at,
+        provider=None if posting is None else str(posting.provider),
     )
 
 
