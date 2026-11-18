@@ -38,6 +38,16 @@ All notable changes to this project are documented here. The format follows
   rate per 1,000 postings), the store's size on disk (database plus `-wal`, by `os.stat`) and the ten largest tables by
   highest row id. Table sizes are approximate (`MAX(rowid)`, since `dbstat` would read the whole 50 GB file). Growth per
   run is not shown: no run records the store size, and this adds no write path. 0.01 s warm on the live store.
+- **The Applied page lists postings whose JD changed after a résumé was built or an application was sent (T309).** A
+  new read-only `GET /api/jd-changes` gives two lists, kept apart. Built: each posting's newest tailored résumé
+  against any `revised` `posting_versions` row captured after the version it was built from, so a résumé rebuilt after
+  the change is not listed. Applied: applications with a recorded submission date and a posting version, against a
+  revised version captured after `submitted_at`, with the version that was live when it was sent. An import with no
+  recorded applied date is counted in `excluded_imports` and never compared; an application with no posting version is
+  counted in `no_posting_version`. Instants are compared after normalising to UTC. The app has no version-diff view,
+  so each row links the board's posting and names the two version ids to compare. Driven from the artifacts and
+  applications, then the versions of those postings only: 3.6 s cold, 0.07 s warm on the live store. Lists are capped
+  at 50 rows; the counts cover all.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

@@ -798,6 +798,49 @@ export interface StoreHygiene {
   tables: { approximate: boolean; rows: { name: string; rows: number }[] };
 }
 
+/* `GET /api/jd-changes` (T309): postings whose JD changed after a résumé was built or after an
+ * application was sent. The two lists are never merged. There is no version-diff view in the app,
+ * so each row carries the board's posting URL and both version ids. */
+export interface JdChangeRow {
+  posting_id: number;
+  job_id: number | null;
+  title: string;
+  company: string;
+  url: string | null;
+  /** Revised versions captured after the build / the submission. */
+  revisions: number;
+  latest_version_id: number;
+  latest_revised_at: string;
+}
+
+export interface JdChangeBuilt extends JdChangeRow {
+  built_at: string;
+  built_version_id: number;
+}
+
+export interface JdChangeApplied extends JdChangeRow {
+  application_id: number;
+  status: string;
+  submitted_at: string;
+  /** The version live when the application was sent; null when none was captured by then. */
+  sent_version_id: number | null;
+}
+
+export interface JdChanges {
+  /** The most rows each list carries; the counts cover them all. */
+  limit: number;
+  built: { checked: number; stale: number; rows: JdChangeBuilt[] };
+  applied: {
+    checked: number;
+    changed: number;
+    /** Imports with no recorded applied date: never compared. */
+    excluded_imports: number;
+    /** Applications that name no posting version, so no posting to compare. */
+    no_posting_version: number;
+    rows: JdChangeApplied[];
+  };
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }

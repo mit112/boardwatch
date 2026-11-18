@@ -490,6 +490,12 @@ function route(method: string, path: string, body: unknown): unknown {
       providers: [],
       companies: [],
     };
+  if (method === "GET" && path === "/api/jd-changes")
+    return {
+      limit: 50,
+      built: { checked: 0, stale: 0, rows: [] },
+      applied: { checked: 0, changed: 0, excluded_imports: 0, no_posting_version: 0, rows: [] },
+    };
   if (method === "GET" && path === "/api/runs/trends") return TRENDS;
   if (method === "GET" && path === "/api/board-health") return BOARD_HEALTH;
 

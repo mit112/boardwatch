@@ -16,6 +16,7 @@ import { ApplicationPace } from "../components/ApplicationPace";
 import { ApplyReadiness } from "../components/ApplyReadiness";
 import { LeadAging } from "../components/LeadAging";
 import { Withdrawals } from "../components/Withdrawals";
+import { JdChanges } from "../components/JdChanges";
 import { PostingLifetime } from "../components/PostingLifetime";
 import { Badge } from "../components/Badge";
 import { FollowUpBadge } from "../components/FollowUpBadge";
@@ -869,6 +870,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
       <LeadAging />
       <Withdrawals refresh={rows} />
       <PostingLifetime />
+      <JdChanges />
 
       <label className="flex min-w-64 max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-3">Filter company, title, location</span>
