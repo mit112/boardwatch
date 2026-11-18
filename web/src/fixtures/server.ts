@@ -427,6 +427,7 @@ function route(method: string, path: string, body: unknown): unknown {
     return {
       runs: [],
       not_rendered_leads: 0,
+      applied_before_build_leads: 0,
       totals: { built: 0, applied: 0, closed: 0, skipped: 0, open: 0, apply_rate: null, settled_rate: null },
       boards: [],
     };

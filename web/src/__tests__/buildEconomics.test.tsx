@@ -12,6 +12,7 @@ const NAME = "Résumé build economics";
 
 const DATA: BuildEconomicsData = {
   not_rendered_leads: 7,
+  applied_before_build_leads: 2,
   totals: { built: 10, applied: 2, closed: 3, skipped: 1, open: 4, apply_rate: 0.2, settled_rate: 2 / 6 },
   boards: [
     { board: "ashby", built: 6, applied: 2, closed: 1, skipped: 0, open: 3, apply_rate: 2 / 6, settled_rate: 2 / 3 },
@@ -33,7 +34,8 @@ it("separates wasted builds from leads that are still open", async () => {
   expect(within(section).getByText(/4 were wasted: 3 closed without being applied to and 1 skipped/)).toBeDefined();
   expect(within(section).getByText(/4 are still open and are not counted as wasted/)).toBeDefined();
   expect(within(section).getByText(/33% were applied to/)).toBeDefined();
-  expect(within(section).getByText(/7 leads were delivered only as an unrendered review stub/)).toBeDefined();
+  expect(within(section).getByText(/7 leads were delivered without a rendered PDF/)).toBeDefined();
+  expect(within(section).getByText(/2 leads were applied to before their résumé was built/)).toBeDefined();
 });
 
 it("prints the board table with the all-in and the settled rate", async () => {
@@ -66,13 +68,15 @@ it("draws an untimed run, or one that built nothing, as dashes and never zero se
 it("says nothing about stubs when there are none, and shows dashes for unmeasured rates", async () => {
   vi.mocked(getBuildEconomics).mockResolvedValue({
     not_rendered_leads: 0,
+    applied_before_build_leads: 0,
     totals: { built: 0, applied: 0, closed: 0, skipped: 0, open: 0, apply_rate: null, settled_rate: null },
     boards: [],
     runs: [],
   });
   render(<BuildEconomics />);
   const section = await screen.findByRole("region", { name: NAME });
-  expect(within(section).queryByText(/unrendered review stub/)).toBeNull();
+  expect(within(section).queryByText(/without a rendered PDF/)).toBeNull();
+  expect(within(section).queryByText(/applied to before their résumé/)).toBeNull();
   expect(within(section).getByText(/— were applied to/)).toBeDefined();
 });
 

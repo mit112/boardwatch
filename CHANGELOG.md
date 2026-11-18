@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Build economics counts only builds the owner could have sent (T310 follow-up).** A tailor whose PDF failed to
+  compile (`typst_pdf_built` false, not a stub) is no longer a rendered build; it joins the stubs in
+  `not_rendered_leads`. A lead whose first dated application came before its first rendered résumé is taken out of the
+  cohort and counted in a new `applied_before_build_leads`, shown on the Runs page, instead of reading as a build that
+  paid off. Undated imports stay applied.
+
 - **T321: schema upgrades are serialised across processes.** `ensure_schema` now holds a lock file beside the store
   (`<db>.schema.lock`) around the alembic upgrade, so two processes opening an un-migrated store at once no longer both
   read the old revision; the second one reads head and does nothing, where it used to fail with

@@ -255,3 +255,32 @@ def test_built_per_run_counts_renders_and_stubs_apart_for_the_runs_asked(engine:
         _lead(conn, "r3a", run_id=r3)  # a run that was not asked for
         got = built_per_run(conn, [r1, r2])
     assert got == {r1: {"built": 2, "not_rendered": 1}, r2: {"built": 0, "not_rendered": 0}}
+
+
+def test_a_lead_applied_to_before_its_build_is_counted_apart(engine: Engine) -> None:
+    """Built (rendered) on D0. a: applied D0 + 1 day, after the build: applied. b: applied D0 - 1
+    day, before the build existed: outside the cohort, in `applied_before_build_leads`."""
+    with engine.begin() as conn:
+        _, a = _lead(conn, "a")
+        _apply(conn, a, D0 + timedelta(days=1))
+        _, b = _lead(conn, "b")
+        _apply(conn, b, D0 - timedelta(days=1))
+        got = lead_outcomes(conn)
+    assert got["applied_before_build_leads"] == 1
+    assert (got["totals"]["built"], got["totals"]["applied"]) == (1, 1)
+
+
+def test_a_tailor_whose_pdf_failed_is_not_a_build(engine: Engine) -> None:
+    """Not a stub (`pending_tailor` absent), but `typst_pdf_built` false: no PDF reached the owner,
+    so the lead is not rendered, exactly as a stub is."""
+    with engine.begin() as conn:
+        p_a, _ = _lead(conn, "a")
+        conn.execute(
+            update(artifacts)
+            .where(artifacts.c.posting_version_id == _version(conn, p_a))
+            .values(meta_json={"typst_pdf_built": False, "pdf_uri": None})
+        )
+        _lead(conn, "b")
+        got = lead_outcomes(conn)
+    assert got["not_rendered_leads"] == 1
+    assert got["totals"]["built"] == 1
