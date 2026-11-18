@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **T321: schema upgrades are serialised across processes.** `ensure_schema` now holds a lock file beside the store
+  (`<db>.schema.lock`) around the alembic upgrade, so two processes opening an un-migrated store at once no longer both
+  read the old revision; the second one reads head and does nothing, where it used to fail with
+  `duplicate column name` on an `ADD COLUMN`.
+
 - **Company hiring's window no longer drifts within a day (T308 follow-up).** The 8-week window opens before the
   start of the current UTC day instead of before the moment of the request, so the in-process memo, which is keyed on
   that day, always serves the answer it would compute; before, a view late in the day could reuse a window cut up to a
