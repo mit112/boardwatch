@@ -102,6 +102,7 @@ from boardwatch.store.applications import (
     mark_job_unapplied,
     set_application_status,
 )
+from boardwatch.store.board_health_queries import load_board_health
 from boardwatch.store.db import (
     DB_FILENAME,
     WalUnsafeFilesystemError,
@@ -533,6 +534,10 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/runs/trends":
                 self._json(HTTPStatus.OK, self._read(run_trends_payload))
+                return
+            if path == "/api/board-health":
+                # Latest scan per board only (T305): one grouped pass, never the scan history.
+                self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: load_board_health(conn)))
                 return
             if (app := _APPLICATION.match(path)) is not None and app.group(2) == "events":
                 self._application_events(int(app.group(1)))

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import { getFunnel, getRuns } from "../api/client";
 import { RunTrends } from "../components/RunTrends";
+import { BoardHealth } from "../components/BoardHealth";
 import type { FunnelStage, RunFunnel, RunSummary } from "../api/types";
 import { CompanionHistory } from "../components/CompanionHistory";
 import { RuleDispositions } from "../components/RuleDispositions";
@@ -799,6 +800,7 @@ export function RunsPage() {
         </>
       )}
       <CompanionHistory />
+      <BoardHealth />
     </div>
   );
 }

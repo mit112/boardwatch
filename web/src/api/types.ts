@@ -749,6 +749,61 @@ export interface RunTrends {
   runs: RunTrendPoint[];
 }
 
+/* `GET /api/board-health`, from `store/board_health_queries.load_board_health` (T305). */
+
+/** A board that needs an action. `issue` is open-ended on purpose: the server maps a status it
+ * does not recognise to `unknown`, and the page must render a key it has never seen. */
+export interface BoardHealthRow {
+  company_id: number;
+  name: string;
+  provider: string;
+  slug: string;
+  issue: string;
+  label: string;
+  action: string;
+  last_health: string | null;
+  scan_status: string | null;
+  error: string | null;
+  reported_total: number | null;
+  enumerated: number | null;
+  /** `reported_total - enumerated` when both were measured and differ; positive = not reached. */
+  missing: number | null;
+  scanned_at: string | null;
+}
+
+export interface BoardHealthProvider {
+  provider: string;
+  boards: number;
+  healthy: number;
+  dead: number;
+  unreachable: number;
+  error: number;
+  mismatch: number;
+  partial: number;
+  empty: number;
+  unknown: number;
+  gated_boards: number;
+  gated_postings: number;
+  seconds_avg: number | null;
+  seconds_max: number | null;
+}
+
+export interface BoardHealthSlowest {
+  company_id: number;
+  name: string;
+  provider: string;
+  seconds: number;
+  scan_status: string;
+  scanned_at: string;
+}
+
+export interface BoardHealthResponse {
+  providers: BoardHealthProvider[];
+  boards: BoardHealthRow[];
+  slowest: BoardHealthSlowest[];
+  watched_boards: number;
+}
+
 /* The funnel artifact, passed through by `GET /api/runs/{run_id}`. Keys transcribed from
  * `reports/run_funnel.funnel_to_dict`; only what the page renders is typed. */
 

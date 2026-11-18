@@ -30,6 +30,14 @@ All notable changes to this project are documented here. The format follows
   never 0%, over zero rows). A rule that abstains on every row is called out as a monitoring failure; a rule that never
   fired is named. Counts are requirement rows over the current evaluation of every open posting, not postings.
 
+- **The Runs page shows board and provider health (T305).** A per-provider table (boards, dead, unreachable, failing,
+  count mismatch, partial, empty, scan time average and maximum), the boards that need an action with what to do for
+  each ("remove the board or fix its slug", "check the board; retry next run", "postings may be missing; re-scan"),
+  and the ten slowest boards. Reads the latest board scan per watched board and `companies.last_health` through the
+  new read-only `GET /api/board-health`, in one grouped pass (about 0.13 s on a 600k-row `board_scans`). A status the
+  page does not know shows as "unknown status". The listing gate (a setting, D-663) is a count per provider, never a
+  failure. No schema change, no config key.
+
 - **`boardwatch web` shows pipeline health on every page and a "Needs you" list (T293, T300).** A strip under the
   header reads the last nightly run, the last intraday pass and each companion (T294) as green / amber / red with the
   reason in words: red when the last attempt failed, amber when no nightly started today after 06:00. A new "Needs you"
