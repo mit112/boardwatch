@@ -37,6 +37,7 @@ import type {
   JudgeAgreement,
   LeadAging,
   PostingLifetime,
+  StoreHygiene,
   QueueDetail,
   QueueResponse,
   ReportResponse,
@@ -251,6 +252,9 @@ export const getFormQuestionBank = (): Promise<FormQuestionBank> =>
 
 export const getPostingLifetime =(): Promise<PostingLifetime> =>
   request<PostingLifetime>("/api/posting-lifetime");
+
+export const getStoreHygiene = (): Promise<StoreHygiene> =>
+  request<StoreHygiene>("/api/store-hygiene");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

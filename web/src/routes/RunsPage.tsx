@@ -10,6 +10,7 @@ import { CompanionHistory } from "../components/CompanionHistory";
 import { JudgeAgreementPanel } from "../components/JudgeAgreementPanel";
 import { RuleDispositions } from "../components/RuleDispositions";
 import { SourceYield } from "../components/SourceYield";
+import { StoreHygiene } from "../components/StoreHygiene";
 import { EM_DASH, formatCount, formatFraction, formatTimestamp } from "../lib/format";
 
 /*
@@ -807,6 +808,7 @@ export function RunsPage() {
         </>
       )}
       <BuildEconomics />
+      <StoreHygiene />
       <CompanionHistory />
       <BoardHealth />
     </div>

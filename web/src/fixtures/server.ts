@@ -456,6 +456,30 @@ function route(method: string, path: string, body: unknown): unknown {
         },
       ],
     };
+  if (method === "GET" && path === "/api/store-hygiene")
+    return {
+      quarantine: {
+        held: 0,
+        drained: 0,
+        oldest_held_days: null,
+        last_drained_at: null,
+        days_since_drain: null,
+        stall_days: 14,
+        stalled: false,
+        weekly: [],
+      },
+      grouping: {
+        merges: 0,
+        merged_jobs: 0,
+        without_source_job: 0,
+        postings_approx: 0,
+        per_1000_postings: null,
+        methods: [],
+        weekly: [],
+      },
+      store: { db_bytes: 0, wal_bytes: 0, total_bytes: 0, growth_recorded: false },
+      tables: { approximate: true, rows: [] },
+    };
   if (method === "GET" && path === "/api/posting-lifetime")
     return {
       closed: { count: 0, median_days: null, p90_days: null },

@@ -31,6 +31,13 @@ All notable changes to this project are documented here. The format follows
   unevaluated one are not counted; `uncertain` (abstain) forms are reported as their own number. Greenhouse's six
   built-in fields (name, email, phone, résumé, cover letter) are left out. An unreadable answers file shows every row
   as unknown instead of unanswered. 0.5 s on the live store.
+- **The Runs page shows store hygiene (T313).** A new read-only `GET /api/store-hygiene` reports whether the
+  quarantine is draining (`quarantined_bodies`: held against drained by `reopened_at`, the oldest held body's age, the
+  last drain, eight weeks of quarantined against drained, and a stall alert when something is held and nothing has
+  drained for 14 days), how often grouping merges duplicates (`job_grouping_events`: merges by method and week, and a
+  rate per 1,000 postings), the store's size on disk (database plus `-wal`, by `os.stat`) and the ten largest tables by
+  highest row id. Table sizes are approximate (`MAX(rowid)`, since `dbstat` would read the whole 50 GB file). Growth per
+  run is not shown: no run records the store size, and this adds no write path. 0.01 s warm on the live store.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

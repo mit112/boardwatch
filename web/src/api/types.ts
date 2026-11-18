@@ -762,6 +762,42 @@ export interface PostingLifetime {
   companies: PostingLifetimeCompany[];
 }
 
+/* `GET /api/store-hygiene` (T313). */
+export interface StoreHygiene {
+  quarantine: {
+    held: number;
+    drained: number;
+    /** Days the longest-held body has waited. `null`: nothing is held. */
+    oldest_held_days: number | null;
+    last_drained_at: string | null;
+    days_since_drain: number | null;
+    stall_days: number;
+    /** Something is held and nothing has drained inside `stall_days`. */
+    stalled: boolean;
+    /** Last eight weeks, oldest first; `drained` is by `reopened_at` (the drain stamps no run). */
+    weekly: { week_start: string; quarantined: number; drained: number }[];
+  };
+  grouping: {
+    merges: number;
+    merged_jobs: number;
+    without_source_job: number;
+    /** Highest postings rowid: approximate. */
+    postings_approx: number;
+    per_1000_postings: number | null;
+    methods: { method: string; algorithm_version: string | null; count: number }[];
+    weekly: { week_start: string; merges: number }[];
+  };
+  store: {
+    db_bytes: number;
+    wal_bytes: number;
+    total_bytes: number;
+    /** `false`: no run records the size, so there is no growth to show. */
+    growth_recorded: boolean;
+  };
+  /** Highest rowid per table, not a count: approximate. */
+  tables: { approximate: boolean; rows: { name: string; rows: number }[] };
+}
+
 export interface RunsResponse {
   runs: RunSummary[];
 }
