@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
+  row per withdrawn application, from its first withdrawal (a later `withdrawn -> withdrawn` event is a repeat, not a
+  second one), split into pulled back after applying (with days since applying) and declined before sending, with the
+  recorded note. The live store holds 39, all declined before sending; the 40 other `withdrawn` events are repeats.
+  Outcomes past applied stay out of scope.
+
 - **The Runs page shows discovery yield per source (T306).** One row per source (Greenhouse, Ashby, LinkedIn, Indeed,
   the job-apps lane, ...): open and eligible postings from the run's own per-board snapshot, beside résumés built and
   applications made all time, from a new read-only `GET /api/source-yield` that credits each lead once to the source

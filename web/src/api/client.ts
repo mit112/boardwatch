@@ -44,6 +44,7 @@ import type {
   RunTrends,
   SkipResponse,
   VersionResponse,
+  Withdrawal,
 } from "./types";
 
 function resolveFixtureMode(): boolean {
@@ -238,6 +239,9 @@ export const getSourceYield = (): Promise<SourceYieldResponse> =>
 
 export const getJudgeAgreement = (): Promise<JudgeAgreement> =>
   request<JudgeAgreement>("/api/judge-agreement");
+
+export const getWithdrawals = (): Promise<{ withdrawals: Withdrawal[] }> =>
+  request<{ withdrawals: Withdrawal[] }>("/api/withdrawals");
 
 export const getCompanions = (): Promise<CompanionsResponse> =>
   request<CompanionsResponse>("/api/companions");

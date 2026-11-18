@@ -126,6 +126,7 @@ from boardwatch.store.queue_state import (
     unmark_job_reported,
     unmark_job_skipped,
 )
+from boardwatch.store.withdrawal_queries import withdrawals
 
 #: The one address this server may bind. A frozenset so the refusal reads as a closed catalog
 #: rather than as a `!=` somebody can widen without noticing.
@@ -524,6 +525,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if path == "/api/judge-agreement":
                 agreement = self._read(lambda conn, _ctx: judge_agreement(conn))
                 self._json(HTTPStatus.OK, agreement)
+                return
+            if path == "/api/withdrawals":
+                self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: withdrawals(conn)))
                 return
             if path == "/api/lead-aging":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: lead_aging(conn)))
