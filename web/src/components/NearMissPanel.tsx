@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { getNearMisses } from "../api/client";
-import type { NearMissRule, NearMisses } from "../api/types";
+import type { NearMissRule, NearMissesResponse } from "../api/types";
 
 /*
  * T303: the near-miss list. Open postings blocked by exactly one unmet requirement, grouped by that
@@ -78,7 +78,7 @@ function RuleRow({ rule, peak }: { rule: NearMissRule; peak: number }) {
 }
 
 export function NearMissPanel() {
-  const [data, setData] = useState<NearMisses | null>(null);
+  const [data, setData] = useState<NearMissesResponse | null>(null);
   useEffect(() => {
     let live = true;
     void Promise.resolve()
@@ -93,7 +93,14 @@ export function NearMissPanel() {
       live = false;
     };
   }, []);
-  if (data === null || !data.profile) return null;
+  if (data === null) return null;
+  if (!data.available)
+    return (
+      <section aria-label="Near-miss list" className="text-sm text-fg-2">
+        Near-misses are computed at the end of each nightly run; none has run yet.
+      </section>
+    );
+  if (!data.profile) return null;
 
   const gatedOut = data.gated_out.reduce((sum, g) => sum + g.count, 0);
   const peak = data.rules[0]?.count || 1;
@@ -101,6 +108,7 @@ export function NearMissPanel() {
   return (
     <section aria-label="Near-miss list" className="flex flex-col gap-2">
       <h2 className="text-base text-fg">Near-misses: one unmet requirement</h2>
+      <p className="text-xs text-fg-2">As of the end of run {data.run_id}.</p>
       <p className="text-sm text-fg-2">
         {data.near_misses.toLocaleString()} open postings that pass the title
         and location gates are blocked by exactly one unmet requirement and

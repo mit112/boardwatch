@@ -1125,6 +1125,12 @@ export interface NearMisses {
   rules: NearMissRule[];
 }
 
+/* `GET /api/near-misses`: the newest stored report, computed at the end of each nightly run
+ * (it takes about two minutes, too long for a page load). `available: false` until the first. */
+export type NearMissesResponse =
+  | { available: false }
+  | ({ available: true; run_id: number } & NearMisses);
+
 /* `GET /api/withdrawals` (T311): one row per withdrawn application, newest first. */
 export interface Withdrawal {
   application_id: number;

@@ -411,6 +411,8 @@ function route(method: string, path: string, body: unknown): unknown {
   if (method === "GET" && path === "/api/companions") return { companions: [] };
   if (method === "GET" && path === "/api/near-misses")
     return {
+      available: true,
+      run_id: 1,
       profile: true,
       blocked: 0,
       one_unmet: 0,

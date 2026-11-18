@@ -4,10 +4,12 @@ import { expect, it, vi } from "vitest";
 vi.mock("../api/client", () => ({ getNearMisses: vi.fn() }));
 
 import { getNearMisses } from "../api/client";
-import type { NearMisses } from "../api/types";
+import type { NearMissesResponse } from "../api/types";
 import { NearMissPanel } from "../components/NearMissPanel";
 
-const DATA: NearMisses = {
+const DATA: NearMissesResponse = {
+  available: true,
+  run_id: 812,
   profile: true,
   blocked: 1000,
   one_unmet: 300,
@@ -50,6 +52,7 @@ it("states the cohort, what the gates left out and the abstains apart, then each
   vi.mocked(getNearMisses).mockResolvedValue(DATA);
   render(<NearMissPanel />);
   const panel = await screen.findByRole("region", { name: "Near-miss list" });
+  expect(within(panel).getByText("As of the end of run 812.")).toBeDefined();
   const summary = within(panel).getByText(/open postings that pass the title/);
   expect(summary.textContent).toContain("120 open postings");
   expect(summary.textContent).toContain("Of 1,000 blocked postings, 300 hold");
@@ -93,7 +96,7 @@ it("shows a sample's quoted span as text, never as markup", async () => {
 });
 
 it("draws nothing without a profile", async () => {
-  vi.mocked(getNearMisses).mockResolvedValue({
+  vi.mocked(getNearMisses).mockResolvedValue({ available: true, run_id: 1,
     profile: false,
     blocked: 0,
     one_unmet: 0,
@@ -105,4 +108,11 @@ it("draws nothing without a profile", async () => {
   const { container } = render(<NearMissPanel />);
   await Promise.resolve();
   expect(container.textContent).toBe("");
+});
+
+it("says when no nightly run has computed the report yet", async () => {
+  vi.mocked(getNearMisses).mockResolvedValue({ available: false });
+  render(<NearMissPanel />);
+  const panel = await screen.findByRole("region", { name: "Near-miss list" });
+  expect(panel.textContent).toContain("computed at the end of each nightly run; none has run yet");
 });

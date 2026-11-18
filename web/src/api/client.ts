@@ -36,7 +36,7 @@ import type {
   FormQuestionBank,
   JdChanges,
   JudgeAgreement,
-  NearMisses,
+  NearMissesResponse,
   LeadAging,
   CompanyHiring,
   PostingLifetime,
@@ -247,8 +247,8 @@ export const getSourceYield = (): Promise<SourceYieldResponse> =>
 export const getJudgeAgreement = (): Promise<JudgeAgreement> =>
   request<JudgeAgreement>("/api/judge-agreement");
 
-export const getNearMisses = (): Promise<NearMisses> =>
-  request<NearMisses>("/api/near-misses");
+export const getNearMisses = (): Promise<NearMissesResponse> =>
+  request<NearMissesResponse>("/api/near-misses");
 
 export const getWithdrawals = (): Promise<{ withdrawals: Withdrawal[] }> =>
   request<{ withdrawals: Withdrawal[] }>("/api/withdrawals");

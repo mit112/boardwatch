@@ -27,16 +27,16 @@ The gate vetoes a title containing "Senior" (`excluded_title`) and the location 
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import Connection, Engine, insert, select
+from sqlalchemy import Connection, Engine, insert
 
 from boardwatch.core.settings import load_settings
-from boardwatch.delivery.api import ApiContext
-from boardwatch.store import near_miss_queries as nmq
+from boardwatch.delivery.api import ApiContext, compute_near_miss_report
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.near_miss_queries import near_misses
 from boardwatch.store.tables import (
@@ -79,7 +79,6 @@ def _span(quote: str) -> list[int]:
 def _scratch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("BOARDWATCH_DATA_DIR", str(tmp_path / "data"))
-    nmq._memo = None
 
 
 @pytest.fixture()
@@ -289,7 +288,6 @@ def _call(conn: Connection, **over: Any) -> dict[str, Any]:
         "engine_version": ENGINE,
         "blocking": BLOCKING,
         "gate": _gate,
-        "gate_key": "gate-1",
     }
     args.update(over)
     return near_misses(conn, **args)
@@ -387,38 +385,7 @@ def test_a_policy_that_demotes_a_family_stops_it_blocking(engine: Engine) -> Non
     assert [s["posting_id"] for s in e["samples"]] == [p["p7"], p["p5"], p["p4"]]
 
 
-def test_the_result_is_memoised_until_the_store_or_the_gate_changes(engine: Engine) -> None:
-    calls: list[str] = []
-
-    def counting(title: str, locations: Any, remote: str) -> str | None:
-        calls.append(title)
-        return _gate(title, locations, remote)
-
-    with engine.begin() as conn:
-        _build(conn)
-    with engine.connect() as conn:
-        first = _call(conn, gate=counting)
-        seen = len(calls)
-        again = _call(conn, gate=counting)
-    assert seen == 9 and len(calls) == seen  # the gate ran once per one-unmet posting, once
-    assert again == first
-
-    # A new evaluation moves the newest evaluation id: the key changes and the gate runs again.
-    with engine.begin() as conn:
-        acme = int(conn.execute(select(companies.c.id)).scalar_one())
-        _posting(conn, acme, "later", "ineligible", [_req(E_MIN, "unmet", TWO_YEARS)])
-    with engine.connect() as conn:
-        grown = _call(conn, gate=counting)
-    assert len(calls) == seen + 10
-    assert grown["near_misses"] == first["near_misses"] + 1
-
-    # The gate's inputs are part of the key: a different `gate_key` recomputes.
-    with engine.connect() as conn:
-        _call(conn, gate=counting, gate_key="gate-2")
-    assert len(calls) == seen + 20
-
-
-def test_a_company_rename_shows_at_once_through_the_memo(engine: Engine) -> None:
+def test_a_company_rename_shows_in_the_next_report(engine: Engine) -> None:
     with engine.begin() as conn:
         _build(conn)
     with engine.connect() as conn:
@@ -460,10 +427,17 @@ def test_the_route_runs_the_pipelines_own_gates_over_a_real_evaluation(
         _deliver(conn, "abroad", locations=["London, United Kingdom"], **blocked)
         _deliver(conn, "nurse", title="Registered Nurse Practitioner", **blocked)
         _deliver(conn, "open", body=JD_ELIGIBLE, facts=BLOCKING_FACTS, policy=BLOCKING_POLICY)
+    with engine.connect() as conn:
+        report = compute_near_miss_report(conn, ctx.settings)
+    # The run stores it beside its funnel; the route only reads the newest stored report.
+    day = ctx.out_root / "2026-11-18"
+    day.mkdir()
+    (day / "near-miss-41.json").write_text(json.dumps(report), encoding="utf-8")
     with serving(ctx) as live:
         assert call(live, "/api/near-misses").status == 401
         got = call(live, "/api/near-misses", bearer=live.token).json()
 
+    assert (got["available"], got["run_id"]) == (True, 41)
     assert got["profile"] is True
     # Three ineligible postings, each holding the one work_auth row; the eligible one is not blocked.
     assert (got["blocked"], got["one_unmet"]) == (3, 3)
@@ -479,14 +453,32 @@ def test_the_route_runs_the_pipelines_own_gates_over_a_real_evaluation(
     assert sample["posting_id"] == fine
     assert sample["quote"] and sample["quote"] in JD_INELIGIBLE
     assert sample["company"] == "Acme fine"
-    # The read-only engine the server opens names a stat-able store file, so the answer is held.
-    assert nmq._memo is not None
+
+
+def test_the_route_serves_the_newest_runs_report_and_says_when_there_is_none(
+    tmp_path: Path,
+) -> None:
+    """Run 9's report is in an older day folder, run 12's in a newer one and run 10's at the top
+    level: run 12 is served, by run id, never by file order. A malformed name is ignored."""
+    ctx = _ctx(tmp_path)
+    with serving(ctx) as live:
+        assert call(live, "/api/near-misses", bearer=live.token).json() == {"available": False}
+    (ctx.out_root / "2026-11-01").mkdir()
+    (ctx.out_root / "2026-11-02").mkdir()
+    (ctx.out_root / "2026-11-01" / "near-miss-9.json").write_text('{"near_misses": 9}')
+    (ctx.out_root / "2026-11-02" / "near-miss-12.json").write_text('{"near_misses": 12}')
+    (ctx.out_root / "near-miss-10.json").write_text('{"near_misses": 10}')
+    (ctx.out_root / "near-miss-x.json").write_text('{"near_misses": 99}')
+    with serving(ctx) as live:
+        got = call(live, "/api/near-misses", bearer=live.token).json()
+    assert got == {"available": True, "run_id": 12, "near_misses": 12}
 
 
 def test_the_route_says_there_is_no_profile_rather_than_inventing_zeros(
     tmp_path: Path, engine: Engine
 ) -> None:
-    with serving(_ctx(tmp_path)) as live:
-        got = call(live, "/api/near-misses", bearer=live.token).json()
+    ctx = _ctx(tmp_path)
+    with engine.connect() as conn:
+        got = compute_near_miss_report(conn, ctx.settings)
     assert got["profile"] is False
     assert (got["near_misses"], got["rules"]) == (0, [])

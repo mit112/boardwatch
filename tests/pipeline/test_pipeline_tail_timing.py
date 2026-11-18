@@ -31,6 +31,7 @@ def test_tail_boundaries_charge_the_work_before_them(
     costs = {
         "form_sweep": 1.0,
         "funnel": 2.0,
+        "near_miss": 3.0,
         "queue_sync": 4.0,
         "soft_detectors": 8.0,
         "morning": 16.0,
@@ -65,6 +66,9 @@ def test_tail_boundaries_charge_the_work_before_them(
         ("morning", "_emit_morning"),
     ):
         monkeypatch.setattr(runner, attribute, charged(name, getattr(runner, attribute)))
+    monkeypatch.setattr(
+        runner, "compute_near_miss_report", charged("near_miss", runner.compute_near_miss_report)
+    )
     monkeypatch.setattr(runner, "send_heartbeat", charged("heartbeat", lambda: None))
     monkeypatch.setattr(runner, "escalate_alerts", charged("escalation", lambda *_: None))
     output = StringIO()
@@ -80,7 +84,7 @@ def test_tail_boundaries_charge_the_work_before_them(
     if failure in {"funnel", "morning"}:
         expected_costs["heartbeat"] = 0.0
     assert calls == [name for name in costs if name != "heartbeat" or expected_costs[name]]
-    actual = {stage.name: stage.seconds for stage in summary.stage_durations[-7:]}
+    actual = {stage.name: stage.seconds for stage in summary.stage_durations[-8:]}
     assert actual == expected_costs, "tail durations must include each operation's own cost"
     cumulative = 0.0
     lines = output.getvalue().splitlines()
@@ -98,7 +102,7 @@ def test_tail_boundaries_charge_the_work_before_them(
             payload = json.loads(original)
             assert payload["stage_durations"] == [
                 {"name": stage.name, "seconds": round(stage.seconds, 3)}
-                for stage in summary.stage_durations[:-7]
+                for stage in summary.stage_durations[:-8]
             ], "D-343: the funnel keeps the pre-tail snapshot"
     if failure:
         assert any(f"injected {failure} failure" in error for error in summary.errors)

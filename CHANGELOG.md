@@ -72,8 +72,10 @@ All notable changes to this project are documented here. The format follows
   clause and left out. A posting with that one unmet row plus an abstain on a blocking rule is counted apart and never
   added to the near-miss number. On the live store, of 373,423 blocked postings 219,645 hold one blocking unmet row;
   the gates leave 37,858 near-misses (and 3,423 with an abstain). Computing it takes 95 to 125 s on the live store
-  (the current evaluation of every open posting is about half of that), so the answer is held in process, keyed by the
-  latest finished run, the newest evaluation and the gate's inputs: 0.01 s once held.
+  (the current evaluation of every open posting is about half of that), so every full nightly run computes it once,
+  after the funnel, and writes `near-miss-<run_id>.json` beside it (a new `near_miss` stage, non-fatal: a failure is a
+  run error, never a failed run). The route only reads the newest stored report and says `available: false` before the
+  first. Fresh-only runs skip it.
 
 - **The Applied page lists withdrawals with their reasons (T311).** A new read-only `GET /api/withdrawals` gives one
   row per withdrawn application, from the withdrawal that stands, its newest (a `withdrawn -> withdrawn` event is a

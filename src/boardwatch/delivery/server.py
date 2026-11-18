@@ -566,7 +566,8 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 self._json(HTTPStatus.OK, hiring)
                 return
             if path == "/api/near-misses":
-                self._json(HTTPStatus.OK, self._read(near_miss_payload))
+                # A file read: the report is stored by the nightly run, never computed here.
+                self._json(HTTPStatus.OK, near_miss_payload(deps.ctx))
                 return
             if path == "/api/companions":
                 # Files only, no store connection: a held scan lock cannot hide a companion's

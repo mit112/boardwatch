@@ -1507,8 +1507,37 @@ def runs_payload(conn: Connection) -> dict[str, Any]:
     }
 
 
-def near_miss_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
-    """`GET /api/near-misses` (T303): open postings blocked by exactly one unmet requirement.
+NEAR_MISS_PREFIX = "near-miss-"
+
+
+def near_miss_payload(ctx: ApiContext) -> dict[str, Any]:
+    """`GET /api/near-misses` (T303): the newest run's stored near-miss report.
+
+    Computed at the end of each nightly run (`compute_near_miss_report`, written beside the
+    funnel as `near-miss-<run_id>.json`), never on a page load: over every open posting's current
+    evaluation it takes about two minutes on the live store (owner ruling 2026-11-17). Before the
+    first such run there is nothing to show, said as `available: false`, never as zero.
+    """
+    listed = [
+        *ctx.out_root.glob(f"{NEAR_MISS_PREFIX}*.json"),
+        *ctx.out_root.glob(f"*/{NEAR_MISS_PREFIX}*.json"),
+    ]
+
+    def run_of(path: Path) -> int:
+        stem = path.stem.removeprefix(NEAR_MISS_PREFIX)
+        return int(stem) if stem.isdecimal() else -1
+
+    for path in sorted(listed, key=run_of, reverse=True):
+        if run_of(path) < 0:
+            continue
+        report = _read_funnel_file(ctx, path)
+        if report is not None:
+            return {"available": True, "run_id": run_of(path), **report}
+    return {"available": False}
+
+
+def compute_near_miss_report(conn: Connection, settings: Settings) -> dict[str, Any]:
+    """T303: open postings blocked by exactly one unmet requirement, for the run to store.
 
     The cohort is the postings that would be real leads but for that requirement, decided by the
     pipeline's own gates and never a filter of this module's: `hard_filter_verdict` (an excluded
@@ -1517,7 +1546,6 @@ def near_miss_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     The location clauses are asked ARMED whatever `location_filter_mode` says, because the lane
     holds a lead outside the target countries either way (`review_gate.classify`).
     """
-    settings = ctx.settings
     profile_row = get_profile(conn)
     catalog = load_rules(settings.config_dir)
     identity = current_identity(conn, settings, catalog=catalog)
@@ -1558,7 +1586,6 @@ def near_miss_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
             engine_version=engine_version(),
             blocking=blocking,
             gate=gate,
-            gate_key=(profile, role_taxonomy.digest if role_taxonomy is not None else ""),
         ),
     }
 

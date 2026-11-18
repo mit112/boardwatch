@@ -26,23 +26,18 @@ Cost, measured on the live store (50 GB, 770k open postings), cold: about 50 s f
 evaluation of every open posting (the funnel's own join, three covering-index probes per posting;
 it is the same with the verdict column dropped, so the cost is the probes), 7 s for the 733k
 requirement rows of the 373k blocked evaluations, and the rest for the 219k posting rows the gate
-reads. 95 to 125 s in all, which is why the result is held.
-
-The result is memoised in process. Its key is the store file (path and inode), the latest finished
-run, the newest evaluation id, the profile and rules hashes and the caller's `gate_key` (what the
-gate was built from). Company NAMES are never memoised: they are read fresh for the rows shown.
+reads. 95 to 125 s in all, which is why it runs once at the end of each nightly run and the page
+reads the stored report (`delivery/api.py: near_miss_payload`), never computing it on a load.
 """
 
 from __future__ import annotations
 
-import os
-import threading
 from collections import Counter, defaultdict, deque
-from collections.abc import Callable, Hashable, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import Connection, Engine, func, select
+from sqlalchemy import Connection, select
 
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.run_funnel_queries import _current_identity_evaluations
@@ -52,7 +47,6 @@ from boardwatch.store.tables import (
     eligibility_requirements,
     posting_versions,
     postings,
-    runs,
 )
 
 #: Rules shown, requirement texts shown per rule, and sample postings per rule.
@@ -262,37 +256,6 @@ def _quotes(conn: Connection, shown: list[_Sample]) -> tuple[tuple[int, str], ..
     return tuple(out)
 
 
-_Key = tuple[str, int | None, int | None, int | None, str, str, str, Hashable]
-_memo: tuple[_Key, _Aggregate] | None = None
-_compute_lock = threading.Lock()
-
-
-def _inode(engine: Engine) -> int | None:
-    """The store file's inode: a path alone cannot tell a replaced file from the one it replaced."""
-    path = engine.url.database
-    if not path or path == ":memory:":
-        return None
-    try:
-        return os.stat(path.removeprefix("file:")).st_ino
-    except OSError:
-        return None
-
-
-def _memo_key(
-    conn: Connection, profile_hash: str, rules_hash: str, engine_version: str, gate_key: Hashable
-) -> _Key:
-    return (
-        conn.engine.url.render_as_string(hide_password=True),
-        _inode(conn.engine),
-        conn.execute(select(func.max(runs.c.id)).where(runs.c.finished_at.is_not(None))).scalar(),
-        conn.execute(select(func.max(eligibility_evaluations.c.id))).scalar(),
-        profile_hash,
-        rules_hash,
-        engine_version,
-        gate_key,
-    )
-
-
 def near_misses(
     conn: Connection,
     *,
@@ -302,36 +265,16 @@ def near_misses(
     engine_version: str,
     blocking: frozenset[str],
     gate: Gate,
-    gate_key: Hashable,
 ) -> dict[str, Any]:
-    global _memo
-
-    def compute() -> _Aggregate:
-        return _aggregate(
-            conn,
-            profile_hash=profile_hash,
-            rules_hash=rules_hash,
-            engine_kind=engine_kind,
-            engine_version=engine_version,
-            blocking=blocking,
-            gate=gate,
-        )
-
-    if _inode(conn.engine) is None:
-        # No stat-able store file: nothing tells one store from another, so never memoise.
-        base = compute()
-    else:
-        key = _memo_key(conn, profile_hash, rules_hash, engine_version, gate_key)
-        # The lock makes a second page load wait for the first one's answer instead of starting
-        # its own pass over the same rows. The key and the payload tested and returned are one
-        # tuple, read once.
-        with _compute_lock:
-            held = _memo
-            if held is not None and held[0] == key:
-                base = held[1]
-            else:
-                base = compute()
-                _memo = (key, base)
+    base = _aggregate(
+        conn,
+        profile_hash=profile_hash,
+        rules_hash=rules_hash,
+        engine_kind=engine_kind,
+        engine_version=engine_version,
+        blocking=blocking,
+        gate=gate,
+    )
 
     quotes = dict(base.quotes)
     company_ids = sorted({s.candidate.company_id for _, _, _, _, ss in base.rules for s in ss})
