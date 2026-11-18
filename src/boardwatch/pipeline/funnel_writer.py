@@ -13,6 +13,7 @@ in the artifact instead of being resolved silently in favour of whichever ran la
 
 from __future__ import annotations
 
+import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
@@ -57,6 +58,7 @@ from boardwatch.reports.run_funnel import (
     ScanContext,
     ShortlistCounts,
     StageDuration,
+    StoreSize,
     build_projection_counters,
     build_run_funnel,
     identity_drift,
@@ -240,6 +242,39 @@ def read_execution_provenance(
         liveness_prober=liveness_prober,
         top_n=top_n,
     )
+
+
+def read_store_size(engine: Engine) -> StoreSize | None:
+    """T317. The store file and its `-wal` by `os.stat`, as of now; never raises.
+
+    `None` when the engine has no file behind it (an in-memory store). A field is `None` when
+    `os.stat` failed for a reason other than the file being absent; an absent `-wal` is a real
+    `0`, because SQLite removes it at the last checkpoint. An absent db file is `None`.
+    """
+    name = engine.url.database
+    if not name or name == ":memory:":
+        return None
+    path = Path(name.removeprefix("file:"))
+    try:
+        # SQLite keeps the `-wal` beside the RESOLVED file, so a symlinked store's WAL is beside
+        # its target, not beside the link.
+        path = path.resolve()
+    except OSError:
+        pass
+
+    def size(target: Path, *, absent: int | None) -> int | None:
+        try:
+            return os.stat(target).st_size
+        except FileNotFoundError:
+            return absent
+        except OSError:
+            return None
+
+    try:
+        wal = path.with_name(path.name + "-wal")
+    except ValueError:  # a path with no name (`/`): there is no store file to size
+        return None
+    return StoreSize(db_bytes=size(path, absent=None), wal_bytes=size(wal, absent=0))
 
 
 def collect_run_funnel(
@@ -559,6 +594,7 @@ def collect_run_funnel(
         tenant_assumptions=tenant_assumptions,
         direct_share=direct_share,
         delivered_direct_from_store=delivered_direct_from_store,
+        store_size=read_store_size(engine),
         errors=errors,
         board_moves=board_moves,
         fatal=fatal,

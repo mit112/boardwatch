@@ -3254,6 +3254,28 @@ def test_run_trends_are_oldest_first_and_read_each_funnel(
     assert new["stage_seconds"] == {"scan": 610.0, "lanes": 5.0, "tailor": 1500.0}
 
 
+def test_run_trends_carry_each_funnels_recorded_store_size(
+    live: Live, ctx: ApiContext, engine: Engine
+) -> None:
+    """T317. A recorded size passes through; a null field stays null; a funnel from before the
+    field, an unusable value and a non-integer all read as no figure, never 0."""
+    with engine.begin() as conn:
+        recorded, partial, old, junk = (
+            _timed_run(conn, minutes=m, new_count=1) for m in (10, 12, 14, 16)
+        )
+    _write_funnel(ctx, recorded, {"store_size": {"db_bytes": 5000, "wal_bytes": 0}}, day="2026-08-25")
+    _write_funnel(ctx, partial, {"store_size": {"db_bytes": None, "wal_bytes": 9}}, day="2026-08-25")
+    _write_funnel(ctx, old, {"stages": []}, day="2026-08-26")
+    _write_funnel(ctx, junk, {"store_size": {"db_bytes": "5000", "wal_bytes": True}}, day="2026-08-26")
+
+    by_id = {p["id"]: p for p in call(live, "/api/runs/trends", bearer=live.token).json()["runs"]}
+
+    assert by_id[recorded]["store_size"] == {"db_bytes": 5000, "wal_bytes": 0}
+    assert by_id[partial]["store_size"] == {"db_bytes": None, "wal_bytes": 9}
+    assert by_id[old]["store_size"] is None
+    assert by_id[junk]["store_size"] == {"db_bytes": None, "wal_bytes": None}
+
+
 def test_run_trends_leave_a_gap_where_nothing_was_measured(
     live: Live, ctx: ApiContext, engine: Engine
 ) -> None:
@@ -4191,7 +4213,30 @@ def test_store_hygiene_is_served_read_only(live: Live, engine: Engine) -> None:
     assert got["grouping"]["postings_approx"] == 1
     assert got["store"]["db_bytes"] > 0
     assert got["store"]["growth_recorded"] is False
+    # The delivered run has no funnel file: it is listed with no size and no growth, not as 0.
+    assert [(r["db_bytes"], r["growth_bytes"]) for r in got["store"]["series"]] == [(None, None)]
     assert call(live, "/api/store-hygiene").status == 401
+
+
+def test_store_hygiene_shows_growth_from_the_recorded_funnels(
+    live: Live, ctx: ApiContext, engine: Engine
+) -> None:
+    """T317. Three nightly runs: 1000 and 1750 bytes recorded, then a run from before the field.
+    Growth is 750 for the second, and none (not 0) for the first and the third."""
+    with engine.begin() as conn:
+        first, second, third = (_timed_run(conn, minutes=m, new_count=1) for m in (10, 12, 14))
+    _write_funnel(ctx, first, {"store_size": {"db_bytes": 1000, "wal_bytes": 0}}, day="2026-08-25")
+    _write_funnel(ctx, second, {"store_size": {"db_bytes": 1750, "wal_bytes": 8}}, day="2026-08-26")
+    _write_funnel(ctx, third, {"stages": []}, day="2026-08-27")
+
+    store = call(live, "/api/store-hygiene", bearer=live.token).json()["store"]
+
+    assert store["growth_recorded"] is True
+    assert [(r["run_id"], r["db_bytes"], r["growth_bytes"]) for r in store["series"]] == [
+        (first, 1000, None),
+        (second, 1750, 750),
+        (third, None, None),
+    ]
 
 
 def test_jd_changes_is_served_read_only(live: Live, engine: Engine) -> None:

@@ -261,8 +261,9 @@ def test_the_report_changes_no_other_funnel_key(
 ) -> None:
     """CONTROL: the same seeded run with the report produced and with it suppressed. Only the
     `tenant_assumptions` key may differ; every other key is byte-identical once the per-run
-    clocks and the two runs' own temp roots are set aside."""
-    volatile = {"started_at", "finished_at", "stage_durations", "tenant_assumptions"}
+    clocks, the store's file size (T317: the WAL moves with checkpoint timing) and the two runs'
+    own temp roots are set aside."""
+    volatile = {"started_at", "finished_at", "stage_durations", "store_size", "tenant_assumptions"}
 
     def run_once(root: Path) -> tuple[str, Any]:
         monkeypatch.setenv("BOARDWATCH_CONFIG_DIR", str(root / "cfg"))

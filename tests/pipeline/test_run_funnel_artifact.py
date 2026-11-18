@@ -155,6 +155,23 @@ def test_a_real_run_reads_the_buried_population(
     assert handed == [summary.buried], "the alert was not handed the funnel's read"
 
 
+def test_a_real_run_records_the_store_file_size(env: Path, tmp_path: Path) -> None:
+    """T317. Wired through `collect_run_funnel`: a real run's artifact carries the db file's
+    bytes, read from the file the run's engine points at."""
+    _ready(env)
+    out_root = tmp_path / "apps"
+
+    _pipeline(env, out_root)
+
+    size = _payload(out_root)["store_size"]
+    on_disk = (env / "boardwatch.db").stat().st_size
+    assert size["db_bytes"] > 0
+    # The run's own funnel is assembled before the run closes, so the file may have grown by
+    # the time it is statted here, never shrunk.
+    assert size["db_bytes"] <= on_disk
+    assert size["wal_bytes"] >= 0
+
+
 def test_a_below_bar_volume_reading_reaches_the_run_row_and_the_escalation_channel(
     env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

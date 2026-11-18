@@ -791,8 +791,17 @@ export interface StoreHygiene {
     db_bytes: number;
     wal_bytes: number;
     total_bytes: number;
-    /** `false`: no run records the size, so there is no growth to show. */
+    /** `true` once a run shown in `series` has a recorded db size (T317). */
     growth_recorded: boolean;
+    /** The last nightly runs, oldest first. `null` is not recorded (a run before T317, or an
+     * unreadable file), never 0; `growth_bytes` is the db file's change since the run before. */
+    series: {
+      run_id: number;
+      finished: string | null;
+      db_bytes: number | null;
+      wal_bytes: number | null;
+      growth_bytes: number | null;
+    }[];
   };
   /** `exact`: `COUNT(*)`; otherwise the highest rowid, an upper bound on the rows. */
   tables: { rows: { name: string; rows: number; exact: boolean }[] };

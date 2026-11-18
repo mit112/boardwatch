@@ -308,6 +308,11 @@ _TOP_MISSING = 10
 # what an existing key MEANS. A funnel written before it lacks the key, which reads as `null`: NOT
 # MEASURED. A run with `slate_direct_share` at 0 carries `{"instrumented": false, "state": "off"}`,
 # never a block of zeros.
+#
+# **T317's `store_size` section does NOT bump it either**, on that same `buried` / `direct_share`
+# precedent: a new top-level key that supplies no denominator and changes no existing key's
+# MEANING. It is the store file's size on disk when the funnel was assembled, read by `os.stat`.
+# A funnel written before it lacks the key, which reads as `null`: NOT RECORDED, never 0 bytes.
 ARTIFACT_VERSION = 9
 
 #: A lead's location class: the gate's `TargetClass`, or `abstain` where the gate cannot decide.
@@ -1348,6 +1353,36 @@ def _apply_lane_lines(cohort: ApplyLaneCohort | None) -> list[str]:
     return lines
 
 
+@dataclass(frozen=True)
+class StoreSize:
+    """The store file's size on disk when the funnel was assembled (T317).
+
+    `None` in a field means that `os.stat` failed, not that the file is empty. The WAL is `0`
+    when no `-wal` file exists: SQLite removes it at the last checkpoint, which is a real size.
+    """
+
+    db_bytes: int | None
+    wal_bytes: int | None
+
+
+def store_size_to_dict(size: StoreSize | None) -> dict[str, object] | None:
+    """The `store_size` section. `None` (JSON `null`) when it was not recorded for this run."""
+    if size is None:
+        return None
+    return {"db_bytes": size.db_bytes, "wal_bytes": size.wal_bytes}
+
+
+def _store_size_lines(size: StoreSize | None) -> list[str]:
+    lines = ["", "## Store size", ""]
+    if size is None:
+        return lines + ["*NOT RECORDED for this run — unmeasured, not zero.*"]
+
+    def show(value: int | None) -> str:
+        return "unreadable" if value is None else f"{value:,} bytes"
+
+    return lines + [f"db {show(size.db_bytes)} · wal {show(size.wal_bytes)}"]
+
+
 def buried_to_dict(buried: BuriedLeads | None) -> dict[str, object]:
     """The buried section (`store.buried_queries.buried_good_leads`), as counts. `instrumented:
     false` and nulls when it was not read.
@@ -1923,6 +1958,9 @@ class RunFunnel:
     # D-683. `None` means NOT MEASURED -- a funnel built outside `run_pipeline`. A run whose share
     # was off or inert carries a report that says so (`state`), which is not the same as `None`.
     direct_share: DirectShareReport | None = None
+    # T317. `None` means NOT RECORDED -- a funnel built outside `run_pipeline`, or written before
+    # this existed -- never a store of 0 bytes.
+    store_size: StoreSize | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -2274,6 +2312,8 @@ def build_run_funnel(
     # delivered leads recounted from their stored links, `None` when it was not read.
     direct_share: DirectShareReport | None = None,
     delivered_direct_from_store: tuple[int, int] | None = None,
+    # T317. Omitted means NOT RECORDED, and the section says so.
+    store_size: StoreSize | None = None,
     errors: Sequence[str] = (),
     board_moves: Sequence[str] = (),
     fatal: str | None = None,
@@ -2878,6 +2918,7 @@ def build_run_funnel(
         tenant_assumptions=tenant_assumptions,
         provenance=provenance,
         direct_share=direct_share,
+        store_size=store_size,
     )
 
 
@@ -3108,6 +3149,8 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         # Its own section, outside `stages` and every cross-check: a standing population, not
         # a drop, so it can sit in no reconciliation identity.
         "buried": buried_to_dict(funnel.buried),
+        # T317. Its own section, outside `stages` and every cross-check: a size, not a count.
+        "store_size": store_size_to_dict(funnel.store_size),
         "stub_rate": {
             "open_postings": funnel.stub_rate.open_postings,
             "stubs": funnel.stub_rate.stubs,
@@ -4021,6 +4064,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         *_apply_lane_lines(funnel.apply_lane),
         *_buried_lines(funnel.buried),
         *direct_share_lines(funnel.direct_share),
+        *_store_size_lines(funnel.store_size),
         "",
         "## Stub rate",
         "",
@@ -4163,6 +4207,7 @@ __all__ = [
     "ShortlistCounts",
     "SourceTotal",
     "Stage",
+    "StoreSize",
     "StubRate",
     "WrittenArtifact",
     "apply_lane_to_dict",
@@ -4178,5 +4223,6 @@ __all__ = [
     "gate_to_dict",
     "identity_drift",
     "provenance_to_dict",
+    "store_size_to_dict",
     "write_run_funnel",
 ]
