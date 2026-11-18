@@ -11,12 +11,15 @@ Four readings, each cheap on the 50 GB live store:
   set when anything is held and nothing has drained for `STALL_DAYS`.
 * **Duplicate grouping.** `job_grouping_events` rows are postings moved from one job into a
   survivor (`regroup.apply_merges`). Counted by method and algorithm version and per week, and
-  as a rate per 1000 postings ever stored. Postings are counted by their highest rowid, not
-  `COUNT(*)`: the table carries body text, and the rowid is exact until a row is deleted.
+  as a rate per 1000 postings ever stored. Postings come from the largest-tables reading below:
+  exact when `COUNT(*)` finishes inside its budget, the highest rowid otherwise.
 * **Store size.** The db file and its `-wal`, by `os.stat`. Nothing in the store or a run report
   records the size per run, so growth is reported as unrecorded; this adds no write path.
-* **Largest tables.** `MAX(rowid)` per table, approximate: it counts rows ever inserted, so a
-  table that deletes reads high. `dbstat` would read the whole file.
+* **Largest tables.** `COUNT(*)` per table, each given `COUNT_BUDGET_SECONDS` and then
+  interrupted. A table that cannot be counted in time (the big ones: a full count is minutes
+  on the 50 GB store) falls back to `MAX(rowid)` and is marked not exact: the rowid counts rows
+  ever inserted, so it reads high on a table that deletes, and far too high on a sparse one
+  (a quarantine keyed by posting version id). `dbstat` would read the whole file.
 
 Read-only. The store mixes naive-UTC and offset-carrying text in every DateTime column, so no
 SQL orders or compares a raw timestamp: they are read whole and normalised in Python.
@@ -25,12 +28,14 @@ SQL orders or compares a raw timestamp: they are read whole and normalised in Py
 from __future__ import annotations
 
 import os
+import threading
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Connection, select
+from sqlalchemy.exc import OperationalError
 
 from boardwatch.store.lead_aging_queries import _naive
 from boardwatch.store.tables import job_grouping_events, quarantined_bodies
@@ -40,6 +45,10 @@ from boardwatch.store.tables import job_grouping_events, quarantined_bodies
 STALL_DAYS = 14
 WEEKS = 8
 TABLE_ROWS = 10
+#: Time one exact `COUNT(*)` may take before it is interrupted and the table is estimated instead.
+#: Measured on the live store (cold, 29 tables): 15 count in 0.15 s or less; the other 14 take
+#: 0.35 s to 29 s. The worst case is 14 x 0.1 s spent on interrupted counts.
+COUNT_BUDGET_SECONDS = 0.1
 _SECONDS_PER_DAY = 86400
 
 
@@ -130,7 +139,36 @@ def _file_bytes(path: Path) -> int:
         return 0
 
 
-def _table_rows(conn: Connection) -> dict[str, int]:
+def _scalar_within(conn: Connection, sql: str, budget: float) -> int | None:
+    """The single integer `sql` returns, or None when it ran past `budget` seconds.
+
+    SQLite's progress handler never fires inside `COUNT(*)` (one opcode), so the statement is
+    cut short with `interrupt()` from a timer. `timed_out` is set by the timer, so only our own
+    interrupt is swallowed; any other database error still raises.
+    """
+    raw = conn.connection.driver_connection
+    timed_out = threading.Event()
+
+    def _stop() -> None:
+        timed_out.set()
+        raw.interrupt()  # type: ignore[union-attr]
+
+    timer = threading.Timer(budget, _stop)
+    timer.start()
+    try:
+        return int(conn.exec_driver_sql(sql).scalar() or 0)
+    except OperationalError:
+        if not timed_out.is_set():
+            raise
+        return None
+    finally:
+        timer.cancel()
+
+
+def _table_rows(
+    conn: Connection, budget: float = COUNT_BUDGET_SECONDS
+) -> dict[str, tuple[int, bool]]:
+    """Per table: (rows, exact). Exact is `COUNT(*)`; otherwise the highest rowid."""
     # Names come from the store's own catalog, never from a request.
     tables = [
         str(row[0])
@@ -138,25 +176,27 @@ def _table_rows(conn: Connection) -> dict[str, int]:
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
         )
     ]
-    sizes: dict[str, int] = {}
+    sizes: dict[str, tuple[int, bool]] = {}
     for name in tables:
         quoted = '"' + name.replace('"', '""') + '"'
-        top = conn.exec_driver_sql(f"SELECT MAX(rowid) FROM {quoted}").scalar()  # noqa: S608
-        sizes[name] = int(top or 0)
+        exact = _scalar_within(conn, f"SELECT COUNT(*) FROM {quoted}", budget)  # noqa: S608
+        if exact is not None:
+            sizes[name] = (exact, True)
+        else:
+            top = conn.exec_driver_sql(f"SELECT MAX(rowid) FROM {quoted}").scalar()  # noqa: S608
+            sizes[name] = (int(top or 0), False)
     return sizes
 
 
-def store_hygiene(
-    conn: Connection, db_path: Path, now: datetime | None = None
-) -> dict[str, Any]:
+def store_hygiene(conn: Connection, db_path: Path, now: datetime | None = None) -> dict[str, Any]:
     at = _naive(now) if now is not None else datetime.now(UTC).replace(tzinfo=None)
     sizes = _table_rows(conn)
     db_bytes = _file_bytes(db_path)
     wal_bytes = _file_bytes(db_path.with_name(db_path.name + "-wal"))
-    largest = sorted(sizes.items(), key=lambda kv: (-kv[1], kv[0]))[:TABLE_ROWS]
+    largest = sorted(sizes.items(), key=lambda kv: (-kv[1][0], kv[0]))[:TABLE_ROWS]
     return {
         "quarantine": _quarantine(conn, at),
-        "grouping": _grouping(conn, at, sizes.get("postings")),
+        "grouping": _grouping(conn, at, sizes.get("postings", (0, False))[0]),
         "store": {
             "db_bytes": db_bytes,
             "wal_bytes": wal_bytes,
@@ -164,8 +204,10 @@ def store_hygiene(
             # Neither `runs` nor a run report records the size, so there is no series to draw.
             "growth_recorded": False,
         },
+        # `exact` is per row: a table counted in time is a count, the rest are a highest rowid.
         "tables": {
-            "approximate": True,
-            "rows": [{"name": name, "rows": rows} for name, rows in largest],
+            "rows": [
+                {"name": name, "rows": rows, "exact": exact} for name, (rows, exact) in largest
+            ],
         },
     }

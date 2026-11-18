@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 from sqlalchemy import Connection, Engine, insert, text
+from sqlalchemy.exc import OperationalError
 
+from boardwatch.store import store_hygiene_queries as hygiene
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.store_hygiene_queries import store_hygiene
 from boardwatch.store.tables import jobs, posting_versions, runs
@@ -215,22 +218,88 @@ def test_store_size_is_the_database_plus_its_wal_and_says_growth_is_unrecorded(
         assert store_hygiene(conn, db, now=NOW)["store"]["total_bytes"] == 1234
 
 
-def test_largest_tables_are_ranked_by_highest_rowid_not_by_surviving_rows(engine: Engine) -> None:
-    """25 jobs inserted and the first 20 deleted: 5 rows survive, the highest id is 25, so the
-    approximate size is 25 and it still ranks first. 3 runs (id 3) rank next; `alembic_version`
-    (one row, rowid 1) after them. `sqlite_sequence` is not listed."""
+def test_sparse_and_deleting_tables_are_counted_exactly(engine: Engine) -> None:
+    """25 jobs inserted and the first 20 deleted: 5 survive, highest rowid 25. One delivery adds
+    1 row to each of jobs, posting_versions, postings, companies, artifacts, board_scans (it
+    reuses an existing run).
+    Three more posting_versions have ids 1001, 5000, 9000, each quarantined: the quarantine
+    table has 3 rows but its highest rowid is 9000. 3 runs. Exact counts: jobs 5+1 = 6,
+    posting_versions 1+3 = 4, quarantined_bodies 3, runs 3, then the one-row tables.
+    The 3-way tie breaks by name (quarantined_bodies before runs). Ranked by highest rowid the quarantine
+    would come first."""
     with engine.begin() as conn:
         for _ in range(25):
             conn.execute(insert(jobs).values(created_at=NOW))
         conn.execute(text("DELETE FROM jobs WHERE id <= 20"))
         for _ in range(3):
             conn.execute(insert(runs).values(started_at=NOW))
+        posting, _ = _deliver(conn, "sparse", judge=False)
+        for version_id in (1001, 5000, 9000):
+            conn.execute(
+                insert(posting_versions).values(
+                    id=version_id,
+                    posting_id=posting,
+                    content_hash=f"s{version_id}",
+                    body_text="body",
+                    captured_at=NOW,
+                    capture_reason="revised",
+                )
+            )
+            conn.execute(
+                text(
+                    "INSERT INTO quarantined_bodies (posting_version_id, posting_id, markers_json,"
+                    " catalog_version, quarantined_at) VALUES (:v, :p, '[]', 1, :q)"
+                ),
+                {"v": version_id, "p": posting, "q": NOW.isoformat()},
+            )
         got = store_hygiene(conn, UNUSED, now=NOW)["tables"]
-    assert got["approximate"] is True
-    assert got["rows"][:3] == [
-        {"name": "jobs", "rows": 25},
-        {"name": "runs", "rows": 3},
-        {"name": "alembic_version", "rows": 1},
+    assert "approximate" not in got
+    assert got["rows"][:5] == [
+        {"name": "jobs", "rows": 6, "exact": True},
+        {"name": "posting_versions", "rows": 4, "exact": True},
+        {"name": "quarantined_bodies", "rows": 3, "exact": True},
+        {"name": "runs", "rows": 3, "exact": True},
+        {"name": "alembic_version", "rows": 1, "exact": True},
     ]
     assert len(got["rows"]) == 10
     assert "sqlite_sequence" not in {r["name"] for r in got["rows"]}
+
+
+def test_a_table_that_cannot_be_counted_in_time_falls_back_to_its_highest_rowid(
+    engine: Engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only the count of `jobs` is made to time out: it reads its highest rowid (25) and is marked
+    not exact, the other tables stay exact counts. The postings figure follows the same rule."""
+    real = hygiene._scalar_within
+
+    def timeout_on_jobs(conn: Connection, sql: str, budget: float) -> int | None:
+        return None if 'FROM "jobs"' in sql else real(conn, sql, budget)
+
+    monkeypatch.setattr(hygiene, "_scalar_within", timeout_on_jobs)
+    with engine.begin() as conn:
+        for _ in range(25):
+            conn.execute(insert(jobs).values(created_at=NOW))
+        conn.execute(text("DELETE FROM jobs WHERE id <= 20"))
+        for _ in range(3):
+            conn.execute(insert(runs).values(started_at=NOW))
+        rows = {r["name"]: r for r in store_hygiene(conn, UNUSED, now=NOW)["tables"]["rows"]}
+    assert rows["jobs"] == {"name": "jobs", "rows": 25, "exact": False}
+    assert rows["runs"] == {"name": "runs", "rows": 3, "exact": True}
+
+
+def test_a_statement_past_its_budget_is_interrupted_and_the_connection_survives(
+    engine: Engine,
+) -> None:
+    endless = (
+        "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT COUNT(*) FROM c"
+    )
+    with engine.begin() as conn:
+        started = time.perf_counter()
+        assert hygiene._scalar_within(conn, endless, 0.05) is None
+        assert time.perf_counter() - started < 5
+        assert hygiene._scalar_within(conn, "SELECT 7", 5) == 7  # not poisoned by the interrupt
+
+
+def test_a_database_error_that_is_not_our_timeout_is_not_swallowed(engine: Engine) -> None:
+    with engine.begin() as conn, pytest.raises(OperationalError):
+        hygiene._scalar_within(conn, 'SELECT COUNT(*) FROM "no_such_table"', 5)
