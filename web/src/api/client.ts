@@ -35,6 +35,7 @@ import type {
   FollowUpResponse,
   FormQuestionBank,
   JdChanges,
+  VersionDiff,
   JudgeAgreement,
   NearMissesResponse,
   LeadAging,
@@ -263,6 +264,9 @@ export const getStoreHygiene = (): Promise<StoreHygiene> =>
   request<StoreHygiene>("/api/store-hygiene");
 
 export const getJdChanges = (): Promise<JdChanges> => request<JdChanges>("/api/jd-changes");
+
+export const getVersionDiff = (postingId: number, from: number, to: number): Promise<VersionDiff> =>
+  request<VersionDiff>(`/api/postings/${String(postingId)}/diff?from=${String(from)}&to=${String(to)}`);
 
 export const getCompanyHiring = (): Promise<CompanyHiring> =>
   request<CompanyHiring>("/api/company-hiring");

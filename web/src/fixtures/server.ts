@@ -558,6 +558,22 @@ function route(method: string, path: string, body: unknown): unknown {
     }
   }
 
+  const diffMatch = /^\/api\/postings\/(\d+)\/diff\?from=(\d+)&to=(\d+)$/.exec(path);
+  if (method === "GET" && diffMatch) {
+    return {
+      posting_id: Number(diffMatch[1]),
+      from: Number(diffMatch[2]),
+      to: Number(diffMatch[3]),
+      lines: [
+        { kind: "hunk", text: "@@ -1,3 +1,3 @@" },
+        { kind: "same", text: "Requirements" },
+        { kind: "del", text: "3+ years of Python" },
+        { kind: "add", text: "5+ years of Python" },
+        { kind: "same", text: "Remote within the US" },
+      ],
+    };
+  }
+
   const runMatch = /^\/api\/runs\/(\d+)$/.exec(path);
   if (method === "GET" && runMatch) {
     const funnel = FUNNELS[Number(runMatch[1])];

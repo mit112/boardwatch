@@ -4205,6 +4205,52 @@ def test_jd_changes_is_served_read_only(live: Live, engine: Engine) -> None:
     assert call(live, "/api/jd-changes").status == 401
 
 
+def test_posting_diff_is_served_read_only(live: Live, engine: Engine) -> None:
+    """T316: `/api/postings/<id>/diff` diffs two versions of THAT posting; else 404, bad query 400."""
+    with engine.begin() as conn:
+        posting, _ = _deliver(conn, "diff-a", body="alpha\nbeta\ngamma")
+        other, _ = _deliver(conn, "diff-b", body="elsewhere")
+        first = int(
+            conn.execute(
+                select(posting_versions.c.id).where(posting_versions.c.posting_id == posting)
+            ).scalar_one()
+        )
+        foreign = int(
+            conn.execute(
+                select(posting_versions.c.id).where(posting_versions.c.posting_id == other)
+            ).scalar_one()
+        )
+        revised = int(
+            conn.execute(
+                insert(posting_versions).values(
+                    posting_id=posting,
+                    content_hash="v-diff-a2",
+                    body_text="alpha\nBETA\ngamma",
+                    captured_at=NOW + timedelta(days=1),
+                    capture_reason="revised",
+                )
+            ).inserted_primary_key[0]
+        )
+    base = f"/api/postings/{posting}/diff"
+    got = call(live, f"{base}?from={first}&to={revised}", bearer=live.token).json()
+    assert (got["posting_id"], got["from"], got["to"]) == (posting, first, revised)
+    assert [(x["kind"], x["text"]) for x in got["lines"]] == [
+        ("hunk", "@@ -1,3 +1,3 @@"),
+        ("same", "alpha"),
+        ("del", "beta"),
+        ("add", "BETA"),
+        ("same", "gamma"),
+    ]
+    # A version of a different posting is not comparable, even though it exists.
+    assert call(live, f"{base}?from={first}&to={foreign}", bearer=live.token).status == 404
+    assert call(live, f"{base}?from={first}&to=999999", bearer=live.token).status == 404
+    assert call(live, f"/api/postings/999999/diff?from={first}&to={revised}", bearer=live.token).status == 404
+    for bad in ("", f"?from={first}", f"?to={first}", f"?from=x&to={first}", f"?from=-1&to={first}",
+                f"?from={first}&from={first}&to={revised}", f"?from={first}&to="):
+        assert call(live, base + bad, bearer=live.token).status == 400, bad
+    assert call(live, f"{base}?from={first}&to={revised}").status == 401
+
+
 def test_company_hiring_is_served_read_only(live: Live, engine: Engine) -> None:
     """T308: `/api/company-hiring` counts eligible under the live identity and needs the bearer."""
     chq._memo = None

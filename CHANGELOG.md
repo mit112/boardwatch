@@ -34,6 +34,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Version diff for the JD-change panel (T316).** `GET /api/postings/<posting_id>/diff?from=<version>&to=<version>`
+  returns a read-only line diff (Python's `difflib`, two lines of context) of two `posting_versions` bodies; both
+  versions must belong to that posting (404 otherwise, 400 for a missing or non-numeric id). In the panel, "Compare
+  version A with B" is now a button that opens the diff under the row, with a `+` or `−` sign on each added or removed
+  line so colour is never the only cue. A sent-against version that was never captured has nothing to compare, so that
+  row names the gap instead of offering a button.
+
 - **The Runs page shows résumé build economics (T310).** A new read-only `GET /api/build-economics` counts, from
   `artifacts`, the résumés each nightly run built (CLI rows left out; review-lane stubs, which render nothing, counted
   apart) and where every built résumé ended up, each job once at its first delivery, in total and per board: applied,

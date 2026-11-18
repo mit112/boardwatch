@@ -799,8 +799,8 @@ export interface StoreHygiene {
 }
 
 /* `GET /api/jd-changes` (T309): postings whose JD changed after a résumé was built or after an
- * application was sent. The two lists are never merged. There is no version-diff view in the app,
- * so each row carries the board's posting URL and both version ids. */
+ * application was sent. The two lists are never merged. Each row carries the board's posting URL
+ * and both version ids; `GET /api/postings/<id>/diff` compares them (T316). */
 export interface JdChangeRow {
   posting_id: number;
   job_id: number | null;
@@ -824,6 +824,21 @@ export interface JdChangeApplied extends JdChangeRow {
   submitted_at: string;
   /** The version live when the application was sent; null when none was captured by then. */
   sent_version_id: number | null;
+}
+
+/* `GET /api/postings/<posting_id>/diff?from=<version>&to=<version>` (T316): a line diff of two
+ * versions' text. `hunk` is the `@@` marker opening a run of changes with a little unchanged context;
+ * no lines at all means the two texts are the same. */
+export interface VersionDiffLine {
+  kind: "add" | "del" | "same" | "hunk";
+  text: string;
+}
+
+export interface VersionDiff {
+  posting_id: number;
+  from: number;
+  to: number;
+  lines: VersionDiffLine[];
 }
 
 export interface JdChanges {

@@ -118,7 +118,7 @@ from boardwatch.store.db import (
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
 from boardwatch.store.funnel_queries import job_id_for_posting
-from boardwatch.store.jd_change_queries import jd_changes
+from boardwatch.store.jd_change_queries import jd_changes, version_diff
 from boardwatch.store.judge_agreement_queries import judge_agreement
 from boardwatch.store.lead_aging_queries import lead_aging, source_yield
 from boardwatch.store.posting_lifetime_queries import posting_lifetime
@@ -238,6 +238,7 @@ _INVALID = object()
 
 _APPLICATION = re.compile(r"^/api/applications/(\d+)/(events|status|note)$")
 _PDF = re.compile(r"^/api/pdf/(\d+)$")
+_POSTING_DIFF = re.compile(r"^/api/postings/(\d+)/diff$")
 _RUN = re.compile(r"^/api/runs/(\d+)$")
 _ASSET = re.compile(r"^/assets/(.+)$")
 #: A probe's challenge: 16 random bytes as hex, and nothing else.
@@ -565,6 +566,9 @@ class ReviewHandler(BaseHTTPRequestHandler):
             if path == "/api/jd-changes":
                 self._json(HTTPStatus.OK, self._read(lambda conn, _ctx: jd_changes(conn)))
                 return
+            if (diff := _POSTING_DIFF.match(path)) is not None:
+                self._posting_diff(int(diff.group(1)))
+                return
             if path == "/api/company-hiring":
                 hiring = self._read(
                     lambda conn, ctx: company_hiring(conn, current_identity(conn, ctx.settings))
@@ -654,6 +658,24 @@ class ReviewHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, "no delivered lead for that posting")
             return
         self._json(HTTPStatus.OK, payload)
+
+    def _posting_diff(self, posting_id: int) -> None:
+        query = parse_qs(urlsplit(self.path).query)
+        ids = []
+        for key in ("from", "to"):
+            given = query.get(key, [])
+            # ASCII digits only: `str.isdigit` also accepts superscripts that `int` rejects.
+            if len(given) != 1 or not re.fullmatch(r"[0-9]{1,18}", given[0]):
+                self._error(HTTPStatus.BAD_REQUEST, "expected ?from=<version id>&to=<version id>")
+                return
+            ids.append(int(given[0]))
+        diff = self._read(
+            lambda conn, _ctx: {"diff": version_diff(conn, posting_id, ids[0], ids[1])}
+        )["diff"]
+        if diff is None:
+            self._error(HTTPStatus.NOT_FOUND, "those versions are not both of that posting")
+            return
+        self._json(HTTPStatus.OK, diff)
 
     def _answers(self) -> None:
         try:
