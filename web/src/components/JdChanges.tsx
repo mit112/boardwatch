@@ -108,7 +108,7 @@ function Compare({ row, from }: { row: JdChangeRow; from: number }) {
         Compare version {from} with {to}
       </button>
       {open ? (
-        <div className="mt-1 text-xs">
+        <div className="mt-1 text-xs" aria-live="polite">
           {failed ? (
             <p className="text-fg-2">The diff could not be loaded.</p>
           ) : diff === null ? (
@@ -174,7 +174,7 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
               <span className="text-fg-2">
                 · built {when(r.built_at)} · {revisions(r, "the version it was built from")} ·{" "}
               </span>
-              <Compare row={r} from={r.built_version_id} />
+              <Compare key={`${String(r.posting_id)}:${String(r.built_version_id)}:${String(r.latest_version_id)}`} row={r} from={r.built_version_id} />
             </li>
           ))}
         </ul>
@@ -205,7 +205,7 @@ export function JdChanges({ refresh }: { refresh?: unknown }) {
                   ? `no version was captured when it was sent (latest is version ${String(r.latest_version_id)})`
                   : null}
               </span>
-              {r.sent_version_id === null ? null : <Compare row={r} from={r.sent_version_id} />}
+              {r.sent_version_id === null ? null : <Compare key={`${String(r.posting_id)}:${String(r.sent_version_id)}:${String(r.latest_version_id)}`} row={r} from={r.sent_version_id} />}
             </li>
           ))}
         </ul>

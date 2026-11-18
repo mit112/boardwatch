@@ -171,3 +171,27 @@ it("says so when the diff fails to load, and retries on the next open", async ()
   fireEvent.click(button);
   expect(await screen.findByText("No line differs between the two versions.")).toBeDefined();
 });
+
+it("drops an open diff when a refresh moves the row to a newer version", async () => {
+  vi.mocked(getVersionDiff).mockReset();
+  vi.mocked(getJdChanges).mockResolvedValue(ONE_BUILT);
+  vi.mocked(getVersionDiff).mockResolvedValue({
+    posting_id: 1,
+    from: 11,
+    to: 30,
+    lines: [{ kind: "add", text: "old pair" }],
+  });
+  const { rerender } = render(<JdChanges refresh={1} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Compare version 11 with 30" }));
+  expect(await screen.findByText("old pair")).toBeDefined();
+
+  const moved = structuredClone(ONE_BUILT);
+  const first = moved.built.rows[0];
+  if (first === undefined) throw new Error("fixture has a built row");
+  first.latest_version_id = 31;
+  vi.mocked(getJdChanges).mockResolvedValue(moved);
+  rerender(<JdChanges refresh={2} />);
+  const next = await screen.findByRole("button", { name: "Compare version 11 with 31" });
+  expect(next.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.queryByText("old pair")).toBeNull();
+});
