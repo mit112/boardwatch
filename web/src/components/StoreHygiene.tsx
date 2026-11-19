@@ -83,31 +83,33 @@ export function StoreHygiene() {
         </p>
       ) : null}
       {q.weekly.length === 0 ? null : (
-        <table className="mt-2 text-sm">
-          <caption className="sr-only">Quarantine by week</caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Week of</th>
-              <th className="pr-6 text-right font-normal">Quarantined</th>
-              <th className="text-right font-normal">Drained</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {q.weekly.map((w) => (
-              <tr key={w.week_start}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {w.week_start}
-                </th>
-                <td className="pr-6 text-right tabular-nums">
-                  {formatCount(w.quarantined)}
-                </td>
-                <td className="text-right tabular-nums">
-                  {formatCount(w.drained)}
-                </td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Quarantine by week">
+          <table className="mt-2 text-sm">
+            <caption className="sr-only">Quarantine by week</caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Week of</th>
+                <th className="pr-6 text-right font-normal">Quarantined</th>
+                <th className="text-right font-normal">Drained</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {q.weekly.map((w) => (
+                <tr key={w.week_start}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {w.week_start}
+                  </th>
+                  <td className="pr-6 text-right tabular-nums">
+                    {formatCount(w.quarantined)}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {formatCount(w.drained)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h3 className="label-micro mt-4 text-fg-3">Duplicate grouping</h3>
@@ -124,27 +126,29 @@ export function StoreHygiene() {
           .join(", ")}
       </p>
       {g.weekly.length === 0 ? null : (
-        <table className="mt-2 text-sm">
-          <caption className="sr-only">Merges by week</caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Week of</th>
-              <th className="text-right font-normal">Merged</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {g.weekly.map((w) => (
-              <tr key={w.week_start}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {w.week_start}
-                </th>
-                <td className="text-right tabular-nums">
-                  {formatCount(w.merges)}
-                </td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Merges by week">
+          <table className="mt-2 text-sm">
+            <caption className="sr-only">Merges by week</caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Week of</th>
+                <th className="text-right font-normal">Merged</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {g.weekly.map((w) => (
+                <tr key={w.week_start}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {w.week_start}
+                  </th>
+                  <td className="text-right tabular-nums">
+                    {formatCount(w.merges)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <h3 className="label-micro mt-4 text-fg-3">Store size</h3>
@@ -156,63 +160,67 @@ export function StoreHygiene() {
           : "No run shown has a recorded size yet, so no growth is shown."}
       </p>
       {store.growth_recorded ? (
-        <table className="mt-2 text-sm">
-          <caption className="sr-only">Store size by run</caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Run</th>
-              <th className="pr-6 text-left font-normal">Finished</th>
-              <th className="pr-6 text-right font-normal">Database</th>
-              <th className="pr-6 text-right font-normal">Log</th>
-              <th className="text-right font-normal">Database growth</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {store.series.map((r) => (
-              <tr key={r.run_id}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {r.run_id}
-                </th>
-                <td className="pr-6">{formatTimestamp(r.finished)}</td>
-                <td className="pr-6 text-right tabular-nums">
-                  {r.db_bytes === null ? EM_DASH : gigabytes(r.db_bytes)}
-                </td>
-                <td className="pr-6 text-right tabular-nums">
-                  {megabytes(r.wal_bytes)}
-                </td>
-                <td className="text-right tabular-nums">
-                  {growth(r.growth_bytes)}
-                </td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Store size by run">
+          <table className="mt-2 text-sm">
+            <caption className="sr-only">Store size by run</caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Run</th>
+                <th className="pr-6 text-left font-normal">Finished</th>
+                <th className="pr-6 text-right font-normal">Database</th>
+                <th className="pr-6 text-right font-normal">Log</th>
+                <th className="text-right font-normal">Database growth</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {store.series.map((r) => (
+                <tr key={r.run_id}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {r.run_id}
+                  </th>
+                  <td className="pr-6">{formatTimestamp(r.finished)}</td>
+                  <td className="pr-6 text-right tabular-nums">
+                    {r.db_bytes === null ? EM_DASH : gigabytes(r.db_bytes)}
+                  </td>
+                  <td className="pr-6 text-right tabular-nums">
+                    {megabytes(r.wal_bytes)}
+                  </td>
+                  <td className="text-right tabular-nums">
+                    {growth(r.growth_bytes)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
       {tables.rows.length === 0 ? null : (
-        <table className="mt-2 text-sm">
-          <caption className="label-micro pb-1 text-left text-fg-3">
-            Largest tables, by rows (≈ marks an estimate)
-          </caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Table</th>
-              <th className="text-right font-normal">Rows</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {tables.rows.map((t) => (
-              <tr key={t.name}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {t.name}
-                </th>
-                <td className="text-right tabular-nums">
-                  {t.exact ? "" : "≈ "}
-                  {formatCount(t.rows)}
-                </td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Largest tables by rows">
+          <table className="mt-2 text-sm">
+            <caption className="label-micro pb-1 text-left text-fg-3">
+              Largest tables, by rows (≈ marks an estimate)
+            </caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Table</th>
+                <th className="text-right font-normal">Rows</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {tables.rows.map((t) => (
+                <tr key={t.name}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {t.name}
+                  </th>
+                  <td className="text-right tabular-nums">
+                    {t.exact ? "" : "≈ "}
+                    {formatCount(t.rows)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

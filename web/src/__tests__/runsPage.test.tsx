@@ -33,7 +33,7 @@ async function renderRuns(funnel: RunFunnel, runs: RunSummary[] = [runSummary()]
   vi.mocked(getFunnel).mockResolvedValue(funnel);
   render(<RunsPage />);
   // The funnel section only exists once both requests have settled.
-  await screen.findByText(/^funnel · artifact/);
+  await screen.findByRole("heading", { name: "Run funnel" });
 }
 
 function gateBand(): HTMLElement {
@@ -171,7 +171,7 @@ describe("a run that has no stored funnel", () => {
     );
     render(<RunsPage />);
 
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
     screen.getByText(/Showing run 528 — the newest run with a stored funnel\. Run 529 is listed but has none\./);
     // The picker still lists the run it skipped: nothing was hidden.
     expect(screen.getByRole("option", { name: /^529 ·/ })).toBeTruthy();
@@ -186,10 +186,10 @@ describe("a run that has no stored funnel", () => {
       id === 529 ? Promise.reject(notFound(529)) : Promise.resolve(runFunnel({ run_id: id })),
     );
     render(<RunsPage />);
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
 
     // The reader chooses the run with no funnel on purpose.
-    fireEvent.change(screen.getByRole("combobox", { name: "run" }), { target: { value: "529" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Run" }), { target: { value: "529" } });
     const notice = await screen.findByRole("alert");
     expect(within(notice).getByText("No funnel is stored for run 529.")).toBeTruthy();
     // Not a status code, and not a reason invented for the missing file.
@@ -199,7 +199,7 @@ describe("a run that has no stored funnel", () => {
     expect(screen.getByRole("region", { name: "Run summary" })).toBeTruthy();
 
     fireEvent.click(within(notice).getByRole("button", { name: "Show the newest run that has one" }));
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
   });
 
   it("skips a funnel file it cannot draw, instead of throwing, and says which run it skipped", async () => {
@@ -214,7 +214,7 @@ describe("a run that has no stored funnel", () => {
     );
     render(<RunsPage />);
 
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
     screen.getByText(/Showing run 528 — the newest run with a stored funnel\. Run 529 is listed but has none\./);
     expect(screen.queryByText(/could not be drawn/)).toBeNull();
   });
@@ -228,9 +228,9 @@ describe("a run that has no stored funnel", () => {
       Promise.resolve(id === 529 ? thin : runFunnel({ run_id: id })),
     );
     render(<RunsPage />);
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
 
-    fireEvent.change(screen.getByRole("combobox", { name: "run" }), { target: { value: "529" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Run" }), { target: { value: "529" } });
     const notice = await screen.findByRole("alert");
     expect(within(notice).getByText("The funnel for run 529 can't be drawn.")).toBeTruthy();
     expect(notice.textContent).toMatch(/missing parts this page needs/);
@@ -247,7 +247,7 @@ describe("a run that has no stored funnel", () => {
     within(notice).getByText(/This run['’]s details could not be loaded just now\./);
     expect(notice.textContent).not.toMatch(/503|api\/runs/);
     fireEvent.click(within(notice).getByRole("button", { name: "Try again" }));
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
   });
 
   it("does not walk the whole table when no run has a funnel", async () => {
@@ -276,7 +276,7 @@ describe("a run list that cannot be loaded", () => {
     within(notice).getByText("The run list could not be loaded.");
     expect(notice.textContent).not.toMatch(/503|api\/runs/);
     fireEvent.click(within(notice).getByRole("button", { name: "Try again" }));
-    await screen.findByText(/^funnel · artifact/);
+    await screen.findByRole("heading", { name: "Run funnel" });
   });
 
   it("says no runs are recorded, rather than loading forever, when the table is empty", async () => {

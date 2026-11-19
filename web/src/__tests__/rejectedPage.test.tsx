@@ -163,6 +163,7 @@ describe("the filtered-out page", () => {
     vi.mocked(disputeRejection).mockResolvedValue({ outcome: "disputed" });
     vi.mocked(getRejected).mockResolvedValue(response([{ ...row, disputed: true }]));
 
+    fireEvent.click(screen.getByLabelText("More actions: Globex — Backend Engineer"));
     fireEvent.click(screen.getByRole("button", { name: "Flag as wrongly filtered: Globex — Backend Engineer" }));
     await settle();
 
@@ -184,6 +185,7 @@ describe("the filtered-out page", () => {
     vi.mocked(markApplied).mockResolvedValue({ outcome: "created", job_id: row.job_id });
     vi.mocked(unapply).mockResolvedValue({ outcome: "transitioned", job_id: row.job_id });
 
+    fireEvent.click(screen.getByLabelText("More actions: Globex — Backend Engineer"));
     fireEvent.click(
       screen.getByRole("button", { name: "Record application anyway: Globex — Backend Engineer" }),
     );

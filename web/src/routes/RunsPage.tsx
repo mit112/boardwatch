@@ -198,7 +198,7 @@ function GateBand({ funnel }: { funnel: RunFunnel }) {
   ];
   return (
     <section aria-label="Final eligibility gate" className="flex flex-col">
-      <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
+      <dl className="ledger flex flex-wrap items-stretch gap-y-2 py-2">
         {cells.map(([label, value, emphasis]) => (
           <div key={label} className="flex min-w-32 flex-col gap-1 px-4 py-3">
             <dt className="label-micro text-fg-3">{label}</dt>
@@ -603,11 +603,14 @@ export function RunsPage() {
   );
 
   return (
-    <div className="flex flex-col gap-4">
-      <RunTrends />
-      <div className="flex flex-wrap items-end gap-4">
-        <label className="flex flex-col gap-1.5">
-          <span className="label-micro text-fg-3">run</span>
+    <div className="flex max-w-6xl flex-col gap-4">
+      <header>
+        <h1 className="page-title">Runs</h1>
+        <p className="mt-1 text-sm text-fg-2">See what each scan found, what reached Jobs, and where a run ran into trouble.</p>
+      </header>
+      <div className="flex flex-col gap-4">
+        <label className="flex max-w-md flex-col gap-1.5">
+          <span className="label-micro text-fg-2">Run</span>
           <select
             value={runId ?? ""}
             onChange={(event) => {
@@ -616,7 +619,7 @@ export function RunsPage() {
               setState({ kind: "loading" });
               setRunId(Number(event.target.value));
             }}
-            className="min-h-11 rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
+            className="min-h-11 w-full rounded-sm border border-control bg-surface px-3 text-sm text-fg transition-colors duration-150 ease-in-out hover:border-fg-2"
           >
             {(runs ?? []).map((run) => (
               <option key={run.id} value={run.id}>
@@ -628,7 +631,7 @@ export function RunsPage() {
 
         {selected === null ? null : (
           <section aria-label="Run summary">
-            <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
+            <dl className="ledger flex flex-wrap items-stretch gap-y-2 py-2">
               {(
                 [
                   // Only on a run nothing has closed. A finished run's status is already in the
@@ -636,19 +639,19 @@ export function RunsPage() {
                   ...(selected.finished === null
                     ? ([["status", "running", false]] as [string, ReactNode, boolean][])
                     : []),
-                  ["boards", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
-                  ["partial", formatCount(selected.boards_partial), false],
-                  ["unchanged", formatCount(selected.boards_unchanged), false],
+                  ["Boards completed", `${formatCount(selected.boards_complete)} / ${formatCount(selected.boards_attempted)}`, false],
+                  ["Partial boards", formatCount(selected.boards_partial), false],
+                  ["Unchanged boards", formatCount(selected.boards_unchanged), false],
                   // The ONE cell in this row whose value changes what you should do about the run,
                   // and it was rendered in the same weight as the zeros beside it.
-                  ["failed", formatCount(selected.boards_failed), (selected.boards_failed ?? 0) > 0],
-                  ["postings seen", formatCount(selected.postings_seen), false],
-                  ["new", formatCount(selected.new_count), false],
+                  ["Failed boards", formatCount(selected.boards_failed), (selected.boards_failed ?? 0) > 0],
+                  ["Postings seen", formatCount(selected.postings_seen), false],
+                  ["New postings", formatCount(selected.new_count), false],
                   // The run's leads are a QUERY the other page can answer, and this was the only
                   // place on either page that knew which run a lead came from. Hash-routed, so
                   // the loopback server still needs no SPA fallback.
                   [
-                    "leads",
+                    "Jobs delivered",
                     (selected.leads ?? 0) > 0 ? (
                       <a
                         href={`#/queue?run=${String(selected.id)}`}
@@ -774,17 +777,13 @@ export function RunsPage() {
             </section>
           ) : null}
 
-          <GateBand funnel={funnel} />
-
-          <CoverageBand funnel={funnel} />
-
-          <LanesAccordion funnel={funnel} />
-
-          <section>
-            <h2 className="mb-3 label-micro text-fg-3">
-              funnel · artifact v{funnel.artifact_version} ·{" "}
-              {funnel.reconciles ? "reconciles" : "does NOT reconcile"}
-            </h2>
+          <section aria-label="Run funnel">
+            <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h2 className="text-xl text-fg">Run funnel</h2>
+              <p className="text-sm text-fg-2">
+                Artifact v{funnel.artifact_version} · {funnel.reconciles ? "Counts reconcile" : "Counts do not reconcile"}
+              </p>
+            </div>
             {/* Bounded measure. At full width a stage card was a 1,568px box holding "38
                 malformed_payload", with a `divide-y` rule running the whole way across it — the
                 numbers and their labels ended up a screen apart. */}
@@ -800,6 +799,10 @@ export function RunsPage() {
             </ol>
           </section>
 
+          <h2 className="mt-2 text-xl text-fg">Run diagnostics</h2>
+          <GateBand funnel={funnel} />
+          <CoverageBand funnel={funnel} />
+          <LanesAccordion funnel={funnel} />
           <BoardsAccordion funnel={funnel} />
 
           <RuleDispositions abstain={funnel.abstain} />
@@ -811,11 +814,18 @@ export function RunsPage() {
           <JudgeAgreementPanel />
         </>
       )}
-      <BuildEconomics />
-      <StoreHygiene />
-      <CompanionHistory />
-      <BoardHealth />
-      <CompanyHiring />
+      <section aria-labelledby="run-trends" className="mt-4 flex flex-col gap-4">
+        <h2 id="run-trends" className="text-xl text-fg">Across runs</h2>
+        <RunTrends />
+        <BuildEconomics />
+      </section>
+      <section aria-labelledby="monitoring" className="mt-4 flex flex-col gap-4">
+        <h2 id="monitoring" className="text-xl text-fg">Sources and monitoring</h2>
+        <BoardHealth />
+        <CompanyHiring />
+        <CompanionHistory />
+        <StoreHygiene />
+      </section>
     </div>
   );
 }

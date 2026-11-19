@@ -75,39 +75,41 @@ export function BuildEconomics() {
       )}
 
       {data.boards.length === 0 ? null : (
-        <table className="mt-3 text-sm">
-          <caption className="label-micro pb-1 text-left text-fg-3">
-            By board (the source that first delivered the job)
-          </caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-5 text-left font-normal">Board</th>
-              <th className="pr-5 text-right font-normal">Built</th>
-              <th className="pr-5 text-right font-normal">Applied</th>
-              <th className="pr-5 text-right font-normal">Closed, not applied</th>
-              <th className="pr-5 text-right font-normal">Skipped</th>
-              <th className="pr-5 text-right font-normal">Still open</th>
-              <th className="pr-5 text-right font-normal">Applied ÷ built</th>
-              <th className="text-right font-normal">Applied ÷ settled</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {data.boards.map((b) => (
-              <tr key={b.board}>
-                <th scope="row" className="pr-5 text-left font-normal">
-                  {b.board}
-                </th>
-                <td className="pr-5 text-right tabular-nums">{formatCount(b.built)}</td>
-                <td className="pr-5 text-right tabular-nums">{formatCount(b.applied)}</td>
-                <td className="pr-5 text-right tabular-nums">{formatCount(b.closed)}</td>
-                <td className="pr-5 text-right tabular-nums">{formatCount(b.skipped)}</td>
-                <td className="pr-5 text-right tabular-nums">{formatCount(b.open)}</td>
-                <td className="pr-5 text-right tabular-nums">{formatFraction(b.apply_rate)}</td>
-                <td className="text-right tabular-nums">{formatFraction(b.settled_rate)}</td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Résumé builds by board">
+          <table className="mt-3 text-sm">
+            <caption className="label-micro pb-1 text-left text-fg-3">
+              By board (the source that first delivered the job)
+            </caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-5 text-left font-normal">Board</th>
+                <th className="pr-5 text-right font-normal">Built</th>
+                <th className="pr-5 text-right font-normal">Applied</th>
+                <th className="pr-5 text-right font-normal">Closed, not applied</th>
+                <th className="pr-5 text-right font-normal">Skipped</th>
+                <th className="pr-5 text-right font-normal">Still open</th>
+                <th className="pr-5 text-right font-normal">Applied ÷ built</th>
+                <th className="text-right font-normal">Applied ÷ settled</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {data.boards.map((b) => (
+                <tr key={b.board}>
+                  <th scope="row" className="pr-5 text-left font-normal">
+                    {b.board}
+                  </th>
+                  <td className="pr-5 text-right tabular-nums">{formatCount(b.built)}</td>
+                  <td className="pr-5 text-right tabular-nums">{formatCount(b.applied)}</td>
+                  <td className="pr-5 text-right tabular-nums">{formatCount(b.closed)}</td>
+                  <td className="pr-5 text-right tabular-nums">{formatCount(b.skipped)}</td>
+                  <td className="pr-5 text-right tabular-nums">{formatCount(b.open)}</td>
+                  <td className="pr-5 text-right tabular-nums">{formatFraction(b.apply_rate)}</td>
+                  <td className="text-right tabular-nums">{formatFraction(b.settled_rate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {data.runs.length === 0 ? null : (
@@ -120,7 +122,7 @@ export function BuildEconomics() {
             résumés it built. No per-lead time is stored, and the stage also delivers review stubs
             and runs the gate backlog, so the real cost per résumé is lower.
           </p>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Résumé builds by run">
             <table className="mt-1 text-sm">
               <thead className="text-fg-3">
                 <tr>

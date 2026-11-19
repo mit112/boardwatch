@@ -30,7 +30,7 @@ function NavTab({
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`min-h-11 rounded-sm px-3.5 text-sm transition-colors duration-[120ms] ease-snap ${
+      className={`min-h-11 rounded-sm px-2.5 text-sm sm:px-3 transition-colors duration-[120ms] ease-snap ${
         active
           ? "bg-surface-2 font-semibold text-fg shadow-[inset_0_-2px_0_0_var(--color-primary)]"
           : "font-medium text-fg-2 hover:bg-surface-2 hover:text-fg"
@@ -101,18 +101,13 @@ export function App() {
       >
         Skip to content
       </button>
-      <header inert={sheet} className="z-30 border-b border-divider bg-bg roomy:sticky roomy:top-0">
-        <div className="mx-auto flex max-w-[160rem] flex-wrap items-center gap-6 px-6 py-3">
-          {/* A real `h1`, not a styled span: it is the only document-level heading either route
-              has, and without it a screen reader's heading list starts at `h2` under nothing.
-              Set as a wordmark in the display voice. The accent rule beside it is the only place
-              the accent appears outside a focus ring; it is `aria-hidden` and carries no meaning,
-              because the word does. */}
-          <h1 className="flex items-center gap-2 text-base font-semibold text-fg">
+      <header inert={sheet} className="z-30 border-b border-divider bg-surface roomy:sticky roomy:top-0">
+        <div className="mx-auto grid max-w-[100rem] grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-2 sm:px-6 roomy:grid-cols-[auto_1fr_auto] roomy:py-3">
+          <span className="col-start-1 row-start-1 flex items-center gap-2 text-base font-bold text-fg">
             <span aria-hidden="true" className="size-2.5 rounded-full bg-primary" />
             boardwatch
-          </h1>
-          <nav aria-label="Views" className="flex items-center gap-1">
+          </span>
+          <nav aria-label="Views" className="col-span-2 row-start-2 flex flex-wrap items-center gap-x-1 roomy:col-span-1 roomy:col-start-2 roomy:row-start-1">
             <NavTab
               label="Jobs"
               active={route === "queue"}
@@ -120,31 +115,9 @@ export function App() {
                 setRoute("queue");
               }}
             />
-            {/* In the order of the work: what to apply to, what has been sent, what the rules turned
-                away. The pipeline's own diagnostics are last and are not what this app is for. */}
-            <NavTab
-              label="Applied"
-              active={route === "applied"}
-              onClick={() => {
-                setRoute("applied");
-              }}
-            />
-            {/* Not "Rejected": that word belongs to an employer's answer to an application, and
-                this list is what OUR rules turned away, read to catch a wrong call. */}
-            <NavTab
-              label="Filtered out"
-              active={route === "rejected"}
-              onClick={() => {
-                setRoute("rejected");
-              }}
-            />
-            <NavTab
-              label="Needs you"
-              active={route === "needs"}
-              onClick={() => {
-                setRoute("needs");
-              }}
-            />
+            <NavTab label="Needs you" active={route === "needs"} onClick={() => setRoute("needs")} />
+            <NavTab label="Applied" active={route === "applied"} onClick={() => setRoute("applied")} />
+            <NavTab label="Filtered out" active={route === "rejected"} onClick={() => setRoute("rejected")} />
             <NavTab
               label="Runs"
               active={route === "runs"}
@@ -156,7 +129,7 @@ export function App() {
           {/* Dev-only by construction: `FIXTURE_MODE` is always false in a production build, so
               the `import.meta.env.DEV` literal folds this badge — and its mention of the fixture
               directory — out of the shipped bundle rather than leaving it as unreachable text. */}
-          <span className="ml-auto flex items-center gap-2">
+          <span className="col-start-2 row-start-1 flex items-center gap-2 roomy:col-start-3">
             {import.meta.env.DEV && FIXTURE_MODE ? (
               <span
                 className="rounded-sm bg-surface-2 px-2 py-1 text-xs text-fg-2"
@@ -177,16 +150,7 @@ export function App() {
         <StaleViewerBanner />
       </div>
 
-      {/*
-        * 160rem, not the 110rem this used to be. 110rem is 1760px, so on the 27-inch display this
-        * is worked on (2560 CSS px) it left 400px of dead margin each side AND — because the
-        * detail pane takes up to 32rem of what is left — put the queue's list container at 1184px,
-        * under the 78rem at which `QueueRowItem` switches to its eight-column tier. The widest
-        * layout was therefore unreachable whenever a lead was open, at every width. The cap is on
-        * the GRID's page, so it is raised here and the readable measure is held where the prose
-        * actually is: the JD box in the detail pane and the queue's empty state.
-        */}
-      <main id="view" tabIndex={-1} className="mx-auto max-w-[160rem] px-4 py-6 sm:px-6 sm:py-8">
+      <main id="view" tabIndex={-1} className="mx-auto max-w-[100rem] px-4 py-6 sm:px-6 sm:py-8">
         {/*
           * Wraps the route SWITCH, not the header — so a view that fails to draw leaves the nav
           * above it working, and the reader's way out is the tab they already know. `resetKeys`

@@ -119,8 +119,8 @@ describe("the reading order", () => {
     const at = (prefix: string) => names.findIndex((name) => name.startsWith(prefix));
     expect(at("Software Engineer")).toBe(0);
     expect(at("What to check")).toBeGreaterThan(at("Software Engineer"));
-    expect(at("Prepared materials")).toBeGreaterThan(at("What to check"));
-    expect(at("Job description")).toBeGreaterThan(at("Prepared materials"));
+    expect(at("Application materials")).toBeGreaterThan(at("What to check"));
+    expect(at("Job description")).toBeGreaterThan(at("Application materials"));
     const why = screen.getByText("Why this status?");
     const description = screen.getByRole("heading", { name: "Job description" });
     expect(description.compareDocumentPosition(why) & 4).toBe(4);

@@ -50,7 +50,7 @@ export function PipelineHealthStrip() {
     <section
       aria-label="Pipeline health"
       data-tone={tone}
-      className="mx-auto flex max-w-[160rem] flex-wrap items-center gap-x-5 gap-y-1 px-6 pt-3 text-sm text-fg-2"
+      className="mx-auto flex max-w-[100rem] flex-wrap items-center gap-x-5 gap-y-1 px-4 pt-3 sm:px-6 text-sm text-fg-2"
     >
       {cells.map((cell) => (
         <span key={cell.label} data-tone={cell.tone} className="flex items-center gap-1.5">

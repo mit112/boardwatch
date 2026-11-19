@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 import type { Companion } from "../api/types";
@@ -65,9 +65,13 @@ it("the page lists the groups with what to do, and keeps held leads when compani
   );
   vi.mocked(getCompanions).mockRejectedValue(new Error("503"));
   render(<NeedsYouPage />);
-  const group = await screen.findByRole("region", { name: "Held: outside the US" });
-  expect(within(group).getByRole("link", { name: "Abroad Role" })).toBeDefined();
-  expect(within(group).getByText(/^To do: /)).toBeDefined();
+  const group = await screen.findByLabelText("Location is outside the US");
+  const summary = within(group).getByText("Location is outside the US");
+  expect(group.hasAttribute("open")).toBe(false);
+  fireEvent.click(summary);
+  expect(group.hasAttribute("open")).toBe(true);
+  expect(within(group).getByRole("link", { name: /^Abroad Role/ })).toBeDefined();
+  expect(summary.closest("summary")?.textContent).toContain("1");
   expect(screen.getByRole("alert").textContent).toMatch(/companion status/);
 });
 

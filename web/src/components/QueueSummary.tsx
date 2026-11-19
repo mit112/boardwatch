@@ -96,7 +96,7 @@ export function QueueSummary({
   return (
     <section
       aria-label="Summary"
-      className="grid gap-x-8 gap-y-4 rounded-md bg-surface p-4 shadow-card sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"
+      className="grid gap-x-6 gap-y-2 border-y border-divider py-2 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-center"
     >
       <Stat>
         <span className="label-micro text-fg-2">{scoped ? "New in this search" : "New"}</span>
@@ -104,12 +104,14 @@ export function QueueSummary({
           type="button"
           aria-pressed={newActive}
           onClick={onToggleNew}
-          className="inline-flex min-h-11 items-center gap-2 rounded-sm px-1 text-left transition-colors duration-150 ease-in-out hover:bg-surface-2"
+          className={`inline-flex min-h-11 items-center gap-2 rounded-sm px-1 text-left transition-colors duration-150 ease-in-out ${
+            newActive ? "bg-surface-3" : "hover:bg-surface-2"
+          }`}
         >
-          <span className="text-2xl leading-none font-semibold text-fg tabular-nums">
+          <span className="font-semibold text-fg tabular-nums">
             {newCount.toLocaleString()}
           </span>
-          <span className="text-sm text-fg-2">
+          <span className="text-sm text-accent underline underline-offset-4">
             {newActive ? "new since your last visit — showing only these" : "since your last visit"}
           </span>
         </button>
@@ -137,13 +139,13 @@ export function QueueSummary({
         ) : (
           <p className="flex min-h-11 flex-wrap items-center gap-x-3 text-sm text-fg-2">
             <span>
-              <span className="text-2xl leading-none font-semibold text-fg tabular-nums">
+              <span className="font-semibold text-fg tabular-nums">
                 {recorded.today.toLocaleString()}
               </span>{" "}
               today
             </span>
             <span>
-              <span className="text-2xl leading-none font-semibold text-fg tabular-nums">
+              <span className="font-semibold text-fg tabular-nums">
                 {recorded.week.toLocaleString()}
               </span>{" "}
               in the past 7 days
@@ -203,7 +205,7 @@ export const LENSES: readonly { key: Lens; label: string; blurb: string }[] = [
     key: "all",
     label: "All jobs",
     blurb:
-      "Auto-apply, Apply by hand and Link not resolved together, with no job counted twice. Filtered-out, closed, skipped and already-applied jobs are not included.",
+      "Open jobs you can apply to or review.",
   },
 ];
 
@@ -244,19 +246,19 @@ export function LensTabs({
               }}
               className={`inline-flex min-h-11 items-center gap-2 rounded-sm px-4 text-sm font-medium transition-colors duration-150 ease-in-out ${
                 active
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface text-fg-2 shadow-card hover:bg-surface-2 hover:text-fg"
+                  ? "bg-surface-3 font-semibold text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
+                  : "bg-surface text-fg-2 hover:bg-surface-2 hover:text-fg"
               }`}
             >
               {entry.label}
-              <span className={`tabular-nums ${active ? "text-on-primary" : "text-fg-3"}`}>
+              <span className={`tabular-nums ${active ? "text-fg" : "text-fg-3"}`}>
                 {counts[entry.key].toLocaleString()}
               </span>
             </button>
           );
         })}
       </div>
-      <p className="max-w-[72ch] text-sm text-fg-2">{current?.blurb}</p>
+      {lens === "all" ? null : <p className="max-w-[68ch] text-sm text-fg-2">{current?.blurb}</p>}
     </div>
   );
 }
