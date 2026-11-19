@@ -284,6 +284,12 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
 
   return (
     <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="page-title">Filtered out</h1>
+        <p className="mt-1 max-w-[68ch] text-sm text-fg-2">
+          Boardwatch’s eligibility rules excluded these jobs. Open the evidence to see which requirement triggered the decision.
+        </p>
+      </header>
       <section aria-label="Filtered-out jobs status" className="flex flex-col">
         <dl className="flex flex-wrap items-stretch gap-x-8 gap-y-2 rounded-md bg-surface p-4 shadow-card">
           <div className="flex min-w-28 flex-col gap-1">
@@ -327,16 +333,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
         </dl>
       </section>
 
-      <p className="max-w-[80ch] text-sm text-fg-2">
-        Jobs the automatic eligibility rules filtered out after a run delivered them. This is our
-        rules’ call, not an employer’s answer — nothing was sent for any of them, and a call can be
-        wrong. They are not in your job lists, and their folders sit in{" "}
-        <code className="font-mono text-fg-3">_ineligible</code>. Open “Why filtered out” to read the
-        rule and the words it quoted. “Flag as wrongly filtered” records that you disagree and
-        changes nothing else; record an application anyway if you are sure.
-      </p>
-
-      <label className="flex min-w-64 max-w-md flex-col gap-1.5">
+      <label className="flex w-full max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-2">Search</span>
         <input
           type="search"
@@ -349,7 +346,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
         />
       </label>
 
-      <div className="overflow-x-auto rounded-md bg-surface shadow-card">
+      <div className="ledger overflow-x-auto" role="region" aria-label="Filtered-out job list" tabIndex={0}>
         <table className="w-full text-sm">
           <caption className="sr-only">
             Jobs the eligibility rules filtered out, those the independent review found no blocker in first.
@@ -357,7 +354,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
           <thead>
             {/* Not sticky: inside `overflow-x-auto` the wrapper is the sticky container, and the
                 app header's offset would push this row down over the first lead. */}
-            <tr className="bg-surface text-fg-2 [&>*]:border-b [&>*]:border-divider">
+            <tr className="bg-surface-2 text-fg-2 [&>*]:border-b [&>*]:border-divider">
               <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Company</th>
               <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Title</th>
               <th scope="col" className="px-3 py-2 text-left text-sm font-medium">Location</th>
@@ -396,7 +393,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                       )}
                     </td>
                     <td className="px-3 py-1.5">
-                      <span className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="flex flex-wrap items-start justify-end gap-2">
                         <button
                           type="button"
                           aria-expanded={isOpen}
@@ -413,67 +410,77 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                         >
                           Why filtered out
                         </button>
-                        {isSafeHttpUrl(url) && url !== null ? (
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`Open application: ${named}`}
-                            title={`Open ${applicationSite(url) ?? "the application site"} in a new tab.`}
-                            className={BUTTON}
+                        <details className="text-left">
+                          <summary
+                            aria-label={`More actions: ${named}`}
+                            className="min-h-11 cursor-pointer rounded-sm px-3 py-3 text-sm font-medium text-fg-2 hover:bg-surface-3"
                           >
-                            Open application
-                          </a>
-                        ) : null}
-                        {row.pdf_available ? (
-                          <button
-                            type="button"
-                            aria-label={`Preview résumé: ${named}`}
-                            onClick={() => {
-                              void openPdf(row.posting_id).catch((caught: unknown) => {
-                                push({
-                                  message:
-                                    caught instanceof Error ? caught.message : "Could not open the PDF.",
-                                  tone: "error",
-                                });
-                              });
-                            }}
-                            className={BUTTON}
-                          >
-                            Preview résumé
-                          </button>
-                        ) : null}
-                        <button
-                          type="button"
-                          disabled={inFlight}
-                          aria-busy={inFlight}
-                          aria-label={`${row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}: ${named}`}
-                          title={
-                            row.disputed
-                              ? "Withdraw your flag on this call."
-                              : "Record that you think this call is wrong. The job stays filtered out."
-                          }
-                          onClick={() => {
-                            onDispute(row);
-                          }}
-                          className={BUTTON}
-                        >
-                          {row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={inFlight}
-                          aria-busy={inFlight}
-                          aria-label={`Record application anyway: ${named}`}
-                          title="You applied despite the filter. Moves it to the Applied page; undoable from the toast."
-                          onClick={() => {
-                            onApplied(row);
-                          }}
-                          className={BUTTON}
-                        >
-                          Record application anyway
-                        </button>
-                      </span>
+                            More actions
+                          </summary>
+                          <div className="flex flex-col items-start gap-1 border-l border-divider pl-2">
+                            {isSafeHttpUrl(url) && url !== null ? (
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                aria-label={`Open application: ${named}`}
+                                title={`Open ${applicationSite(url) ?? "the application site"} in a new tab.`}
+                                className={BUTTON}
+                              >
+                                Open application
+                              </a>
+                            ) : null}
+                            {row.pdf_available ? (
+                              <button
+                                type="button"
+                                aria-label={`Preview résumé: ${named}`}
+                                onClick={() => {
+                                  void openPdf(row.posting_id).catch((caught: unknown) => {
+                                    push({
+                                      message:
+                                        caught instanceof Error ? caught.message : "Could not open the PDF.",
+                                      tone: "error",
+                                    });
+                                  });
+                                }}
+                                className={BUTTON}
+                              >
+                                Preview résumé
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={inFlight}
+                              aria-busy={inFlight}
+                              aria-label={`${row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}: ${named}`}
+                              title={
+                                row.disputed
+                                  ? "Withdraw your flag on this call."
+                                  : "Record that you think this call is wrong. The job stays filtered out."
+                              }
+                              onClick={() => {
+                                onDispute(row);
+                              }}
+                              className={BUTTON}
+                            >
+                              {row.disputed ? "Withdraw flag" : "Flag as wrongly filtered"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={inFlight}
+                              aria-busy={inFlight}
+                              aria-label={`Record application anyway: ${named}`}
+                              title="You applied despite the filter. Moves it to the Applied page; undoable from the toast."
+                              onClick={() => {
+                                onApplied(row);
+                              }}
+                              className={BUTTON}
+                            >
+                              Record application anyway
+                            </button>
+                          </div>
+                        </details>
+                      </div>
                     </td>
                   </tr>
                   {isOpen ? (
@@ -493,7 +500,7 @@ export function RejectedPage({ push }: { push: (request: ToastRequest) => void }
                     ? "No delivered job has been filtered out right now."
                     : query.trim() !== ""
                       ? "No filtered-out job matches that search. Clear the search to see them all."
-                      : "None of these was read as clear by the independent review. Press the count above again to see them all."}
+                      : "None of these was read as clear by the independent review. Turn off the independent review filter to see them all."}
                 </td>
               </tr>
             )}

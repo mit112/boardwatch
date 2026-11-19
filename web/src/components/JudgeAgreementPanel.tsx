@@ -23,38 +23,40 @@ function Matrix({ run }: { run: JudgeAgreementRun }) {
     run.cells.some((c) => c.deterministic === d),
   );
   return (
-    <table
-      className="text-sm"
-      aria-label={`Run ${String(run.run_id ?? "unknown")} agreement`}
-    >
-      <thead className="text-fg-3">
-        <tr>
-          <th className="pr-4 text-left font-normal">Engine \ judge</th>
-          {VERDICTS.slice(0, 3).map((j) => (
-            <th key={j} className="pr-4 text-right font-normal">
-              {j}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody className="text-fg">
-        {rows.map((d) => (
-          <tr key={d}>
-            <th scope="row" className="pr-4 text-left font-normal">
-              {d === "none" ? "no engine verdict" : d}
-            </th>
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Independent review agreement table">
+      <table
+        className="text-sm"
+        aria-label={`Run ${String(run.run_id ?? "unknown")} agreement`}
+      >
+        <thead className="text-fg-3">
+          <tr>
+            <th className="pr-4 text-left font-normal">Engine \ judge</th>
             {VERDICTS.slice(0, 3).map((j) => (
-              <td
-                key={j}
-                className={`pr-4 text-right tabular-nums ${d === j ? "font-semibold" : ""}`}
-              >
-                {String(cell(d, j))}
-              </td>
+              <th key={j} className="pr-4 text-right font-normal">
+                {j}
+              </th>
             ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody className="text-fg">
+          {rows.map((d) => (
+            <tr key={d}>
+              <th scope="row" className="pr-4 text-left font-normal">
+                {d === "none" ? "no engine verdict" : d}
+              </th>
+              {VERDICTS.slice(0, 3).map((j) => (
+                <td
+                  key={j}
+                  className={`pr-4 text-right tabular-nums ${d === j ? "font-semibold" : ""}`}
+                >
+                  {String(cell(d, j))}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

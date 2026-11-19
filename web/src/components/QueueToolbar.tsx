@@ -287,91 +287,139 @@ export function QueueToolbar({
         </label>
       </div>
 
-      <details className="group rounded-sm">
-        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm px-1 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg [&::-webkit-details-marker]:hidden">
-          <Icon name="filter" />
-          More filters
-          {moreActive === 0 ? null : (
-            <span className="rounded-full bg-surface-3 px-2 text-xs text-fg tabular-nums">
-              {moreActive} on
-            </span>
-          )}
-          <Icon name="chevronDown" size={14} className="transition-transform group-open:rotate-180" />
-        </summary>
-        <div className="mt-2 flex flex-col gap-3 rounded-md bg-surface-2 p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="flex w-48 flex-col gap-1">
-              <span className="label-micro text-fg-2">Application site</span>
-              <select
-                value={board}
-                onChange={(event) => {
-                  onBoard(event.target.value);
-                }}
-                className={FIELD}
+      <div className="flex flex-wrap items-start gap-x-4 gap-y-1">
+        <details className="group rounded-sm">
+          <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1.5 rounded-sm px-1 text-sm text-fg-2 transition-colors duration-150 ease-in-out hover:text-fg [&::-webkit-details-marker]:hidden">
+            <Icon name="filter" />
+            More filters
+            {moreActive === 0 ? null : (
+              <span className="rounded-full bg-surface-3 px-2 text-xs text-fg tabular-nums">
+                {moreActive} on
+              </span>
+            )}
+            <Icon name="chevronDown" size={14} className="transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-2 flex flex-col gap-3 rounded-md bg-surface-2 p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="flex w-48 flex-col gap-1">
+                <span className="label-micro text-fg-2">Application site</span>
+                <select
+                  value={board}
+                  onChange={(event) => {
+                    onBoard(event.target.value);
+                  }}
+                  className={FIELD}
+                >
+                  <option value="">All sites</option>
+                  {boards.map(([name, count]) => (
+                    <option key={name} value={name}>
+                      {name} ({count.toLocaleString()})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex w-48 flex-col gap-1">
+                <span className="label-micro text-fg-2">Minimum ranking score</span>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="1"
+                  min="0"
+                  value={minScore}
+                  onChange={(event) => {
+                    onMinScore(event.target.value);
+                  }}
+                  placeholder="Any"
+                  title="The ranking score only orders the list. It is not a chance of being hired or proof you qualify."
+                  className={`${FIELD} tabular-nums`}
+                />
+              </label>
+              {views === undefined ? null : <div className="ml-auto">{views}</div>}
+            </div>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-fg-2">
+              <label className="flex min-h-11 items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={hideThin}
+                  onChange={(event) => {
+                    onHideThin(event.target.checked);
+                  }}
+                />
+                Hide very short descriptions
+              </label>
+              <label className="flex min-h-11 items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={hideUnverifiable}
+                  onChange={(event) => {
+                    onHideUnverifiable(event.target.checked);
+                  }}
+                />
+                Hide postings I can’t verify are open
+              </label>
+              <label
+                className="flex min-h-11 items-center gap-2"
+                title="Show one job per company and title — the best-placed one — and fold the rest of the group under it. Each folded posting stays one click away from that job's workspace."
               >
-                <option value="">All sites</option>
-                {boards.map(([name, count]) => (
-                  <option key={name} value={name}>
-                    {name} ({count.toLocaleString()})
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex w-48 flex-col gap-1">
-              <span className="label-micro text-fg-2">Minimum ranking score</span>
-              <input
-                type="number"
-                inputMode="decimal"
-                step="1"
-                min="0"
-                value={minScore}
-                onChange={(event) => {
-                  onMinScore(event.target.value);
-                }}
-                placeholder="Any"
-                title="The ranking score only orders the list. It is not a chance of being hired or proof you qualify."
-                className={`${FIELD} tabular-nums`}
-              />
-            </label>
-            {views === undefined ? null : <div className="ml-auto">{views}</div>}
+                <input
+                  type="checkbox"
+                  checked={hideSimilar}
+                  onChange={(event) => {
+                    onHideSimilar(event.target.checked);
+                  }}
+                />
+                Collapse similar roles
+              </label>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-fg-2">
-            <label className="flex min-h-11 items-center gap-2">
-              <input
-                type="checkbox"
-                checked={hideThin}
-                onChange={(event) => {
-                  onHideThin(event.target.checked);
-                }}
-              />
-              Hide very short descriptions
-            </label>
-            <label className="flex min-h-11 items-center gap-2">
-              <input
-                type="checkbox"
-                checked={hideUnverifiable}
-                onChange={(event) => {
-                  onHideUnverifiable(event.target.checked);
-                }}
-              />
-              Hide postings I can’t verify are open
-            </label>
-            <label
-              className="flex min-h-11 items-center gap-2"
-              title="Show one job per company and title — the best-placed one — and fold the rest of the group under it. Each folded posting stays one click away from that job's workspace."
-            >
-              <input
-                type="checkbox"
-                checked={hideSimilar}
-                onChange={(event) => {
-                  onHideSimilar(event.target.checked);
-                }}
-              />
-              Collapse similar roles
-            </label>
-          </div>
-        </div>
-      </details>
+        </details>
+        {/*
+          * Shortcuts, folded. Every key has a visible button equivalent in the workspace, so this is
+          * an accelerator rather than the only route — but a queue worked at speed every day is
+          * exactly where an undiscovered accelerator is a wasted one, so it is one click away rather
+          * than gone. Hidden under `(hover: none)`: a touch device has no keyboard to press them on.
+          */}
+        <details className="text-xs text-fg-3 [@media(hover:none)]:hidden">
+          <summary className="inline-flex min-h-8 cursor-pointer items-center rounded-sm px-1 hover:text-fg-2">
+            Keyboard shortcuts
+          </summary>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+            <span>
+              <Key>/</Key> search
+            </span>
+            <span>
+              <Key>Tab</Key> list
+            </span>
+            <span>
+              <Key>↑</Key> <Key>↓</Key> move
+            </span>
+            <span>
+              <Key>Enter</Key> open
+            </span>
+            <span>
+              <Key>o</Key> open application
+            </span>
+            <span>
+              <Key>a</Key> record application
+            </span>
+            <span>
+              <Key>s</Key> skip
+            </span>
+            <span>
+              <Key>x</Key> select
+            </span>
+            <span>
+              <Key>c</Key> select company
+            </span>
+            <span>
+              <Key>r</Key> report
+            </span>
+            <span>
+              <Key>Esc</Key> close
+            </span>
+          </p>
+        </details>
+      </div>
 
       {activeFilters.length === 0 ? null : (
         <p role="status" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-fg-2">
@@ -397,52 +445,6 @@ export function QueueToolbar({
         />
       )}
 
-      {/*
-        * Shortcuts, folded. Every key has a visible button equivalent in the workspace, so this is
-        * an accelerator rather than the only route — but a queue worked at speed every day is
-        * exactly where an undiscovered accelerator is a wasted one, so it is one click away rather
-        * than gone. Hidden under `(hover: none)`: a touch device has no keyboard to press them on.
-        */}
-      <details className="text-xs text-fg-3 [@media(hover:none)]:hidden">
-        <summary className="inline-flex min-h-8 cursor-pointer items-center rounded-sm px-1 hover:text-fg-2">
-          Keyboard shortcuts
-        </summary>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-          <span>
-            <Key>/</Key> search
-          </span>
-          <span>
-            <Key>Tab</Key> list
-          </span>
-          <span>
-            <Key>↑</Key> <Key>↓</Key> move
-          </span>
-          <span>
-            <Key>Enter</Key> open
-          </span>
-          <span>
-            <Key>o</Key> open application
-          </span>
-          <span>
-            <Key>a</Key> record application
-          </span>
-          <span>
-            <Key>s</Key> skip
-          </span>
-          <span>
-            <Key>x</Key> select
-          </span>
-          <span>
-            <Key>c</Key> select company
-          </span>
-          <span>
-            <Key>r</Key> report
-          </span>
-          <span>
-            <Key>Esc</Key> close
-          </span>
-        </p>
-      </details>
     </div>
   );
 }

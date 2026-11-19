@@ -47,49 +47,62 @@ export function NeedsYouPage() {
     };
   }, []);
 
-  if (settled < 2) return <p className="text-sm text-fg-2">Loading what needs you…</p>;
   const groups = needsYou(queue, companions);
   const total = needsCount(groups);
 
   return (
-    <div className="max-w-4xl">
-      <h2 className="text-lg font-semibold text-fg">Needs you</h2>
-      <p className="mt-1 text-sm text-fg-2">
-        {total === 0
-          ? "No lead or companion is waiting on you."
-          : `${String(total)} ${total === 1 ? "thing" : "things"} only you can settle. Open a lead to settle it in Jobs.`}
-      </p>
+    <div className="flex max-w-4xl flex-col gap-4">
+      <header>
+        <h1 className="page-title">Needs you</h1>
+        <p className="mt-1 text-sm text-fg-2">
+          {settled < 2
+            ? "Loading items to review…"
+            : total === 0
+              ? "No lead or companion is waiting on you."
+              : `${String(total)} ${total === 1 ? "item needs" : "items need"} your review.`}
+        </p>
+      </header>
       {failed.length > 0 ? (
         <p role="alert" className="mt-3 rounded-md bg-surface-2 p-3 text-sm text-fg">
           Could not load {failed.join(" or ")}, so this list may be incomplete.
         </p>
       ) : null}
-      {groups.map((g) => (
-        <Group key={g.key} group={g} />
-      ))}
-      <FormQuestionBankPanel />
+      {settled < 2 ? null : (
+        <>
+          {groups.length === 0 ? null : (
+            <div className="flex flex-col gap-2">
+              {groups.map((group) => <Group key={group.key} group={group} />)}
+            </div>
+          )}
+          <FormQuestionBankPanel />
+        </>
+      )}
     </div>
   );
 }
 
 function Group({ group }: { group: NeedsGroup }) {
   const n = group.leads.length + group.items.length;
+  const title = group.key.startsWith("held:") && group.key !== "held:other" ? group.todo : group.heading;
   return (
-    <section aria-label={group.heading} className="mt-6">
-      <h3 className="text-base font-medium text-fg">
-        {group.heading} <span className="text-fg-2">({String(n)})</span>
-      </h3>
-      <p className="text-sm text-fg-2">To do: {group.todo}</p>
-      <ul className="mt-2 divide-y divide-divider rounded-md bg-surface">
+    <details aria-label={title} className="ledger">
+      <summary>
+        <span className="ml-1">{title}</span>
+        <span className="float-right ml-3 text-sm text-fg-2 tabular-nums">{n.toLocaleString()}</span>
+      </summary>
+      {title === group.todo ? null : (
+        <p className="bg-surface-2 px-4 py-3 text-sm text-fg-2">{group.todo}</p>
+      )}
+      <ul className="divide-y divide-divider">
         {group.leads.map((l) => (
-          <li key={l.postingId} className="px-3 py-2 text-sm">
+          <li key={l.postingId} className="text-sm">
             <a
-              className="text-accent underline underline-offset-4"
+                className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 text-accent hover:bg-surface-2"
               href={`#/queue?lead=${String(l.postingId)}`}
             >
-              {l.title}
-            </a>{" "}
-            <span className="text-fg-2">· {l.company}</span>
+              <span className="font-medium underline underline-offset-4">{l.title}</span>
+              <span className="text-fg-2">{l.company}</span>
+            </a>
           </li>
         ))}
         {group.items.map((i, idx) => (
@@ -110,6 +123,6 @@ function Group({ group }: { group: NeedsGroup }) {
           </li>
         ))}
       </ul>
-    </section>
+    </details>
   );
 }

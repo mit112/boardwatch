@@ -2016,35 +2016,11 @@ export function QueuePage({
     <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-5">
       {/* Grouped so the summary, the lists' controls and the refresh line take ONE `inert` while
           the narrow sheet covers them. */}
-      <div className="flex flex-col gap-5" inert={sheetOpen}>
-        <QueueSummary
-          newCount={newTotal}
-          newActive={facet === "new"}
-          onToggleNew={() => {
-            toggleFacet("new");
-          }}
-          recorded={recordedState}
-          onRetryRecorded={retryApplied}
-          followUpsDue={followUpsDue}
-          followUpsActive={facet === "follow_up_due"}
-          onToggleFollowUps={() => {
-            toggleFacet("follow_up_due");
-          }}
-          quietApplications={
-            applied.kind === "ready" ? (applied.data.counts.quiet ?? 0) : null
-          }
-          quietHref="#/applied"
-          onStart={startSession}
-          startLabel={session === null ? "Start applying" : "Continue applying"}
-          canStart={navList.length > 0}
-          scoped={
-            activeFilters.length -
-              (facet === null ? 0 : 1) -
-              (reasonFacet === null ? 0 : 1) -
-              (reviewOnly ? 1 : 0) >
-            0
-          }
-        />
+      <div className="flex flex-col gap-4" inert={sheetOpen}>
+        <header>
+          <h1 className="page-title">Jobs</h1>
+          <p className="mt-1 text-sm text-fg-2">Find a job to review, open its application, and record it when you’ve applied.</p>
+        </header>
 
         {session === null ? null : (
           <SessionBar
@@ -2124,6 +2100,35 @@ export function QueuePage({
           onClearSelection={clearSelection}
         />
 
+        <QueueSummary
+          newCount={newTotal}
+          newActive={facet === "new"}
+          onToggleNew={() => {
+            toggleFacet("new");
+          }}
+          recorded={recordedState}
+          onRetryRecorded={retryApplied}
+          followUpsDue={followUpsDue}
+          followUpsActive={facet === "follow_up_due"}
+          onToggleFollowUps={() => {
+            toggleFacet("follow_up_due");
+          }}
+          quietApplications={
+            applied.kind === "ready" ? (applied.data.counts.quiet ?? 0) : null
+          }
+          quietHref="#/applied"
+          onStart={startSession}
+          startLabel={session === null ? "Start applying" : "Continue applying"}
+          canStart={navList.length > 0}
+          scoped={
+            activeFilters.length -
+              (facet === null ? 0 : 1) -
+              (reasonFacet === null ? 0 : 1) -
+              (reviewOnly ? 1 : 0) >
+            0
+          }
+        />
+
         {/* The run filter reads as its own sentence rather than joining the filter list: it comes
             from the URL, not from a control on this page, so the reader needs to be told it is on
             at all before being told how to drop it. */}
@@ -2159,7 +2164,7 @@ export function QueuePage({
             aria-label="Filter by review reason"
             className="flex flex-wrap items-center gap-2"
           >
-            <span className="label-micro text-fg-2">Why held</span>
+            <span className="label-micro text-fg-2">Review reason</span>
             {reasonCounts.map(({ reason, count }) => (
               <ReasonChip
                 key={reason}
@@ -2188,7 +2193,6 @@ export function QueuePage({
               <Icon name="refresh" />
               Add them to the list
             </button>
-            <span className="text-fg-3">Nothing moves until you ask it to.</span>
           </p>
         ) : null}
 
@@ -2284,26 +2288,16 @@ export function QueuePage({
              job is opened — and the empty workspace says where to start. */
           <aside
             aria-label="Job workspace"
-            className="hidden rounded-lg bg-surface p-8 text-center shadow-card lg:sticky lg:top-0 lg:roomy:top-header lg:flex lg:min-h-80 lg:flex-col lg:items-center lg:justify-center lg:gap-3"
+            className="hidden rounded-lg border border-dashed border-control bg-surface/50 p-8 lg:sticky lg:top-0 lg:roomy:top-header lg:flex lg:min-h-40 lg:flex-col lg:justify-center lg:gap-2"
           >
             <h2 className="text-lg text-fg">
-              {navList.length === 0 ? "No job to open" : "Pick a job to start"}
+              {navList.length === 0 ? "No job to open" : "Select a job"}
             </h2>
             <p className="max-w-[44ch] text-sm text-fg-2">
               {navList.length === 0
                 ? emptyHint
-                : "Open any job to see what to check, the résumé prepared for it, and your application answers — all in one place beside the list."}
+                : "Open a job to review its requirements, résumé, and application answers."}
             </p>
-            {navList.length === 0 ? null : (
-              <button
-                type="button"
-                onClick={startSession}
-                className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-5 text-sm font-semibold text-on-primary transition-colors duration-150 ease-in-out hover:bg-primary-strong"
-              >
-                Start with the first job
-                <Icon name="arrowRight" />
-              </button>
-            )}
           </aside>
         ) : recordedPanel !== null && recordedPanel.row.posting_id === selected ? (
           <div

@@ -55,28 +55,30 @@ export function LeadAging() {
           ? ` ${data.applied_date_unknown!.toLocaleString()} were applied on a date nobody recorded (imported), so they are not in the waits.`
           : ""}
       </p>
-      <table className="mt-3 text-sm">
-        <thead className="text-fg-3">
-          <tr>
-            <th className="pr-6 text-left font-normal">Outcome</th>
-            <th className="pr-6 text-right font-normal">Leads</th>
-            <th className="pr-6 text-right font-normal">Median wait</th>
-            <th className="text-right font-normal">90th percentile</th>
-          </tr>
-        </thead>
-        <tbody className="text-fg">
-          {outcomes.map(([key, s]) => (
-            <tr key={key}>
-              <th scope="row" className="pr-6 text-left font-normal">
-                {OUTCOME_LABEL[key]}
-              </th>
-              <td className="pr-6 text-right tabular-nums">{s.count.toLocaleString()}</td>
-              <td className="pr-6 text-right tabular-nums">{days(s.median_days)}</td>
-              <td className="text-right tabular-nums">{days(s.p90_days)}</td>
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Lead aging by outcome">
+        <table className="mt-3 text-sm">
+          <thead className="text-fg-3">
+            <tr>
+              <th className="pr-6 text-left font-normal">Outcome</th>
+              <th className="pr-6 text-right font-normal">Leads</th>
+              <th className="pr-6 text-right font-normal">Median wait</th>
+              <th className="text-right font-normal">90th percentile</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="text-fg">
+            {outcomes.map(([key, s]) => (
+              <tr key={key}>
+                <th scope="row" className="pr-6 text-left font-normal">
+                  {OUTCOME_LABEL[key]}
+                </th>
+                <td className="pr-6 text-right tabular-nums">{s.count.toLocaleString()}</td>
+                <td className="pr-6 text-right tabular-nums">{days(s.median_days)}</td>
+                <td className="text-right tabular-nums">{days(s.p90_days)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {boards.length === 0 ? null : (
         <div className="mt-3">
           <h3 className="label-micro text-fg-3">Closed before anyone applied, by source</h3>

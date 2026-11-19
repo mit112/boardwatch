@@ -263,8 +263,8 @@ function FacetCell({
   onToggle: () => void;
 }) {
   return (
-    <div className="flex min-w-28 flex-col gap-1 px-4 py-3">
-      <dt className={`label-micro ${pressed ? "text-fg-2" : "text-fg-3"}`}>{label}</dt>
+    <div className="px-1 py-1">
+      <dt className="sr-only">{label}</dt>
       <dd>
         <button
           type="button"
@@ -274,13 +274,14 @@ function FacetCell({
           }`}
           title={title}
           onClick={onToggle}
-          className={`inline-flex min-h-11 w-full cursor-pointer items-center rounded-sm px-1 font-display text-lg tabular-nums transition-colors duration-[120ms] ease-snap ${
+          className={`inline-flex min-h-11 items-center gap-2 rounded-sm px-3 text-left text-sm font-medium transition-colors duration-[120ms] ease-snap ${
             pressed
               ? "bg-surface-3 text-fg shadow-[inset_0_-2px_0_0_var(--color-accent)]"
-              : "text-fg-2 hover:bg-surface-2"
+              : "bg-surface text-accent hover:bg-surface-2"
           }`}
         >
-          {value.toLocaleString()}
+          <span aria-hidden="true" className="first-letter:uppercase">{label}</span>
+          <span className="font-semibold tabular-nums">{value.toLocaleString()}</span>
         </button>
       </dd>
     </div>
@@ -331,18 +332,7 @@ function CountsBand({
   ];
   return (
     <section aria-label="Applied history status" className="flex flex-col">
-      <dl className="flex flex-wrap items-stretch rounded-md border border-divider bg-surface">
-        {cells.map(([label, value, note]) => (
-          <div key={label} className="flex min-w-28 flex-col gap-1 px-4 py-3">
-            <dt className="label-micro text-fg-3">{label}</dt>
-            <dd
-              className="font-display text-lg text-fg-2 tabular-nums"
-              {...(note ? { title: note } : {})}
-            >
-              {value}
-            </dd>
-          </div>
-        ))}
+      <dl className="flex flex-wrap items-center gap-x-2 gap-y-1 border-y border-divider">
         {/*
           * The one cell on this band that is a FILTER, so it is a real `<button>`: role, keyboard
           * operation and the app's focus ring come for free, and `aria-pressed` carries the on/off
@@ -388,6 +378,24 @@ function CountsBand({
           Showing {showing.toLocaleString()} of {(counts.total ?? 0).toLocaleString()}
         </div>
       </dl>
+      <details className="mt-2 text-sm text-fg-2">
+        <summary className="min-h-11 cursor-pointer rounded-sm px-3 py-3 font-medium hover:bg-surface-2">
+          Application counts by status
+        </summary>
+        <dl className="flex flex-wrap gap-x-2 gap-y-1 bg-surface">
+          {cells.map(([label, value, note]) => (
+            <div key={label} className="flex min-w-24 flex-col gap-1 px-3 py-2">
+              <dt className="label-micro text-fg-3">{label}</dt>
+              <dd
+                className="font-display text-lg text-fg-2 tabular-nums"
+                {...(note ? { title: note } : {})}
+              >
+                {value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </details>
     </section>
   );
 }
@@ -856,6 +864,10 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
 
   return (
     <div className="flex flex-col gap-4">
+      <header>
+        <h1 className="page-title">Applied</h1>
+        <p className="mt-1 text-sm text-fg-2">Track the applications you’ve recorded and follow up when they’re due.</p>
+      </header>
       <CountsBand
         counts={counts}
         showing={visible.length}
@@ -865,14 +877,7 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
         }}
       />
 
-      <ApplicationPace rows={rows} />
-      <ApplyReadiness rows={rows} />
-      <LeadAging />
-      <Withdrawals refresh={rows} />
-      <PostingLifetime />
-      <JdChanges refresh={rows} />
-
-      <label className="flex min-w-64 max-w-md flex-col gap-1.5">
+      <label className="flex w-full max-w-md flex-col gap-1.5">
         <span className="label-micro text-fg-3">Filter company, title, location</span>
         <input
           type="search"
@@ -891,13 +896,13 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
           header's offset then pushed the column header down over the first application at every
           scroll position. Borders are rationed to the divider between rows and the line under the
           header (`ux-table-scannable`) — padding does the rest of the separating. */}
-      <div className="overflow-x-auto rounded-md bg-surface shadow-card">
+      <div className="ledger overflow-x-auto" role="region" aria-label="Application history" tabIndex={0}>
         <table className="w-full text-sm">
           <caption className="sr-only">
             Every application boardwatch has recorded, newest first.
           </caption>
           <thead>
-            <tr className="bg-surface label-micro text-fg-3 [&>*]:border-b [&>*]:border-divider">
+            <tr className="bg-surface-2 label-micro text-fg-3 [&>*]:border-b [&>*]:border-divider">
               <SortHeader
                 label="applied"
                 sortKey="date"
@@ -1080,6 +1085,15 @@ export function AppliedPage({ push }: { push: (request: ToastRequest) => void })
           </tbody>
         </table>
       </div>
+      <section aria-labelledby="application-analysis" className="mt-4 flex flex-col gap-4">
+        <h2 id="application-analysis" className="text-xl text-fg">Application analysis</h2>
+        <ApplicationPace rows={rows} />
+        <ApplyReadiness rows={rows} />
+        <LeadAging />
+        <Withdrawals refresh={rows} />
+        <PostingLifetime />
+        <JdChanges refresh={rows} />
+      </section>
     </div>
   );
 }

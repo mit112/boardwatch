@@ -77,68 +77,72 @@ export function PostingLifetime() {
         time to apply.
       </p>
       {data.providers.length === 0 ? null : (
-        <table className="mt-3 text-sm">
-          <caption className="label-micro pb-1 text-left text-fg-3">By provider</caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Provider</th>
-              <th className="pr-6 text-right font-normal">Closed</th>
-              <th className="pr-6 text-right font-normal">Never closed</th>
-              <th className="pr-6 text-right font-normal">Median life</th>
-              <th className="pr-6 text-right font-normal">90th percentile</th>
-              <th className="pr-6 text-right font-normal">Median to apply</th>
-              <th className="pr-6 text-right font-normal">Reopened</th>
-              <th className="text-right font-normal">Urgent</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {data.providers.map((p) => (
-              <tr key={p.provider}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {p.provider}
-                </th>
-                <td className="pr-6 text-right tabular-nums">{formatCount(p.count)}</td>
-                <td className="pr-6 text-right tabular-nums">{formatCount(p.never_closed)}</td>
-                <td className="pr-6 text-right tabular-nums">{days(p.median_days)}</td>
-                <td className="pr-6 text-right tabular-nums">{days(p.p90_days)}</td>
-                <td className="pr-6 text-right tabular-nums">{days(p.to_apply.median_days)}</td>
-                <td className="pr-6 text-right tabular-nums">{formatFraction(p.reopen_rate)}</td>
-                <td className="text-right">{urgency(p.urgent)}</td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Posting lifetime by provider">
+          <table className="mt-3 text-sm">
+            <caption className="label-micro pb-1 text-left text-fg-3">By provider</caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Provider</th>
+                <th className="pr-6 text-right font-normal">Closed</th>
+                <th className="pr-6 text-right font-normal">Never closed</th>
+                <th className="pr-6 text-right font-normal">Median life</th>
+                <th className="pr-6 text-right font-normal">90th percentile</th>
+                <th className="pr-6 text-right font-normal">Median to apply</th>
+                <th className="pr-6 text-right font-normal">Reopened</th>
+                <th className="text-right font-normal">Urgent</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {data.providers.map((p) => (
+                <tr key={p.provider}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {p.provider}
+                  </th>
+                  <td className="pr-6 text-right tabular-nums">{formatCount(p.count)}</td>
+                  <td className="pr-6 text-right tabular-nums">{formatCount(p.never_closed)}</td>
+                  <td className="pr-6 text-right tabular-nums">{days(p.median_days)}</td>
+                  <td className="pr-6 text-right tabular-nums">{days(p.p90_days)}</td>
+                  <td className="pr-6 text-right tabular-nums">{days(p.to_apply.median_days)}</td>
+                  <td className="pr-6 text-right tabular-nums">{formatFraction(p.reopen_rate)}</td>
+                  <td className="text-right">{urgency(p.urgent)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {data.companies.length === 0 ? null : (
-        <table className="mt-3 text-sm">
-          <caption className="label-micro pb-1 text-left text-fg-3">
-            By company (at least 5 closed postings, most closed first)
-          </caption>
-          <thead className="text-fg-3">
-            <tr>
-              <th className="pr-6 text-left font-normal">Company</th>
-              <th className="pr-6 text-left font-normal">Provider</th>
-              <th className="pr-6 text-right font-normal">Closed</th>
-              <th className="pr-6 text-right font-normal">Never closed</th>
-              <th className="pr-6 text-right font-normal">Median life</th>
-              <th className="text-right font-normal">90th percentile</th>
-            </tr>
-          </thead>
-          <tbody className="text-fg">
-            {data.companies.map((c) => (
-              <tr key={`${c.provider}/${c.company}`}>
-                <th scope="row" className="pr-6 text-left font-normal">
-                  {c.company}
-                </th>
-                <td className="pr-6 text-fg-2">{c.provider}</td>
-                <td className="pr-6 text-right tabular-nums">{formatCount(c.count)}</td>
-                <td className="pr-6 text-right tabular-nums">{formatCount(c.never_closed)}</td>
-                <td className="pr-6 text-right tabular-nums">{days(c.median_days)}</td>
-                <td className="text-right tabular-nums">{days(c.p90_days)}</td>
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Posting lifetime by company">
+          <table className="mt-3 text-sm">
+            <caption className="label-micro pb-1 text-left text-fg-3">
+              By company (at least 5 closed postings, most closed first)
+            </caption>
+            <thead className="text-fg-3">
+              <tr>
+                <th className="pr-6 text-left font-normal">Company</th>
+                <th className="pr-6 text-left font-normal">Provider</th>
+                <th className="pr-6 text-right font-normal">Closed</th>
+                <th className="pr-6 text-right font-normal">Never closed</th>
+                <th className="pr-6 text-right font-normal">Median life</th>
+                <th className="text-right font-normal">90th percentile</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="text-fg">
+              {data.companies.map((c) => (
+                <tr key={`${c.provider}/${c.company}`}>
+                  <th scope="row" className="pr-6 text-left font-normal">
+                    {c.company}
+                  </th>
+                  <td className="pr-6 text-fg-2">{c.provider}</td>
+                  <td className="pr-6 text-right tabular-nums">{formatCount(c.count)}</td>
+                  <td className="pr-6 text-right tabular-nums">{formatCount(c.never_closed)}</td>
+                  <td className="pr-6 text-right tabular-nums">{days(c.median_days)}</td>
+                  <td className="text-right tabular-nums">{days(c.p90_days)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </section>
   );

@@ -777,7 +777,7 @@ export function DetailPane({
               {banner}
 
               <header>
-                <h2 id={TITLE_ID} className="text-xl leading-snug text-fg">
+                <h2 id={TITLE_ID} className="text-2xl leading-tight font-bold text-fg">
                   {row.title}
                 </h2>
                 <p className="mt-0.5 text-base text-fg-2">{row.company}</p>
@@ -791,7 +791,6 @@ export function DetailPane({
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {row.target_flag === true ? <Badge label="Company you target" /> : null}
-                  {row.thin_jd ? <Badge label="Very short description" /> : null}
                   <SponsorBadge seen={row.sponsor_seen} showReason />
                 </div>
                 <div className="mt-2">
@@ -801,10 +800,7 @@ export function DetailPane({
 
               <WhatToCheck detail={detail} onShow={showQuote} />
 
-              <Section
-                title="Prepared materials"
-                hint="Everything you need to fill in the application, ready to copy. Nothing here is sent anywhere."
-              >
+              <Section title="Application materials">
                 {pdfPath === null ? (
                   <div className="rounded-md bg-surface-2 p-4">
                     <StatusMark mark={materialsMark(false)} size="md" className="font-medium" />
