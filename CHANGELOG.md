@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Build economics' per-run table counts a failed compile as not rendered.** The per-run `built` count now uses
+  the same rendered test as the per-lead cohort, so a tailor whose PDF failed (`typst_pdf_built` false) lands in the
+  renamed **Not rendered** column beside review stubs instead of reading as a build.
+
 - **The web queue loads about three times faster.** A warm `GET /api/queue` on the live store went from 18.3 s to
   6.4 s with the same payload. The form-question export pattern was quadratic in the question's length (11.4 s over the
   store's 8,327 stored questions; 0.025 s anchored, same 22 hits), and the page ran the whole standing-queue read twice,

@@ -66,7 +66,9 @@ def _blank() -> dict[str, Any]:
 
 
 def built_per_run(conn: Connection, run_ids: Sequence[int]) -> dict[int, dict[str, int]]:
-    """run id -> résumés rendered and review-lane stubs that run delivered. Every id is present."""
+    """run id -> résumés rendered, and rows that rendered nothing (a review-lane stub or a failed
+    compile), that run delivered. Every id is present. "Rendered" is `_rendered`, the same test the
+    per-lead cohort uses, so the two panels agree on what a build is."""
     out = {run_id: {"built": 0, "not_rendered": 0} for run_id in run_ids}
     if not out:
         return out
@@ -75,7 +77,7 @@ def built_per_run(conn: Connection, run_ids: Sequence[int]) -> dict[int, dict[st
             artifacts.c.kind == TAILORED_KIND, artifacts.c.run_id.in_(list(out))
         )
     ):
-        out[int(r.run_id)]["not_rendered" if _pending(r.meta_json) else "built"] += 1
+        out[int(r.run_id)]["built" if _rendered(r.meta_json) else "not_rendered"] += 1
     return out
 
 
