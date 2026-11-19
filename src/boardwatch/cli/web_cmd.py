@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import errno
 import sys
+import threading
 import webbrowser
 from pathlib import Path
 
@@ -104,7 +105,12 @@ def web(
             )
         raise typer.Exit(code=1) from exc
 
-    prime_queue(api_ctx)
+    # On a thread, so the page answers while the folder tree syncs. Run inline, the socket was
+    # already bound and listening but nothing accepted for the whole prime (~106 s on the live
+    # store): every request in that window was reset, so the viewer read as down after each
+    # restart. The page reads the database, not the folders, and a web action that meets the
+    # prime's lock is answered `contended` exactly as during a nightly run's sync.
+    threading.Thread(target=prime_queue, args=(api_ctx,), name="prime-queue", daemon=True).start()
     console.print("boardwatch review — open this URL:", markup=False)
     # `markup=False` because the URL carries the token, and a token is arbitrary URL-safe text
     # Rich must never read as a style tag. `soft_wrap=True` because Rich hard-wraps a "word"

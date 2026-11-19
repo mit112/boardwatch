@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`boardwatch web` answers as soon as it starts.** The start-up queue prime (reconcile + sync of the folder tree)
+  now runs on a background thread. Run inline, it held the process for ~106 s on the live store with the port already
+  bound, so every request in that window was reset and the viewer looked down after each restart.
+
 - **Build economics' per-run table counts a failed compile as not rendered.** The per-run `built` count now uses
   the same rendered test as the per-lead cohort, so a tailor whose PDF failed (`typst_pdf_built` false) lands in the
   renamed **Not rendered** column beside review stubs instead of reading as a build.
