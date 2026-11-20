@@ -1363,7 +1363,8 @@ def _apply_lane(
     # is what `_apply_snapshots` actually upserted, not `result.snapshots`: a company whose every
     # posting was filed onto another company's row by its job id (`_route_by_stored_posting`)
     # got no row of its own and added no reach.
-    landed = set(applied)
+    # Case-folded: the budget admits one spelling of a slug, and a snapshot may carry another.
+    landed = {(provider, slug.casefold()) for provider, slug in applied}
     return (
         LaneReport(
             name=lane.name,
@@ -1373,7 +1374,9 @@ def _apply_lane(
             is_silent_outage=tally.is_silent_outage,
             admitted=budget.admitted,
             refused=budget.refused,
-            persisted_new=tuple(key for key in budget.admitted if key in landed),
+            persisted_new=tuple(
+                key for key in budget.admitted if (key[0], key[1].casefold()) in landed
+            ),
             # One per `apply_board` call, i.e. per `scan_kind='lane'` row written -- counted after
             # routing, which can split one collected snapshot across several company rows.
             snapshots=len(applied),

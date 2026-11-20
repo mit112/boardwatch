@@ -28,6 +28,11 @@ DEFAULT_NEW_COMPANIES_PER_RUN = 10
 CompanyKey = tuple[str, str]
 
 
+def _folded(key: CompanyKey) -> CompanyKey:
+    # Case-folded as `run_funnel_queries.count_lane_captures` folds the store's side.
+    return (key[0], key[1].casefold())
+
+
 class CompanyBudget:
     """Admits at most `limit` distinct new companies, recording both sides.
 
@@ -86,15 +91,18 @@ class CompanyBudget:
             # is what makes the absent key today's behaviour exactly.
             return self._tier1.admit(provider, slug)
         key: CompanyKey = (provider, slug)
-        if key in self._admitted:
-            # Already paid for. Two postings from one employer are one company.
+        if _folded(key) in {_folded(k) for k in self._admitted}:
+            # Already paid for. Two postings from one employer are one company, and so are two
+            # spellings of one slug: the store keeps one row for `ashby:Ampersand` and
+            # `ashby:ampersand` (`queries.stored_slug`), so admitting both burned a slot and
+            # made `lane:<name>:persisted_new` read one higher than the store (run 2868, 11/10).
             return True
         if self._limit is not None and len(self._admitted) >= self._limit:
             # Deduplicated on the same rule as `_admitted`, and for the same reason: a refusal
             # COUNT that lists one employer three times overstates how much reach the cap cost,
             # which is the one number this report exists to give. Re-asking about an already
             # refused company is still False — the budget is spent either way.
-            if key not in self._refused:
+            if _folded(key) not in {_folded(k) for k in self._refused}:
                 self._refused.append(key)
             return False
         self._admitted.append(key)
