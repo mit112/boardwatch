@@ -63,7 +63,8 @@ class _StuckProvider:
                 if request.slug == "stuck":
                     if self.release_after is not None:
                         threading.Timer(self.release_after, self.release.set).start()
-                    self.release.wait(timeout=5.0)
+                    # Far past the 15 s bound below, so a stage that joins on this worker fails it.
+                    self.release.wait(timeout=30.0)
                 self.fetches[request.slug] = (started, time.monotonic())
         return BoardSnapshot(
             status="complete", postings=[], url=request.url,
@@ -111,8 +112,9 @@ def test_a_board_past_its_deadline_is_failed_and_the_stage_completes(
     started = time.monotonic()
     summary = run_scan(engine, settings, providers={"greenhouse": provider})
 
-    # Not joined on the stuck worker, which is still blocked when the stage ends.
-    assert time.monotonic() - started < 3.0
+    # Not joined on the stuck worker, which is still blocked when the stage ends. 15 s, not 3: a
+    # windows-latest runner took 3.06 s on the 2026-11-19 nightly (issue #645).
+    assert time.monotonic() - started < 15.0
     assert "stuck" not in provider.fetches
     assert summary.failed == 1
     assert summary.complete == 1
