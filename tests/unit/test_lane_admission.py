@@ -138,3 +138,15 @@ def test_an_uncapped_tier1_budget_never_refuses_while_the_lane_cap_still_does():
         assert budget.admit("greenhouse", slug, tier1=True) is True
     assert budget.admit("indeed", "acme") is False
     assert budget.refused == (("indeed", "acme"),)
+
+
+def test_two_spellings_of_one_slug_are_one_company():
+    """The store keeps one row for both spellings, so the budget must spend one slot (run 2868)."""
+    budget = CompanyBudget(limit=2)
+    assert budget.admit("ashby", "Ampersand") is True
+    assert budget.admit("ashby", "ampersand") is True
+    assert budget.admit("ashby", "other") is True
+    assert budget.admitted == (("ashby", "Ampersand"), ("ashby", "other"))
+    assert budget.admit("ashby", "Late") is False
+    assert budget.admit("ashby", "late") is False
+    assert budget.refused == (("ashby", "Late"),)
