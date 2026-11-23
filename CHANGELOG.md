@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A run's duplicate regroup takes the write lock before it reads.** `_regroup` read job anchors and the protected
+  jobs in a DEFERRED transaction, then moved postings; a viewer action committing in between failed the move with
+  `database is locked`. It now uses `write_connection`, the T281 fix (T292).
+
 - **`tailor run` no longer overwrites one posting's résumé with another's.** The default `--out` is now
   `{data_dir}/tailored/<posting_id>/` (also for `tailor rewrite apply`). A résumé is named for the employer and title,
   so 25 postings titled `Software Engineer` at one employer used to render to one file, and every earlier artifact row

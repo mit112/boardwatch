@@ -2463,7 +2463,10 @@ def _regroup(engine: Engine, suppressions: Sequence[Suppression]) -> tuple[int, 
         {s.posting_id for s in suppressions} | {s.survivor_posting_id for s in suppressions}
     )
     messages: list[str] = []
-    with engine.begin() as conn:
+    # The anchor and protection reads must not precede a DEFERRED write-lock upgrade (T292): a
+    # commit landing between them would fail the move with `database is locked`, or plan it
+    # against a protected set that has since changed.
+    with write_connection(engine) as conn, conn.begin():
         plan = plan_regrouping(
             suppressions,
             job_anchors(conn, member_ids),

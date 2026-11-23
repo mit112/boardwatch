@@ -176,6 +176,54 @@ def test_shortlist_dispositions_serialize_a_competing_commit(
     assert (by_job[built_job].disposition, by_job[built_job].reason) == ("built", "lead_built")
 
 
+def test_regroup_serializes_a_competing_commit(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T292: `_regroup` reads anchors and protections, then moves postings. A commit from
+    another engine between the two must queue behind the move, not break it."""
+    import boardwatch.pipeline.runner as runner_mod
+    from boardwatch.core.dedup import Suppression
+
+    survivor = _seed_posting(env, slug="acme2")
+    duplicate = _seed_posting(env, slug="acme3")
+    engine = get_engine(env, busy_timeout_ms=0)
+    competitor = get_engine(env, busy_timeout_ms=0)
+    now = utcnow()
+    with engine.connect() as conn:
+        survivor_job = int(
+            conn.execute(
+                select(tables.postings.c.job_id).where(tables.postings.c.id == survivor)
+            ).scalar_one()
+        )
+
+    real_anchors = runner_mod.job_anchors
+    competing_commit = False
+
+    def anchors_with_competitor(conn: Connection, posting_ids: list[int]) -> dict[int, int]:
+        nonlocal competing_commit
+        anchors = real_anchors(conn, posting_ids)
+        try:
+            with competitor.begin() as other:
+                other.execute(insert(tables.jobs).values(created_at=now))
+            competing_commit = True
+        except OperationalError as exc:
+            assert isinstance(exc.orig, sqlite3.OperationalError)
+            assert exc.orig.sqlite_errorcode == sqlite3.SQLITE_BUSY
+        return anchors
+
+    monkeypatch.setattr(runner_mod, "job_anchors", anchors_with_competitor)
+    moved, messages = runner_mod._regroup(
+        engine, [Suppression(posting_id=duplicate, survivor_posting_id=survivor, kind="exact_quad")]
+    )
+    assert not competing_commit
+    assert (moved, messages) == (1, [])
+    with engine.connect() as conn:
+        moved_job = conn.execute(
+            select(tables.postings.c.job_id).where(tables.postings.c.id == duplicate)
+        ).scalar_one()
+    assert moved_job == survivor_job
+
+
 def _add_live_board(data_dir: Path) -> None:
     """A second watched board that answers 200, so "every board failed" is not the default."""
     with get_engine(data_dir).begin() as conn:
