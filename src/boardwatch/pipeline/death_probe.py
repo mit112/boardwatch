@@ -356,6 +356,10 @@ def _past_ttl(cutoff: datetime) -> ColumnElement[bool]:
     )
 
 
+# T284 (D-696): `budget // 5` of the URL budget goes to never-asked rows no standing lead holds.
+NEVER_ASKED_RESERVE_DIVISOR = 5
+
+
 def _due_predicate(cutoff: datetime) -> ColumnElement[bool]:
     return and_(unreachable_by_the_scanner(), _past_ttl(cutoff))
 
@@ -392,6 +396,8 @@ def sweep_unwatched_deaths(
     Both budgets go to the rows carrying a STANDING LEAD first (T90). The priority reorders the
     due set and never widens it, so it cannot become "always the same leads": a probed row leaves
     the due set for `ttl_hours`, and the next run's budget flows to the rest of the class.
+    That holds only while the held rows are fewer than the budget, so a fifth of the URL budget
+    is reserved for never-asked rows no lead holds (T284, D-696).
 
     `priority_ids` (D-691) is a second, prior reordering inside the same budget: a layer wrapper
     whose only employer twin is closed is asked about before the rest of the due set. It is a
@@ -436,16 +442,11 @@ def sweep_unwatched_deaths(
         held_by_a_standing_lead = case((has_a_standing_lead, 0), else_=1)  # 0 sorts first
         # Only while the URL is still the LinkedIn page the measurement was about: a row resolved
         # to an employer URL (a Workday one the CXS probe can close) keeps its priority.
-        probed_last = case(
-            (
-                and_(
-                    companies.c.provider.in_(tuple(PROBED_LAST_PROVIDERS)),
-                    postings.c.url.like("%linkedin.com/%"),
-                ),
-                1,
-            ),
-            else_=0,
+        linkedin_job_view = and_(
+            companies.c.provider.in_(tuple(PROBED_LAST_PROVIDERS)),
+            postings.c.url.like("%linkedin.com/%"),
         )
+        probed_last = case((linkedin_job_view, 1), else_=0)
         # Ahead of the standing-lead key: a row that cannot close is not worth a probe before one
         # that can, whoever holds it.
         url_order: list[ColumnElement[Any]] = [
@@ -491,13 +492,45 @@ def sweep_unwatched_deaths(
         # `LIMIT`ed result in Python would rank only the rows the limit had already admitted, and
         # a lead past the budget's edge would be cut before the priority ever saw it. `LIMIT` IS
         # the budget, so this is still bounded by construction.
-        candidates = conn.execute(
-            select(postings.c.id, postings.c.url, postings.c.death_strikes)
+        #
+        # T284 (D-696): a fifth of the budget is held for rows NEVER asked that no standing lead
+        # holds. Without it the lead priority spent ~80% of the probes on 2,215 held rows while
+        # 48,665 never-asked rows waited behind them. A held row is left out of the reserve, not
+        # because it matters less, but because the main order already puts it first. A LinkedIn
+        # job-view row is left out while the guest check is off: it cannot close, so a reserved
+        # slot spent on it is a slot the tail never gets. `budget` stays the total.
+        reserve_where = [
+            due_predicate,
+            has_url,
+            on_url_path,
+            postings.c.last_death_probe_at.is_(None),
+            ~has_a_standing_lead,
+        ]
+        if not linkedin_can_close:
+            reserve_where.append(~linkedin_job_view)
+        row_columns = (postings.c.id, postings.c.url, postings.c.death_strikes)
+        reserved = conn.execute(
+            select(*row_columns)
             .select_from(board)
-            .where(and_(due_predicate, has_url, on_url_path))
-            .order_by(*url_order)
-            .limit(budget)
+            .where(and_(*reserve_where))
+            .order_by(postings.c.id.asc())
+            .limit(budget // NEVER_ASKED_RESERVE_DIVISOR)
         ).all()
+        ordered = conn.execute(
+            select(*row_columns)
+            .select_from(board)
+            .where(
+                and_(
+                    due_predicate,
+                    has_url,
+                    on_url_path,
+                    postings.c.id.notin_([row.id for row in reserved]),
+                )
+            )
+            .order_by(*url_order)
+            .limit(budget - len(reserved))
+        ).all()
+        candidates = [*ordered, *reserved]
         # The listing half's queue, one row per COMPANY. A company is due when any of its open
         # rows is: a posting a lane added since the last ask has never been answered about, and
         # the listing that answers it answers the whole board anyway.

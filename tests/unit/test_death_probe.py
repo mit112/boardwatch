@@ -1273,6 +1273,74 @@ def test_the_priority_never_overrides_the_ttl(tmp_path: Path) -> None:
     assert (second.due, second.attempted, second.budget_refused) == (1, 1, 0)
 
 
+def _held_rows(engine: Engine, company_id: int, count: int) -> list[int]:
+    """`count` never-asked rows, each holding its own standing lead."""
+    ids = [
+        _posting(engine, company_id, pid=f"held-{n}", url=f"https://boards.example.test/h/{n}")
+        for n in range(count)
+    ]
+    for posting_id in ids:
+        _deliver_lead(engine, posting_id)
+    return ids
+
+
+def test_a_fifth_of_the_budget_reaches_the_never_asked_tail(tmp_path: Path) -> None:
+    """T284. More held rows than the budget, so the lead priority alone spends every slot on them
+    and the never-asked tail is never reached (1,049 of ~1,323 probes in 36 h, measured).
+
+    A budget of five reserves one slot. It goes to the LOWEST-id never-asked unheld row: not to
+    `asked_before`, which is due again but has been answered, and not to a held row, though the
+    held rows are seeded first so they hold the lowest never-asked ids.
+    """
+    engine = _store(tmp_path)
+    company_id = _company(engine, slug="acme", watched=False)
+    held = _held_rows(engine, company_id, 6)
+    asked_before = _posting(
+        engine, company_id, pid="asked", url="https://boards.example.test/j/asked"
+    )
+    with engine.begin() as conn:
+        conn.execute(
+            update(tables.postings)
+            .where(tables.postings.c.id == asked_before)
+            .values(last_death_probe_at=utcnow() - timedelta(hours=25))
+        )
+    tail = [
+        _posting(engine, company_id, pid=f"tail-{n}", url=f"https://boards.example.test/t/{n}")
+        for n in range(2)
+    ]
+
+    url = _url_prober_that_records(_error)
+    report = _sweep(engine, url, budget=5)
+
+    assert url.asked == [*held[:4], tail[0]]  # type: ignore[attr-defined]
+    assert (report.due, report.attempted, report.budget_refused) == (9, 5, 4)
+
+
+@pytest.mark.parametrize("linkedin_can_close", [False, True])
+def test_a_linkedin_tail_row_takes_the_reserve_only_when_it_can_close(
+    tmp_path: Path, linkedin_can_close: bool
+) -> None:
+    """T284. A LinkedIn job-view row cannot close without the guest check, so the reserved slot
+    skips it for the next never-asked row; with the guest check on, it is an ordinary tail row and
+    its lower id wins the slot."""
+    engine = _store(tmp_path)
+    linkedin_row = _posting(
+        engine,
+        _company(engine, slug="jobapps:acme", watched=False, provider="linkedin"),
+        pid="4458214586",
+        url="https://www.linkedin.com/jobs/view/4458214586",
+    )
+    company_id = _company(engine, slug="acme", watched=False)
+    other = _posting(engine, company_id, pid="other", url="https://boards.example.test/j/other")
+    held = _held_rows(engine, company_id, 6)
+
+    url = _url_prober_that_records(_error)
+    _sweep(engine, url, budget=5, linkedin_can_close=linkedin_can_close)
+
+    expected_tail = linkedin_row if linkedin_can_close else other
+    assert url.asked == [*held[:4], expected_tail]  # type: ignore[attr-defined]
+
+
 def test_a_listing_row_asked_within_the_ttl_is_neither_struck_nor_stamped(
     tmp_path: Path,
 ) -> None:
