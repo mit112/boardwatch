@@ -833,6 +833,7 @@ class WorkdayProvider:
         # comprehension here lets a ValueError escape fetch_board.
         postings: list[RawPosting] = []
         detail_failures = 0
+        first_failure: str | None = None
         for index, (pid, row) in enumerate(unseen):
             # T243: a board its cap cuts is failed and keeps nothing, so a detail phase longer
             # than the cap re-fetched the same details every scan. Stop starting them here
@@ -848,11 +849,13 @@ class WorkdayProvider:
             except FetchFailure as exc:
                 detail_failures += 1
                 errors.append(f"posting {pid} detail: {exc}")
+                first_failure = first_failure or errors[-1]
                 continue
             detail = _payload(detail_res.content)
             if detail is None:
                 detail_failures += 1
                 errors.append(f"posting {pid} detail: malformed payload")
+                first_failure = first_failure or errors[-1]
                 continue
             try:
                 postings.append(parse_posting(host, site, row, detail))
@@ -860,7 +863,9 @@ class WorkdayProvider:
                 errors.append(f"posting {pid}: {exc}")
 
         if unseen and detail_failures == len(unseen):
-            return _failed(request.url, f"all {len(unseen)} detail fetches failed")
+            return _failed(
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}"
+            )
 
         return BoardSnapshot(
             status="complete" if not errors else "partial",

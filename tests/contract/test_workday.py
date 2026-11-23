@@ -845,6 +845,36 @@ def test_all_details_failing_fails_the_board(tmp_path: Path) -> None:
     assert snapshot.status == "failed"
 
 
+@pytest.mark.parametrize(
+    ("first_status", "first_body", "first_text"),
+    [
+        (404, b"", "HTTP 404 for {url}"),
+        (200, b"<html>maintenance</html>", "detail: malformed payload"),
+    ],
+    ids=["fetch-failure", "malformed-payload"],
+)
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_board_whose_every_detail_fails_keeps_the_first_failures_text(
+    tmp_path: Path, first_status: int, first_body: bytes, first_text: str
+) -> None:
+    """T324: the first detail fails one way and the rest answer 410, so the error can only name
+    the first failure by carrying it — not the last, and not a summary of all of them. Both
+    failure sites are pinned: a refused fetch and a 200 whose body cannot be read."""
+    paths = [row["externalPath"] for row in _fx("list_normal.json")["jobPostings"]]
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=_fx("list_normal.json")))
+    first_url = _detail_url(paths[0])
+    respx.get(first_url).mock(return_value=httpx.Response(first_status, content=first_body))
+    for path in paths[1:]:
+        respx.get(_detail_url(path)).mock(return_value=httpx.Response(410))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None
+    assert snapshot.error.startswith("all 3 detail fetches failed; ")
+    assert first_text.format(url=first_url) in snapshot.error
+    assert "HTTP 410" not in snapshot.error
+
+
 @respx.mock
 def test_posted_at_comes_from_start_date_not_posted_on(tmp_path: Path) -> None:
     # postedOn is a human string ("Posted Today") and is never parsed. startDate is the

@@ -429,6 +429,7 @@ class EightfoldProvider:
 
         postings: list[RawPosting] = []
         detail_failures = 0
+        first_failure: str | None = None
         for index, row in enumerate(unseen):
             # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
             # board's clock could fail the board and discard every detail already fetched.
@@ -445,11 +446,13 @@ class EightfoldProvider:
                 # signal (property 6). The id stays in listed_ids.
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: {exc}")
+                first_failure = first_failure or errors[-1]
                 continue
             detail = _envelope_data(detail_res.content)
             if not detail:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: malformed payload")
+                first_failure = first_failure or errors[-1]
                 continue
             try:
                 postings.append(parse_posting(host, row, detail))
@@ -457,7 +460,9 @@ class EightfoldProvider:
                 errors.append(f"posting {posting_id}: {exc}")
 
         if unseen and detail_failures == len(unseen):
-            return _failed(request.url, f"all {len(unseen)} detail fetches failed", ledger)
+            return _failed(
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}", ledger
+            )
 
         if ledger.exhausted:
             errors.append(
