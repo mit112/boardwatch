@@ -393,8 +393,10 @@ def _judge_batch(
     except subprocess.TimeoutExpired:
         return None, f"{binary} timed out after {settings.gate.call_timeout_s}s", ()
     except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or "").strip()[:300]
-        return None, f"{binary} exited {exc.returncode}: {stderr}", ()
+        # `claude -p --output-format json` reports an auth or usage-limit failure as a JSON
+        # result on STDOUT with an empty stderr, so stderr alone leaves the note blank.
+        detail = ((exc.stderr or "").strip() or (exc.stdout or "").strip())[:300]
+        return None, f"{binary} exited {exc.returncode}: {detail}", ()
     except OSError as exc:
         # Everything else `subprocess.run` can raise launching a process: EACCES on a binary
         # that is not executable, E2BIG on a batch whose argv exceeds the platform limit,

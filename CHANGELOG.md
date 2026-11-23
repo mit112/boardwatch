@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A failed judge call now says why.** When `claude -p` exits non-zero with an empty stderr, the fail-open note
+  carries its stdout, where the JSON output mode puts the error. Runs 2882–2886 failed every batch with only
+  `claude exited 1:` and no cause.
+
 - **`boardwatch web` answers as soon as it starts.** The start-up queue prime (reconcile + sync of the folder tree)
   now runs on a background thread. Run inline, it held the process for ~106 s on the live store with the port already
   bound, so every request in that window was reset and the viewer looked down after each restart.
