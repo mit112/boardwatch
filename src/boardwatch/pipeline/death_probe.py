@@ -22,10 +22,16 @@ company's listing**.
    requisitions one employer at a time. Never `refetch_error`: a timeout, a 403 from a
    bot-blocker or a 5xx says nothing about the requisition. `core/liveness.py` owns that
    classification and this module reads its typed signal, never a status code or a message.
-2. **Only `companies.watched = 0`.** Exactly the rows for which the scanner cannot produce a
-   signal. A watched board enumerates itself and closes its own postings correctly; adding a
-   second, weaker path over it would be a regression, not a fix. The predicate is the honest
-   one — it covers unwatched `source='user'` companies too, which have the identical defect.
+2. **Only `companies.watched = 0`** — with ONE stated exception, T334 (D-705). A watched board
+   enumerates itself and closes its own postings correctly; adding a second, weaker path over
+   it would be a regression, not a fix. The predicate is the honest one — it covers unwatched
+   `source='user'` companies too, which have the identical defect. The exception is a watched
+   board the empty-complete guard has refused for `GUARD_DRAIN_NIGHTS` consecutive pipeline
+   nights: the scanner counts no miss on an empty answer, so for that board it cannot produce a
+   signal either, and the guard's own comment named "a board that genuinely empties never closes"
+   as a residual. Its open postings join the URL path as a second population, each closing only
+   on its own two-strike proof; the board stays watched, and a relist resumes ordinary miss
+   counting with no special handling.
 3. **Two consecutive strikes in different runs**, mirroring `CLOSE_AFTER_MISSES = 2`. An
    `unknown` probe neither increments nor resets, which mirrors the board path exactly: there a
    `failed` snapshot leaves `consecutive_missing` alone and only a POSITIVE observation resets
@@ -128,7 +134,19 @@ from typing import Any
 from urllib.parse import quote
 
 from rich.console import Console
-from sqlalchemy import ColumnElement, Engine, and_, case, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Connection,
+    Engine,
+    and_,
+    case,
+    distinct,
+    func,
+    or_,
+    select,
+    union,
+    update,
+)
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.liveness import Liveness
@@ -143,7 +161,7 @@ from boardwatch.store.db import write_connection
 from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
 from boardwatch.store.queries import open_as_filter
-from boardwatch.store.tables import companies, postings, runs
+from boardwatch.store.tables import board_scans, companies, postings, runs
 
 # The liveness signals permitted to strike a posting on the URL path, compared as catalog
 # members rather than re-derived from a status code: `core/liveness.py` owns what "gone" means,
@@ -328,6 +346,67 @@ def unreachable_by_the_scanner() -> ColumnElement[bool]:
     )
 
 
+@dataclass(frozen=True)
+class GuardedBoard:
+    """A watched board on its `GUARD_DRAIN_NIGHTS`th consecutive guarded pipeline night."""
+
+    company_id: int
+    provider: str
+
+
+def guarded_for_the_drain(conn: Connection, run_id: int) -> list[GuardedBoard]:
+    """Watched boards whose latest pipeline scans, back to a break, were ALL refused by the guard
+    on at least `GUARD_DRAIN_NIGHTS` distinct days, the newest of them this run's (T334, D-705).
+
+    Read from the typed `board_scans.empty_guarded`, never from `postings_listed = 0`: that
+    proxy matches 1,224 boards against the 73 the guard fired on. The filter is D-669's
+    (`scan/board_moves.dead_for_three_scans`) and for its reason: `pipeline_scan` rows only, so
+    a lane row or a standalone `boardwatch scan` neither counts nor interrupts a streak.
+
+    A break is anything that is not a guarded scan: a relist, a `failed` or `unchanged` or
+    `partial` night, an ordinary `complete` one, and a row written before the column existed
+    (NULL). A failed night is a break on purpose, as it is for a dead board: it observed nothing,
+    so the streak must be made of consecutive observations of an empty board, and the cost of
+    the rule is a delay, never a close.
+
+    Requiring the newest row to be THIS run's means a board the run did not scan (a `--project`
+    pass, `--no-scan`) hands nothing over: the evidence is that the board answered empty tonight.
+    """
+    history = (
+        select(
+            board_scans.c.company_id,
+            board_scans.c.run_id,
+            board_scans.c.started_at,
+            # Newest first; the running count of non-guarded rows is 0 exactly on the leading
+            # guarded streak. A NULL flag is a break: `IS 1` is false for it.
+            func.sum(case((board_scans.c.empty_guarded.is_(True), 0), else_=1))
+            .over(partition_by=board_scans.c.company_id, order_by=board_scans.c.id.desc())
+            .label("breaks"),
+        )
+        .where(
+            board_scans.c.scan_kind == "board",
+            board_scans.c.pipeline_scan.is_(True),
+            board_scans.c.run_id <= run_id,
+        )
+        .subquery()
+    )
+    streaking = (
+        select(history.c.company_id)
+        .where(history.c.breaks == 0)
+        .group_by(history.c.company_id)
+        .having(
+            func.count(distinct(func.date(history.c.started_at))) >= GUARD_DRAIN_NIGHTS,
+            func.max(history.c.run_id) == run_id,
+        )
+    )
+    rows = conn.execute(
+        select(companies.c.id, companies.c.provider)
+        .where(companies.c.id.in_(streaking), companies.c.watched.is_(True))
+        .order_by(companies.c.id)
+    )
+    return [GuardedBoard(int(r.id), str(r.provider)) for r in rows]
+
+
 def _listing_signal(listing: Listing, provider_posting_id: str) -> str:
     """Which `LISTING_SIGNALS` member this row's id earned from its company's listing.
 
@@ -359,6 +438,29 @@ def _past_ttl(cutoff: datetime) -> ColumnElement[bool]:
 
 # T284 (D-696): `budget // 5` of the URL budget goes to never-asked rows no standing lead holds.
 NEVER_ASKED_RESERVE_DIVISOR = 5
+
+# T334 (D-705). A watched board is handed to the URL probe after this many CONSECUTIVE nights on
+# which the empty-complete guard refused its scan (`board_scans.empty_guarded`). Distinct
+# calendar days, not scans: a manual run on the same day is the same night. Measured on four
+# providers over 80 days, 7 of 42 empty runs that later relisted did so after 15 days or more
+# (longest 49), so the line is a delay before asking, and nothing closes on the count: the close
+# still needs two strikes of the posting's own URL. A named constant, not a Settings field.
+GUARD_DRAIN_NIGHTS = 14
+
+# T334 (D-705): up to `budget // 10` of the URL budget goes to the handed-over rows no standing
+# lead holds, ordered least-recently-probed first. A held row rides the main order, which already
+# puts it first. Taken from the main order only when such rows exist, so with none the budget
+# splits exactly as T284 left it (a fifth never-asked, four fifths main).
+GUARD_DRAIN_RESERVE_DIVISOR = 10
+
+# T89: providers whose own dead-posting URL answers ALIVE (Ashby 200 with an empty shell,
+# Greenhouse 302 to `<board>?error=true` then 200), so a URL probe can never strike their rows
+# and an `alive` answer would only spend a probe. A guarded board on one of them is counted and
+# reported, never asked: its listing is empty, which the listing half reads as `listing_unknown`.
+# Lever is deliberately absent. Its dead URL answers 404 (the liveness probe found a genuinely
+# dead open Lever posting by URL, METRICS P6 item 6), and a guarded Lever board is exactly the
+# case the listing half cannot answer.
+URL_PROBE_BLIND_PROVIDERS: frozenset[str] = frozenset({"ashby", "greenhouse"})
 
 
 def _due_predicate(cutoff: datetime) -> ColumnElement[bool]:
@@ -400,6 +502,16 @@ def sweep_unwatched_deaths(
     That holds only while the held rows are fewer than the budget, so a fifth of the URL budget
     is reserved for never-asked rows no lead holds (T284, D-696).
 
+    T334 (D-705) adds a second URL population: the open postings of WATCHED boards the guard has
+    refused for `GUARD_DRAIN_NIGHTS` consecutive pipeline nights (`guarded_for_the_drain`),
+    except on a provider in `URL_PROBE_BLIND_PROVIDERS`, whose rows are counted and left open.
+    They share the URL budget and the same two-strike rule; `due`, `attempted`, `gone`,
+    `closed_by_url` and the rest keep covering the whole URL path, and the `guard_*` fields are
+    the part of them that came from this population. Up to `budget // 10` is reserved for them
+    (those no standing lead holds, least-recently-probed first), so the leads and the never-asked
+    reserve cannot starve the drain and it cannot starve either of them: with none handed over
+    the split is T284's, and with some the leads' share is `budget - budget // 5 - budget // 10`.
+
     `priority_ids` (D-691) is a second, prior reordering inside the same budget: a layer wrapper
     whose only employer twin is closed is asked about before the rest of the due set. It is a
     suspicion, not a close — the probe's own answer decides — and the due set is untouched, so a
@@ -420,6 +532,30 @@ def sweep_unwatched_deaths(
     on_url_path = companies.c.provider.notin_(tuple(LISTING_ENDPOINTS))
     on_listing_path = companies.c.provider.in_(tuple(LISTING_ENDPOINTS))
     board = postings.join(companies, companies.c.id == postings.c.company_id)
+    # T334. The watched boards handed over tonight, read before any candidate query because the
+    # URL population is defined by them. A bound `IN` is not the corpus-scaled one D-287 forbids:
+    # it is bounded by the boards the guard fired on, ~73 today.
+    with engine.connect() as probe_conn:
+        guarded = guarded_for_the_drain(probe_conn, run_id)
+    guarded_ids = [g.company_id for g in guarded]
+    judgeable_ids = [g.company_id for g in guarded if g.provider not in URL_PROBE_BLIND_PROVIDERS]
+    # ONE company-id set, never an `OR` of two joined predicates: the OR plans as
+    # `ix_postings_status_posted_at (status=?)`, the walk of every open posting that
+    # `unreachable_by_the_scanner` exists to avoid, while an `IN` over this union keeps
+    # `ix_postings_corpus (status=? AND company_id=?)`. The first arm is that predicate's own
+    # company set; the second is the handed-over boards, which are watched.
+    url_companies = union(
+        select(companies.c.id).where(companies.c.watched.is_(False), on_url_path),
+        select(companies.c.id).where(companies.c.id.in_(judgeable_ids)),
+    )
+    url_due = and_(
+        postings.c.status == "open",
+        postings.c.company_id.in_(url_companies),
+        _past_ttl(cutoff),
+    )
+    # A candidate row of a WATCHED company is, by construction of `url_companies`, a handed-over
+    # one. Selected with each row so the loop can attribute without a second query.
+    guard_row = companies.c.watched.is_(True)
     # Some open row of this company has never been asked. `func.min` cannot express it —
     # SQL `min()` SKIPS nulls, so a company with one never-probed row and one probed yesterday
     # would sort by yesterday and lose its place at the head of the queue.
@@ -480,7 +616,7 @@ def sweep_unwatched_deaths(
                 func.coalesce(func.sum(case((has_url, 0), else_=1)), 0).label("unprobeable"),
             )
             .select_from(board)
-            .where(and_(due_predicate, on_url_path))
+            .where(url_due)
         ).one()
         # Standing leads first, then least-recently-probed, NULL (never asked) ahead of
         # everything. Ordering by `id` alone would probe the same head every run for ever and
@@ -509,7 +645,12 @@ def sweep_unwatched_deaths(
         ]
         if not linkedin_can_close:
             reserve_where.append(~linkedin_job_view)
-        row_columns = (postings.c.id, postings.c.url, postings.c.death_strikes)
+        row_columns = (
+            postings.c.id,
+            postings.c.url,
+            postings.c.death_strikes,
+            guard_row.label("guarded"),
+        )
         reserved = conn.execute(
             select(*row_columns)
             .select_from(board)
@@ -517,21 +658,62 @@ def sweep_unwatched_deaths(
             .order_by(postings.c.id.asc())
             .limit(budget // NEVER_ASKED_RESERVE_DIVISOR)
         ).all()
+        # T334 (D-705): the handed-over rows no standing lead holds, round-robin by last ask.
+        # `company_id IN` the judgeable boards restates what `url_due` and `guard_row` already
+        # say; it gives the planner a direct company seek instead of the union.
+        guard_reserved = conn.execute(
+            select(*row_columns)
+            .select_from(board)
+            .where(
+                and_(
+                    url_due,
+                    guard_row,
+                    has_url,
+                    postings.c.company_id.in_(judgeable_ids),
+                    ~has_a_standing_lead,
+                )
+            )
+            .order_by(postings.c.last_death_probe_at.asc(), postings.c.id.asc())
+            .limit(budget // GUARD_DRAIN_RESERVE_DIVISOR)
+        ).all()
         ordered = conn.execute(
             select(*row_columns)
             .select_from(board)
             .where(
                 and_(
-                    due_predicate,
+                    url_due,
                     has_url,
-                    on_url_path,
-                    postings.c.id.notin_([row.id for row in reserved]),
+                    postings.c.id.notin_([row.id for row in (*reserved, *guard_reserved)]),
                 )
             )
             .order_by(*url_order)
-            .limit(budget - len(reserved))
+            .limit(budget - len(reserved) - len(guard_reserved))
         ).all()
-        candidates = [*ordered, *reserved]
+        candidates = [*ordered, *reserved, *guard_reserved]
+        # What the drain did NOT hand to the URL probe, and what it did: one pass over the open
+        # rows of the boards past the threshold. The blind providers' rows are counted here and
+        # nowhere else, because they never become candidates.
+        if guarded_ids:
+            guard_open = conn.execute(
+                select(
+                    func.count().label("open_rows"),
+                    func.coalesce(
+                        func.sum(
+                            case(
+                                (companies.c.provider.in_(tuple(URL_PROBE_BLIND_PROVIDERS)), 1),
+                                else_=0,
+                            )
+                        ),
+                        0,
+                    ).label("blind"),
+                )
+                .select_from(board)
+                .where(postings.c.status == "open", postings.c.company_id.in_(guarded_ids))
+            ).one()
+            guard_rows = int(guard_open.open_rows) - int(guard_open.blind)
+            guard_rows_unjudgeable = int(guard_open.blind)
+        else:
+            guard_rows = guard_rows_unjudgeable = 0
         # The listing half's queue, one row per COMPANY. A company is due when any of its open
         # rows is: a posting a lane added since the last ask has never been answered about, and
         # the listing that answers it answers the whole board anyway.
@@ -561,8 +743,10 @@ def sweep_unwatched_deaths(
     url_progress = StageProgress("death probe URLs", len(candidates), console=console)
 
     gone = unknown = alive = closed_by_url = strikes_cleared = 0
+    guard_attempted = guard_closed = 0
     linkedin_guest: dict[str, int] | None = None
     for row in candidates:
+        guard_attempted += 1 if row.guarded else 0
         result = prober(int(row.id), str(row.url))
         if result.linkedin_guest is not None:
             if linkedin_guest is None:
@@ -605,6 +789,7 @@ def sweep_unwatched_deaths(
             values["status"] = "closed"
             values["closed_at"] = now
             closed_by_url += 1
+            guard_closed += 1 if row.guarded else 0
         # One transaction per posting, mirroring `apply_board`'s per-board atomicity: the row
         # update and its event commit or vanish together, and a probe that raises mid-sweep
         # leaves every earlier decision durable instead of rolling the whole sweep back.
@@ -717,6 +902,11 @@ def sweep_unwatched_deaths(
         listing_present=listing_present,
         listing_unknown=listing_unknown,
         linkedin_guest=linkedin_guest,
+        guard_boards=len(guarded_ids),
+        guard_rows=guard_rows,
+        guard_rows_unjudgeable=guard_rows_unjudgeable,
+        guard_attempted=guard_attempted,
+        guard_closed=guard_closed,
     )
 
 
@@ -803,12 +993,17 @@ __all__ = [
     "ShortlistStrikes",
     "strike_from_shortlist",
     "CLOSING_SIGNALS",
+    "GUARD_DRAIN_NIGHTS",
+    "GUARD_DRAIN_RESERVE_DIVISOR",
+    "GuardedBoard",
     "LISTING_ENDPOINTS",
     "LISTING_SIGNALS",
     "Listing",
     "ListingProber",
+    "URL_PROBE_BLIND_PROVIDERS",
     "UnlistableProvider",
     "build_listing_prober",
+    "guarded_for_the_drain",
     "parse_listing",
     "sweep_unwatched_deaths",
     "unreachable_by_the_scanner",

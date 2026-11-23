@@ -2941,6 +2941,13 @@ the loss)".** T36 is re-decided on the next tick's tail, not before.
 **T39** — `scan.empty_complete_guarded` in the funnel and one run-log line; `ARTIFACT_VERSION`
 deliberately not bumped (additive key, `fetch_cost` precedent).
 
+**T334 (D-705) — the guard's exit.** `board_scans.empty_guarded` is the typed record of a refused scan; `postings_listed = 0`
+is NOT a stand-in (it matches 1,224 boards against the 73 real ones). A watched board refused on 14 distinct pipeline nights
+running hands its open postings to the death probe's URL half (`death_probe.guarded_for_the_drain`), which closes on its own
+two strikes only. Ashby and Greenhouse rows cannot close this way (their dead URL answers alive) and are only counted. No
+backfill: the streak starts with the first guarded scan after migration `p_empty_guarded`. An UNWATCHED Lever, Ashby or
+Greenhouse board whose listing is empty is a different, open gap (the listing half reads an empty list as unknown).
+
 **T28 — CLOSED, and the zero is STRUCTURAL.** The probe reaches the funnel's 40 for each run and
 still finds 0 duplicate groups at every scope. The control that establishes it is a POSITIVE one:
 the identical grouping over the 83,308 open postings finds **7,093 groups**. The cause is in run 3's

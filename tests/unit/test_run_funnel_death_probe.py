@@ -127,7 +127,41 @@ def test_every_probe_bucket_reaches_the_artifact() -> None:
         "listing_present": 13,
         "listing_unknown": 2,
         "linkedin_guest": None,
+        "guard_boards": 0,
+        "guard_rows": 0,
+        "guard_rows_unjudgeable": 0,
+        "guard_attempted": 0,
+        "guard_closed": 0,
     }
+
+
+def _guarded_sample() -> DeathProbeReport:
+    return DeathProbeReport(
+        due=12, unprobeable=2, attempted=5, budget_refused=7, gone=3, unknown=1, alive=1,
+        closed_by_url=2, closed_by_listing=4, strikes_cleared=1, companies_due=9,
+        companies_attempted=6, companies_refused=3, listing_absent=8, listing_present=13,
+        listing_unknown=2,
+        guard_boards=6, guard_rows=127, guard_rows_unjudgeable=80, guard_attempted=100,
+        guard_closed=9,
+    )
+
+
+def test_the_guard_drain_counts_reach_the_artifact_and_the_markdown() -> None:
+    """T334 (D-705): the drain is observable. The five counts ride the existing `death_probe`
+    block, and the markdown line appears only once a board is past the threshold."""
+    payload = funnel_to_dict(_funnel(_guarded_sample()))["death_probe"]
+    assert isinstance(payload, dict)
+    assert {k: v for k, v in payload.items() if k.startswith("guard_")} == {
+        "guard_boards": 6, "guard_rows": 127, "guard_rows_unjudgeable": 80,
+        "guard_attempted": 100, "guard_closed": 9,
+    }
+
+    rendered = funnel_to_markdown(_funnel(_guarded_sample()))
+    assert "guard drain (T334): 6 watched board(s)" in rendered
+    assert "127 open rows handed to the URL probe (100 asked this run, 9 closed)" in rendered
+    assert "80 rows on Ashby or Greenhouse stay open" in rendered
+    # Nothing handed over, nothing printed: the healthy-run case is not a line to learn to ignore.
+    assert "guard drain (T334)" not in funnel_to_markdown(_funnel(_sample()))
 
 
 def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: N802
@@ -156,6 +190,11 @@ def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: 
         "listing_present": None,
         "listing_unknown": None,
         "linkedin_guest": None,
+        "guard_boards": None,
+        "guard_rows": None,
+        "guard_rows_unjudgeable": None,
+        "guard_attempted": None,
+        "guard_closed": None,
     }
 
 

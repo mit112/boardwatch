@@ -10,17 +10,23 @@ either, so the fixture's plan is the production plan.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import Engine, event, insert
 
 from boardwatch.core.clock import utcnow
+from boardwatch.core.liveness import Liveness
 from boardwatch.core.models import BoardSnapshot
-from boardwatch.pipeline.death_probe import Listing, sweep_unwatched_deaths
+from boardwatch.pipeline.death_probe import (
+    GUARD_DRAIN_NIGHTS,
+    Listing,
+    sweep_unwatched_deaths,
+)
 from boardwatch.scan.apply import apply_board
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, jobs, postings, runs
+from boardwatch.store.tables import board_scans, companies, jobs, postings, runs
 
 WALK = "ix_postings_status_posted_at"
 
@@ -153,3 +159,48 @@ def test_the_death_probe_reads_a_listed_company_from_the_company_index(tmp_path:
     # walk this pins against.
     _reads_by_company(_plans(engine, reads))
 
+
+
+def test_the_drain_reads_handed_over_rows_from_the_company_index(tmp_path: Path) -> None:
+    """T334: the URL half's candidate reads now take rows from a union of company ids (the
+    unwatched URL-path companies and the boards handed over). The first shape written, an `OR` of
+    two predicates, planned as `ix_postings_status_posted_at (status=?)`: the walk of every open
+    posting that `unreachable_by_the_scanner` exists to avoid. This pins that every read the sweep
+    issues for them constrains `company_id`, with a board actually handed over so the second arm
+    of the union is the one under test."""
+    engine, company_id, _ = _store(tmp_path)
+    now = utcnow()
+    with engine.begin() as conn:
+        conn.execute(
+            companies.update().where(companies.c.id == company_id).values(provider="lever")
+        )
+        conn.execute(postings.update().values(url="https://jobs.lever.co/acme/x"))
+        for night in range(GUARD_DRAIN_NIGHTS):
+            run_id = int(
+                conn.execute(insert(runs).values(started_at=now, status="running"))
+                .inserted_primary_key[0]
+            )
+            started = now - timedelta(days=GUARD_DRAIN_NIGHTS - 1 - night)
+            conn.execute(insert(board_scans).values(
+                run_id=run_id, company_id=company_id, started_at=started, finished_at=started,
+                status="complete", postings_listed=0, pipeline_scan=True, scan_kind="board",
+                empty_guarded=True,
+            ))
+    seen = _captured(engine)
+
+    report = sweep_unwatched_deaths(
+        engine,
+        prober=lambda posting_id, url: Liveness(posting_id, "unknown", "refetch_error", "x"),
+        listing_prober=None,
+        run_id=run_id,
+        budget=10,
+        company_budget=0,
+        ttl_hours=24,
+    )
+
+    assert report.guard_boards == 1 and report.guard_attempted == 3, (
+        "no board was handed over, so the union's second arm was never planned"
+    )
+    reads = [(sql, p) for sql, p in seen if "death_strikes" in sql or "count(" in sql.lower()]
+    assert len(reads) >= 4, "the candidate reads were not captured, so nothing below was checked"
+    _reads_by_company(_plans(engine, reads))

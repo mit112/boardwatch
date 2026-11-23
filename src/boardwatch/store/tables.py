@@ -207,6 +207,13 @@ board_scans = Table(
     Column("error", Text, nullable=True),
     Column("dead", Boolean, nullable=False, server_default="0"),
     Column("pipeline_scan", Boolean, nullable=False, server_default="0"),
+    # T334 (D-705): this scan was refused as evidence of closure by the empty-complete guard
+    # (`scan/apply._empty_complete_is_evidence_of_nothing`), written at the guard's own site and
+    # never inferred from `postings_listed = 0`, which matches 1,224 boards against the 73 the
+    # guard actually fired on (a multi-request provider writes 0 whenever every id is known).
+    # NULL means "written before this column existed": not evidence either way, and it breaks
+    # a guarded streak exactly as a False does. Every row written since carries a real bool.
+    Column("empty_guarded", Boolean, nullable=True),
     # Coverage instrument (D-271). Nullable: NULL means the board stated no total, which is
     # not the same claim as zero.
     Column("board_reported_total", Integer, nullable=True),
