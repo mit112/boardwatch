@@ -414,6 +414,23 @@ def test_all_detail_failures_keep_the_first_failures_text(
 
 
 @respx.mock
+def test_all_detail_failures_still_report_what_was_listed_and_deferred(tmp_path: Path) -> None:
+    """T252: a board cut at its first detail has every detail fail, and the `failed` snapshot
+    said nothing of the listing — so the cap's verdict, which carries the provider's counts,
+    recorded NULLs. The counts are the listing's own: 3 listed, 1 left past the budget of 2."""
+    listing = _fx_json("list_normal.json")
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    for entry in listing["content"]:
+        respx.get(_detail_url(str(entry["id"]))).mock(return_value=httpx.Response(410))
+    snap = provider.fetch_board(_fetcher(tmp_path), _request(budget=2))
+    assert snap.status == "failed"
+    assert snap.error is not None and snap.error.startswith("all 2 detail fetches failed")
+    assert (snap.board_reported_total, snap.board_enumerated, snap.detail_deferred) == (
+        listing["totalFound"], len(listing["content"]), len(listing["content"]) - 2
+    )
+
+
+@respx.mock
 def test_list_failure_is_failed(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(side_effect=httpx.ConnectError("boom"))
     snap = provider.fetch_board(_fetcher(tmp_path), _request())

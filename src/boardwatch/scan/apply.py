@@ -97,8 +97,9 @@ def apply_board(
     started_at = utcnow()
     with write_connection(engine) as conn, conn.begin():
         if snapshot.status == "failed":
-            # With its counts: a board failed at its cap carries the provider's (T248); every
-            # other failed snapshot has none, so its coverage columns stay NULL.
+            # With its counts: a board failed at its cap carries the provider's (T248), and so
+            # does a board whose every detail failed (T252); every other failed snapshot has
+            # none, so its coverage columns stay NULL.
             _scan_row(
                 conn, run_id, company_id, started_at, "failed", 0, snapshot.error,
                 snapshot=snapshot, scan_kind=scan_kind, lane=lane,

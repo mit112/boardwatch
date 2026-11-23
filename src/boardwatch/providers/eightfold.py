@@ -207,7 +207,9 @@ def _get(
 
 
 def _failed(
-    url: str, error: str, ledger: _ThrottleLedger | None = None, *, dead: bool = False
+    url: str, error: str, ledger: _ThrottleLedger | None = None, *, dead: bool = False,
+    board_reported_total: int | None = None, board_enumerated: int | None = None,
+    detail_deferred: int | None = None,
 ) -> BoardSnapshot:
     """A failed snapshot, still carrying the throttle counters.
 
@@ -215,9 +217,15 @@ def _failed(
     reported because a board the throttle killed at its bootstrap or first page is exactly the
     board whose loss is largest, and a run that could not say so would show it as an ordinary
     failure.
+
+    A board whose every detail failed also carries its listing counts (T252): the cap's verdict
+    for a board its clock cut at the first detail takes the provider's counts, and these are
+    all it has. Every other failure happens before there is a listing, and leaves them None.
     """
     return BoardSnapshot(
         status="failed", postings=[], url=url, observed_validators=None, error=error, dead=dead,
+        board_reported_total=board_reported_total, board_enumerated=board_enumerated,
+        detail_deferred=detail_deferred,
         throttle_retries=None if ledger is None else ledger.retries,
         throttle_exhausted=None if ledger is None else ledger.exhausted,
     )
@@ -470,7 +478,9 @@ class EightfoldProvider:
 
         if unseen and detail_failures == len(unseen):
             return _failed(
-                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}", ledger
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}", ledger,
+                board_reported_total=total, board_enumerated=len(listed_ids),
+                detail_deferred=len(unseen_before_truncation) - len(unseen),
             )
 
         if ledger.exhausted:

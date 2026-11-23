@@ -520,12 +520,14 @@ def test_a_board_its_cap_would_cut_keeps_its_details_and_the_next_scan_fetches_o
 
 
 def _one_posting_scan(
-    engine: Engine, tmp_path: Path, *, out_of_time_before_the_detail: bool
+    engine: Engine, tmp_path: Path, *, out_of_time_before_the_detail: bool,
+    listed: int = 1, detail_budget: int | None = None,
 ) -> tuple[Any, int, tuple[Any, ...]]:
-    """One Workday board listing ONE posting, under a valid 30 s cap — below one default 240 s
-    fetch deadline plus pacing. Optionally the board's clock runs out as the listing returns."""
+    """One Workday board listing ONE posting (or `listed` of them, with a `detail_budget` when
+    one is given), under a valid 30 s cap — below one default 240 s fetch deadline plus pacing.
+    Optionally the board's clock runs out as the listing returns."""
     listing = json.loads((_WORKDAY_FIXTURES / "list_normal.json").read_text(encoding="utf-8"))
-    listing = {**listing, "total": 1, "jobPostings": listing["jobPostings"][:1]}
+    listing = {**listing, "total": listed, "jobPostings": listing["jobPostings"][:listed]}
     info = json.loads((_WORKDAY_FIXTURES / "detail_normal.json").read_text(encoding="utf-8"))
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -547,6 +549,7 @@ def _one_posting_scan(
     settings = Settings(
         data_dir=tmp_path, config_dir=tmp_path, retry_attempts=1, scan_workers=1,
         per_host_delay_seconds=0.25, board_deadline_seconds=30.0,
+        detail_fetch_budget=50 if detail_budget is None else detail_budget,
     )
     fetcher = Fetcher(
         settings, client=httpx.Client(transport=httpx.MockTransport(handler)),
@@ -585,6 +588,32 @@ def test_a_board_out_of_time_before_its_first_detail_is_failed_at_its_cap_as_bef
     summary, stored, scan = _one_posting_scan(engine, tmp_path, out_of_time_before_the_detail=True)
     assert (summary.failed, summary.partial, stored) == (1, 0, 0)
     assert scan == ("failed", "board deadline 30s exceeded")
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+def test_a_board_cut_at_its_first_detail_still_records_what_it_listed_and_deferred(
+    engine: Engine, tmp_path: Path
+) -> None:
+    """T252. A board its clock cuts at the first detail has EVERY detail fail, and the provider's
+    `failed` snapshot carried no counts, so the cap's verdict (which carries them, T248) recorded
+    NULLs: no listing size and no deferral for the board whose size matters most. Three listed,
+    a budget of two: the board lists 3 and defers 1."""
+    summary, stored, scan = _one_posting_scan(
+        engine, tmp_path, out_of_time_before_the_detail=True, listed=3, detail_budget=2
+    )
+    assert (summary.failed, summary.partial, stored) == (1, 0, 0)
+    assert scan == ("failed", "board deadline 30s exceeded")
+    with engine.connect() as conn:
+        counts = tuple(
+            conn.execute(
+                select(
+                    tables.board_scans.c.board_reported_total,
+                    tables.board_scans.c.board_enumerated,
+                    tables.board_scans.c.detail_deferred,
+                )
+            ).one()
+        )
+    assert counts == (3, 3, 1)
 
 
 _COUNTS = (

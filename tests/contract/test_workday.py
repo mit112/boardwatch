@@ -875,6 +875,27 @@ def test_a_board_whose_every_detail_fails_keeps_the_first_failures_text(
     assert "HTTP 410" not in snapshot.error
 
 
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_board_whose_every_detail_fails_still_reports_what_it_listed_and_deferred(
+    tmp_path: Path,
+) -> None:
+    """T252: a board cut at its first detail has every detail fail, and the `failed` snapshot
+    said nothing of the listing — so the cap's verdict, which carries the provider's counts,
+    recorded NULLs. The counts are the listing's own: 3 listed, 1 left past the budget of 2."""
+    listing = _fx("list_normal.json")
+    respx.post(LIST_URL).mock(return_value=httpx.Response(200, json=listing))
+    for row in listing["jobPostings"]:
+        respx.get(_detail_url(row["externalPath"])).mock(return_value=httpx.Response(410))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=2))
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None and snapshot.error.startswith("all 2 detail fetches failed")
+    assert (
+        snapshot.board_reported_total, snapshot.board_enumerated, snapshot.detail_deferred,
+        snapshot.board_total_censored,
+    ) == (listing["total"], len(listing["jobPostings"]), len(listing["jobPostings"]) - 2, False)
+
+
 @respx.mock
 def test_posted_at_comes_from_start_date_not_posted_on(tmp_path: Path) -> None:
     # postedOn is a human string ("Posted Today") and is never parsed. startDate is the

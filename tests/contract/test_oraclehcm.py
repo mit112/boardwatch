@@ -641,6 +641,23 @@ def test_every_detail_failing_keeps_the_first_failures_text(
 
 
 @respx.mock
+def test_every_detail_failing_still_reports_what_was_listed_and_deferred(tmp_path: Path) -> None:
+    """T252: a board cut at its first detail has every detail fail, and the `failed` snapshot
+    said nothing of the listing — so the cap's verdict, which carries the provider's counts,
+    recorded NULLs. The counts are the listing's own: 3 listed, 1 left past the budget of 2."""
+    rows = _rows()
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    for row in rows:
+        respx.get(_detail_url(str(row["Id"]))).mock(return_value=httpx.Response(410))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=2))
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None and snapshot.error.startswith("all 2 detail fetches failed")
+    assert (snapshot.board_reported_total, snapshot.board_enumerated, snapshot.detail_deferred) == (
+        _fx_json("list_normal.json")["items"][0]["TotalJobsCount"], len(rows), len(rows) - 2
+    )
+
+
+@respx.mock
 def test_a_dead_list_endpoint_fails_without_raising(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(404))
 
