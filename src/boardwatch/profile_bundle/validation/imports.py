@@ -533,9 +533,10 @@ def validate_extraction_report(
             findings.append(
                 diagnostic(
                     IssueCode.IMPORT_DENOMINATOR_MISMATCH,
+                    # Design §6.3a: no report entry for an imported or excluded record.
                     f"{record.source_record_id} is dispositioned {record.disposition.value} but "
-                    f"{EXTRACTION_REPORT_PATH} carries reason {entry.reason.value!r}; §6.3a "
-                    "forbids a report entry for an imported or excluded record",
+                    f"{EXTRACTION_REPORT_PATH} carries reason {entry.reason.value!r}; only a "
+                    "record still awaiting review may have an entry in the report",
                     path=EXTRACTION_REPORT_PATH,
                     record_id=record.source_record_id,
                 )

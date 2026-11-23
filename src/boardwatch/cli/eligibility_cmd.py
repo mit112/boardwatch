@@ -1002,8 +1002,9 @@ def policy_degree_field(ctx: typer.Context, choice: str) -> None:
     """Decide a degree bar that names a field on its level alone (`ignore`) or not (`compare`).
 
     `ignore` means any degree at or above the bar's level qualifies, whatever its field; a bar
-    above your level still fails. A per-user preference, stored beside severity (D-651).
+    above your level still fails. A per-user preference, stored beside severity.
     """
+    # D-651: the layout-only degree bar this preference governs.
     if choice not in ("compare", "ignore"):
         typer.echo(f"choice must be compare or ignore, got {choice!r}")
         raise typer.Exit(code=1)

@@ -124,11 +124,11 @@ NOT_REACHABLE_FROM_BUILTIN_MAPPINGS: Final[Mapping[str, str]] = {
         "there is no headline bucket"
     ),
     "education.institution": (
-        "the education agent lane's target (§8), not this deterministic mapping's — the mapping "
+        "a target of the education agent lane, not of this deterministic mapping — the mapping "
         "defers `education/*` (free_text_deferred) rather than producing a candidate"
     ),
-    "education.credential": "as education.institution — the education agent lane's target (§8)",
-    "education.field": "as education.institution — the education agent lane's target (§8)",
+    "education.credential": "as education.institution — a target of the education agent lane",
+    "education.field": "as education.institution — a target of the education agent lane",
     "education.start_date": (
         "the résumé's two education lines carry institution/credential/field only; no bucket "
         "carries an education date"
@@ -141,8 +141,8 @@ NOT_REACHABLE_FROM_BUILTIN_MAPPINGS: Final[Mapping[str, str]] = {
     ),
     "employment.team_size": "no résumé bucket carries a team size",
     "project.summary": (
-        "no longer the metadata heading's target after §6.2a routed project.name; the résumé has "
-        "no project-summary bucket"
+        "no longer the metadata heading's target now that the heading routes to project.name; "
+        "the résumé has no project-summary bucket"
     ),
     "deployment.environment": "no résumé bucket carries a deployment environment",
     "publication.title": "a publications surface the résumé enumerator has no bucket for",
@@ -164,8 +164,8 @@ NOT_REACHABLE_FROM_BUILTIN_MAPPINGS: Final[Mapping[str, str]] = {
     "patent.filing_date": "as patent.title — no patents bucket",
     "patent.grant_date": "as patent.title — no patents bucket",
     "application.requires_sponsorship": (
-        "an application-only work-authorization fact, never sourced from a résumé; it belongs to "
-        "application/gated-facts.yaml (§16)"
+        "an application-only work-authorization fact, never sourced from a résumé; it belongs "
+        "in application/gated-facts.yaml"
     ),
     "application.authorized_regions": (
         "as application.requires_sponsorship — an application-only fact, never résumé-sourced"

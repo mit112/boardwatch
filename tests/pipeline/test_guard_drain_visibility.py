@@ -128,7 +128,7 @@ def test_a_real_scan_writes_the_flag_and_the_fourteenth_night_hands_the_posting_
     # Read off the WRITTEN artifact, not `summary` again.
     block = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))["death_probe"]
     assert (block["guard_boards"], block["guard_rows"], block["guard_attempted"]) == (1, 1, 1)
-    assert "guard drain (T334): 1 watched board(s)" in summary.funnel.markdown_path.read_text(
+    assert "guard drain: 1 watched board(s)" in summary.funnel.markdown_path.read_text(
         encoding="utf-8"
     )
 

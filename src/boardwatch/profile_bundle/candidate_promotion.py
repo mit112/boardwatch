@@ -319,8 +319,9 @@ def build_promotion(
         if len(displays) > 1:
             raise PromotionError(
                 f"skill id {skill_id!r} is grounded by more than one skill item "
-                f"{sorted(displays)!r}: the id slug is lossy (D-180), so these would silently "
-                "merge into one skill. Rename or merge them in the source before promoting."
+                f"{sorted(displays)!r}: different items can reduce to the same skill id, so "
+                "these would silently merge into one skill. Rename or merge them in the source "
+                "before promoting."
             )
         # One item under two groups is not a lossy id (D-202's guard keys on the display value, the
         # same string in both groups, so it cannot see this) and not a category collision (the two

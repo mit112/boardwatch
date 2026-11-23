@@ -157,11 +157,11 @@ def test_the_guard_drain_counts_reach_the_artifact_and_the_markdown() -> None:
     }
 
     rendered = funnel_to_markdown(_funnel(_guarded_sample()))
-    assert "guard drain (T334): 6 watched board(s)" in rendered
+    assert "guard drain: 6 watched board(s)" in rendered
     assert "127 open rows handed to the URL probe (100 asked this run, 9 closed)" in rendered
     assert "80 rows on Ashby or Greenhouse stay open" in rendered
     # Nothing handed over, nothing printed: the healthy-run case is not a line to learn to ignore.
-    assert "guard drain (T334)" not in funnel_to_markdown(_funnel(_sample()))
+    assert "guard drain:" not in funnel_to_markdown(_funnel(_sample()))
 
 
 def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: N802

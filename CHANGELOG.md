@@ -63,6 +63,19 @@ All notable changes to this project are documented here. The format follows
   command that opens the store read-write migrated it. Every route that touches the store now answers 503 with
   `store_needs_migration`, `/api/version` carries the flag, and the page's banner says the next `boardwatch run` or
   `boardwatch stats` upgrades it. The viewer still never migrates (T325, D-279).
+- **Ticket, decision and spec numbers no longer appear in text a user reads.** T269 cleaned `--help` and the run's
+  console lines; the rest is now plain prose. The run funnel's notes and captions (the `run_funnel` files and the web
+  Runs page) no longer cite D-/T- numbers, and the direct-share report loses two; the profile-bundle errors for a
+  `.` or `..` locator component, a lossy skill id and a report entry on an imported record drop their `§` and D-
+  references; `eligibility policy degree-field --help` drops D-651; and the Applied page's "unverifiable" tooltip no
+  longer ends in D-324. A new test fails on any such reference in a command's `--help`, in a string literal under
+  `src/boardwatch`, or in the committed web bundle (T271).
+
+- **A refused résumé template no longer reads `render tool unavailable`.** The run's tailor-loop abort served two
+  faults under one label, so a user with a working `tectonic` and an unedited template was told to reinstall the tool.
+  It now reads `résumé template refused: …` and names `resume_template.tex` in the config directory; a missing
+  `tectonic` or `pdfinfo` keeps its wording (T271).
+
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).

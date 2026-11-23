@@ -201,8 +201,9 @@ def reopen(
     — auto-expiry on mismatch would rebuild the whole shortlist on any settings
     tweak, and an automatic re-open cannot be reviewed before it happens. This is that review.
     It never releases a `built` decision, however stale its stamp: that lead was delivered, and
-    reopening it re-serves it (D-600, T264). Name such a job with `--job` to release it anyway.
+    reopening it re-serves it. Name such a job with `--job` to release it anyway.
     """
+    # Never releasing a `built` decision under --stale is D-600 / T264.
     # No automatic release on a stamp mismatch is design §2.4.
     if not job and not stale:
         console.print("nothing to do: pass --job <id> (repeatable) or --stale")

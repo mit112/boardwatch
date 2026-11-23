@@ -3455,7 +3455,16 @@ def _run_pipeline_leased(
                 # compiler binary is missing from PATH or the template itself is broken, so
                 # every remaining lead would fail identically — abort the stage rather than
                 # burn through the whole shortlist re-discovering that.
-                summary.fatal = f"render tool unavailable: {exc}"
+                # Two different faults share this abort, and the text must say which one a user
+                # has: a missing `tectonic`/`pdfinfo` is fixed on the machine, a refused
+                # template is fixed in the config directory. One assignment, because
+                # RUN_CONTRACT.md's table has one row per place `summary.fatal` is set.
+                summary.fatal = (
+                    f"render tool unavailable: {exc}"
+                    if isinstance(exc, RenderToolMissingError)
+                    else f"résumé template refused: {exc} — create or fix `resume_template.tex` "
+                    "in your config directory, then run again"
+                )
                 message = f"tailor: {summary.fatal}"
                 stage_errors.append(message)
                 summary.errors.append(message)

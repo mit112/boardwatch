@@ -2090,6 +2090,7 @@ def _dedup_stage(dedup: DedupSweep | None) -> Stage:
             ),
         ),
         derived=True,
+        # D-327: the audit-only kinds' counts are upper bounds, so they are never folded in.
         note=(
             "Every OPEN posting, grouped by identity. `entered` is the corpus the sweep saw; "
             "`advanced` is what survived suppression. The numbers beside this stage in "
@@ -2097,7 +2098,7 @@ def _dedup_stage(dedup: DedupSweep | None) -> Stage:
             "keys collide on BEFORE the string re-verification, so it bounds `suppressed` "
             "from above and the difference is the verifier's refusals; every "
             "`candidate_redundant_*` is an audit-only kind's UPPER BOUND, which spans "
-            "genuinely different jobs and suppresses nothing (D-327). Neither is folded in."
+            "genuinely different jobs and suppresses nothing. Neither is folded in."
         ),
         dedup_detail={
             "suppressing_groups": dedup.suppressing_groups,
@@ -2471,9 +2472,10 @@ def build_run_funnel(
                 Drop(
                     reason="hidden_lane_copy",
                     count=shortlist.hidden_lane_copy,
+                    # D-498 rules (a) and (b).
                     note=(
                         "an aggregator lane's copy of a job this slate already carries under "
-                        "the same `cross_host` group (D-498 rules (a) and (b)). The survivor is "
+                        "the same `cross_host` group. The survivor is "
                         "the EMPLOYER'S OWN board posting where one exists — on this slate or "
                         "standing in the queue, and its JD is the canonical one — and otherwise "
                         "the highest-ranked LANE copy, which is the weaker claim of the two; "
@@ -2490,10 +2492,11 @@ def build_run_funnel(
                 Drop(
                     reason="hidden_requisition_twin",
                     count=shortlist.hidden_requisition_twin,
+                    # D-654.
                     note=(
                         "the same employer requisition, read from the posting URL, as a posting "
                         "delivered and still open and unreported, as one applied to, or as one "
-                        "already on this slate (D-654). Reaches board copies too: one Oracle "
+                        "already on this slate. Reaches board copies too: one Oracle "
                         "requisition on two career sites. No `seen` row is written, so a held "
                         "posting returns once every delivered holder is closed or reported; an "
                         "applied requisition holds for good"
@@ -2580,9 +2583,10 @@ def build_run_funnel(
     withheld_drop = Drop(
         reason="withheld_not_live",
         count=liveness.dead or 0,
+        # P6 item 6.
         note=(
             "re-fetched immediately before the render and answered 404/410, so it "
-            "never entered the tailor loop (P6 item 6). NOT a render failure — a "
+            "never entered the tailor loop. NOT a render failure — a "
             "third terminal state, which is why it is its own bucket"
         ),
     )
@@ -2633,7 +2637,7 @@ def build_run_funnel(
         count=routed_to_review,
         note=(
             "DELIVERED, not lost. A review-lane lead gets its folder, its JD, its apply link "
-            "and its `resume_tailored` row with no render at all (T43), so it bypassed "
+            "and its `resume_tailored` row with no render at all, so it bypassed "
             "projection entirely and RE-ENTERS the tailor stage below, where it is counted in "
             "both `entered` and `advanced`"
         ),
@@ -2716,14 +2720,16 @@ def build_run_funnel(
                 Drop(
                     reason="cache_hit_unattributed",
                     count=corpus.cache_hit_unattributed,
+                    # D-019.
                     note=(
                         "judged before run attribution existed (run_id IS NULL). Its own "
-                        "bucket by D-019 and never folded into the line above"
+                        "bucket, never folded into the line above"
                     ),
                 ),
             ),
+            # D-016.
             note=(
-                "The stage D-016 exists for: 'judged this run' and 'cache hit' are the same "
+                "This stage separates 'judged this run' from 'cache hit', which are the same "
                 "number without run_id. DERIVED — the three buckets are a SQL partition of "
                 "the very set `entered` counts, so this balance holds for every possible "
                 "database state. The bucket VALUES are the information here; the tick is not."
@@ -2788,9 +2794,10 @@ def build_run_funnel(
                 ""
                 if projection_stage is None
                 else (
+                    # T43: the review lane.
                     "TWO paths merge here on a projected run: the leads projection advanced, "
                     "which arrive rendered, and the review-lane leads, which never entered "
-                    "projection and arrive unrendered by design (T43). `entered` is the sum of "
+                    "projection and arrive unrendered by design. `entered` is the sum of "
                     "the two, so a review lead is a named drop in the stage above AND an "
                     "entrant here rather than being counted in neither."
                 )
@@ -2806,7 +2813,11 @@ def build_run_funnel(
                 Drop(
                     reason="no_pdf",
                     count=apply_lane_tailored - with_pdf,
-                    note="résumé source written but no PDF compiled — D-006's silent degrade",
+                    # D-006: the silent degrade to the `.tex` source.
+                    note=(
+                        "résumé source written but no PDF compiled — a quiet fall-back to the "
+                        "`.tex` source"
+                    ),
                 ),
             ),
             derived=True,
@@ -3638,8 +3649,9 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "`taxonomy.yaml`. Corpus membership is in neither: watching a board changes which "
         "postings exist without moving any hash here.*",
         "",
-        "*`routing hash` is the one value above that is NOT about which postings became leads "
-        "(T111). It covers which LANE a delivered lead lands in — the knobs `config hash` "
+        # T111.
+        "*`routing hash` is the one value above that is NOT about which postings became leads. "
+        "It covers which LANE a delivered lead lands in — the knobs `config hash` "
         "excludes that can still move a lead between the apply queue and `_review`, plus the "
         "source of the five modules that decide the lane. Two runs whose five hashes agree and "
         "whose routing hash differs are not comparable as apply-lane volume readings. It is "
@@ -3841,11 +3853,11 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
         f"{len(funnel.sources)} boards owning an open posting, or a lead from this run.",
         "",
-        "`unique` and `assisted` are **not instrumented** — both are dedup-attribution "
-        "quantities (`assisted` credits a source that arrived second for a posting another "
-        "source won), and dedup is P6. They are not 0: reporting 0 would assert that no source "
-        "ever arrived second, which is the naive attribution that nearly cost job-apps a "
-        "working adapter.",
+        # P6: dedup attribution is its own phase.
+        "`unique` and `assisted` are **not instrumented** — both attribute a duplicate posting "
+        "to the sources that carried it (`assisted` credits a source that arrived second for a "
+        "posting another source won), and this report does not measure that. They are not 0: "
+        "reporting 0 would assert that no source ever arrived second.",
         "",
         "`open` is every OPEN posting the board owns, **not** what it listed this run — an "
         "unchanged board lists nothing and would otherwise show a denominator of zero.",
@@ -3891,13 +3903,14 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         )
     lines += [
         "",
+        # D-028: `eligible` was deleted from the reconciliation for always agreeing.
         "*Both numbers are read from the store; what differs is the SHAPE of the count — a row "
         "count of this run's artifacts against a distinct-posting count resolved through "
         "`posting_versions`. Neither way it can disagree is reachable through today's tailor "
         "path, so read this as a guard against a future writer rather than as live evidence. "
         "Two quantities are deliberately NOT reconciled here. `eligible` cannot be: the "
         "per-board sweep groups the same subquery the verdict stage counts, by a NOT NULL "
-        "foreign key, so it would agree for every possible database state (D-028). `applied` "
+        "foreign key, so it would agree for every possible database state. `applied` "
         "cannot be either: it counts distinct jobs per board, and summing per-board distinct "
         "counts is not the global distinct count if a job ever spans two boards.*",
         *[f"- *{total.name}*: {total.note}" for total in funnel.source_totals if total.note],
@@ -3976,11 +3989,12 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         ),
         f"- strikes: {'—' if live.struck is None else live.struck} struck, "
         f"{'—' if live.closed is None else live.closed} closed, "
-        f"{'—' if live.strikes_cleared is None else live.strikes_cleared} cleared (D-665)",
+        f"{'—' if live.strikes_cleared is None else live.strikes_cleared} cleared",
         "",
+        # D-665: the strike counts.
         "*Liveness is never cached. A `dead` result withholds the lead from this run; on an "
-        "unwatched posting it also counts as a strike, and two strikes a TTL apart close it "
-        "(D-665). Only an explicit "
+        "unwatched posting it also counts as a strike, and two strikes a TTL apart close it. "
+        "Only an explicit "
         "404/410 withholds, and only from the URL asked about; every other outcome — timeout, "
         "403, 5xx, no URL, and a 404 reached through a redirect — is served, because missing a "
         "real job costs more than one wasted résumé. A gone-after-redirect count that climbs "
@@ -4009,10 +4023,11 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"· {probe.closed_by_listing} closed by listing"
         ),
         "",
+        # T334 / D-705: the empty-complete guard drain.
         (
             ""
             if probe is None or not probe.guard_boards
-            else f"guard drain (T334): {probe.guard_boards} watched board(s) past the drain "
+            else f"guard drain: {probe.guard_boards} watched board(s) past the drain "
             "threshold of consecutive nights refused by the empty-complete guard · "
             f"{probe.guard_rows} open rows handed to the URL probe "
             f"({probe.guard_attempted} asked this run, "
@@ -4020,19 +4035,21 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             "Greenhouse stay open, because their dead URL answers alive"
         ),
         "",
+        # D-314: lane postings can never close by absence. D-647: the Workday CXS probe.
         "*The only mechanism that can close a posting whose company is `watched = 0` — a lane "
         "re-acquires by SEARCH, so absence is never evidence for these rows and the board "
-        "scanner never revisits them (D-314). Only a non-redirect 404/410 from the posting's "
+        "scanner never revisits them. Only a non-redirect 404/410 from the posting's "
         "own URL counts, and only twice in different runs, mirroring `CLOSE_AFTER_MISSES`. "
         "Sensitivity is LOW and measured: 4 of 60 postings the scanner had PROVED closed "
         "(6.7%, Wilson 95% CI 2.6%–15.9%), because a closed Workday requisition's page still "
         "answers 200 (0 of 37). It returned 0 false deaths against 90 live postings. `closed` "
-        "staying at 0 is the expected reading, not evidence the class is healthy. Since D-647 a "
+        "staying at 0 is the expected reading, not evidence the class is healthy. A "
         "Workday row is asked through its CXS endpoint instead, where an unposted requisition "
         "answers 403 `S22`: 80 of 80 scanner-proven-closed Workday postings detected, 0 false "
         "deaths in 76 open.*",
         "",
-        "*T89 gave `ashby`, `greenhouse` and `lever` rows a second, disjoint mechanism: "
+        # T89.
+        "*`ashby`, `greenhouse` and `lever` rows have a second, disjoint mechanism: "
         "membership of their company's ATS list endpoint, one GET per COMPANY. On those two "
         "hosts the URL probe was worse than blind — a dead Ashby posting answers 200 with an "
         "empty shell and a dead Greenhouse posting redirects to a 200, so the probe took its "
@@ -4043,7 +4060,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "moves no counter — so `listing_unknown` climbing while `listing_absent` sits at 0 is "
         "the signature of this half being disarmed.*",
         "",
-        "*T334 (D-705) is the one exception to `watched = 0`: a WATCHED board the empty-complete "
+        # T334 / D-705.
+        "*There is one exception to `watched = 0`: a WATCHED board the empty-complete "
         "guard refused on every pipeline night of the drain window has no miss counting either, "
         "so its open postings join the URL path and close only on their own two strikes. The "
         "board stays watched and a relist resumes ordinary miss counting. `guard_*` are part of "
@@ -4062,43 +4080,47 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{forms.budget_refused} refused by the budget"
         ),
         "",
-        "*T91: the Greenhouse application form carries hard stops the JD does not. Measured "
-        "2026-09-17, three apply-lane leads a hand pre-flight withdrew each carried a "
-        "citizenship or export-control requirement that appears ONLY on the form — a "
-        "`body_text` grep for citizen/clearance/ITAR/export returned 0 hits on all three, so "
-        "no rule, judge or ranker in this repo can reach the class: they all read the frozen "
-        "JD. GREENHOUSE-ONLY by construction, not as a gap to close — Ashby and Lever do not "
-        "publish the form at all — and reach was 22 of 400 apply-lane leads. A hit routes the "
-        "lead to `_review` and NEVER produces a verdict: the keystone requires a quoted span "
-        "from the frozen JD and the form is not the frozen JD. `unfetched` climbing while "
-        "`fetched` sits at 0 is the signature of the endpoint being unreachable (every fetch "
-        "fails open, so the leads still shipped unheld); `budget_refused` above 0 is the knob "
-        "`form_question_fetch_budget`, not a provider fault. `candidates` counts the leads "
-        "this run DELIVERED, so it is a different population from `liveness` (the shortlist) "
-        "and from the death probe (the unwatched corpus) and adds to neither.*",
+        # T91. The measurement is from 2026-09-17.
+        "*A Greenhouse application form can carry hard stops the job description does not. "
+        "Three apply-lane leads withdrawn after a hand check each carried a citizenship or "
+        "export-control requirement that appeared ONLY on the form — a text search of the "
+        "description (`body_text`) for citizen/clearance/ITAR/export found nothing on all "
+        "three, so no rule, judge or ranker can see the class: they all read the frozen "
+        "description. GREENHOUSE-ONLY by construction, not as a gap to close — Ashby and Lever "
+        "do not publish the form at all — and reach was 22 of 400 apply-lane leads. A hit "
+        "routes the lead to `_review` and NEVER produces a verdict, because an ineligible "
+        "verdict has to quote the frozen description and the form is not that. `unfetched` "
+        "climbing while `fetched` sits at 0 is the signature of the endpoint being unreachable "
+        "(every fetch fails open, so the leads still shipped unheld); `budget_refused` above 0 "
+        "is the knob `form_question_fetch_budget`, not a provider fault. `candidates` counts "
+        "the leads this run DELIVERED, so it is a different population from `liveness` (the "
+        "shortlist) and from the death probe (the unwatched corpus) and adds to neither.*",
         "",
         "## Gate",
         "",
         *_gate_lines(funnel.gate),
         "",
-        "*T42 (D-477's \"lever\"): a headless final-eligibility-gate judge over the whole "
-        "delivered slate, JD-and-facts-only (never a prior engine verdict), routed through "
+        # T42 (D-477's "lever"); fails open per D-074; `beyond_slate` is T63.
+        "*The final eligibility gate: a headless judge over the whole delivered slate, reading "
+        "only the job description and the facts (never a prior engine verdict), routed through "
         "the same handshake `eligibility gate request`/`apply` uses. Never re-judges a lead "
-        "with a current gate row. Fails OPEN at every seam (D-074) — a missing binary, a "
+        "with a current gate row. Fails OPEN at every step — a missing binary, a "
         "non-zero exit, a timeout, unparseable JSON, or a wrong item count all leave that "
         "batch's leads unjudged, never dropped, and `failed_open_batches` climbing with "
         "`judged` at 0 is the signature of the judge being entirely unreachable. "
-        "`beyond_slate` is T63: with `gate.depth` above `--top` the judge sees a deeper slate "
-        "than the run tailors, and those leads were cut before the lane split — judged, never "
-        "presented, never recorded `seen`, so they rank again next run carrying the verdict "
-        "this run bought for them. They are counted in the shortlist stage's "
-        "`capped_by_top_n`, which is what they were for delivery.*",
+        "`beyond_slate` counts the leads the judge saw but the run did not deliver: with "
+        "`gate.depth` above `--top` the judge sees a deeper slate than the run tailors, and "
+        "those leads were cut before the lane split — judged, never presented, never recorded "
+        "`seen`, so they rank again next run carrying the verdict this run bought for them. "
+        "They are counted in the shortlist stage's `capped_by_top_n`, which is what they were "
+        "for delivery.*",
         "",
-        "*T107, the second and third lines: `sent` is the only honest denominator for answer "
+        # T107.
+        "*On the second and third lines: `sent` is the only honest denominator for answer "
         "coverage — a `cached` lead was never asked about, so measuring against `candidates` "
         "would report a well-behaved all-cache run as a total outage. `missing_items` counts "
-        "sent labels NO answer named (run 467 lost posting 302235 that way, with "
-        "`failed_open_batches` at 0 and no alert anywhere); `refused_items` counts items that "
+        "sent labels NO answer named (a lead can be lost this way with "
+        "`failed_open_batches` at 0 and no alert); `refused_items` counts items that "
         "WERE answered and whose verdict `accept_oracle_verdict` then refused — a different "
         "fault needing a different fix. `seniority_fit` is split three ways because the parser "
         "folds an absent or out-of-catalog answer to `unclear`, which is also what a judge "
@@ -4194,7 +4216,8 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "",
         f"{funnel.unattributed_evaluations} evaluations in the whole store carry no run_id.",
         "",
-        "Per D-019 that means exactly one thing — the row predates run attribution — and the "
+        # D-019.
+        "That means exactly one thing — the row predates run attribution — and the "
         "number can only shrink. **If it grew since the last run, a NULL leaked back in.** It "
         "is never folded into this run's counts and never reported as 0.",
     ]
