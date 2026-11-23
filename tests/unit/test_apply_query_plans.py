@@ -17,6 +17,7 @@ from sqlalchemy import Engine, event, insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardSnapshot
+from boardwatch.pipeline.death_probe import Listing, sweep_unwatched_deaths
 from boardwatch.scan.apply import apply_board
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.tables import companies, jobs, postings, runs
@@ -104,3 +105,40 @@ def test_resetting_listed_but_unrefreshed_postings_reads_the_board_from_the_comp
     resets = [(sql, p) for sql, p in seen if "consecutive_missing" in sql]
     assert resets, "the reset was not captured, so nothing below was checked"
     assert not [plan for plan in _plans(engine, resets) if WALK in plan]
+
+
+def test_the_death_probe_reads_a_listed_company_from_the_company_index(tmp_path: Path) -> None:
+    """T260: `pipeline/death_probe.py` re-reads one company's open postings inside each listing
+    transaction with the same `company_id = ? AND status = 'open'` shape T256 fixed in
+    `apply_board`, and carries the same `likely()` hint. Today `ix_postings_corpus` seeks it by
+    company even without the hint; what this pins is that SOME plan constrains `company_id`,
+    so a change that loses both falls back to walking every open posting per asked company."""
+    engine, company_id, run_id = _store(tmp_path)
+    with engine.begin() as conn:
+        conn.execute(
+            companies.update().where(companies.c.id == company_id)
+            .values(provider="ashby", watched=False)
+        )
+    seen = _captured(engine)
+    sweep_unwatched_deaths(
+        engine,
+        prober=lambda posting_id, url: None,  # type: ignore[arg-type,return-value]
+        listing_prober=lambda cid, provider, slug: Listing(company_id=cid, ids=frozenset({"acme-0"})),
+        run_id=run_id,
+        budget=0,
+        company_budget=10,
+        ttl_hours=24,
+    )
+    # Keyed on the read's own columns, not on `likely(`: a filter on the hint would find nothing
+    # once the hint is gone and fail on the capture instead of on the plan.
+    reads = [
+        (sql, p) for sql, p in seen
+        if "provider_posting_id" in sql and "death_strikes" in sql and "postings.company_id" in sql
+    ]
+    assert reads, "the per-company re-read was not captured, so nothing below was checked"
+    plans = _plans(engine, reads)
+    assert not [plan for plan in plans if WALK in plan], plans
+    # Either index that seeks by company is fine (`ix_postings_corpus` answers it without the hint
+    # today); a plan that does not constrain company_id is the walk this pins against.
+    assert all("company_id=?" in plan for plan in plans), plans
+
