@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-23
+
+Catches the published package up to `main` (327 commits since 0.6.1). The web app grows from a review queue into
+the place to watch the pipeline: a health strip on every page, a "Needs you" list, and Runs and Applied pages that
+show trends, board and provider health, discovery yield, near-misses, rule abstain rates, build economics, lead
+aging and application pace. The scan gets steadier: Eightfold boards are capped at two in flight across tenants, a
+board whose every detail fails says why and keeps its counts, and the death probe now reaches rows it never asked
+about and, after 14 refused nights, the postings of a board that went empty. **Behaviour change:** `boardwatch top`
+no longer marks what it shows `seen` unless you pass `--record`. Eight store migrations apply on the first run; the
+web viewer never migrates and now says so instead of dropping the connection.
+
 ### Fixed
 
 - **A board the empty-complete guard keeps refusing now hands its open postings to the death probe after 14 nights.** The
