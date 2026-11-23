@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import httpcore
@@ -22,13 +23,38 @@ from boardwatch.core.settings import Settings
 from boardwatch.providers.base import detail_phase_stops
 
 #: Before 3.13, `time.monotonic()` on Windows is `GetTickCount64`, which ticks every ~15.6 ms (3.13
-#: moved it to `QueryPerformanceCounter`). A 0.3 s sleep then reads back as 0.296-0.297 s, and two
-#: reads a few microseconds apart return the SAME value, so `_bounded`'s `left < timeout` is false
-#: and a clamped timeout is reported as the caller's own (T251: 3.11 and 3.12 only, every night).
+#: moved it to `QueryPerformanceCounter`). A 0.3 s sleep then reads back as 0.296-0.297 s, which
+#: fails the two tests below that assert a 0.3 s lower bound (T251: 3.11 and 3.12 only, every
+#: night). Two reads a few microseconds apart also return the SAME value, which made `_bounded`'s
+#: `left < timeout` false and a clamped timeout the caller's own; it is `<=` now (T272).
 _coarse_windows_clock = pytest.mark.skipif(
     sys.platform == "win32" and sys.version_info < (3, 13),
     reason="time.monotonic() ticks at ~15.6 ms on Windows before Python 3.13",
 )
+
+
+def test_a_timeout_the_deadline_clamps_to_exactly_is_the_deadlines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T272. Where the clock is coarse (Windows before Python 3.13), the time left can read
+    EXACTLY the caller's own timeout, and a strict `<` then called the clamp the caller's own: a
+    timeout that ended at the deadline surfaced as a plain `TimeoutException`. A frozen clock puts
+    both at 5 s. The control is a caller's timeout a second SHORTER than the time left, which is
+    still the caller's own."""
+    monkeypatch.setattr(politeness, "time", SimpleNamespace(monotonic=lambda: 100.0))
+
+    def timed_out(_timeout: float | None) -> None:
+        raise httpcore.ReadTimeout("timed out")
+
+    politeness._REQUEST_DEADLINE.at = 105.0
+    try:
+        with pytest.raises(politeness.DeadlineExceeded):
+            politeness._bounded(timed_out, 5.0)
+        with pytest.raises(httpcore.ReadTimeout) as own:
+            politeness._bounded(timed_out, 4.0)
+        assert not isinstance(own.value, politeness.DeadlineExceeded)
+    finally:
+        del politeness._REQUEST_DEADLINE.at
 
 
 def _settings(tmp_path: Path, delay: float = 0.25, retries: int = 3) -> Settings:
@@ -1124,7 +1150,6 @@ def test_a_header_trickle_ends_at_the_board_deadline(tmp_path: Path) -> None:
     assert clock.tripped  # T228: set on the backend's clamp too, not only on a refused start
 
 
-@_coarse_windows_clock
 def test_a_body_trickle_ends_at_the_deadline_not_at_the_next_byte(tmp_path: Path) -> None:
     """Headers and the first body byte at once, then the next byte WITHHELD past any bound.
     `_read_body`'s per-chunk check runs only when a chunk arrives, so it can never fire again
@@ -1410,7 +1435,6 @@ def test_every_address_refused_raises_the_connect_error_httpcore_raised() -> Non
     assert isinstance(info.value.__cause__, ConnectionRefusedError), repr(info.value.__cause__)
 
 
-@_coarse_windows_clock
 def test_a_resolver_that_hangs_ends_at_the_fetch_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

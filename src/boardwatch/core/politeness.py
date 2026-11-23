@@ -184,7 +184,9 @@ def _bounded(op: Callable[[float | None], _T], timeout: float | None) -> _T:
     This is what a per-request timeout cannot do (T205): httpcore reads that value once per
     phase and each `recv` restarts it, so a host sending a byte every 0.1s never trips it. Here
     each `recv` gets only what is left, so the trickle ends at the deadline however it is paced.
-    A timeout that fired on the clamp rather than on the caller's own value is the deadline's.
+    A timeout that fired on the clamp rather than on the caller's own value is the deadline's. The
+    two coincide when the time left EQUALS the caller's timeout (a coarse clock does not move
+    between the two reads, T272), and that is the deadline's too, so the test is `<=`.
     """
     at: float | None = getattr(_REQUEST_DEADLINE, "at", None)
     if at is None:
@@ -192,7 +194,7 @@ def _bounded(op: Callable[[float | None], _T], timeout: float | None) -> _T:
     left = at - time.monotonic()
     if left <= 0:
         raise DeadlineExceeded("no time left before the deadline")
-    clamped = timeout is None or left < timeout
+    clamped = timeout is None or left <= timeout
     try:
         return op(left if clamped else timeout)
     except httpcore.TimeoutException as exc:
