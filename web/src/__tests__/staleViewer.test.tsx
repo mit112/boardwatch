@@ -83,6 +83,40 @@ describe("the stale-viewer banner", () => {
     expect(screen.getByRole("status")).toBeTruthy();
   });
 
+  it("says the store needs an upgrade, and where the fix is, when it is behind the code", async () => {
+    loadedScript("index-AAA.js");
+    vi.mocked(getVersion).mockResolvedValue({
+      bundle: "index-AAA.js",
+      code_changed: false,
+      store_needs_migration: true,
+    });
+    await renderBanner();
+    expect(screen.getByText(/The store needs a database upgrade/)).toBeTruthy();
+    expect(screen.getByText(/boardwatch run/)).toBeTruthy();
+    // Neither of the other two skews is claimed, and no reload is offered as the fix.
+    expect(screen.queryByText(/older code/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
+  });
+
+  it("names the store and the code together when both are behind, and clears on the next check", async () => {
+    loadedScript("index-AAA.js");
+    vi.mocked(getVersion).mockResolvedValue({
+      bundle: "index-AAA.js",
+      code_changed: true,
+      store_needs_migration: true,
+    });
+    await renderBanner();
+    expect(screen.getByText(/The store needs a database upgrade/)).toBeTruthy();
+    expect(screen.getByText(/Stop it and start `boardwatch web` again/)).toBeTruthy();
+
+    // An older server sends no field; the migrated store sends false. Both read as not behind.
+    vi.mocked(getVersion).mockResolvedValue({ bundle: "index-AAA.js", code_changed: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(screen.queryByRole("status")).toBeNull();
+  });
+
   it("says nothing when the check fails or the dev server loaded no built page", async () => {
     loadedScript("index-AAA.js");
     vi.mocked(getVersion).mockRejectedValue(new Error("404 from /api/version"));

@@ -111,9 +111,12 @@ from boardwatch.store.board_health_queries import load_board_health
 from boardwatch.store.company_hiring_queries import company_hiring
 from boardwatch.store.db import (
     DB_FILENAME,
+    StoreNeedsMigrationError,
     WalUnsafeFilesystemError,
     get_engine,
     get_readonly_engine,
+    require_current_schema,
+    schema_chain,
     write_connection,
 )
 from boardwatch.store.delivery_queries import delivered_unapplied
@@ -356,6 +359,10 @@ class ServerDeps:
     #: `code_fingerprint()` when this process started: the Python it imported then is the Python
     #: it serves until it exits, whatever the checkout on disk has since become (D-360).
     code_fingerprint: str
+    #: `schema_chain()` when this process started: the revisions the code it imported then knows. A
+    #: pull since can put newer migrations on disk, but this process does not run them, and it
+    #: reads an unmigrated store fine until it is restarted.
+    schema_chain: tuple[str, ...]
 
 
 class ReviewServer(ThreadingHTTPServer):
@@ -379,6 +386,7 @@ class ReviewServer(ThreadingHTTPServer):
             token=token,
             authority=f"{host}:{self.server_address[1]}",
             code_fingerprint=code_fingerprint(),
+            schema_chain=schema_chain(),
         )
 
     @property
@@ -471,6 +479,19 @@ class ReviewHandler(BaseHTTPRequestHandler):
             # connection, and the browser then shows a network error for a condition that has a
             # precise explanation the owner needs to read.
             self._error(HTTPStatus.SERVICE_UNAVAILABLE, str(exc))
+        except StoreNeedsMigrationError as exc:
+            # The viewer never migrates (D-279), so a pull that carried a migration leaves it
+            # reading a store the next run has not upgraded: `no such column`, a reset connection.
+            # Answered by name instead, and `/api/version` carries the same fact for the banner.
+            self._json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {
+                    "error": str(exc),
+                    "store_needs_migration": True,
+                    "db_revision": exc.db_revision,
+                    "code_revision": exc.code_revision,
+                },
+            )
         except CatalogError as exc:
             # A malformed local `rules.yaml` override: every route that resolves the current
             # identity loads it. Answered for the same reason as the two above — the owner needs
@@ -520,13 +541,23 @@ class ReviewHandler(BaseHTTPRequestHandler):
                 return
             if path == "/api/version":
                 # What the page needs to tell its reader the viewer is stale: the bundle on disk
-                # (the page compares it with the one it loaded) and whether the package's Python
-                # has changed under this process since it started.
+                # (the page compares it with the one it loaded), whether the package's Python
+                # has changed under this process since it started, and whether the store is
+                # behind that Python. The last is advice like the others: a store that cannot be
+                # read says nothing here, and the routes that read it say why.
+                try:
+                    self._require_current_store()
+                    store_needs_migration = False
+                except StoreNeedsMigrationError:
+                    store_needs_migration = True
+                except (OperationalError, OSError, WalUnsafeFilesystemError):
+                    store_needs_migration = False
                 self._json(
                     HTTPStatus.OK,
                     {
                         "bundle": bundle_entry(),
                         "code_changed": code_fingerprint() != deps.code_fingerprint,
+                        "store_needs_migration": store_needs_migration,
                     },
                 )
                 return
@@ -638,6 +669,16 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
     # -------------------------------------------------------------------------------- reading
 
+    def _require_current_store(self) -> None:
+        """Refuse, by name, a store the next run has not yet upgraded to this code's schema.
+
+        Before the caller opens its own connection, never on it: see `require_current_schema`.
+        """
+        deps = self._deps
+        require_current_schema(
+            deps.ctx.settings.data_dir, deps.schema_chain, busy_timeout_ms=READ_BUSY_TIMEOUT_MS
+        )
+
     def _read(self, work: Any) -> dict[str, Any]:
         """Run one read-only unit of work on a per-request read-only connection.
 
@@ -645,6 +686,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         request that is never disposed is one leaked SQLite handle per page load.
         """
         deps = self._deps
+        self._require_current_store()
         engine = get_readonly_engine(
             deps.ctx.settings.data_dir, busy_timeout_ms=READ_BUSY_TIMEOUT_MS
         )
@@ -721,6 +763,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
 
     def _resolve_pdf(self, posting_id: int) -> PdfFile | PdfIssue:
         deps = self._deps
+        self._require_current_store()
         engine = get_readonly_engine(
             deps.ctx.settings.data_dir, busy_timeout_ms=READ_BUSY_TIMEOUT_MS
         )
@@ -1243,6 +1286,7 @@ class ReviewHandler(BaseHTTPRequestHandler):
         `SQLITE_BUSY`, which the busy handler waits out.
         """
         deps = self._deps
+        self._require_current_store()
         for _attempt in range(WRITE_ATTEMPTS):
             engine = get_engine(deps.ctx.settings.data_dir, busy_timeout_ms=WRITE_BUSY_TIMEOUT_MS)
             try:

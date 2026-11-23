@@ -7,6 +7,10 @@ review app is a *viewer* of a store `boardwatch run` maintains: it reads through
 `get_readonly_engine` and writes only the four mark functions, and neither needs a migration. So
 this resolves settings and nothing else.
 
+A store the next run has not yet upgraded is therefore answered, not repaired: every route that
+reads it replies 503 with `store_needs_migration`, and `/api/version` carries the same flag for
+the page's banner (T325).
+
 `--host` exists so a non-loopback address can be **refused by name** rather than silently ignored.
 The refusal is the feature: the server carries the owner's answers panel, their résumé and
 third-party job text, and the only thing standing between that and the network is the bind
