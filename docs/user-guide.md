@@ -12,6 +12,8 @@ for your installed copy.
 - [Your funnel](#your-funnel)
 - [Where you stand](#where-you-stand)
 - [Take your data with you](#take-your-data-with-you)
+- [The review app's pages](#the-review-apps-pages)
+- [The Jobs page](#the-jobs-page)
 - [Configuration](#configuration)
 - [Tailor a résumé](#tailor-a-résumé)
 - [Career-profile bundle (advanced, optional)](#career-profile-bundle-advanced-optional)
@@ -80,6 +82,12 @@ Each posting gets a 0–1 score: a weighted blend of **skill coverage**, **title
 (fuzzy), **recency** (exponential decay), and **location fit**. Undefined components
 renormalize away, so a sparse profile still ranks sensibly. Nothing is precomputed:
 change a weight and the next `top` reflects it. `show <id>` prints the exact arithmetic.
+
+The score orders postings only within a tier. Tier 1 is a posting in your field that the
+eligibility audit decided `eligible`, tier 2 one in your field it left `uncertain`, and tier 3
+everything else still visible. With a target seniority band of `entry`, tier 0 comes first: an
+in-field posting whose title or description says in so many words that it is entry level. So a
+decided posting can list above an undecided one that scores higher.
 
 ## The daily pipeline
 
@@ -150,12 +158,16 @@ could apply at all, and shows its work.
 You describe your situation once, in the catalog's own vocabulary:
 
 ```bash
-boardwatch eligibility facts set work_authorization.status citizen
+boardwatch eligibility facts set work_authorization.status needs_sponsorship
+boardwatch eligibility facts set work_authorization.jurisdiction us
 boardwatch eligibility facts set highest_degree bachelor
 boardwatch eligibility facts set field_of_study computer_science
 boardwatch eligibility facts set employment_type_preference fte_only
 boardwatch eligibility policy set work_auth blocker   # treat this family as disqualifying
 ```
+
+Work authorization needs both its `status` and its `jurisdiction`: with either one missing, its
+rules abstain (`uncertain`) instead of deciding.
 
 Then `boardwatch eligibility run` reads each open posting for catalogued requirements
 (visa sponsorship, security clearance, degree, years of experience, employment type,
@@ -292,6 +304,26 @@ Every row carries the posting, your funnel state, and the eligibility verdict to
 with the profile and rules hashes that identify the evaluation it was computed under.
 This is a flat snapshot, not a full audit trail; it does not support independent
 recomputation of verdicts.
+
+## The review app's pages
+
+`boardwatch web` has five pages. A line under the header shows the last nightly run, the last
+same-day pass and each [companion](companions.md) as green, amber or red, with the reason in words.
+
+- **Jobs**: the leads you can act on, listed by how you apply to each ([below](#the-jobs-page)).
+- **Needs you**: what only you can settle, read-only. Held leads grouped by why they are held,
+  apply-lane leads the rules left `uncertain`, items a companion marked `needs_owner`, and the
+  Greenhouse form questions employers ask most, each marked answered or not by your `answers.yaml`.
+  A lead opens in Jobs.
+- **Applied**: every application you have recorded, with its status history, whether the posting
+  is still open and which résumé went out, plus your application pace and the withdrawals with
+  their reasons.
+- **Filtered out**: the jobs the automatic rules turned away, each with the rule and the sentence
+  it quoted, so a wrong call is easy to catch. You can record that you applied anyway, or flag the
+  call as wrong.
+- **Runs**: how each run went. What every stage did and how long it took, trends over the last 30
+  runs, the health of each board and provider, why leads were not eligible with each rule's
+  abstain rate, and the store's size.
 
 ## The Jobs page
 

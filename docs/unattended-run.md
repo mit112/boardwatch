@@ -91,8 +91,10 @@ What to expect from an unattended run:
   (~0.97 s each) and `death_probe_company_budget` to 100 board GETs. Read it against the leads
   standing in your queue rather than against `due`: the sweep probes a posting carrying a
   standing lead **first**, so the first rows the budget buys are the ones whose death you would
-  otherwise walk into on the apply list. Size the budget so it is at least as large as your
-  standing-lead count, in `config.toml`:
+  otherwise walk into on the apply list. Up to a fifth of `death_probe_budget` is set aside for
+  postings never probed that no standing lead holds, and the rest goes to standing leads first.
+  Size the budget so that four fifths of it is at least as large as your standing-lead count, in
+  `config.toml`:
 
   ```toml
   death_probe_budget = 400
