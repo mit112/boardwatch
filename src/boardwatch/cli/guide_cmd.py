@@ -10,12 +10,12 @@ describe a command this copy of boardwatch does not have, and never omits one it
 The effect labels are the reason this file exists. Nothing in this CLI is read-only except the
 offline commands: any command that opens the store through the default context first applies every
 pending schema migration (`cli/context.py:build_context` calls `ensure_schema`), `show`/`stats`/
-`export` backfill extractions and verdicts on the way to their readout, `top` records what it
-surfaced unless `--no-record` says otherwise, and `doctor` writes board health. An agent that
-inspects a live store by running "the show command" changes that store. The guide says so per
-command, and `migrates` derives the migration half from each command's own source so the label
-cannot drift from the code — unless an entry overrides it, and an override must say why in its
-own text, because the two that need one reach the store a frame down inside a helper.
+`export` backfill extractions and verdicts on the way to their readout, `top` backfills them
+too and marks what it surfaced `seen` only under `--record`, and `doctor` writes board health. An
+agent that inspects a live store by running "the show command" changes that store. The guide says
+so per command, and `migrates` derives the migration half from each command's own source so the
+label cannot drift from the code — unless an entry overrides it, and an override must say why in
+its own text, because the two that need one reach the store a frame down inside a helper.
 
 `boardwatch skill` prints the short file an agent saves in its own skills folder. It names one
 command, `boardwatch guide`, and carries `SKILL_VERSION`; `guide --skill <n>` opens with a notice
@@ -154,9 +154,9 @@ only thing that says it migrates UP FRONT; a command without that note either mi
 (`scan` and `run`, inside the scan lock) or not at all (`doctor`, `coverage`, `seeds`,
 `companies discover`, `companies discover-grnh`, `companies discover-crawl`, `web`). `show`,
 `stats` and `export` backfill extractions and eligibility verdicts on the way to their readout.
-`top` records what it surfaced, which is the part `--no-record` skips. `doctor` writes board
-health. So there is no boardwatch command that inspects a store and leaves it byte-identical,
-except the ones marked `pure`.
+`top` backfills the same way, and marks what it surfaced `seen` only when given `--record`.
+`doctor` writes board health. So there is no boardwatch command that inspects a store and leaves
+it byte-identical, except the ones marked `pure`.
 
 To look at a store the person must keep pristine — a live store another process is writing, or
 one a newer boardwatch owns — do not run a command against it. Read the file yourself:
@@ -222,11 +222,12 @@ Pacing toward third-party hosts is a promise, not a knob: do not run several at 
         """The ranked shortlist against the profile: eligibility, the role gate, the seniority band,
 the hard filters, dedup and the slate cap all applied, each hidden bucket counted and named.
 Takes `--json`, and it is the ONE command whose `--json` is a bare ARRAY of rows rather than an
-object. Every `--include-*` flag shows one hidden bucket for audit. It WRITES on two counts: the
+object. Every `--include-*` flag shows one hidden bucket for audit. It WRITES: the
 eligibility preflight backfills extraction and evaluation rows whenever any are pending (minting
-a `runs` row only then, never merely because `top` was typed), and it records a `seen`
-disposition per surfaced posting. `--no-record` skips the dispositions and nothing else, so
-`top` is still not the way to peek at a store you must not change.""",
+a `runs` row only then, never merely because `top` was typed), and with `--record` it also
+marks each surfaced posting `seen`, which keeps `run` from serving it for `seen_ttl_days`.
+Without `--record` (the default; `--no-record` is the same thing) no `seen` row is written, but
+the backfill still is, so `top` is still not the way to peek at a store you must not change.""",
     ),
     "show": Entry(
         ("writes store",),

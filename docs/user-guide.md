@@ -36,9 +36,9 @@ band** (`entry`, `mid` or `senior`; the default `any` leaves the seniority filte
 **target countries** (ISO-3166 alpha-3 codes such as `USA`), without which the country-based
 location filters stay off.
 
-`top` remembers what it showed you: a lead it surfaced stays off `run`'s shortlist for
-`seen_ttl_days` (7 by default), so the same job is not served twice. `top --no-record` looks
-without marking anything seen.
+`top` only looks: it marks nothing seen, so you can run it as often as you like without costing
+`run` a lead. `top --record` marks what it shows, and a lead it marked stays off `run`'s shortlist
+and off the next `top` for `seen_ttl_days` (7 by default), so the same job is not served twice.
 
 New here? `boardwatch guide` prints the full command reference, generated from your installed
 copy. It is written for a coding agent working on your behalf, so it also says what each command
