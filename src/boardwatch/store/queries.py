@@ -75,6 +75,24 @@ def _unsliced_slug(slug: ColumnElement[str]) -> ColumnElement[str]:
 BODY_STRIP_SET = "char(32, 9, 10, 13, 12, 11)"
 
 
+def open_as_filter() -> ColumnElement[bool]:
+    """`status = 'open'` as a filter on rows already found, never as an index key.
+
+    Beside `company_id = ?` it keeps SQLite on the company index (`UNIQUE(company_id,
+    provider_posting_id)`), which reads one board's rows. A bare `status = ?` lets the planner
+    pick `ix_postings_status_posted_at` and walk every open posting in the store to find one
+    board's (~40 s a board on run 478's store). The unary `+` is SQLite's documented way to
+    take a term out of index selection, so the choice does not rest on the SQLite version or
+    on a cost estimate. `likely()` was the first answer and is only an estimate: SQLite
+    3.42 to 3.46 (the 3.11.9 Python builds bundle 3.46.0) answer it with a SCAN of the whole
+    `postings` table, which is the same walk; 3.49 and later seek the company index.
+
+    The table is named in the text because `literal_column` does not qualify it; every reader
+    selects from or updates `postings` itself, never an alias.
+    """
+    return literal_column("+postings.status") == "open"
+
+
 def body_is_empty() -> ColumnElement[bool]:
     """SQL predicate: this open posting's JD body is empty once trimmed (a stub).
 

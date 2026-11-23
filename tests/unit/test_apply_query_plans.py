@@ -69,6 +69,18 @@ def _plans(engine: Engine, statements: list[tuple[str, Any]]) -> list[str]:
         ]
 
 
+def _reads_by_company(plans: list[str]) -> None:
+    """Every plan walks neither the status index nor the whole table: it constrains `company_id`.
+
+    `not WALK in plan` alone is vacuous where the plan is a bare `SCAN postings`, which names no
+    index. SQLite 3.42 to 3.46 (the 3.11.9 Python builds bundle 3.46.0) answered the old
+    `likely()` hint that way for three of these statements while this file stayed green.
+    """
+    assert plans
+    assert not [plan for plan in plans if WALK in plan], plans
+    assert all("company_id=?" in plan for plan in plans), plans
+
+
 def test_closing_missing_postings_reads_the_board_from_the_company_index(tmp_path: Path) -> None:
     engine, company_id, run_id = _store(tmp_path)
     seen = _captured(engine)
@@ -77,7 +89,7 @@ def test_closing_missing_postings_reads_the_board_from_the_company_index(tmp_pat
     apply_board(engine, listed, company_id, run_id)
     missing = [(sql, p) for sql, p in seen if "consecutive_missing" in sql]
     assert missing, "the closure read was not captured, so nothing below was checked"
-    assert not [plan for plan in _plans(engine, missing) if WALK in plan]
+    _reads_by_company(_plans(engine, missing))
 
 
 def test_the_empty_board_guard_counts_from_the_company_index(tmp_path: Path) -> None:
@@ -87,7 +99,7 @@ def test_the_empty_board_guard_counts_from_the_company_index(tmp_path: Path) -> 
     apply_board(engine, empty, company_id, run_id)
     counts = [(sql, p) for sql, p in seen if "count(" in sql.lower()]
     assert counts, "the guard's count was not captured, so nothing below was checked"
-    assert not [plan for plan in _plans(engine, counts) if WALK in plan]
+    _reads_by_company(_plans(engine, counts))
 
 
 def test_resetting_listed_but_unrefreshed_postings_reads_the_board_from_the_company_index(
@@ -104,15 +116,16 @@ def test_resetting_listed_but_unrefreshed_postings_reads_the_board_from_the_comp
     apply_board(engine, listed, company_id, run_id)
     resets = [(sql, p) for sql, p in seen if "consecutive_missing" in sql]
     assert resets, "the reset was not captured, so nothing below was checked"
-    assert not [plan for plan in _plans(engine, resets) if WALK in plan]
+    _reads_by_company(_plans(engine, resets))
 
 
 def test_the_death_probe_reads_a_listed_company_from_the_company_index(tmp_path: Path) -> None:
     """T260: `pipeline/death_probe.py` re-reads one company's open postings inside each listing
     transaction with the same `company_id = ? AND status = 'open'` shape T256 fixed in
-    `apply_board`, and carries the same `likely()` hint. Today `ix_postings_corpus` seeks it by
-    company even without the hint; what this pins is that SOME plan constrains `company_id`,
-    so a change that loses both falls back to walking every open posting per asked company."""
+    `apply_board`, and carries the same `open_as_filter()`. What this pins is that SOME plan
+    constrains `company_id`, so a change that loses it falls back to walking every open posting
+    per asked company. It failed on SQLite 3.46 (Python 3.11.9) while the `likely()` hint was in:
+    the plan was `SCAN postings`, with the T256 tests above green."""
     engine, company_id, run_id = _store(tmp_path)
     with engine.begin() as conn:
         conn.execute(
@@ -129,16 +142,14 @@ def test_the_death_probe_reads_a_listed_company_from_the_company_index(tmp_path:
         company_budget=10,
         ttl_hours=24,
     )
-    # Keyed on the read's own columns, not on `likely(`: a filter on the hint would find nothing
-    # once the hint is gone and fail on the capture instead of on the plan.
+    # Keyed on the read's own columns, not on the status term's text: a filter on that term would
+    # find nothing once it changes and fail on the capture instead of on the plan.
     reads = [
         (sql, p) for sql, p in seen
         if "provider_posting_id" in sql and "death_strikes" in sql and "postings.company_id" in sql
     ]
     assert reads, "the per-company re-read was not captured, so nothing below was checked"
-    plans = _plans(engine, reads)
-    assert not [plan for plan in plans if WALK in plan], plans
-    # Either index that seeks by company is fine (`ix_postings_corpus` answers it without the hint
-    # today); a plan that does not constrain company_id is the walk this pins against.
-    assert all("company_id=?" in plan for plan in plans), plans
+    # Either index that seeks by company is fine; a plan that does not constrain company_id is the
+    # walk this pins against.
+    _reads_by_company(_plans(engine, reads))
 

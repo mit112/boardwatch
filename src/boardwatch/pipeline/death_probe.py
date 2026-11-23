@@ -142,6 +142,7 @@ from boardwatch.scan.apply import CLOSE_AFTER_MISSES
 from boardwatch.store.db import write_connection
 from boardwatch.store.delivery_queries import standing_lead_job_ids
 from boardwatch.store.events import append_event
+from boardwatch.store.queries import open_as_filter
 from boardwatch.store.tables import companies, postings, runs
 
 # The liveness signals permitted to strike a posting on the URL path, compared as catalog
@@ -646,8 +647,8 @@ def sweep_unwatched_deaths(
                         _past_ttl(cutoff).label("past_ttl"),
                     ).where(
                         postings.c.company_id == company.id,
-                        # The planner hint `scan/apply._process_missing` explains.
-                        func.likely(postings.c.status == "open"),
+                        # The index choice `scan/apply._process_missing` explains.
+                        open_as_filter(),
                     )
                 ).all()
                 for row in open_rows:

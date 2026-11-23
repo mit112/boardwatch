@@ -40,6 +40,7 @@ from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.db import write_connection
 from boardwatch.store.events import append_event
 from boardwatch.store.identity_queries import write_identities
+from boardwatch.store.queries import open_as_filter
 from boardwatch.store.sources import record_version_source
 from boardwatch.store.tables import (
     board_scans,
@@ -576,13 +577,13 @@ def _reset_listed_but_unrefreshed(
     to_reset = tuple(listed_ids - applied)
     if not to_reset:
         return
-    # `likely()` for the reason `_process_missing` gives: from three ids the bare status term
-    # walks every open posting in the store, ~41 s a Workday board on run 489.
+    # `open_as_filter()` for the reason `_process_missing` gives: from three ids the bare status
+    # term walks every open posting in the store, ~41 s a Workday board on run 489.
     conn.execute(
         update(postings)
         .where(
             postings.c.company_id == company_id,
-            func.likely(postings.c.status == "open"),
+            open_as_filter(),
             postings.c.provider_posting_id.in_(to_reset),
             postings.c.consecutive_missing != 0,
         )
@@ -623,15 +624,16 @@ def _process_missing(
     by _reset_listed_but_unrefreshed, so this loop only skips or closes."""
     applied = {raw.provider_posting_id for raw in raw_postings}
     effective = listed_ids or frozenset(applied)
-    # `likely()` is a planner hint and a no-op on the value. Without it SQLite (no ANALYZE stats)
-    # answers `company_id = ? AND status = ?` from `ix_postings_status_posted_at`, walking every
-    # OPEN posting in the store to find one board's, once per applied board. With the pages cached
-    # that is ~1 s; on a 16 GB store under memory pressure it was ~40 s a board and serialised the
-    # scan (run 478: 141 boards in 88 min). The company index answers it from the board's own rows.
+    # `open_as_filter()` is a no-op on the value that keeps `status` out of index selection.
+    # Without it SQLite (no ANALYZE stats) answers `company_id = ? AND status = ?` from
+    # `ix_postings_status_posted_at`, walking every OPEN posting in the store to find one board's,
+    # once per applied board. With the pages cached that is ~1 s; on a 16 GB store under memory
+    # pressure it was ~40 s a board and serialised the scan (run 478: 141 boards in 88 min). The
+    # company index answers it from the board's own rows.
     open_rows = conn.execute(
         select(
             postings.c.id, postings.c.provider_posting_id, postings.c.consecutive_missing
-        ).where(postings.c.company_id == company_id, func.likely(postings.c.status == "open"))
+        ).where(postings.c.company_id == company_id, open_as_filter())
     ).all()
     closed = 0
     now = utcnow()
