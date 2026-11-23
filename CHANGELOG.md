@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The per-board apply and the death probe read one board's rows from the company index on every SQLite.** The T256
+  `likely()` hint only kept the status term off `ix_postings_status_posted_at` where the planner's estimate agreed: on
+  SQLite 3.42 to 3.46 (the Python 3.11.9 builds bundle 3.46.0) three of the four statements answered with a
+  `SCAN postings` of the whole table instead, and the death probe's plan test failed on the macOS 3.11 CI job. The
+  status term is now `+status`, which takes it out of index selection on every version; the plan on SQLite 3.53 is
+  unchanged. The plan tests now also require `company_id=?` in every plan, which a bare `SCAN postings` slipped past
+  (T256, T260).
+
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
