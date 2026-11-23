@@ -13,14 +13,17 @@ Unauthenticated — no cookie, no token, no `Referer`.
 
 These files use the **exact response shape** of that endpoint, recorded during an attended,
 read-only session on **2026-09-07** (rate-limited to 1 request/second, `boardwatch-probe`
-User-Agent). Only the *shape* was carried over.
+User-Agent). Only the *shape* was carried over. `facets_category.json` was re-recorded the same
+way on **2026-11-23** (D-699) after the facet lost `Machine Learning Science`; the other files
+keep their 2026-09-07 shape, re-checked live on 2026-11-23 (D-697). The figures in the limits
+table below (2,597 and 22,282) are the 2026-09-07 measurement and were not re-taken.
 
 **All posting text is synthetic.** No real posting copy, requisition id, posting URL or
 recruiter contact appears here. The employer is the invented "Acme Corp" on the fictional host
 `careers.acme.test`; posting ids are `9000001`–`9000005`.
 
 **Two things are deliberately real, and both have to be.** (1) The API host
-`www.amazon.jobs`, because the provider's identity *is* that host. (2) The 38 category names
+`www.amazon.jobs`, because the provider's identity *is* that host. (2) The 37 category names
 and their counts in `facets_category.json`, because that file exists to pin the provider's
 closed slug catalog against the live facet vocabulary — a synthetic taxonomy would pin nothing.
 Neither is posting content, an employer name we recorded, or a person.
@@ -87,6 +90,12 @@ What exists instead: `_CATEGORIES` is closed and versioned, `normalize_slug` rai
 outside it, `facets_category.json` pins it against the capture, and R15's review deadline is
 what forces the live facet list to be re-read on schedule.
 
+That review caught one on 2026-11-23 (D-699): `Machine Learning Science` left the facet, and
+its old filter value did not empty the board but answered Applied Science postings (478 hits
+in D-697, `job_category` `Applied Science`). The entry was dropped from `_CATEGORIES`. The echoed
+`job_posting_search_request` now shows `includeFacets: []` where the 2026-09-07 echo showed the
+`category` facet; nothing reads the echo.
+
 ## `board_reported_total` at the cap
 
 `hits >= 10000` is the board refusing to state its size, so the provider persists
@@ -95,8 +104,8 @@ what forces the live facet list to be re-read on schedule.
 reason. Unlike Workday there is no uncapped second path to recover a real number from:
 `facets[]=category` on a category-filtered query just echoes `hits` back (measured 19/19).
 
-**In practice this cannot fire for a catalog slug.** The largest live category held 3,370
-postings and every one of the 38 is under the ceiling, which is precisely what makes
+**In practice this cannot fire for a catalog slug.** The largest live category held 3,260
+postings (2026-11-23) and every one of the 37 is under the ceiling, which is precisely what makes
 category-per-board a correct enumeration strategy rather than a convenience — the unfiltered
 query provably cannot enumerate the corpus, and a category always can.
 
@@ -186,7 +195,7 @@ are JSON-encoded strings, and one posting carried ten.
 | `empty.json` | A live but vacant category: `"jobs": []`, `hits: 0`, `error: null` → a *complete, empty* inventory. |
 | `error_result_limit.json` | The `result_limit > 100` refusal: HTTP 200, `error` set, `jobs: null`. |
 | `error_offset_ceiling.json` | The `offset >= 10000` refusal, same shape. Served on a LATER page, it must be a `partial`. |
-| `facets_category.json` | The `facets[]=category` capture: 38 single-key dicts, sum 22,282, max 3,370, alongside the capped `hits: 10000`. Pins `_CATEGORIES`. |
+| `facets_category.json` | The `facets[]=category` capture (2026-11-23): 37 single-key dicts, sum 20,674, max 3,260, alongside the capped `hits: 10000`. Pins `_CATEGORIES`. |
 | `normal_response_headers.json` | The `etag` validator (and the recorded absence of `last_modified`) for the 304 exchange. |
 
 There is deliberately **no `dead.json`** — see the dead-board signature above.

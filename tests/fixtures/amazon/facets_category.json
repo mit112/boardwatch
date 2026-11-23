@@ -4,118 +4,115 @@
   "facets": {
     "category_facet": [
       {
-        "Operations, IT, & Support Engineering": 3370
+        "Operations, IT, & Support Engineering": 3260
       },
       {
-        "Software Development": 2597
+        "Software Development": 2594
       },
       {
-        "Fulfillment & Operations Management": 2245
+        "Fulfillment & Operations Management": 2084
       },
       {
-        "Project/Program/Product Management--Non-Tech": 1211
+        "Project/Program/Product Management--Technical": 1116
       },
       {
-        "Project/Program/Product Management--Technical": 1187
+        "Project/Program/Product Management--Non-Tech": 1091
       },
       {
-        "Sales, Advertising, & Account Management": 1181
+        "Facilities, Maintenance, & Real Estate": 887
       },
       {
-        "Solutions Architect": 973
+        "Sales, Advertising, & Account Management": 847
       },
       {
-        "Facilities, Maintenance, & Real Estate": 907
+        "Systems, Quality, & Security Engineering": 784
       },
       {
-        "Systems, Quality, & Security Engineering": 713
+        "Solutions Architect": 741
       },
       {
-        "Hardware Development": 701
+        "Hardware Development": 692
       },
       {
-        "Finance & Accounting": 668
+        "Finance & Accounting": 624
       },
       {
-        "Administrative Support": 645
+        "Administrative Support": 622
       },
       {
-        "Supply Chain/Transportation Management": 598
+        "Corporate Operations": 592
       },
       {
-        "Medical, Health, & Safety": 585
+        "Medical, Health, & Safety": 555
       },
       {
-        "Corporate Operations": 569
+        "Supply Chain/Transportation Management": 531
       },
       {
-        "Human Resources": 500
+        "Human Resources": 485
       },
       {
-        "Applied Science": 427
+        "Applied Science": 474
       },
       {
-        "Business & Merchant Development": 388
+        "Design": 297
       },
       {
-        "Design": 354
+        "Business & Merchant Development": 286
       },
       {
-        "Marketing & PR": 345
+        "Buying, Planning, & Instock Management": 262
       },
       {
-        "Buying, Planning, & Instock Management": 305
+        "Marketing & PR": 247
       },
       {
-        "Fulfillment Associate": 234
+        "Investigation & Loss Prevention": 219
       },
       {
-        "Business Intelligence": 222
+        "Business Intelligence": 205
       },
       {
-        "Investigation & Loss Prevention": 212
+        "Fulfillment Associate": 201
       },
       {
-        "Customer Service": 197
+        "Customer Service": 176
       },
       {
-        "Data Science": 170
+        "Data Science": 138
       },
       {
-        "Legal": 159
+        "Fulfillment / Warehouse Associate": 135
       },
       {
-        "Machine Learning Science": 131
+        "Legal": 126
       },
       {
-        "Procurement": 121
+        "Procurement": 111
       },
       {
-        "Editorial, Writing, & Content Management": 81
+        "Research Science": 75
       },
       {
-        "Research Science": 65
+        "Editorial, Writing, & Content Management": 60
       },
       {
-        "PR": 41
+        "Leadership Development & Training": 39
       },
       {
-        "Leadership Development & Training": 40
+        "PR": 28
       },
       {
-        "Fulfillment / Warehouse Associate": 36
+        "Public Policy": 27
       },
       {
-        "Audio / Video / Photography Production": 35
+        "Economics": 24
       },
       {
-        "Economics": 27
+        "Database Administration": 23
       },
       {
-        "Public Policy": 23
-      },
-      {
-        "Database Administration": 19
+        "Audio / Video / Photography Production": 16
       }
     ]
   },
@@ -124,5 +121,5 @@
     "search_results": {}
   },
   "jobs": [],
-  "job_posting_search_request": "{\"jobPostingSearchRequest\": {\"query\": null, \"excludeFacets\": [{\"name\": \"businessCategory\", \"values\": [{\"name\": \"a-confidential-job\"}]}, {\"name\": \"isPostedExternally\", \"values\": [{\"name\": \"0\"}]}, {\"name\": \"isUnsearchable\", \"values\": [{\"name\": \"1\"}]}], \"filterFacets\": [], \"start\": \"0\", \"size\": \"1\", \"sort\": {\"sortOrder\": \"DESCENDING\", \"sortType\": \"CREATED_DATE\"}, \"location\": null, \"accessLevel\": \"EXTERNAL\", \"includeFacets\": [{\"name\": \"category\"}], \"locationFacets\": [], \"jobTypeFacets\": [], \"contentFilterFacets\": [], \"treatment\": \"OM\"}}"
+  "job_posting_search_request": "{\"jobPostingSearchRequest\": {\"query\": null, \"excludeFacets\": [{\"name\": \"businessCategory\", \"values\": [{\"name\": \"a-confidential-job\"}]}, {\"name\": \"isPostedExternally\", \"values\": [{\"name\": \"0\"}]}, {\"name\": \"isUnsearchable\", \"values\": [{\"name\": \"1\"}]}], \"filterFacets\": [], \"start\": \"0\", \"size\": \"1\", \"sort\": {\"sortOrder\": \"DESCENDING\", \"sortType\": \"CREATED_DATE\"}, \"location\": null, \"accessLevel\": \"EXTERNAL\", \"includeFacets\": [], \"locationFacets\": [], \"jobTypeFacets\": [], \"contentFilterFacets\": [], \"treatment\": \"OM\"}}"
 }

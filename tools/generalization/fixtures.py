@@ -87,9 +87,9 @@ class FixtureProvenance:
 # stable enough for a longer window, and a shorter one would have landed this gate already red.
 FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     "amazon": FixtureProvenance(
-        captured=date(2026, 9, 7),
-        review_by=date(2026, 12, 6),
-        readme_pin="sha256:d2bc07ee4df6909510cb69944a4a9ae25efd24153a1557932c7af7efdd906016",
+        captured=date(2026, 11, 23),
+        review_by=date(2027, 2, 21),
+        readme_pin="sha256:27d5851402e793778f8e5b1bcc22e74518f3b729b8936e1542120b0a0e9e5430",
     ),
     "apple": FixtureProvenance(
         captured=date(2026, 9, 7),
