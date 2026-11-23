@@ -13,7 +13,7 @@
 # those providers (scan/health.py's `_fallback`) without inflating the curated
 # starter set — they are catalog, not yet starter-grade.
 companies:
-  # --- greenhouse (18) ---
+  # --- greenhouse (19) ---
   - name: Stripe
     provider: greenhouse
     slug: stripe
@@ -86,11 +86,11 @@ companies:
     provider: greenhouse
     slug: datadog
     tags: []
-  # --- lever (5) ---
-  - name: Mistral AI
-    provider: lever
-    slug: mistral
-    tags: [starter]
+  - name: Browserbase
+    provider: greenhouse
+    slug: browserbaseinc
+    tags: []
+  # --- lever (4) ---
   - name: Palantir
     provider: lever
     slug: palantir
@@ -144,10 +144,6 @@ companies:
     provider: ashby
     slug: neon
     tags: []
-  - name: Browserbase
-    provider: ashby
-    slug: browserbase
-    tags: []
   - name: Render
     provider: ashby
     slug: render
@@ -155,6 +151,10 @@ companies:
   - name: OpenAI
     provider: ashby
     slug: openai
+    tags: [starter]
+  - name: Mistral AI
+    provider: ashby
+    slug: mistral.ai
     tags: [starter]
   # --- workable ---
   - name: Rokt

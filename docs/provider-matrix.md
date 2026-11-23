@@ -10,8 +10,8 @@ registry.
 
 | Provider | Registry boards | In starter set | JD body | `--verify` catches a wrong slug | Honest limit |
 |---|---:|---|---|---|---|
-| **Greenhouse** | 18 | yes | inline with the listing | yes — a wrong slug returns no board | — |
-| **Lever** | 5 | yes | inline with the listing | yes — a wrong slug returns no board | — |
+| **Greenhouse** | 19 | yes | inline with the listing | yes — a wrong slug returns no board | — |
+| **Lever** | 4 | yes | inline with the listing | yes — a wrong slug returns no board | — |
 | **Ashby** | 12 | yes | inline with the listing | yes — a wrong slug returns no board | — |
 | **Workable** | 1 | no (catalog only) | inline (whole board in one request) | yes — a wrong slug returns no board | 1 catalog entry so `doctor` can probe real connectivity; not curated into the starter set |
 | **SmartRecruiters** | 1 | no (catalog only) | one detail fetch per unseen posting, bounded by `detail_fetch_budget`, never refreshed | **no** — an unknown slug returns an *empty* board, not an error, so a typo reads as "unverifiable", not "wrong" | bodies fill in across scans; a description-only edit is not re-fetched (no revision signal) |
