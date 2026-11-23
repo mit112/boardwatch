@@ -48,6 +48,23 @@ class WalUnsafeFilesystemError(RuntimeError):
         )
 
 
+class StoreNeedsMigrationError(RuntimeError):
+    """The store's schema is older than the code asked to read it.
+
+    Raised by `require_current_schema` for a caller that must not migrate (the web viewer, D-279),
+    typed so it is answered by name instead of being classified from a `no such column` message.
+    """
+
+    def __init__(self, db_revision: str | None, code_revision: str) -> None:
+        self.db_revision = db_revision
+        self.code_revision = code_revision
+        super().__init__(
+            f"the store needs migration (store {db_revision or 'has no schema'}, code "
+            f"{code_revision}): the next `boardwatch run` upgrades it, or run `boardwatch stats` "
+            "now"
+        )
+
+
 #: The three modes SQLite's BEGIN accepts, as a closed catalog. The `begin` listener
 #: interpolates the chosen one into a statement, so nothing outside this set can reach the
 #: driver: an unknown mode is a typed refusal at the raise site, never a new bucket.
@@ -252,6 +269,12 @@ def schema_revision() -> str:
     return script.get_current_head() or "unknown"
 
 
+def schema_chain() -> tuple[str, ...]:
+    """Every revision the bundled migration scripts know, head first; needs no database."""
+    script = ScriptDirectory(str(_MIGRATIONS))
+    return tuple(rev.revision for rev in script.walk_revisions())
+
+
 def db_revision(conn: Connection) -> str | None:
     """The DB's applied Alembic revision, or None if the DB is unversioned/uninitialized.
 
@@ -264,6 +287,29 @@ def db_revision(conn: Connection) -> str | None:
     except OperationalError:  # alembic_version table absent -> schema never applied
         return None
     return str(result) if result is not None else None
+
+
+def require_current_schema(
+    data_dir: Path, chain: tuple[str, ...], busy_timeout_ms: int = 5000
+) -> None:
+    """Raise `StoreNeedsMigrationError` when the store sits on an OLDER revision of `chain`.
+
+    A store with no revision has had nothing applied, so it is older too. A revision `chain` does
+    not contain belongs to a newer checkout (D-279's mirror): that store is not this code's to
+    upgrade, and old code reading it is not the failure this guards.
+
+    Reads on a connection of its own, closed before it returns. A statement on the caller's
+    connection would take that connection's read snapshot before the caller's own reads, which
+    must stay free to take theirs inside a lock (T135).
+    """
+    engine = get_readonly_engine(data_dir, busy_timeout_ms=busy_timeout_ms)
+    try:
+        with engine.connect() as conn:
+            revision = db_revision(conn)
+    finally:
+        engine.dispose()
+    if revision != chain[0] and (revision is None or revision in chain):
+        raise StoreNeedsMigrationError(revision, chain[0])
 
 
 def get_readonly_engine(data_dir: Path, busy_timeout_ms: int = 5000) -> Engine:

@@ -31,13 +31,15 @@ import sqlite3
 import threading
 import time
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import Connection, Engine, event, func, insert, select, text, update
 from sqlalchemy.exc import OperationalError
 
@@ -74,8 +76,9 @@ from boardwatch.eligibility.hashing import build_identity
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store import company_hiring_queries as chq
+from boardwatch.store import db as store_db
 from boardwatch.store.applications import create_application
-from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
+from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine, schema_revision
 from boardwatch.store.queries import insert_run, save_eligibility, save_profile
 from boardwatch.store.queue_state import followup_job_dates, skipped_job_ids
 from boardwatch.store.tables import (
@@ -4362,3 +4365,110 @@ def test_company_hiring_is_served_read_only(live: Live, engine: Engine) -> None:
     assert by_name["Acme hire-abstain"]["eligible"] == 0
     assert got["rows"][0]["company"] == "Acme hire-ok"
     assert call(live, "/api/company-hiring").status == 401
+
+
+# --------------------------------------------------------- a store behind the code (T325)
+
+#: The revision before `runs.incremental` arrived: a store a `git pull` has left behind its code.
+BEHIND_REVISION = "p_dead_boards"
+
+
+@pytest.fixture()
+def behind_store(tmp_path: Path) -> Path:
+    """A store migrated only to `BEHIND_REVISION`, built by the real migration chain."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    cfg = Config()
+    cfg.set_main_option("script_location", str(Path(store_db.__file__).parent / "migrations"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{data_dir / DB_FILENAME}")
+    command.upgrade(cfg, BEHIND_REVISION)
+    probe = sqlite3.connect(str(data_dir / DB_FILENAME))
+    try:
+        columns = {row[1] for row in probe.execute("PRAGMA table_info(runs)")}
+    finally:
+        probe.close()
+    # The premise: the code selects a column this store does not have.
+    assert "incremental" not in columns
+    return data_dir
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("GET", "/api/queue"),
+        ("GET", "/api/queue/1"),
+        ("GET", "/api/applied"),
+        ("GET", "/api/runs"),
+        ("GET", "/api/rejected"),
+        ("GET", "/api/answers"),
+        ("GET", "/api/pdf/1"),
+        ("POST", "/api/queue/1/skipped"),
+    ],
+)
+def test_a_store_behind_the_code_is_answered_by_name_not_with_a_dropped_connection(
+    ctx: ApiContext, behind_store: Path, method: str, path: str
+) -> None:
+    """After a pull that carries a migration the viewer reads a store the next run has not
+    upgraded. It never migrates (D-279), so it must say so: `/api/queue` used to die on
+    `no such column: runs.incremental` and the browser saw a reset connection."""
+    with serving(ctx) as live:
+        got = call(live, path, method=method, bearer=live.token)
+    assert got.status == 503, got.body[:300]
+    body = got.json()
+    assert body["store_needs_migration"] is True
+    assert body["db_revision"] == BEHIND_REVISION
+    assert body["code_revision"] == schema_revision()
+    assert "boardwatch run" in body["error"]
+
+
+def test_the_version_route_flags_a_store_behind_the_code_until_it_is_migrated(
+    ctx: ApiContext, behind_store: Path
+) -> None:
+    """The page's banner reads this flag. Paired with the migrated store, which answers the same
+    routes 200 and clears the flag: a server that flagged everything would pass the first half."""
+    with serving(ctx) as live:
+        assert call(live, "/api/version", bearer=live.token).json()["store_needs_migration"] is True
+        assert call(live, "/api/queue", bearer=live.token).status == 503
+        engine = get_engine(behind_store)
+        try:
+            ensure_schema(engine)
+        finally:
+            engine.dispose()
+        assert call(live, "/api/version", bearer=live.token).json()["store_needs_migration"] is False
+        assert call(live, "/api/queue", bearer=live.token).status == 200
+        assert call(live, "/api/version", bearer=None).status == 401
+
+
+def test_only_a_store_older_than_the_code_is_called_behind(
+    ctx: ApiContext, engine: Engine, tmp_path: Path
+) -> None:
+    """A store stamped by a NEWER checkout (D-279's mirror) is not this viewer's to upgrade, and a
+    store with no revision at all has had nothing applied."""
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE alembic_version SET version_num = 'p_from_a_newer_checkout'"))
+    with serving(ctx) as live:
+        assert call(live, "/api/version", bearer=live.token).json()["store_needs_migration"] is False
+        assert call(live, "/api/queue", bearer=live.token).status == 200
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE alembic_version"))
+    with serving(ctx) as live:
+        got = call(live, "/api/queue", bearer=live.token)
+    assert got.status == 503
+    assert got.json()["db_revision"] is None
+
+
+def test_the_viewer_judges_the_store_against_the_code_it_started_with(
+    ctx: ApiContext, behind_store: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A viewer started before a pull keeps serving the old Python, which reads the old store
+    fine; the migrations a pull since put on disk are not its code. Comparing against the disk now
+    would refuse a working viewer."""
+    chain = store_db.schema_chain()
+    older_code = chain[chain.index(BEHIND_REVISION) :]
+    with ExitStack() as stack:
+        with monkeypatch.context() as older:
+            older.setattr(server_mod, "schema_chain", lambda: older_code)
+            live = stack.enter_context(serving(ctx))
+        # The patch is gone, as the pull is: the running server keeps the chain it started with.
+        assert store_db.schema_chain() == chain
+        assert call(live, "/api/version", bearer=live.token).json()["store_needs_migration"] is False

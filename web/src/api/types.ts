@@ -520,6 +520,9 @@ export interface VersionResponse {
   bundle: string | null;
   /** The package's Python changed on disk since this viewer process started. */
   code_changed: boolean;
+  /** The store's schema is older than this viewer's code, so its reads answer 503. Absent from a
+   *  server that predates the field. */
+  store_needs_migration?: boolean;
 }
 
 /**
