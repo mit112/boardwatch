@@ -34,13 +34,12 @@ import json
 import os
 import plistlib
 import shutil
-import sys
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
+from pathlib import Path, PurePath
 from types import SimpleNamespace
 from typing import get_args
 
@@ -2226,11 +2225,6 @@ def _case_insensitive(base: Path) -> bool:
         probe.rmdir()
 
 
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="WindowsPath equality folds case, so `reconcile`'s `entry.path == target` skips a "
-    "case-only rename on Windows (a production portability gap, T251)",
-)
 def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -2261,6 +2255,41 @@ def test_a_case_only_retitle_renames_the_folder_instead_of_refusing_forever(
     with engine.connect() as conn:
         again = sync_queue(conn, root=root, owner_name=OWNER)
     assert (again.failures, again.moved, again.updated, again.unchanged) == ((), 0, 0, 1)
+
+
+class _CaseBlindPath(type(Path())):  # type: ignore[misc]
+    """A path whose equality and hash fold case, as `WindowsPath`'s do (T272)."""
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, PurePath) and str(self).casefold() == str(other).casefold()
+
+    def __hash__(self) -> int:
+        return hash(str(self).casefold())
+
+
+def test_a_case_only_retitle_renames_the_folder_where_path_equality_folds_case(
+    engine: Engine, root: Path, apps: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T272. `WindowsPath` equality folds case, so `reconcile`'s `entry.path == target` read a
+    case-only retitle as "already there" and the folder kept its old name on Windows. The
+    comparison is now of the spellings. The destination is handed back as a path that folds case,
+    which is what makes this fail on the old comparison on EVERY platform, not only Windows."""
+    with engine.begin() as conn:
+        pid, _ = _deliver(conn, apps, "k1", company="Acme Corp", title="Software Engineer")
+    with engine.connect() as conn:
+        sync_queue(conn, root=root, owner_name=OWNER)
+    assert _folders(root) == ["Acme_Corp_Software_Engineer"]
+
+    with engine.begin() as conn:
+        conn.execute(update(postings).where(postings.c.id == pid).values(title="Software ENGINEER"))
+    real_dest = queue._dest
+    monkeypatch.setattr(queue, "_dest", lambda *args: _CaseBlindPath(real_dest(*args)))
+    with engine.connect() as conn:
+        report = sync_queue(conn, root=root, owner_name=OWNER)
+    monkeypatch.undo()  # before the assertions, so a failure renders without the patch active
+
+    assert (report.failures, report.moved) == ((), 1)
+    assert _folders(root) == ["Acme_Corp_Software_ENGINEER"]
 
 
 def test_a_case_only_retitle_leaves_ONE_resume_and_renames_no_owner_file(

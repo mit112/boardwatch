@@ -563,7 +563,10 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
             entry, target, root=root, owner_name=owner_name, known_job_ids=known_job_ids
         )
         targets[row.posting_id] = target
-        if entry.path == target:
+        # The spellings, not `Path` equality: `WindowsPath` folds case, so a case-only retitle
+        # compared equal there and never renamed the folder (T272). `_relocate` does the
+        # case-only rename itself.
+        if str(entry.path) == str(target):
             continue
         try:
             _relocate(entry.path, target)
