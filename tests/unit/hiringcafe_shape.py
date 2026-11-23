@@ -44,8 +44,11 @@ _GREENHOUSE_CAPTURE = Path(__file__).resolve().parents[1] / "fixtures/greenhouse
 
 # The probe session. Both documents are dated the same day.
 PROBED = date(2026, 8, 23)
-# PROBED + 90, the window `tools/generalization/fixtures.py` uses for the six ATS captures.
-REVIEW_BY = date(2026, 11, 21)
+# 90 days from the latest live re-check, the window `tools/generalization/fixtures.py` uses.
+# Re-reviewed 2026-11-23 through the lane's own fetcher: the SSR page answers with 127 hits over
+# 38 board tokens, every key the lane reads is present (two new, unread `attributed_org*` keys),
+# and robots.txt still disallows exactly `ROBOTS_DISALLOWED_FORMS`. Rolled 90 days.
+REVIEW_BY = date(2027, 2, 21)
 
 # `robots.txt`, read 2026-08-26. KEPT, not deleted, and no longer the lane's constraint.
 #

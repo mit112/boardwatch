@@ -29,9 +29,11 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date
 
-# The probe session (D-290). PROBED + 90, matching the window the six ATS captures use.
+# The probe session (D-290). REVIEW_BY is 90 days from the latest live re-check.
 PROBED = date(2026, 8, 23)
-REVIEW_BY = date(2026, 11, 21)
+# Re-reviewed 2026-11-23: one live guest search page parsed 10 of 10 cards with every `SearchCard`
+# field populated. Rolled 90 days.
+REVIEW_BY = date(2027, 2, 21)
 
 # Contract §1: the only two request shapes, and the one filter parameter that is evidenced.
 SEARCH_URL = (
