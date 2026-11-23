@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   `identifier.value` is now a UUID rather than an integer (the lane never reads it), and Breezy `/apply` pages carry no
   JSON-LD (T322).
 
+- **Shield AI's bundled board now points at Ashby.** It moved from Lever (`shieldai`, an empty list since mid-November)
+  to Ashby (`shield`, 676 postings); `registry-health` read the empty Lever board as healthy, so it never flagged it.
+  Lever now has 3 boards, Ashby 13; the catalog still holds 37.
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
