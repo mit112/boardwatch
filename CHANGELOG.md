@@ -20,6 +20,11 @@ All notable changes to this project are documented here. The format follows
   postings); the old slugs answered 404, so the run failed on 2026-11-09 and 2026-11-16. Both entries now point at the
   new board, which each company's own careers page links to. The catalog still holds 37 boards and 15 starters;
   Lever now has 4 boards, Greenhouse 19.
+- **Re-checked the JSON-LD lane's five vendors against live pages** and extended its shape review to 2027-02-21. Ten
+  pages (Hireology, CareerPlug, JazzHR, Breezy, Garmin iCIMS) all read through the lane as `body_fetched`. Hireology's
+  `identifier.value` is now a UUID rather than an integer (the lane never reads it), and Breezy `/apply` pages carry no
+  JSON-LD (T322).
+
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
