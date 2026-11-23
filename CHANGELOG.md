@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format follows
   pages (Hireology, CareerPlug, JazzHR, Breezy, Garmin iCIMS) all read through the lane as `body_fetched`. Hireology's
   `identifier.value` is now a UUID rather than an integer (the lane never reads it), and Breezy `/apply` pages carry no
   JSON-LD (T322).
+- **`ledger reopen --stale` no longer reopens `built` decisions.** A `built` row records that the lead was delivered, and
+  the shortlist hides only live dispositions, so draining one put a job the owner already has back into the ranking.
+  D-588's drain did that to 1,206 rows and runs 475-480 served 32-40 repeats of 40. `stale_dispositions` now returns
+  only `skipped` rows (`STALE_DRAINABLE_DISPOSITIONS`), so `ledger show --stale` lists exactly what `--stale` releases.
+  `ledger reopen --job <id>` still releases any named job (T264, D-600).
 
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not

@@ -593,13 +593,14 @@ a separate skip, application, report or built disposition. An absent hold is a n
     "ledger show": Entry(
         ("reads store",),
         """Every job the delivery ledger is suppressing, with disposition, reason and whether it
-still governs. Takes `--json`. `--stale` shows permanent decisions whose policy stamp is no
-longer current; `--expired` includes lapsed and reopened rows.""",
+still governs. Takes `--json`. `--stale` shows `skipped` decisions whose policy stamp is no
+longer current (never `built` ones); `--expired` includes lapsed and reopened rows.""",
     ),
     "ledger reopen": Entry(
         ("writes store",),
         """Releases decisions (`--job <id>` or every `--stale` one) so those jobs re-enter the
-shortlist. A drain reopens dispositions, not verdicts: a reopened job is re-judged by the
+shortlist. `--stale` never releases a `built` decision: that lead was delivered, and reopening
+it re-serves it. A drain reopens dispositions, not verdicts: a reopened job is re-judged by the
 current rules, and it can only be delivered again, never un-delivered.""",
     ),
     "postings reparse-bodies": Entry(

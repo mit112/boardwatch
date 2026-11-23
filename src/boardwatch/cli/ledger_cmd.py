@@ -83,7 +83,7 @@ def show(
     stale: bool = typer.Option(
         False,
         "--stale",
-        help="Only permanent decisions whose policy stamp is no longer the current one.",
+        help="Only `skipped` decisions whose policy stamp is no longer the current one.",
     ),
     expired: bool = typer.Option(
         False, "--expired", help="Include lapsed and reopened rows, which no longer govern."
@@ -189,7 +189,7 @@ def reopen(
         [], "--job", help="Job id to release. Repeatable."
     ),
     stale: bool = typer.Option(
-        False, "--stale", help="Release every permanent decision whose policy stamp has moved."
+        False, "--stale", help="Release every `skipped` decision whose policy stamp has moved."
     ),
 ) -> None:
     """Release decisions so their jobs re-enter the shortlist.
@@ -200,6 +200,8 @@ def reopen(
     `--stale` is the policy-drift drain. A stamp mismatch is never released automatically
     — auto-expiry on mismatch would rebuild the whole shortlist on any settings
     tweak, and an automatic re-open cannot be reviewed before it happens. This is that review.
+    It never releases a `built` decision, however stale its stamp: that lead was delivered, and
+    reopening it re-serves it (D-600, T264). Name such a job with `--job` to release it anyway.
     """
     # No automatic release on a stamp mismatch is design §2.4.
     if not job and not stale:

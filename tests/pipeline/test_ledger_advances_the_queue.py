@@ -232,6 +232,52 @@ def test_reopening_a_built_job_brings_it_back_to_the_shortlist(
     assert drained.hidden_handled == 0
 
 
+def test_reopen_stale_does_not_put_a_built_job_back_into_the_ranking(
+    env: Path,
+) -> None:
+    """T264 / D-600, through the ranker. `ledger reopen --stale` once reopened every `built` row
+    whose stamp had moved, and the shortlist hides only LIVE dispositions: runs 475-480 served
+    32-40 repeats of 40. Both jobs here are stale; only the `skipped` one may come back."""
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+    from boardwatch.store.ledger_queries import record_disposition
+
+    built_posting, skipped_posting = _ready(env, 2)
+    engine = get_engine(env)
+    settings = load_settings(data_dir=env)
+    now = utcnow()
+    with engine.begin() as conn:
+        job_by_posting = {
+            int(row.id): int(row.job_id)
+            for row in conn.execute(select(tables.postings.c.id, tables.postings.c.job_id)).all()
+        }
+        for posting_id, disposition, reason in (
+            (built_posting, "built", "lead_built"),
+            (skipped_posting, "skipped", "unshippable_artifact"),
+        ):
+            record_disposition(
+                conn, job_by_posting[posting_id], disposition=disposition, reason=reason,
+                policy_version="a-stamp-from-another-policy", now=now,
+            )
+
+    def _rank():
+        return rank_open_postings(
+            engine, settings, limit=5, record_surfaced=False, output_console=Console(quiet=True)
+        )
+
+    before = _rank()
+    assert before.visible == []
+    assert before.hidden_handled == 2
+
+    drained = CliRunner().invoke(app, ["--data-dir", str(env), "ledger", "reopen", "--stale"])
+    assert drained.exit_code == 0, drained.output
+
+    after = _rank()
+    assert [p.posting_id for p in after.visible] == [skipped_posting]
+    assert after.hidden_handled == 1
+
+
 def test_a_seen_row_lapses_on_its_own_and_the_job_re_enters(env: Path, tmp_path: Path) -> None:
     """The TTL is itself a drain. `top` surfaces without building, so the rows are `seen`; past
     `seen_ttl_days` they govern nothing, with no operator action."""

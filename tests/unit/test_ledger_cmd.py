@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -12,7 +13,11 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.ledger_queries import load_dispositions, record_disposition
+from boardwatch.store.ledger_queries import (
+    live_dispositions,
+    load_dispositions,
+    record_disposition,
+)
 
 NOW = datetime(2026, 8, 10, 12, 0, 0)
 runner = CliRunner()
@@ -118,13 +123,14 @@ def test_reopen_with_no_target_refuses_rather_than_releasing_everything(data_dir
 def test_stale_finds_a_decision_whose_stamp_moved_and_reopen_stale_releases_it(
     data_dir: Path,
 ) -> None:
-    """The policy-drift drain, end to end. The stored stamp is deliberately not the current one,
-    which is what a settings or résumé change produces."""
+    """The policy-drift drain, end to end, on the one disposition it is for: a `skipped` job
+    (its artifact was unshippable under the old policy) whose stamp moved. The stored stamp is
+    deliberately not the current one, which is what a settings or résumé change produces."""
     engine = get_engine(data_dir)
     fresh_job = _seed_job_with_posting(engine, 1)
     with engine.begin() as conn:
         record_disposition(
-            conn, fresh_job, disposition="built", reason="lead_built",
+            conn, fresh_job, disposition="skipped", reason="unshippable_artifact",
             policy_version="a-stamp-from-another-policy", now=NOW,
         )
     listed = _cli(data_dir, ["ledger", "show", "--stale"])
@@ -135,6 +141,63 @@ def test_stale_finds_a_decision_whose_stamp_moved_and_reopen_stale_releases_it(
     assert released.exit_code == 0
     assert "released 1" in released.output
     assert "no stale decisions" in _cli(data_dir, ["ledger", "show", "--stale"]).output
+
+
+def test_reopen_stale_releases_a_skipped_row_and_leaves_a_built_row_live(
+    data_dir: Path,
+) -> None:
+    """T264 / D-600: `--stale` must never drain a `built` row, however stale its stamp.
+
+    `built` records that the lead was DELIVERED; the shortlist hides only LIVE dispositions, so a
+    reopened one re-enters the ranking and the owner is served it again. Both rows carry a stamp
+    that is not the current one, so the stamp cannot be what separates them.
+    """
+    engine = get_engine(data_dir)
+    built_job = _seed_job_with_posting(engine, 1)
+    skipped_job = _seed_job_with_posting(engine, 2)
+    with engine.begin() as conn:
+        record_disposition(
+            conn, built_job, disposition="built", reason="lead_built",
+            policy_version="a-stamp-from-another-policy", now=NOW,
+        )
+        record_disposition(
+            conn, skipped_job, disposition="skipped", reason="unshippable_artifact",
+            policy_version="a-stamp-from-another-policy", now=NOW,
+        )
+
+    listed = _cli(data_dir, ["ledger", "show", "--stale", "--json"])
+    assert listed.exit_code == 0, listed.output
+    assert [row["job_id"] for row in json.loads(listed.output)["rows"]] == [skipped_job]
+
+    released = _cli(data_dir, ["ledger", "reopen", "--stale"])
+    assert released.exit_code == 0, released.output
+    assert "released 1 " in released.output
+
+    with engine.connect() as conn:
+        stored = load_dispositions(conn)
+        governing = live_dispositions(conn, now=NOW)
+    assert stored[built_job].reopened_at is None
+    assert stored[skipped_job].reopened_at is not None
+    assert built_job in governing
+    assert skipped_job not in governing
+
+
+def test_reopen_stale_over_only_built_rows_releases_nothing(data_dir: Path) -> None:
+    """The 1,018-row shape D-600 re-closed: every stale row is `built`, so the drain is empty."""
+    engine = get_engine(data_dir)
+    jobs = [_seed_job_with_posting(engine, n) for n in range(1, 4)]
+    with engine.begin() as conn:
+        for job_id in jobs:
+            record_disposition(
+                conn, job_id, disposition="built", reason="lead_built",
+                policy_version="a-stamp-from-another-policy", now=NOW,
+            )
+    assert "no stale decisions" in _cli(data_dir, ["ledger", "show", "--stale"]).output
+    released = _cli(data_dir, ["ledger", "reopen", "--stale"])
+    assert released.exit_code == 0, released.output
+    assert "released 0 " in released.output
+    with engine.connect() as conn:
+        assert set(live_dispositions(conn, now=NOW)) == set(jobs)
 
 
 def test_a_current_stamp_is_not_reported_stale(data_dir: Path) -> None:
