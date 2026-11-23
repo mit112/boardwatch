@@ -274,6 +274,24 @@ def test_the_three_named_process_failures_keep_their_own_notes(
     assert note is not None and expected in note
 
 
+def test_a_non_zero_exit_with_empty_stderr_keeps_stdout_in_the_note(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Runs 2882-2886 failed every batch with `claude exited 1: ` and nothing else: the CLI's
+    JSON output mode writes the error to stdout. The note must carry it."""
+    _raises(
+        monkeypatch,
+        subprocess.CalledProcessError(
+            returncode=1, cmd="claude", output='{"is_error":true,"result":"usage limit"}', stderr=""
+        ),
+    )
+
+    verdicts, note, _ = _judge_batch(_batch("1"), "policy", _settings(tmp_path))
+
+    assert verdicts is None
+    assert note is not None and "usage limit" in note
+
+
 # -------------------------------------------------- the same three, through the whole stage
 
 
