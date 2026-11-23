@@ -390,7 +390,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
     "tests/fixtures/lever/normal.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,
-        pin="sha256:99331d284e740e9ac6f4d136092b2bde67ff0760046f9f828f0e5db73a96054c",
+        pin="sha256:5f4e6e9bceb68a3f5d759b8067cb4d0ba52145b1ac44320cf720db61bee19f17",
     ),
     "tests/fixtures/lever/normal_response_headers.json": DataEntry(
         kind="fixture",
