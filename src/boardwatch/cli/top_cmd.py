@@ -644,10 +644,11 @@ def rank_open_postings(
 
     The `seen` write makes ranking a mutation (D-103, owner's ruling), which is right for a caller
     that *delivers* a lead to somebody and wrong for one that merely needs the population.
-    Delivering callers leave the default; `eligibility gate request` (which judges the shortlist
-    and hands it back) and the pipeline (which records its own dispositions after the tailor loop,
-    so a crash cannot suppress a lead it never built) pass False. `surfaced_job_ids` is populated
-    either way, so a caller that opts out can still record the decision once it has one.
+    `eligibility gate request` (which judges the shortlist and hands it back) and the pipeline
+    (which records its own dispositions after the tailor loop, so a crash cannot suppress a lead
+    it never built) pass False, and so does the `top` command unless it is given `--record`
+    (D-609). `surfaced_job_ids` is populated either way, so a caller that opts out can still
+    record the decision once it has one.
 
     `profile_already_refreshed` (T164): the pipeline runs `refresh_profile_taxonomy` itself,
     before it reads the run's start identity, and passes the result through here so this call's
@@ -1733,9 +1734,9 @@ def _record_surfaced(
     is the exact defect this slice exists to remove — measured live, five postings each tailored
     across four separate runs. Silently degrading back to that is worse than failing loudly.
 
-    Consequence, deliberate and reversible: two `top` invocations inside the TTL show different
-    rows, because the first advanced the queue. `--include-handled` brings them back, and the
-    command says so whenever the bucket is non-empty.
+    Consequence, deliberate and reversible: two `top --record` invocations inside the TTL show
+    different rows, because the first advanced the queue. `--include-handled` brings them back,
+    and the command says so whenever the bucket is non-empty.
     """
     if not job_ids:
         return
@@ -2086,11 +2087,13 @@ def top(
     new: bool = typer.Option(
         False, "--new", help="Only postings first seen since your last digest."
     ),
-    no_record: bool = typer.Option(
+    record: bool = typer.Option(
         False,
-        "--no-record",
-        help="Rank without marking anything `seen`, so this call does not advance the queue. "
-        "Use it for a second look, or for a script that ranks once to display and again to act.",
+        "--record/--no-record",
+        help="Mark what this call shows `seen`, so `run` skips those leads for `seen_ttl_days` "
+        "and the next `top` shows the following ones. Off by default: a plain `top` marks "
+        "nothing `seen`. `--no-record` is that default, still accepted for scripts that spell "
+        "it out.",
     ),
     json_output: bool = typer.Option(False, "--json", help="Output ranked postings as JSON."),
 ) -> None:
@@ -2116,7 +2119,7 @@ def top(
             include_applied=include_applied,
             only_new=new,
             output_console=output_console,
-            record_surfaced=not no_record,
+            record_surfaced=record,
         )
     except NoProfileError:
         output_console.print("no profile yet — run `boardwatch init` first")

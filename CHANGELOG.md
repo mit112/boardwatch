@@ -338,6 +338,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **BEHAVIOUR CHANGE: `boardwatch top` no longer marks what it shows `seen` unless you pass `--record` (T268 item 4, D-609).**
+  Until now a bare `top` wrote a `seen` row for every lead it showed, and `run` then skipped those leads for `seen_ttl_days`
+  (7 by default), so the quickstart order (`top`, then `run`) cost a new user its first leads ("10 already handled"). A
+  bare `top` now writes none, and two calls in a row show the same rows. Pass `--record` to get the old behaviour. Nothing
+  else about `top` changed: it still backfills extractions and verdicts on the way, so it is still not a read-only command.
+  `--no-record` is still accepted and now means the default, so a script that spells it out keeps working. A script that
+  relied on a bare `top` to advance the queue must add `--record`; `run` and `eligibility gate request` never depended on it.
+
 - **A higher degree offered with `or` keeps the listed bachelor's qualification.** A bachelor's
   holder in the named field now meets "Bachelor's degree in Computer Science or a Master's
   degree in Computer Science." A higher degree still stands the bare bachelor rule down unless

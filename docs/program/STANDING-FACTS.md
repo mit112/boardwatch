@@ -522,7 +522,8 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 ## Liveness and the ledger
 
 - **Only a caller that DELIVERS a lead may consume the queue** (D-110). `eligibility gate request` and the
-  pipeline pass `record_surfaced=False`; `top --no-record` is the operator's opt-out. The pipeline writes all
+  pipeline pass `record_surfaced=False`, and `top` passes it too unless given `--record` (D-609, T268 item 4;
+  `--no-record` is still accepted and is the default). The pipeline writes all
   three ledger tiers *after* the tailor loop. Do not move the `seen` write back into the ranker.
 - **Liveness is never cached, and "never" includes `postings.status`** (D-111). One 404 from a flaky CDN would
   otherwise retire a live requisition **irreversibly**. That column belongs to the scanner's
@@ -642,7 +643,8 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 - **The résumé renderer is `tectonic`** compiling Mit's real LaTeX template, **not Typst** (D-058/D-060). A
   `typst` binary exists on this machine; nothing calls it. The tailoring architecture is already correct.
 - **D-072, the model-tier benchmark, is DEFERRED INDEFINITELY** (D-102) — not owed, not blocking.
-- `bwd` lives in gitignored `.agent/bin/bw-daily`, so its `top --no-record` fix is local to this machine.
+- `bwd` lives in gitignored `.agent/bin/bw-daily`, so its `top --no-record` fix is local to this machine. Since T268 item 4
+  (D-609) a bare `top` records nothing, so its build call (`top "$TOPN" --json`) needs `--record` to advance the queue.
 - Foreground `sleep` is blocked in this harness; background a waiter instead. zsh does **not** word-split an
   unquoted parameter expansion, so a `for spec in "a --b" ...; do cmd $spec; done` loop passes one argument.
 - **There is NO live urgency — job-apps is delivering.** `STAGE1_ONLY=1` is in job-apps' launchd plist, so
@@ -2250,7 +2252,7 @@ then LinkedIn alone, which is a judgment about a population, not an engineering 
 
 | Item | Detail | Owner |
 |---|---|---|
-| **`boardwatch top` advances the queue by default** | records `seen` unless `--no-record`; relevant to Gate P6's clean window | P6 |
+| **`boardwatch top` advances the queue only with `--record`** | records `seen` only under `--record` (D-609); before 2026-11-23 it did so by default, and `--no-record` was the opt-out; relevant to Gate P6's clean window | P6 |
 | **A live store is readable ONLY via Python `sqlite3` `?mode=ro`** | the `sqlite3` CLI with `?mode=ro` fails `CANTOPEN(14)` on a cleanly-checkpointed store (no `-shm`; not the sandbox), and `?immutable=1` skips the WAL so it is STALE against a live writer. Mid-run progress: `SELECT COUNT(*) FROM eligibility_evaluations WHERE run_id=N` (D-268) | tooling |
 | **`resume.yaml` is an IMPORT SOURCE, never hand-fixed** | D-155. Mit pins `resume_max_pages=1`; never advise 2 | Mit |
 

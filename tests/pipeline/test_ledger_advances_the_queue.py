@@ -8,6 +8,7 @@ advanced. These tests are that defect turned into something a regression can tri
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from pathlib import Path
 
@@ -336,6 +337,81 @@ def test_top_can_rank_without_consuming_the_queue(env: Path, tmp_path: Path) -> 
     assert second.hidden_handled == 0
     with engine.connect() as conn:
         assert live_dispositions(conn, now=utcnow()) == {}
+
+
+def _top_json(data_dir: Path, *args: str) -> list[int]:
+    """Posting ids the `top` COMMAND shows, read from its JSON — the CLI, not the ranker."""
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    result = CliRunner().invoke(
+        app, ["--data-dir", str(data_dir), "top", "3", "--json", *args]
+    )
+    assert result.exit_code == 0, result.output
+    return [int(row["posting_id"]) for row in json.loads(result.stdout)]
+
+
+def _live_ledger(data_dir: Path) -> dict[int, str]:
+    with get_engine(data_dir).connect() as conn:
+        return {
+            job_id: row.disposition
+            for job_id, row in live_dispositions(conn, now=utcnow()).items()
+        }
+
+
+def _job_ids_of(data_dir: Path, posting_ids: list[int]) -> set[int]:
+    with get_engine(data_dir).connect() as conn:
+        return {
+            int(row.job_id)
+            for row in conn.execute(
+                select(tables.postings.c.job_id).where(tables.postings.c.id.in_(posting_ids))
+            ).all()
+        }
+
+
+def test_top_writes_no_seen_row_unless_asked_to_record(env: Path) -> None:
+    """CLAIM (T268 item 4, D-609 option A): a bare `boardwatch top` marks nothing `seen`.
+
+    It used to mark every row it showed, so the README's own quickstart order — `top`, then
+    `run` — hid the best leads from `run` for `seen_ttl_days`. The control is the non-empty
+    list: a `top` that showed nothing would also leave the ledger empty.
+    """
+    _ready(env, 3)
+    first = _top_json(env)
+    assert len(first) == 3
+    assert _live_ledger(env) == {}
+    assert _top_json(env) == first
+
+
+def test_top_record_marks_what_it_shows_seen_and_the_next_call_hides_it(env: Path) -> None:
+    """CLAIM: `--record` is the opt-in that does what `top` did by default — one `seen` row per
+    job shown, and a later `top` no longer shows them. Expected job ids come from the postings
+    table, not from the ranker's own selection."""
+    _ready(env, 3)
+    shown = _top_json(env, "--record")
+    assert len(shown) == 3
+    assert _live_ledger(env) == {job_id: "seen" for job_id in _job_ids_of(env, shown)}
+    assert _top_json(env) == []
+    assert sorted(_top_json(env, "--include-handled")) == sorted(shown)
+
+
+def test_top_still_accepts_no_record_and_it_records_nothing(env: Path) -> None:
+    """CLAIM: `--no-record`, the old opt-out, is still a valid flag and means what it always did,
+    so a script written before T268 item 4 keeps working unchanged."""
+    _ready(env, 3)
+    assert len(_top_json(env, "--no-record")) == 3
+    assert _live_ledger(env) == {}
+
+
+def test_top_help_names_record_as_the_opt_in(env: Path) -> None:
+    from typer.testing import CliRunner
+
+    from boardwatch.cli.app import app
+
+    result = CliRunner().invoke(app, ["top", "--help"])
+    assert result.exit_code == 0
+    assert "--record" in result.stdout
 
 
 @pytest.mark.parametrize(
