@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The death probe reaches rows it has never asked about.** A fifth of the URL budget now goes to never-asked rows no
+  standing lead holds (LinkedIn job-view rows left out while the guest check is off). The 2,215 held rows outnumbered
+  the 1,000/run budget and took ~80% of the probes, while 48,665 rows had never been asked (T284, D-696).
+
 - **A run's duplicate regroup takes the write lock before it reads.** `_regroup` read job anchors and the protected
   jobs in a DEFERRED transaction, then moved postings; a viewer action committing in between failed the move with
   `database is locked`. It now uses `write_connection`, the T281 fix (T292).
