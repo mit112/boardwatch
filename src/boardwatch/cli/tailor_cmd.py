@@ -57,6 +57,13 @@ def _resume_path(settings: Settings, override: Path | None = None) -> Path:
     return override if override is not None else settings.config_dir / "resume.yaml"
 
 
+def _default_out_dir(settings: Settings, posting_id: int) -> Path:
+    """One folder per posting (T274). A résumé is named for the application, not the posting, so
+    two postings with the same employer and title render to the same filename; a shared folder
+    let the second overwrite the file the first one's `artifacts` row names."""
+    return settings.data_dir / "tailored" / str(posting_id)
+
+
 @tailor_app.command("init")
 def init_cmd(
     ctx: typer.Context,
@@ -105,7 +112,7 @@ def run_cmd(
     posting_id: int = typer.Argument(..., help="Posting id (the # column of top)."),  # noqa: B008
     resume_path: Path | None = RESUME_OPTION,
     out_dir: Path | None = typer.Option(  # noqa: B008
-        None, "--out", help="Output directory (default {data_dir}/tailored)."
+        None, "--out", help="Output directory (default {data_dir}/tailored/<posting_id>)."
     ),
     fmt: str = typer.Option(  # noqa: B008
         "latex", "--format", help="Render format (latex is the only 1.0 adapter)."
@@ -155,7 +162,7 @@ def run_cmd(
             settings,
             posting_id,
             resume_path=_resume_path(settings, resume_path),
-            out_dir=out_dir if out_dir is not None else settings.data_dir / "tailored",
+            out_dir=out_dir if out_dir is not None else _default_out_dir(settings, posting_id),
             fmt=fmt,
             dry_run=dry_run,
             client=client,
@@ -378,7 +385,9 @@ def rewrite_apply_cmd(
     ),
     resume_path: Path | None = RESUME_OPTION,
     out: Path | None = typer.Option(  # noqa: B008
-        None, "--out", help="Output directory for artifacts (default {data_dir}/tailored)."
+        None,
+        "--out",
+        help="Output directory for artifacts (default {data_dir}/tailored/<posting_id>).",
     ),
 ) -> None:
     """Parse each agent verdict via `parse_verdict`, keep filter-pass ∧ ENTAILED, and
@@ -418,7 +427,7 @@ def rewrite_apply_cmd(
     # applied — these two computations must stay in sync.
     llm_budget = 2 * sum(len(e.bullets) for e in tailored.entries)
 
-    out_dir = out if out is not None else settings.data_dir / "tailored"
+    out_dir = out if out is not None else _default_out_dir(settings, posting_id)
     try:
         result = run_tailor(
             app_ctx.engine,

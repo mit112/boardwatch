@@ -340,7 +340,7 @@ boardwatch tailor run <posting-id>     # tailor it against one posting's extract
 ```
 
 `validate` and `run` read `{config_dir}/resume.yaml` unless you pass `--resume PATH`. `run`
-also takes `--out DIR` (default `{data_dir}/tailored`), `--format latex` (the only
+also takes `--out DIR` (default `{data_dir}/tailored/<posting_id>`), `--format latex` (the only
 adapter), and `--dry-run` (report only; writes no file and records no artifact). It prints
 one line per bullet — kept, reordered, swapped, or dropped, with the JD skills that bullet
 covers — and the same per-bullet audit is stored on the artifact row.
@@ -372,7 +372,7 @@ is rejected. **Two binaries are required, not one** — `tectonic`
 to compile and poppler's `pdfinfo` to count the pages; without `pdfinfo` the page-count gate cannot answer and every
 lead is refused. `boardwatch doctor` probes for both and exits non-zero if either is
 missing. Output lands at
-`{data_dir}/tailored/<Your Name>_<Company>_<Role>.{tex,pdf}` — named for the application, so
+`{data_dir}/tailored/<posting_id>/<Your Name>_<Company>_<Role>.{tex,pdf}` — named for the application, so
 it reads as itself in an employer's upload dialog, and the PDF's own Title and Author carry
 `<Your Name> - <Role> - <Company>` and your name. Your name comes from your `answers.yaml`
 `identity.full_name` or your résumé's header, never from the code. The path is still a

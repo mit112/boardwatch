@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **`tailor run` no longer overwrites one posting's résumé with another's.** The default `--out` is now
+  `{data_dir}/tailored/<posting_id>/` (also for `tailor rewrite apply`). A résumé is named for the employer and title,
+  so 25 postings titled `Software Engineer` at one employer used to render to one file, and every earlier artifact row
+  pointed at the last render (T274). Delivered leads were never affected: the queue copies each lead into its own folder.
+
 - **A failed judge call now says why.** When `claude -p` exits non-zero with an empty stderr, the fail-open note
   carries its stdout, where the JSON output mode puts the error. Runs 2882–2886 failed every batch with only
   `claude exited 1:` and no cause.
