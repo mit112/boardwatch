@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
-from sqlalchemy import insert
+from sqlalchemy import insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
@@ -53,13 +53,20 @@ def _run(env: Env, args: list[str]):
     return runner.invoke(app, ["--data-dir", str(env.data_dir), *args])
 
 
-def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaScript")) -> int:
-    """Insert one company+job+posting+version+taxonomy extraction; return posting_id."""
+def _seed_open_posting(
+    env: Env,
+    *,
+    skills: tuple[str, ...] = ("Python", "JavaScript"),
+    provider_posting_id: str = "pp-acme",
+) -> int:
+    """Insert one job+posting+version+taxonomy extraction under the `acme` company (created on
+    first use); return posting_id."""
     settings = Settings(data_dir=env.data_dir, config_dir=env.config_dir)
     engine = get_engine(env.data_dir)
     ensure_schema(engine)
     with engine.begin() as conn:
-        company_id = int(
+        existing = conn.execute(select(companies.c.id).where(companies.c.slug == "acme")).scalar()
+        company_id = int(existing) if existing is not None else int(
             conn.execute(
                 insert(companies).values(
                     name="acme", provider="greenhouse", slug="acme", source="user", watched=True,
@@ -70,7 +77,7 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
         posting_id = int(
             conn.execute(
                 insert(postings).values(
-                    company_id=company_id, job_id=job_id, provider_posting_id="pp-acme",
+                    company_id=company_id, job_id=job_id, provider_posting_id=provider_posting_id,
                     title="Backend Engineer", normalized_title="backend engineer",
                     url="https://example.test/acme", locations_json=["Remote"],
                     remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
@@ -206,7 +213,30 @@ def test_run_resume_override_is_honoured(env: Env, tmp_path: Path) -> None:
     assert not (env.config_dir / "resume.yaml").exists()
     assert "guarantee: PASS" in result.stdout.replace("\n", "")
     # Named by content now, not by posting id, so the claim is "one .tex landed here".
-    assert len(list((env.data_dir / "tailored").glob("*.tex"))) == 1
+    assert len(list((env.data_dir / "tailored" / str(posting_id)).glob("*.tex"))) == 1
+
+
+def test_run_default_out_keeps_same_titled_postings_apart(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T274: two postings with the same employer and title get the same résumé filename, so a
+    shared default folder let the second render overwrite the file the first's artifact names."""
+
+    def _fake_compile(src: Path, pdf: Path) -> CompileOutcome:
+        pdf.write_bytes(b"%PDF")
+        return CompileOutcome(CompileReason.OK, pdf, 1, "ok")
+
+    monkeypatch.setattr("boardwatch.reports.tailor._default_runner", _fake_compile)
+    _run(env, ["tailor", "init"])
+    first = _seed_open_posting(env, provider_posting_id="pp-acme-1")
+    second = _seed_open_posting(env, provider_posting_id="pp-acme-2")
+    for posting_id in (first, second):
+        result = _run(env, ["tailor", "run", str(posting_id)])
+        assert result.exit_code == 0, result.stdout
+    texs = sorted((env.data_dir / "tailored").rglob("*.tex"))
+    assert len(texs) == 2, texs
+    assert texs[0].name == texs[1].name  # the collision is real: same name, two folders
+    assert {t.parent.name for t in texs} == {str(first), str(second)}
 
 
 def test_run_out_dir_override_is_honoured(
