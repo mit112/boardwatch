@@ -6,9 +6,9 @@ Captured fixtures for the Lever provider contract tests (Task 16 / Issue #16).
 
 These fixtures use the **exact response shape** of the Lever public postings API
 (`GET https://api.lever.co/v0/postings/<slug>?mode=json`), recorded during an attended
-session on **2026-06-13** from public boards only. The structure (a top-level JSON
+session on **2026-06-13** from public boards only, and re-recorded on **2026-11-23** (D-698). The structure (a top-level JSON
 **array** of postings; per-posting `id`, `text`, `categories` (`location`, `team`,
-`commitment`, `allLocations`), `createdAt`/`updatedAt` as epoch **milliseconds**,
+`commitment`, `allLocations`), `createdAt` as epoch **milliseconds**,
 `hostedUrl`, `applyUrl`, `descriptionPlain`, `lists`, `additionalPlain`, `workplaceType`,
 `country`) mirrors the live API.
 
@@ -25,7 +25,10 @@ fictional `acme` board. The loop never fetches a live API (§0); it only reads t
 - **Dead board** returns HTTP **404** with body `{"ok": false, "error": "Document not found"}`.
 - **Bodies are plain text** in `descriptionPlain` / `additionalPlain` — `html_to_text()` is
   **not** on the Lever path (contrast Greenhouse/Ashby HTML).
-- `createdAt` / `updatedAt` are epoch **milliseconds** (13 digits), not seconds.
+- `createdAt` is epoch **milliseconds** (13 digits), not seconds.
+- **No `updatedAt`** (re-checked live 2026-11-23, D-698): the API stopped sending it, so
+  `normal.json` carries none and `updated_at` is `None` for every Lever posting. The 2026-06-13
+  capture had it; the live store's Lever rows have had `updated_at` NULL since September.
 - **Validators:** the live API serves an `ETag` (weak, e.g. `W/"...."`) but **no
   `Last-Modified`**. `normal_response_headers.json` therefore carries a real-shape synthetic
   `etag` and a synthesized `last_modified` so the conditional-GET (304) contract test can
