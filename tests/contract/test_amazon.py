@@ -124,10 +124,10 @@ def test_normalize_slug_refuses_anything_outside_the_catalog(bad: str) -> None:
 def test_the_catalog_matches_the_recorded_category_facet() -> None:
     """The catalog is pinned against the RECORDED facet capture, which is a different path from
     the code that consumes it: a hand-edited `_CATEGORIES` value no longer silently becomes a
-    board that fetches nothing. `facets_category.json` is the 2026-09-07 capture."""
+    board that fetches nothing. `facets_category.json` is the 2026-11-23 capture."""
     recorded = _fixture_json("facets_category.json")["facets"]["category_facet"]
     counts = {name: count for entry in recorded for name, count in entry.items()}
-    assert len(counts) == 38
+    assert len(counts) == 37
     assert set(_CATEGORIES.values()) == set(counts)
     assert list(_CATEGORIES) == sorted(_CATEGORIES)
     # EVERY category under the 10,000 offset ceiling is what makes category-per-board a correct
@@ -635,7 +635,7 @@ def test_healthcheck_refuses_an_out_of_catalog_slug_without_a_request(tmp_path: 
 
 def test_each_catalog_key_is_the_slug_of_its_own_value() -> None:
     """The pairing, not just the two sets. `set(values) == set(recorded)` and a sorted key list
-    both survive an arbitrary PERMUTATION of the 38 values across the 38 keys -- transpose
+    both survive an arbitrary PERMUTATION of the 37 values across the 37 keys -- transpose
     `design`/`legal` and every other test in this file still passes, while `amazon:design` would
     silently fetch and store the Legal board under a company row the user added as `design`."""
     for token, category in _CATEGORIES.items():

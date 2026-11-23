@@ -240,7 +240,7 @@ SHIPPED_DATA: dict[str, DataEntry] = {
     "tests/fixtures/amazon/facets_category.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,
-        pin="sha256:1b3b8b1709c9780ca2fb7043d01b92fcb69a241d74f739d0c6fd11bafdd8afd6",
+        pin="sha256:d23f2f609e129915b5f45fce1802f695518efcee3fe145d03694b8992be526a7",
     ),
     "tests/fixtures/amazon/normal.json": DataEntry(
         kind="fixture",

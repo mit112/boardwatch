@@ -27,8 +27,8 @@ signal here, `error` is:
 5. `category[]` IS honoured: `category[]=Software Development` answered `hits: 2597`.
 
 THE CATEGORY FACET IS BOTH THE SLICING KEY AND THE CATALOG, and the slicing is what makes this
-provider correct rather than convenient. `...&facets[]=category` returns 38 single-key dicts whose
-largest count is 3,370 -- every category sits comfortably under the 10,000 offset ceiling, so
+provider correct rather than convenient. `...&facets[]=category` returns 37 single-key dicts whose
+largest count is 3,260 -- every category sits comfortably under the 10,000 offset ceiling, so
 category-per-board enumerates the whole corpus while the unfiltered query provably cannot.
 
 PAGINATION IS NOT A STABLE SNAPSHOT. `sort=recent` orders by created date descending, so a
@@ -83,11 +83,12 @@ _MONTHS = {
 # VIRTUAL 24, nothing else. See `_remote_policy` for why ONSITE is deliberately not mapped.
 _VIRTUAL = "VIRTUAL"
 
-# Slug -> the EXACT Amazon category string, all 38 live entries as of 2026-09-07 with their
-# counts. The slug is a CATALOG TOKEN, not the category itself: the category names carry spaces,
-# commas, `&`, `/` and `--` (`Project/Program/Product Management--Non-Tech`), none of which
-# survives `provider:slug` parsing or a URL path intact. A closed, versioned catalog is also the
-# only defence against limit 4 above -- an out-of-catalog token is a FAILURE, never a new bucket,
+# Slug -> the EXACT Amazon category string, all 37 live entries as of 2026-11-23 (`Machine Learning
+# Science` left the facet and is gone; the counts are the 2026-09-07 capture). The slug is a
+# CATALOG TOKEN, not the category itself: the category names carry spaces, commas, `&`, `/` and
+# `--` (`Project/Program/Product Management--Non-Tech`), none of which survives `provider:slug`
+# parsing or a URL path intact. A closed, versioned catalog is also the only defence against
+# limit 4 above -- an out-of-catalog token is a FAILURE, never a new bucket,
 # because the API would answer a wrong one with an empty board and `error: null`, and an empty
 # `complete` board is the one status that authorizes apply_board to close every posting it holds.
 _CATEGORIES: dict[str, str] = {
@@ -114,7 +115,6 @@ _CATEGORIES: dict[str, str] = {
     "investigation-loss-prevention": "Investigation & Loss Prevention",  # 212
     "leadership-development-training": "Leadership Development & Training",  # 40
     "legal": "Legal",  # 159
-    "machine-learning-science": "Machine Learning Science",  # 131
     "marketing-pr": "Marketing & PR",  # 345
     "medical-health-safety": "Medical, Health, & Safety",  # 585
     "operations-it-support-engineering": "Operations, IT, & Support Engineering",  # 3370

@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format follows
 - **Re-recorded the Lever fixture without `updatedAt`**, which the live API no longer sends; its review now runs to
   2027-02-21 (T322, D-698).
 
+- **Dropped `Machine Learning Science` from Amazon's category catalog and re-recorded its facet fixture.** The live facet
+  has 37 names; the old filter value now answers Applied Science postings, and no board watched it. The fixture's
+  review now runs to 2027-02-21 (T322, D-699).
+
 - **The death probe reaches rows it has never asked about.** A fifth of the URL budget now goes to never-asked rows no
   standing lead holds (LinkedIn job-view rows left out while the guest check is off). The 2,215 held rows outnumbered
   the 1,000/run budget and took ~80% of the probes, while 48,665 rows had never been asked (T284, D-696).
