@@ -31,6 +31,14 @@ DISPOSITIONS: tuple[str, ...] = ("seen", "skipped", "built")
 # with the wrong disposition is caught here in Python and not by the constraint.
 PERMANENT_DISPOSITIONS = frozenset({"skipped", "built"})
 
+# The permanent dispositions the policy-drift drain (`ledger reopen --stale`) may release. `built`
+# is absent on purpose and stays absent: it records that the lead was DELIVERED, and the shortlist
+# hides only LIVE dispositions, so reopening one puts a job the owner already has back into the
+# ranking. D-588 §2's drain did that to 1,206 rows and runs 475-480 served 32-40 repeats of 40
+# (D-600, T264). An allowlist rather than `PERMANENT - {"built"}`, so a permanent disposition
+# added later is never drained by default. `ledger reopen --job` is the explicit, per-job way.
+STALE_DRAINABLE_DISPOSITIONS = frozenset({"skipped"})
+
 # Closed reason catalog, per disposition. Deliberately three reasons and not one per ranker
 # filter: hard-filter, non-swe, ineligible, below-cutoff and duplicate drops are all recomputed
 # deterministically every run and already counted in the funnel, so persisting them would be

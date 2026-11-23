@@ -45,6 +45,16 @@ def _mark_built(engine: Engine, job_id: int, *, now: datetime = NOW, policy: str
         )
 
 
+def _mark_skipped(
+    engine: Engine, job_id: int, *, now: datetime = NOW, policy: str = POLICY
+) -> bool:
+    with engine.begin() as conn:
+        return record_disposition(
+            conn, job_id, disposition="skipped", reason="unshippable_artifact",
+            policy_version=policy, now=now,
+        )
+
+
 def _mark_seen(engine: Engine, job_id: int, *, now: datetime = NOW) -> bool:
     with engine.begin() as conn:
         return record_disposition(
@@ -145,22 +155,28 @@ def test_a_reopened_job_can_be_decided_again_and_becomes_live(engine: Engine) ->
     assert row.reopened_at is None
 
 
-def test_stale_lists_only_permanent_rows_whose_stamp_moved(engine: Engine) -> None:
-    """A stamp mismatch is reported, never auto-expired (design §2.4)."""
-    current, moved, ttl_job = _seed_job(engine), _seed_job(engine), _seed_job(engine)
-    _mark_built(engine, current, policy=POLICY)
-    _mark_built(engine, moved, policy="policy-old")
+def test_stale_lists_only_drainable_rows_whose_stamp_moved(engine: Engine) -> None:
+    """A stamp mismatch is reported, never auto-expired (design §2.4). Only `skipped` rows are
+    listed: a `built` row with a moved stamp is never drainable, because reopening it re-delivers
+    a lead the owner already has (D-600, T264)."""
+    current, moved, built_moved, ttl_job = (_seed_job(engine) for _ in range(4))
+    _mark_skipped(engine, current, policy=POLICY)
+    _mark_skipped(engine, moved, policy="policy-old")
+    _mark_built(engine, built_moved, policy="policy-old")
     _mark_seen(engine, ttl_job)
     with engine.connect() as conn:
         stale = stale_dispositions(conn, policy_version=POLICY, now=NOW)
         assert set(stale) == {moved}
         # and the stale row still governs — listing is not releasing
         assert moved in live_dispositions(conn, now=NOW)
+        assert built_moved in live_dispositions(conn, now=NOW)
 
 
 def test_a_reopened_row_is_not_reported_as_stale(engine: Engine) -> None:
     job_id = _seed_job(engine)
-    _mark_built(engine, job_id, policy="policy-old")
+    _mark_skipped(engine, job_id, policy="policy-old")
+    with engine.connect() as conn:
+        assert set(stale_dispositions(conn, policy_version=POLICY, now=NOW)) == {job_id}
     with engine.begin() as conn:
         reopen_jobs(conn, [job_id], now=NOW)
     with engine.connect() as conn:

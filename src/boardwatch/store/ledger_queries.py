@@ -15,7 +15,12 @@ from typing import Any
 from sqlalchemy import Row, insert, select, update
 from sqlalchemy.engine import Connection
 
-from boardwatch.core.ledger import LedgerRow, is_live, plan_upsert
+from boardwatch.core.ledger import (
+    STALE_DRAINABLE_DISPOSITIONS,
+    LedgerRow,
+    is_live,
+    plan_upsert,
+)
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.tables import job_dispositions
 
@@ -141,17 +146,24 @@ def record_disposition(
 def stale_dispositions(
     conn: Connection, *, policy_version: str, now: datetime
 ) -> dict[int, LedgerRow]:
-    """Live PERMANENT dispositions whose policy stamp is not the current one.
+    """Live DRAINABLE dispositions whose policy stamp is not the current one.
 
     The drain's read side. A stamp mismatch never re-opens a row on its own (design §2.4):
     auto-expiry on mismatch would rebuild the whole shortlist on any settings tweak, and an
     automatic re-open cannot be reviewed before it happens. This lists them; `reopen_jobs`
     releases them.
+
+    Only `STALE_DRAINABLE_DISPOSITIONS` are returned, so a `built` row is never listed here and
+    therefore never reached by `ledger reopen --stale`: draining it re-delivers a lead the owner
+    already has (D-600, T264). Both `ledger show --stale` and `ledger reopen --stale` read this,
+    so what the review lists is exactly what the drain releases.
     """
     return {
         job_id: row
         for job_id, row in live_dispositions(conn, now=now).items()
-        if row.policy_version is not None and row.policy_version != policy_version
+        if row.disposition in STALE_DRAINABLE_DISPOSITIONS
+        and row.policy_version is not None
+        and row.policy_version != policy_version
     }
 
 

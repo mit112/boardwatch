@@ -49,8 +49,8 @@ def current_evaluations_chunked(
     It lives HERE rather than inside `engine.py` deliberately. `engine.py` is a digested
     module (`engine.digested_modules`), so batching the read in place would move
     `engine_version` — re-keying every verdict in the corpus and, through
-    `pipeline.policy.run_policy_version`, every permanent ledger stamp, which owes a manual
-    `ledger reopen --stale` that re-surfaces already-built leads. All of that for a change
+    `pipeline.policy.run_policy_version`, every permanent ledger stamp, so every `skipped` row
+    reads as stale and owes a manual `ledger reopen --stale` review. All of that for a change
     that cannot alter a single verdict.
 
     Chunk-then-merge is exact: the engine's read is a per-posting-version lookup with no
