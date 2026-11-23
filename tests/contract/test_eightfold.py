@@ -498,6 +498,39 @@ def test_every_detail_failing_fails_the_board(tmp_path: Path) -> None:
     assert "all 4 detail fetches failed" in (snapshot.error or "")
 
 
+@pytest.mark.parametrize(
+    ("first_status", "first_body", "first_text"),
+    [
+        (404, b"", "HTTP 404 for {url}"),
+        (200, b"<html>maintenance</html>", "detail: malformed payload"),
+    ],
+    ids=["fetch-failure", "malformed-payload"],
+)
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_board_whose_every_detail_fails_keeps_the_first_failures_text(
+    tmp_path: Path, first_status: int, first_body: bytes, first_text: str
+) -> None:
+    """T324: the first detail fails one way and the rest answer 410, so the error can only name
+    the first failure by carrying it — not the last, and not a summary of all of them. Both
+    failure sites are pinned: a refused fetch and a 200 whose body cannot be read."""
+    rows = _fx("search_normal.json")["data"]["positions"]
+    _mock_boot()
+    respx.get(_search_url(0)).mock(
+        return_value=httpx.Response(200, json=_fx("search_normal.json"))
+    )
+    first_url = _detail_url(str(rows[0]["id"]))
+    respx.get(first_url).mock(return_value=httpx.Response(first_status, content=first_body))
+    for row in rows[1:]:
+        respx.get(_detail_url(str(row["id"]))).mock(return_value=httpx.Response(410))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None
+    assert snapshot.error.startswith("all 4 detail fetches failed; ")
+    assert first_text.format(url=first_url) in snapshot.error
+    assert "HTTP 410" not in snapshot.error
+
+
 # ---------------------------------------------------------------- the 405 throttle
 
 @pytest.fixture()

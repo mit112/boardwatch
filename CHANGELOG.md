@@ -8,6 +8,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
+  dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
+  tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
+
 - **Reviewed seven ATS fixture shapes against live boards** and extended their review deadlines to 2027-02-21:
   apple, ashby, eightfold, greenhouse, jibe, oraclehcm and phenom. Lever (`updatedAt` dropped) and Amazon (a category
   gone from the facet) changed shape and still need a recapture (T322, D-697).

@@ -179,6 +179,7 @@ class SmartRecruitersProvider:
 
         postings: list[RawPosting] = []
         detail_failures = 0
+        first_failure: str | None = None
         inactive_ids: set[str] = set()
         for index, entry in enumerate(unseen):
             # T243: past here the board's clock could fail the board and discard every detail
@@ -194,11 +195,13 @@ class SmartRecruitersProvider:
             except FetchFailure as exc:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: {exc}")
+                first_failure = first_failure or errors[-1]
                 continue
             detail = _json_object(detail_res.content)
             if detail is None:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: malformed payload")
+                first_failure = first_failure or errors[-1]
                 continue
             if detail.get("active") is False:
                 inactive_ids.add(posting_id)
@@ -209,7 +212,9 @@ class SmartRecruitersProvider:
                 errors.append(f"posting {posting_id}: {exc}")
 
         if unseen and detail_failures == len(unseen):
-            return _failed(request.url, f"all {len(unseen)} detail fetches failed")
+            return _failed(
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}"
+            )
 
         # The live inventory for _process_missing (C1): every listed id minus those a
         # detail confirmed inactive. Known/skipped ids stay in it so they are not closed.

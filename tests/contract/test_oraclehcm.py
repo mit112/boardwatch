@@ -609,6 +609,37 @@ def test_every_detail_failing_fails_the_whole_board(tmp_path: Path) -> None:
     assert snapshot.postings == []
 
 
+@pytest.mark.parametrize(
+    ("first_status", "first_body", "first_text"),
+    [
+        (404, b"", "HTTP 404 for {url}"),
+        (200, b"<html>maintenance</html>", "detail: malformed payload"),
+    ],
+    ids=["fetch-failure", "malformed-payload"],
+)
+@respx.mock
+def test_every_detail_failing_keeps_the_first_failures_text(
+    tmp_path: Path, first_status: int, first_body: bytes, first_text: str
+) -> None:
+    """T324: the first detail fails one way and the rest answer 410, so the error can only name
+    the first failure by carrying it — not the last, and not a summary of all of them. Both
+    failure sites are pinned: a refused fetch and a 200 whose body cannot be read."""
+    ids = [str(row["Id"]) for row in _rows()]
+    respx.get(LIST_URL).mock(return_value=httpx.Response(200, content=_fx("list_normal.json")))
+    first_url = _detail_url(ids[0])
+    respx.get(first_url).mock(return_value=httpx.Response(first_status, content=first_body))
+    for posting_id in ids[1:]:
+        respx.get(_detail_url(posting_id)).mock(return_value=httpx.Response(410))
+
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None
+    assert snapshot.error.startswith("all 3 detail fetches failed; ")
+    assert first_text.format(url=first_url) in snapshot.error
+    assert "HTTP 410" not in snapshot.error
+
+
 @respx.mock
 def test_a_dead_list_endpoint_fails_without_raising(tmp_path: Path) -> None:
     respx.get(LIST_URL).mock(return_value=httpx.Response(404))

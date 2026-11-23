@@ -403,6 +403,7 @@ class OracleHCMProvider:
 
         postings: list[RawPosting] = []
         detail_failures = 0
+        first_failure: str | None = None
         for index, row in enumerate(unseen):
             # T248: the stop Workday and SmartRecruiters have had since T243 — past here the
             # board's clock could fail the board and discard every detail already fetched.
@@ -417,11 +418,13 @@ class OracleHCMProvider:
             except FetchFailure as exc:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: {exc}")
+                first_failure = first_failure or errors[-1]
                 continue
             detail = _detail_item(detail_res.content)
             if detail is None:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: malformed payload")
+                first_failure = first_failure or errors[-1]
                 continue
             if not detail:
                 # Property 5: 200 with `items: []` is a withdrawn or unknown requisition, not
@@ -434,7 +437,9 @@ class OracleHCMProvider:
                 errors.append(f"posting {posting_id}: {exc}")
 
         if unseen and detail_failures == len(unseen):
-            return _failed(request.url, f"all {len(unseen)} detail fetches failed")
+            return _failed(
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}"
+            )
 
         return BoardSnapshot(
             status="complete" if not errors else "partial",
