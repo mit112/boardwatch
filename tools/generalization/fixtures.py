@@ -93,34 +93,45 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "apple": FixtureProvenance(
         captured=date(2026, 9, 7),
-        review_by=date(2026, 12, 6),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:93e4f94e20a0f12a39728e8b31aae1a88cf9f5e920a804b087b034d62cd55d9f",
+        extensions=(
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
+        ),
     ),
     "ashby": FixtureProvenance(
         captured=date(2026, 6, 13),
-        review_by=date(2026, 12, 11),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:68a4536b3d10f9fb6eafe18aa1a0396ecbe77352a0693daee1770374bc120dd2",
         extensions=(
             Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
         ),
     ),
     "eightfold": FixtureProvenance(
         captured=date(2026, 9, 6),
-        review_by=date(2026, 12, 5),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:51f1ad65aa97b0512e6cf1ac0ca5e8cf4097042366be2eb0c91801d1db42cd52",
+        extensions=(
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
+        ),
     ),
     "greenhouse": FixtureProvenance(
         captured=date(2026, 6, 12),
-        review_by=date(2026, 12, 11),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:dca8ddf164d773e3f8a75842071cf53e26b15653f9405357f261602b689341d5",
         extensions=(
             Extension(on=date(2026, 9, 12), reason="live shape re-checked 2026-09-12, unchanged"),
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
         ),
     ),
     "jibe": FixtureProvenance(
         captured=date(2026, 9, 6),
-        review_by=date(2026, 12, 5),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:62917881e8d8c1f82d7c694ac4a247bda1f94438e1c0fb6b9a1a6f6ff3753bb3",
+        extensions=(
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
+        ),
     ),
     "lever": FixtureProvenance(
         captured=date(2026, 6, 13),
@@ -132,8 +143,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "phenom": FixtureProvenance(
         captured=date(2026, 9, 6),
-        review_by=date(2026, 12, 5),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:afdd7b0e50b2bf7de73156cc8785a1812242238679f6071145ba45aad861550b",
+        extensions=(
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
+        ),
     ),
     "smartrecruiters": FixtureProvenance(
         captured=date(2026, 8, 1),
@@ -153,8 +167,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     ),
     "oraclehcm": FixtureProvenance(
         captured=date(2026, 9, 6),
-        review_by=date(2026, 12, 5),
+        review_by=date(2027, 2, 21),
         readme_pin="sha256:05ef5427a18e6a379320959310d07c79f55572ca950d19adf2702812c18a3b53",
+        extensions=(
+            Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
+        ),
     ),
     "workday": FixtureProvenance(
         captured=date(2026, 8, 4),
