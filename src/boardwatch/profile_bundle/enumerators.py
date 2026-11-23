@@ -214,9 +214,10 @@ def normalize_locator(raw: str, *, adapter: SourceEnumerator) -> str:
     segments: list[str] = []
     for part in text.split("/"):
         if part in (".", ".."):
+            # Design §18 forbids a `.` or `..` component in a locator.
             raise EnumerationError(
-                f"{adapter.id}: {raw!r} contains a {part!r} path component, which §18 forbids in "
-                "a locator"
+                f"{adapter.id}: {raw!r} contains a {part!r} path component, which a locator "
+                "may not contain"
             )
         match = _DUPLICATE_SUFFIX_RE.match(part)
         if match is not None:

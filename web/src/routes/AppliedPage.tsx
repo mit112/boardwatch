@@ -173,7 +173,7 @@ function PostingStanding({ row }: { row: AppliedRow }) {
     return (
       <Badge
         label="unverifiable"
-        reason="Open on a board nothing enumerates, so 'still open' was never measured (D-324)."
+        reason="Listed on a board that boardwatch does not scan, so it never checked whether this role is still open."
       />
     );
   }

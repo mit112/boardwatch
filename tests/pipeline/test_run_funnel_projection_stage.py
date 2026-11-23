@@ -31,7 +31,7 @@ from boardwatch.pipeline import runner as runner_mod
 from boardwatch.projection.run import ProjectionAvailability, ProjectionLeadOutcome
 from boardwatch.reports.resume_gate import RenderToolMissingError
 from boardwatch.store.db import get_engine
-from boardwatch.tailor.render.latex import resolve_template
+from boardwatch.tailor.render.latex import TemplateArtifactError, resolve_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.pipeline.test_gate_stage import (
     EVIDENCE,
@@ -636,6 +636,44 @@ def test_an_authored_run_aborting_late_grows_no_projection_stage(
     assert summary.funnel is not None
     payload = json.loads(summary.funnel.json_path.read_text(encoding="utf-8"))
     assert "projection" not in _stages(payload)
+
+
+def test_a_refused_template_aborts_the_run_in_template_words_not_render_tool_words(
+    env: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The tailor loop's one run-level abort serves two faults, and a user fixes them differently:
+    a missing `tectonic` is installed, a refused template is edited in the config directory. The
+    fatal read "render tool unavailable" for both (T271), so a user with a working `tectonic` and an
+    unedited template was told to reinstall the tool.
+
+    The control is the two tests above: the same abort through `RenderToolMissingError` keeps the
+    "render tool unavailable" wording they assert.
+    """
+    _ready(env, 3)
+    _projected_env(env)
+
+    real = runner_mod.run_tailor
+    calls: list[int] = []
+
+    def failing(*args: object, **kwargs: object) -> object:
+        calls.append(1)
+        if len(calls) == 2:
+            raise TemplateArtifactError(
+                "template still carries the bundled placeholder(s) 'Your Name'"
+            )
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(runner_mod, "run_tailor", failing)
+
+    summary = _pipeline(env, tmp_path / "apps", project=False, top_n=3)
+
+    assert summary.fatal is not None
+    assert summary.fatal.startswith(
+        "résumé template refused: template still carries the bundled placeholder(s) 'Your Name'"
+    )
+    assert "`resume_template.tex`" in summary.fatal
+    assert "render tool" not in summary.fatal
+    assert any(error.startswith("tailor: résumé template refused") for error in summary.errors)
 
 
 def test_an_authored_run_has_no_projection_stage(

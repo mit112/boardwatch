@@ -430,7 +430,8 @@ def direct_share_lines(report: DirectShareReport | None) -> list[str]:
             "",
             f"Re-linked after ranking: {report.relinked_to_direct} delivered lead(s) counted "
             f"non-direct above were delivered with a direct link, {report.relinked_off_direct} "
-            "the other way. The link steps run after the ranker (D-689, D-690).",
+            # The two link steps are D-689 and D-690.
+            "the other way. The link steps run after the ranker.",
         ]
     if report.reconciles is False:
         lines += [
