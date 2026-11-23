@@ -38,10 +38,14 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-# The probe session (RETIREMENT-PLAN.md §6). PROBED + 90, matching the window the six ATS
-# captures and the LinkedIn shape both use.
+# The probe session (RETIREMENT-PLAN.md §6). REVIEW_BY is 90 days from the latest live re-check,
+# the window the six ATS captures and the LinkedIn shape both use.
 PROBED = date(2026, 9, 1)
-REVIEW_BY = date(2026, 11, 30)
+# Re-reviewed 2026-11-23 through the lane's own request and parser: one 25-hit search page carried
+# every field `job_dict` models on every hit, the same `data.jobSearch.{pageInfo,results}` envelope
+# and epoch-millisecond `datePublished`; 24 hits identified and the one without an employer page
+# was refused, as designed. Rolled 90 days.
+REVIEW_BY = date(2027, 2, 21)
 
 # The one request shape, and the one filter argument that is evidenced.
 SEARCH_URL = "https://apis.indeed.com/graphql?co=US"
