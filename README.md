@@ -294,7 +294,8 @@ Next:
 
 - [ ] An onboarding flow that fits fields other than software, so the eligibility taxonomy is
       gathered from you rather than assumed
-- [ ] A measured acceptance run — the daily numbers published rather than asserted (in progress)
+- [ ] Meeting the written daily acceptance bars: every scheduled run is scored against them as a
+      health check, and a failing bar is a defect to fix
 - [ ] Broader company coverage, but only after the above shows the funnel converts; breadth
       multiplies whatever is downstream of it, including the mistakes
 
