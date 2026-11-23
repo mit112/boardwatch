@@ -37,8 +37,11 @@ from datetime import date
 from typing import Any
 
 PROBED = date(2026, 8, 24)
-# PROBED + 90, the window `tools/generalization/fixtures.py` uses for the six ATS captures.
-REVIEW_BY = date(2026, 11, 22)
+# 90 days from the latest live re-check, the window `tools/generalization/fixtures.py` uses.
+# Re-reviewed 2026-11-23: both lists still carry exactly S1_KEYS / S2_KEYS (S2 plus a vestigial
+# `season` on 2 of 2292) and the four sponsorship values; `active` reads 3,138 of 18,454 and
+# 874 of 2,292. Rolled 90 days.
+REVIEW_BY = date(2027, 2, 21)
 
 # Contract §3. Both are read; neither is written anywhere.
 S1_REPO = "SimplifyJobs/New-Grad-Positions"
