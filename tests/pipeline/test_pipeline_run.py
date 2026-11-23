@@ -180,7 +180,8 @@ def test_regroup_serializes_a_competing_commit(
     env: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """T292: `_regroup` reads anchors and protections, then moves postings. A commit from
-    another engine between the two must queue behind the move, not break it."""
+    another engine between the two is held off until the move commits (here refused at once,
+    `busy_timeout_ms=0`), instead of landing and failing the move with `database is locked`."""
     import boardwatch.pipeline.runner as runner_mod
     from boardwatch.core.dedup import Suppression
 
