@@ -90,7 +90,7 @@ companies:
     provider: greenhouse
     slug: browserbaseinc
     tags: []
-  # --- lever (4) ---
+  # --- lever (3) ---
   - name: Palantir
     provider: lever
     slug: palantir
@@ -99,15 +99,11 @@ companies:
     provider: lever
     slug: spotify
     tags: [starter]
-  - name: Shield AI
-    provider: lever
-    slug: shieldai
-    tags: []
   - name: Ro
     provider: lever
     slug: ro
     tags: []
-  # --- ashby (12) ---
+  # --- ashby (13) ---
   - name: Ramp
     provider: ashby
     slug: ramp
@@ -156,6 +152,10 @@ companies:
     provider: ashby
     slug: mistral.ai
     tags: [starter]
+  - name: Shield AI
+    provider: ashby
+    slug: shield
+    tags: []
   # --- workable ---
   - name: Rokt
     provider: workable
