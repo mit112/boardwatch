@@ -531,6 +531,28 @@ def test_a_board_whose_every_detail_fails_keeps_the_first_failures_text(
     assert "HTTP 410" not in snapshot.error
 
 
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_board_whose_every_detail_fails_still_reports_what_it_listed_and_deferred(
+    tmp_path: Path,
+) -> None:
+    """T252: a board cut at its first detail has every detail fail, and the `failed` snapshot
+    said nothing of the listing — so the cap's verdict, which carries the provider's counts,
+    recorded NULLs. The counts are the listing's own: 4 listed, 1 left past the budget of 3."""
+    payload = _fx("search_normal.json")
+    rows = payload["data"]["positions"]
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=payload))
+    for row in rows:
+        respx.get(_detail_url(str(row["id"]))).mock(return_value=httpx.Response(410))
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request(budget=3))
+    assert snapshot.status == "failed"
+    assert snapshot.error is not None and snapshot.error.startswith("all 3 detail fetches failed")
+    assert (snapshot.board_reported_total, snapshot.board_enumerated, snapshot.detail_deferred) == (
+        payload["data"]["count"], len(rows), len(rows) - 3
+    )
+
+
 # ---------------------------------------------------------------- the 405 throttle
 
 @pytest.fixture()

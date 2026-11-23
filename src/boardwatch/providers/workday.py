@@ -315,9 +315,18 @@ def _postings_list(content: bytes) -> list[dict[str, Any]] | None:
     return [row for row in payload["jobPostings"] if isinstance(row, dict)]
 
 
-def _failed(url: str, error: str, *, dead: bool = False) -> BoardSnapshot:
+def _failed(
+    url: str, error: str, *, dead: bool = False, board_reported_total: int | None = None,
+    board_enumerated: int | None = None, detail_deferred: int | None = None,
+    board_total_censored: bool | None = None,
+) -> BoardSnapshot:
+    """A failed snapshot. A board whose every detail failed also carries its listing counts
+    (T252): the cap's verdict for a board its clock cut at the first detail takes the provider's
+    counts, and these are all it has. Every other failure happens before there is a listing."""
     return BoardSnapshot(
         status="failed", postings=[], url=url, observed_validators=None, error=error, dead=dead,
+        board_reported_total=board_reported_total, board_enumerated=board_enumerated,
+        detail_deferred=detail_deferred, board_total_censored=board_total_censored,
     )
 
 
@@ -864,7 +873,10 @@ class WorkdayProvider:
 
         if unseen and detail_failures == len(unseen):
             return _failed(
-                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}"
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}",
+                board_reported_total=board_total, board_enumerated=len(listed_ids),
+                detail_deferred=len(unseen_before_truncation) - len(unseen),
+                board_total_censored=board_censored,
             )
 
         return BoardSnapshot(

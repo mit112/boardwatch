@@ -82,9 +82,17 @@ def posting_api_target(url: str) -> tuple[str, str] | None:
     return api, posting_id
 
 
-def _failed(url: str, error: str) -> BoardSnapshot:
+def _failed(
+    url: str, error: str, *, board_reported_total: int | None = None,
+    board_enumerated: int | None = None, detail_deferred: int | None = None,
+) -> BoardSnapshot:
+    """A failed snapshot. A board whose every detail failed also carries its listing counts
+    (T252): the cap's verdict for a board its clock cut at the first detail takes the provider's
+    counts, and these are all it has. Every other failure happens before there is a listing."""
     return BoardSnapshot(
         status="failed", postings=[], url=url, observed_validators=None, error=error,
+        board_reported_total=board_reported_total, board_enumerated=board_enumerated,
+        detail_deferred=detail_deferred,
     )
 
 
@@ -213,7 +221,9 @@ class SmartRecruitersProvider:
 
         if unseen and detail_failures == len(unseen):
             return _failed(
-                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}"
+                request.url, f"all {len(unseen)} detail fetches failed; {first_failure}",
+                board_reported_total=total, board_enumerated=len(listed_ids),
+                detail_deferred=len(unseen_before_truncation) - len(unseen),
             )
 
         # The live inventory for _process_missing (C1): every listed id minus those a

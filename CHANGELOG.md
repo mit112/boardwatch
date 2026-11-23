@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board whose every detail fetch fails now records its listing size.** Eightfold, Workday, SmartRecruiters and
+  Oracle HCM returned a `failed` snapshot with no counts, so a board its clock cut at the first detail wrote NULL
+  `board_reported_total`, `board_enumerated` and `detail_deferred` on the cap's verdict (T248 kept the counts the
+  provider returned, and this case returned none). The snapshot now carries them. The board still fails, and
+  nothing else changes (T252).
 - **The per-board apply and the death probe read one board's rows from the company index on every SQLite.** The T256
   `likely()` hint only kept the status term off `ix_postings_status_posted_at` where the planner's estimate agreed: on
   SQLite 3.42 to 3.46 (the Python 3.11.9 builds bundle 3.46.0) three of the four statements answered with a
