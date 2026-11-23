@@ -139,10 +139,14 @@ def apply_board(
                 # board's inventory entirely — the board would be frozen at empty for as long as
                 # the provider kept serving the same validator.
                 #
-                # KNOWN RESIDUAL: a small board that genuinely empties now never closes its
-                # postings in the store. The liveness probe withholds them at delivery, so the
-                # cost is store hygiene rather than a dead lead reaching the owner. The
-                # fleet-level guard in the runner took the same trade.
+                # RESIDUAL, and its drain: a board that genuinely empties never lists again, so
+                # its postings never take a miss. The liveness probe withholds them at delivery,
+                # so the cost was store hygiene rather than a dead lead reaching the owner. The
+                # fleet-level guard in the runner took the same trade. T334 (D-705) gave it an
+                # exit that does not touch this guard: the scan row below records the fact
+                # (`board_scans.empty_guarded`), and after `GUARD_DRAIN_NIGHTS` consecutive
+                # guarded nights the death probe asks each open posting's own URL. A posting
+                # closes only on that proof, never on this snapshot.
                 result.empty_complete_guarded = True
             else:
                 result.closed = _process_missing(
@@ -153,6 +157,9 @@ def apply_board(
             conn, run_id, company_id, started_at, snapshot.status,
             len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
             lane=lane, pipeline_scan=pipeline_scan,
+            # Typed, at the guard's own site (T334): the death-probe drain counts consecutive
+            # guarded scans from this column and never infers one from `postings_listed`.
+            empty_guarded=result.empty_complete_guarded,
         )
         return result
 
@@ -697,6 +704,7 @@ def _scan_row(
     scan_kind: str = "board",
     lane: str | None = None,
     pipeline_scan: bool = False,
+    empty_guarded: bool = False,
 ) -> None:
     conn.execute(
         insert(board_scans).values(
@@ -709,6 +717,7 @@ def _scan_row(
             error=error,
             dead=snapshot is not None and snapshot.status == "failed" and snapshot.dead,
             pipeline_scan=pipeline_scan,
+            empty_guarded=empty_guarded,
             scan_kind=scan_kind,
             lane=lane,
             # NULL, not 0, when there is no snapshot: a failed board's coverage is undefined.

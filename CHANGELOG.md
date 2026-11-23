@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A board the empty-complete guard keeps refusing now hands its open postings to the death probe after 14 nights.** The
+  guard counts no miss on an empty `complete` answer, so a board that never lists again kept its postings open for good
+  (73 boards and 1,178 postings on 2026-11-23, the oldest 64 days), and the probe skipped them because the boards are
+  watched. `board_scans.empty_guarded` now records each refused scan (migration `p_empty_guarded`; a streak starts with the
+  first guarded scan after it), and a watched board refused on 14 distinct pipeline nights running has its open postings
+  asked through their own URL. A posting closes only on the probe's own two strikes, never on a timer, and the board stays
+  watched; a relist resumes ordinary miss counting. Ashby and Greenhouse postings stay open, because their dead pages
+  answer alive, and are counted as `guard_rows_unjudgeable`. Up to a tenth of `death_probe_budget` is set aside for these
+  rows (the never-asked fifth is unchanged), the funnel's `death_probe` block gains five `guard_*` counts, and the run log
+  prints a `drain:` line under `! N empty-complete guarded` (T334, D-705).
 - **A board whose every detail fetch fails now records its listing size.** Eightfold, Workday, SmartRecruiters and
   Oracle HCM returned a `failed` snapshot with no counts, so a board its clock cut at the first detail wrote NULL
   `board_reported_total`, `board_enumerated` and `detail_deferred` on the cap's verdict (T248 kept the counts the

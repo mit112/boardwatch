@@ -901,6 +901,17 @@ class DeathProbeReport:
       reason D-325 gave `death_strikes` its own column: one number fed by two signals makes a
       close unattributable. `closed` is derived as their sum — a property, not a field, so the
       identity every existing reader relies on cannot drift from the two halves.
+    - `guard_*` are T334's (D-705) second URL population, the open postings of WATCHED boards the
+      empty-complete guard has refused for `GUARD_DRAIN_NIGHTS` consecutive pipeline nights, and
+      they are an "of which" of the URL fields above, never a third path: `due`, `attempted`
+      and `closed_by_url` already include these rows. `guard_boards` is the boards past the
+      threshold; `guard_rows` their open rows on providers the URL probe can judge (a row with
+      no URL is also in `unprobeable`) and `guard_rows_unjudgeable` the rest (Ashby and
+      Greenhouse, whose dead URL answers alive), which stay open and are reported rather than
+      asked; `guard_attempted` and `guard_closed`
+      are what this run did. `guard_boards > 0` with `guard_attempted` at 0 for many nights is
+      the drain not reaching its rows (budget, or no URL); `guard_closed` is the only count that
+      says a board's postings left the store.
 
     Plain ints, never `None`: the whole object is `None` when the sweep did not run, so an
     unmeasured run is stated once at the section rather than fifteen times inside it.
@@ -923,6 +934,11 @@ class DeathProbeReport:
     listing_present: int
     listing_unknown: int
     linkedin_guest: dict[str, int] | None = None
+    guard_boards: int = 0
+    guard_rows: int = 0
+    guard_rows_unjudgeable: int = 0
+    guard_attempted: int = 0
+    guard_closed: int = 0
 
     @property
     def closed(self) -> int:
@@ -956,6 +972,11 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
             "listing_present": None,
             "listing_unknown": None,
             "linkedin_guest": None,
+            "guard_boards": None,
+            "guard_rows": None,
+            "guard_rows_unjudgeable": None,
+            "guard_attempted": None,
+            "guard_closed": None,
         }
     return {
         "instrumented": True,
@@ -979,6 +1000,11 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
         "listing_present": report.listing_present,
         "listing_unknown": report.listing_unknown,
         "linkedin_guest": report.linkedin_guest,
+        "guard_boards": report.guard_boards,
+        "guard_rows": report.guard_rows,
+        "guard_rows_unjudgeable": report.guard_rows_unjudgeable,
+        "guard_attempted": report.guard_attempted,
+        "guard_closed": report.guard_closed,
     }
 
 
@@ -3983,6 +4009,17 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"· {probe.closed_by_listing} closed by listing"
         ),
         "",
+        (
+            ""
+            if probe is None or not probe.guard_boards
+            else f"guard drain (T334): {probe.guard_boards} watched board(s) past the drain "
+            "threshold of consecutive nights refused by the empty-complete guard · "
+            f"{probe.guard_rows} open rows handed to the URL probe "
+            f"({probe.guard_attempted} asked this run, "
+            f"{probe.guard_closed} closed) · {probe.guard_rows_unjudgeable} rows on Ashby or "
+            "Greenhouse stay open, because their dead URL answers alive"
+        ),
+        "",
         "*The only mechanism that can close a posting whose company is `watched = 0` — a lane "
         "re-acquires by SEARCH, so absence is never evidence for these rows and the board "
         "scanner never revisits them (D-314). Only a non-redirect 404/410 from the posting's "
@@ -4005,6 +4042,13 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         "an empty listing for a company that still holds open rows is `listing_unknown` and "
         "moves no counter — so `listing_unknown` climbing while `listing_absent` sits at 0 is "
         "the signature of this half being disarmed.*",
+        "",
+        "*T334 (D-705) is the one exception to `watched = 0`: a WATCHED board the empty-complete "
+        "guard refused on every pipeline night of the drain window has no miss counting either, "
+        "so its open postings join the URL path and close only on their own two strikes. The "
+        "board stays watched and a relist resumes ordinary miss counting. `guard_*` are part of "
+        "the URL numbers above, not additions to them; Ashby and Greenhouse rows are counted as "
+        "unjudgeable and left open, since their dead URL answers 200.*",
         "",
         "## Application forms",
         "",

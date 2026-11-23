@@ -106,6 +106,19 @@ What to expect from an unattended run:
   sweep can never be misread as a corpus with nothing dead in it. Do not leave the listing half at
   `0` for long: a dead Ashby or Greenhouse page answers 200, so the URL half reads it as alive, and
   for unwatched companies on those boards the listing half is the only thing that can close it.
+- **A watched board that has gone empty drains after 14 nights.** When a board answers `complete`
+  with no postings while the store still holds open ones, the scan refuses to treat that as a
+  closure (a degraded provider and a renamed board look the same), and the run log lists the board
+  under `! N empty-complete guarded`. If the same board is refused on 14 distinct nights running,
+  its open postings join the death-probe sweep: each is asked through its own page, and closes only
+  after two answers of "gone" at least `death_probe_ttl_hours` apart. Nothing closes because time
+  passed, and the board stays watched, so a board that lists again resumes normal counting. A
+  `drain:` line under the guarded line says how many boards are past 14 nights, how many open rows
+  were handed over, how many were asked and closed, and how many sit on Ashby or Greenhouse, whose
+  dead pages answer 200, so they stay open and are only counted. Up to a tenth of
+  `death_probe_budget` is set aside for these rows, taken from the standing leads' share only while
+  such rows exist. The count starts at the first guarded scan after you upgrade, so the first
+  drain is 14 nights later.
 - **The delivery queue's root can be overridden with `--queue-root PATH`**, the same option `web`
   takes; omit it and the queue defaults to `~/boardwatch-queue`. If `BOARDWATCH_DATA_DIR` is set
   (rather than `--data-dir`) and `--queue-root` is not, `run` refuses instead of reconciling the

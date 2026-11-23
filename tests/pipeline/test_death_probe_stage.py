@@ -299,6 +299,11 @@ def test_a_run_with_no_prober_reports_the_sweep_as_UNMEASURED(  # noqa: N802
         "listing_present": None,
         "listing_unknown": None,
         "linkedin_guest": None,
+        "guard_boards": None,
+        "guard_rows": None,
+        "guard_rows_unjudgeable": None,
+        "guard_attempted": None,
+        "guard_closed": None,
     }
 
 

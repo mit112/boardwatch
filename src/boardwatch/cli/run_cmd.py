@@ -17,7 +17,7 @@ from boardwatch.cli.context import build_context
 from boardwatch.core.clock import utcnow
 from boardwatch.core.politeness import Fetcher
 from boardwatch.delivery.queue import DEFAULT_QUEUE_ROOT
-from boardwatch.pipeline.death_probe import build_listing_prober
+from boardwatch.pipeline.death_probe import GUARD_DRAIN_NIGHTS, build_listing_prober
 from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import ScanLockHeldError
@@ -285,6 +285,18 @@ def run(
         console.print(
             f"  ! {len(summary.scan_empty_complete_guarded)} empty-complete guarded "
             f"({', '.join(sorted(summary.scan_empty_complete_guarded))})",
+            markup=False,
+        )
+    probe = summary.death_probe
+    if probe is not None and probe.guard_boards:
+        # T334 (D-705): the guard's exit, printed beside the guard so a growing list above is read
+        # against what the drain did with it. Same printed-only-when-it-fires rule as the line
+        # above, and no soft alert: nothing here is a fault, and the funnel carries the numbers.
+        console.print(
+            f"    drain: {probe.guard_boards} past {GUARD_DRAIN_NIGHTS} nights · "
+            f"{probe.guard_rows} open rows handed to the death probe "
+            f"({probe.guard_attempted} asked, {probe.guard_closed} closed) · "
+            f"{probe.guard_rows_unjudgeable} Ashby/Greenhouse rows stay open",
             markup=False,
         )
     for lead in summary.tailored:
