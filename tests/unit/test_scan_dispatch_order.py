@@ -16,12 +16,13 @@ grouping by PROVIDER instead of by host.
 
 from __future__ import annotations
 
-from collections import deque
+from collections import Counter, deque
 from itertools import pairwise
 from typing import Any
 
 from boardwatch.core.models import BoardRequest
 from boardwatch.core.politeness import host_key
+from boardwatch.providers.registry import PROVIDER_CLASSES
 from boardwatch.scan.coordinator import host_queues, take_ready
 
 
@@ -223,3 +224,123 @@ def test_an_empty_fleet_is_not_an_error() -> None:
     """`--company` can select nothing, and the scan must submit nothing rather than block."""
     assert host_queues([]) == []
     assert take_ready([], set(), 8) == []
+
+
+# --- T323: a provider's own cap on boards in flight, across all of its hosts -------------------
+
+
+class _Capped:
+    """Stands in for a provider that declares `max_boards_in_flight` (Eightfold's shape)."""
+
+    def __init__(self, cap: int) -> None:
+        self.max_boards_in_flight = cap
+
+
+_EIGHTFOLD = "https://{}.eightfold.example/api/pcsx/search"  # one HOST per board, like a tenant
+_CAP = 2
+
+
+def _capped_work(
+    capped: int, uncapped: int = 0, *, cap: int = _CAP
+) -> list[tuple[Any, Any, BoardRequest]]:
+    """`capped` boards of provider `ef` (one host each) FIRST in stored order, then `uncapped`
+    boards of provider `wd` (also one host each, no cap). Row = a label, so a test can say WHICH
+    board was handed out."""
+    limited, free = _Capped(cap), object()
+    return [
+        *[
+            (f"ef{i}", limited, BoardRequest(provider="ef", slug=f"ef{i}", url=_EIGHTFOLD.format(i)))
+            for i in range(capped)
+        ],
+        *[
+            (f"wd{i}", free, BoardRequest(
+                provider="wd", slug=f"wd{i}", url=_TENANT.format(f"t{i}", f"t{i}"),
+            ))
+            for i in range(uncapped)
+        ],
+    ]
+
+
+def test_a_capped_provider_is_handed_out_at_most_its_cap_however_many_slots_are_free() -> None:
+    """THE T323 defect, in one call. Nine Eightfold boards sit on nine DIFFERENT hosts, so `busy`
+    sees no collision and sixteen free slots took all nine at once — five 2,000-listing boards
+    hitting one backend whose throttle spans tenants. The cap is per PROVIDER, which no host key
+    can express."""
+    taken = take_ready(host_queues(_capped_work(9)), set(), 16)
+
+    assert [row for row, _, _ in taken] == ["ef0", "ef1"], "more boards than the cap, or the wrong two"
+
+
+def test_a_capped_provider_never_exceeds_its_cap_across_refills_and_every_board_still_runs() -> None:
+    """Drained the way `_scan_body` drains it: take, then release the oldest board's host AND its
+    provider count as its future completes. The peak is asserted EQUAL to the cap, not just below
+    it, so a cap that quietly collapsed to one lane would also fail. Every board is submitted
+    exactly once, which is the termination claim: a count that was never released would strand the
+    capped boards in their queues and the scan would end with them unscanned."""
+    work = _capped_work(9, 7)
+    queues = host_queues(work)
+    busy: set[str] = set()
+    in_flight: Counter[str] = Counter()
+    running: deque[tuple[Any, str, str]] = deque()
+    submitted: list[Any] = []
+    peak = 0
+    while True:
+        for row, _, request in take_ready(queues, busy, 16 - len(running), in_flight):
+            submitted.append(row)
+            running.append((row, host_key(request.url), request.provider))
+        peak = max(peak, sum(1 for _, _, provider in running if provider == "ef"))
+        if not running:
+            break
+        _, host, provider = running.popleft()
+        busy.discard(host)
+        in_flight[provider] -= 1
+
+    assert peak == _CAP, f"eightfold boards peaked at {peak} in flight, not {_CAP}"
+    assert sorted(submitted) == sorted(row for row, _, _ in work), "a board was dropped or repeated"
+
+
+def test_a_provider_without_a_cap_is_not_held_back_by_anothers() -> None:
+    """The cap must not leak. The capped provider's boards come FIRST in stored order and are
+    skipped, and the uncapped boards behind them must still all be handed out in the same call —
+    a skip that stopped scanning, or a cap that bled across providers, would hold them back."""
+    taken = take_ready(host_queues(_capped_work(9, 7)), set(), 16)
+
+    rows = [row for row, _, _ in taken]
+    assert [r for r in rows if r.startswith("wd")] == [f"wd{i}" for i in range(7)]
+    assert [r for r in rows if r.startswith("ef")] == ["ef0", "ef1"]
+
+
+def test_a_skipped_capped_board_keeps_its_place_and_is_offered_next_when_a_slot_frees() -> None:
+    """`exactly like a busy host`: the capped head is passed over, not discarded and not moved to
+    the back. When one of its provider's boards is released it is offered AHEAD of the uncapped
+    boards queued behind it — otherwise the Eightfold chain would start only after the rest of the
+    fleet had been dispatched, which is the whole of the scan's tail."""
+    work = _capped_work(3, 2, cap=1)
+    queues = host_queues(work)
+    busy: set[str] = set()
+    in_flight: Counter[str] = Counter()
+
+    first = take_ready(queues, busy, 2, in_flight)
+    assert [row for row, _, _ in first] == ["ef0", "wd0"], "ef1 should be skipped, not taken"
+
+    ef0 = first[0][2]
+    busy.discard(host_key(ef0.url))  # ef0's future completed ...
+    in_flight[ef0.provider] -= 1  # ... and so does its provider's count
+
+    second = take_ready(queues, busy, 1, in_flight)
+    assert [row for row, _, _ in second] == ["ef1"], "the skipped board lost its place"
+
+
+def test_only_eightfold_declares_a_cap_and_every_declared_cap_can_be_met() -> None:
+    """Pins both halves of "other providers unchanged": the declared set is exactly Eightfold's,
+    written out literally because comparing against the constant itself would pass for any value.
+    A cap below 1 can never be satisfied, so the ready queue would skip that provider's boards
+    forever and the scan would finish without them — silently."""
+    declared = {
+        cls.name: getattr(cls, "max_boards_in_flight")  # noqa: B009 - an optional attribute
+        for cls in PROVIDER_CLASSES
+        if hasattr(cls, "max_boards_in_flight")
+    }
+
+    assert declared == {"eightfold": 2}
+    assert all(isinstance(cap, int) and cap >= 1 for cap in declared.values())

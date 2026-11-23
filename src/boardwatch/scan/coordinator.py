@@ -291,6 +291,7 @@ def take_ready(
     queues: list[list[tuple[Any, Provider, BoardRequest]]],
     busy: set[str],
     slots: int,
+    in_flight: Counter[str] | None = None,
 ) -> list[tuple[Any, Provider, BoardRequest]]:
     """Pop the next board off up to `slots` hosts that are not already in flight.
 
@@ -309,21 +310,37 @@ def take_ready(
     the blocking this module's ordering has always been trying to avoid, now by construction
     rather than by heuristic. Same model, same fleet: 83.8 min.
 
-    Mutates both `queues` (pops the boards it hands out) and `busy` (adds the hosts it commits),
-    because the caller's next call must not re-offer either; the caller releases a host when its
-    future is collected. Deepest-queue-first is `host_queues`' order and is preserved by the
-    scan, which is what keeps the critical path from being starved by 130 singletons.
+    A provider that declares `max_boards_in_flight` (Eightfold, T323) is held to it across ALL its
+    hosts, which `busy` cannot express: its tenants are different hosts on one backend whose
+    throttle spans them. `in_flight` counts boards per provider name, and a queue head whose
+    provider is at its cap is skipped exactly like a busy host: it keeps its place in the order,
+    so it is offered ahead of everything behind it once one of that provider's boards is released.
+    A provider without the attribute is never held to anything, and `in_flight=None` starts from
+    none in flight.
+
+    Mutates `queues` (pops the boards it hands out), `busy` (adds the hosts it commits) and
+    `in_flight` (counts them), because the caller's next call must not re-offer any of them; the
+    caller releases a host and its provider's count when its future is collected. Deepest-queue-
+    first is `host_queues`' order and is preserved by the scan, which is what keeps the critical
+    path from being starved by 130 singletons.
     """
+    if in_flight is None:
+        in_flight = Counter()
     taken: list[tuple[Any, Provider, BoardRequest]] = []
     for queue in queues:
         if len(taken) >= slots:
             break
         if not queue:
             continue
-        host = host_key(queue[0][2].url)
+        _, prov, request = queue[0]
+        host = host_key(request.url)
         if host in busy:
             continue
+        cap = getattr(prov, "max_boards_in_flight", None)
+        if cap is not None and in_flight[request.provider] >= cap:
+            continue
         busy.add(host)
+        in_flight[request.provider] += 1
         taken.append(queue.pop(0))
     return taken
 
@@ -561,10 +578,11 @@ def _scan_body(
     # host (T192b): the thread may still hold, or be about to take, `Fetcher`'s per-host lock,
     # and a same-host board handed out before then would only queue at that lock, be failed at
     # its own cap without sending a request, and fetch anyway once the lock came free.
-    # Keyed to (host, start, slug). A thread ends by itself within about one fetch deadline of
-    # its cap, because `fetch_board_job` runs it under the same deadline (T192c); one still
-    # running past that is reported once, below, so a stall that escapes every clock shows.
-    abandoned: dict[Future[BoardSnapshot], tuple[str, float, str]] = {}
+    # Keyed to (host, start, slug, provider). The provider's `max_boards_in_flight` count (T323)
+    # is held with the host and released with it. A thread ends by itself within about one fetch
+    # deadline of its cap, because `fetch_board_job` runs it under the same deadline (T192c); one
+    # still running past that is reported once, below, so a stall that escapes every clock shows.
+    abandoned: dict[Future[BoardSnapshot], tuple[str, float, str, str]] = {}
     grace = settings.fetch_deadline_seconds
     reported: set[Future[BoardSnapshot]] = set()
     # Boards failed at their cap and not yet recorded (T248), keyed to (row, request, the seconds
@@ -576,13 +594,19 @@ def _scan_body(
     try:
         queues = host_queues(work)
         busy: set[str] = set()
+        in_flight: Counter[str] = Counter()  # boards per provider, for `max_boards_in_flight`
         future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str, float]] = {}
+
+        def _release(host: str, provider: str) -> None:
+            busy.discard(host)
+            in_flight[provider] -= 1
 
         def _submit_ready() -> None:
             for ended in [f for f in abandoned if f.done()]:
-                busy.discard(abandoned.pop(ended)[0])
+                host, _, _, provider = abandoned.pop(ended)
+                _release(host, provider)
             for row, prov, request in take_ready(
-                queues, busy, settings.scan_workers - len(future_map) - len(abandoned)
+                queues, busy, settings.scan_workers - len(future_map) - len(abandoned), in_flight
             ):
                 # ONE instant for both halves of the cap: this loop's `wait` and the thread's
                 # own clock inside `Fetcher` (T192c).
@@ -591,20 +615,23 @@ def _scan_body(
                     pool.submit(fetch_board_job, prov, fetcher, request, start + cap, cap)
                 ] = (row, request, host_key(request.url), start)
 
-        # Never empty while work remains: a host is in `busy` only while one of its boards is in
-        # flight, so an empty `future_map` means an empty `busy`, which means every non-empty
-        # queue is offerable. That is what makes the loop below terminate having submitted each
-        # board exactly once, without a separate "anything left?" condition.
-        # The one exception is abandoned threads, which hold a worker AND their host (a board
-        # in flight, just no longer ours): `future_map` can then be empty with work queued, and
-        # the loop waits on those threads to free a worker or a host.
+        # Never empty while work remains: a host is in `busy`, and a provider counted in
+        # `in_flight`, only while one of its boards is in flight, so an empty `future_map` means
+        # an empty `busy` and zero in flight for every provider, which means every non-empty queue
+        # is offerable (a `max_boards_in_flight` is at least 1, so a provider with nothing in
+        # flight is never at its cap). That is what makes the loop below terminate having
+        # submitted each board exactly once, without a separate "anything left?" condition.
+        # The one exception is abandoned threads, which hold a worker, their host AND their
+        # provider's count (a board in flight, just no longer ours): `future_map` can then be
+        # empty with work queued, and the loop waits on those threads to free a worker, a host
+        # or a provider slot.
         _submit_ready()
         while future_map or unrecorded or (abandoned and any(queues)):
             now = time.monotonic()
             idle = not future_map and not any(queues)  # only cap-failed boards' threads are left
             due = [start + cap for *_, start in future_map.values()]
             due += [
-                start + cap + grace for f, (_, start, _) in abandoned.items() if f not in reported
+                start + cap + grace for f, (_, start, *_) in abandoned.items() if f not in reported
             ]
             timeout = 0.0 if idle else (max(0.0, min(due) - now) if due else None)
             done, _ = wait(
@@ -612,7 +639,7 @@ def _scan_body(
                 timeout=timeout, return_when=FIRST_COMPLETED,
             )
             now = time.monotonic()
-            for f, (_, start, slug) in abandoned.items():
+            for f, (_, start, slug, _) in abandoned.items():
                 if f not in reported and not f.done() and now - start >= cap + grace:
                     # What gets here escaped every clock in `Fetcher`: a peer trickling
                     # response HEADERS under the per-operation read timeout, or work that never
@@ -652,12 +679,13 @@ def _scan_body(
                     # writer: the pool used to carry the whole fleet as backlog, so a worker never
                     # idled while the coordinator wrote. Refilling only after the batch applied
                     # would hand that back and idle a worker for every apply. An overdue board's
-                    # host is NOT released: it stays busy until the abandoned thread ends.
+                    # host and provider slot are NOT released: they stay held until the abandoned
+                    # thread ends.
                     if future in overdue:
                         # before the refill: its worker is not handed out
-                        abandoned[future] = (host, start, row.slug)
+                        abandoned[future] = (host, start, row.slug, request.provider)
                     else:
-                        busy.discard(host)
+                        _release(host, request.provider)
                     _submit_ready()
                     if future in overdue:
                         unrecorded[future] = (row, request, now - start)  # recorded above, later

@@ -11,6 +11,11 @@ All notable changes to this project are documented here. The format follows
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
+- **Eightfold boards no longer run more than two at a time.** Five 2,000-listing boards on different hosts of one
+  Eightfold backend ran together, spent their 12-retry throttle budgets and failed every detail each night since
+  2026-11-08; the same board alone drew no 405. The provider now declares `max_boards_in_flight = 2` and the scan's ready
+  queue holds it across hosts, counting an abandoned thread. Other providers are unchanged. Modelled cost: +0 s of scan
+  wall clock at two, +17 minutes at one (T323, D-700).
 
 - **Reviewed seven ATS fixture shapes against live boards** and extended their review deadlines to 2027-02-21:
   apple, ashby, eightfold, greenhouse, jibe, oraclehcm and phenom. Lever (`updatedAt` dropped) and Amazon (a category
