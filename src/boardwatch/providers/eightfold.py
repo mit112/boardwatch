@@ -317,6 +317,15 @@ def validated_host(slug: str) -> str:
 
 class EightfoldProvider:
     name = "eightfold"
+    # At most this many Eightfold boards are fetched at once, across ALL tenants (T323, D-700);
+    # `scan.coordinator.take_ready` reads it. `Fetcher` paces per HOST, and these tenants are
+    # different hosts on ONE backend whose throttle (the 405 above) spans them: five 2,000-listing
+    # boards running together spent their `_THROTTLE_BOARD_BUDGET` and then failed every detail,
+    # nightly since 2026-11-08, while one board alone drew 0 x 405 over 375 requests. TWO and not
+    # one by estimate: the nine boards take ~41 minutes back to back and the whole scan ~34, so a
+    # single lane would end the scan ~16 minutes late where two lanes end inside it (D-700). If
+    # a night with this at 2 still exhausts the budget, the next step is 1 — not more retries.
+    max_boards_in_flight: int = 2
     # Unbounded like Workday's, and for a stronger reason: an Eightfold tenant is usually on
     # the EMPLOYER's own domain (careers.qualcomm.com, jobs.northropgrumman.com), which no
     # suffix can enumerate. Only the vendor-hosted form is claimable, so `board_hosts` is
