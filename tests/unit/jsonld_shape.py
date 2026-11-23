@@ -35,8 +35,21 @@ from __future__ import annotations
 import json
 from datetime import date
 
-# Re-confirm the seven shapes above against the live vendors by this date.
-REVIEW_BY = date(2026, 12, 15)
+# Re-confirm the seven shapes above against the live vendors by this date: 90 days from the latest
+# live re-check, the window `tools/generalization/fixtures.py` uses.
+# Re-reviewed 2026-11-23 through the lane's own fetcher, `job_posting` and `_read`: 10 of 10 pages
+# came back `body_fetched` (Hireology 3, CareerPlug 1, JazzHR 3, Breezy 1, Garmin iCIMS 2).
+# Still true live: CareerPlug's description is escaped HTML (265 `&lt;`, 0 tags), Garmin's JD is
+# split three ways beside four `UNAVAILABLE` siblings, JazzHR carries `uniqueJobCode` and no
+# `identifier`, and Breezy's `url` still carries `?source=GoogleJobs`. Three readings differ from
+# 2026-09-01 and the lane reads none of them: Hireology's `identifier.value` is now a UUID string
+# on 3 of 3 pages, so the integer-off-by-one trap is no longer observed (the lane takes the id
+# from the URL either way); `baseSalary`, `industry` and `validThrough` come and go against
+# MEASURED_JSONLD_KEYS; Breezy `/p/{id}/apply` pages carry no JSON-LD (2 of 2) where the base
+# `/p/{id}` page does. robots.txt: Hireology now answers 200 `Allow: /` (was 404), CareerPlug
+# disallows `/apps/` and `/j/` (the lane requests `/jobs/{id}`), Garmin, JazzHR and Breezy are
+# unchanged. Rolled 90 days.
+REVIEW_BY = date(2027, 2, 21)
 
 # sha256 over the shipped vendor catalog, as `test_the_vendor_catalog_is_pinned` recomputes it.
 # A LITERAL, never a recomputation of the value under test: an assertion that recomputes the
