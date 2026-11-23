@@ -15,7 +15,11 @@ All notable changes to this project are documented here. The format follows
   status term is now `+status`, which takes it out of index selection on every version; the plan on SQLite 3.53 is
   unchanged. The plan tests now also require `company_id=?` in every plan, which a bare `SCAN postings` slipped past
   (T256, T260).
-
+- **The weekly `registry-health` run is green again: two bundled boards had moved.** Mistral AI left Lever for
+  Ashby (slug `mistral.ai`, 262 postings) and Browserbase left Ashby for Greenhouse (slug `browserbaseinc`, 16
+  postings); the old slugs answered 404, so the run failed on 2026-11-09 and 2026-11-16. Both entries now point at the
+  new board, which each company's own careers page links to. The catalog still holds 37 boards and 15 starters;
+  Lever now has 4 boards, Greenhouse 19.
 - **A board whose every detail fetch fails now says why.** Eightfold, Workday, SmartRecruiters and Oracle HCM
   dropped the per-posting errors when they returned `all N detail fetches failed`, so `board_scans.error` could not
   tell a 404 from a timeout or a throttle. The first failure's text now follows the unchanged prefix (T324).
