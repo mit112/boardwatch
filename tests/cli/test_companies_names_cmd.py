@@ -17,6 +17,7 @@ from sqlalchemy import insert, select
 from typer.testing import CliRunner
 
 from boardwatch.cli.app import app
+from boardwatch.core.normalize import normalize_company
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 
@@ -80,6 +81,63 @@ def test_add_still_prefers_the_bundled_registrys_own_name(tmp_path: Path) -> Non
     """The registry knows this board, and a curated name beats a derived token."""
     assert _cli(tmp_path, ["add", "greenhouse:stripe"]).exit_code == 0
     assert _names(tmp_path) == {"greenhouse:stripe": "Stripe"}
+
+
+# ---------------------------------------------------------------- `add --name` (T273)
+
+_WORKDAY_URL = "https://acmecorp.wd5.myworkdayjobs.com/en-US/AcmeExternal"
+_WORKDAY_BOARD = "workday:acmecorp.wd5.myworkdayjobs.com/acmecorp/AcmeExternal"
+_LANE_ROW = {
+    "name": "Acme Corp", "provider": "linkedin", "slug": "acme-corp", "source": "lane",
+    "watched": False,
+}
+
+
+def test_add_names_a_workday_board_after_its_tenant_when_no_name_is_given(tmp_path: Path) -> None:
+    """The control for `--name`: a Workday host carries the tenant's token and nothing more, so
+    the derived name is `acmecorp` and cannot group with a lane row that says `Acme Corp`."""
+    _seed(tmp_path, [_LANE_ROW])
+    assert _cli(tmp_path, ["add", _WORKDAY_URL]).exit_code == 0
+    stored = _names(tmp_path)
+    assert stored[_WORKDAY_BOARD] == "acmecorp"
+    assert normalize_company(stored[_WORKDAY_BOARD]) != normalize_company(stored["linkedin:acme-corp"])
+
+
+def test_add_name_gives_a_new_board_the_employer_name_its_lane_rows_carry(tmp_path: Path) -> None:
+    """RED before T273: there was no `--name`, and a Workday board could only be named after its
+    tenant slug, so the two rows for one employer normalized to different strings and could not
+    group (the T74 failure). The grouping is read off what the store holds for BOTH rows."""
+    _seed(tmp_path, [_LANE_ROW])
+    result = _cli(tmp_path, ["add", _WORKDAY_URL, "--name", "  Acme Corp "])
+    assert result.exit_code == 0, result.output
+    stored = _names(tmp_path)
+    assert stored[_WORKDAY_BOARD] == "Acme Corp"
+    assert normalize_company(stored[_WORKDAY_BOARD]) == normalize_company(stored["linkedin:acme-corp"])
+
+
+def test_add_refuses_a_blank_name_and_writes_nothing(tmp_path: Path) -> None:
+    _seed(tmp_path, [])  # the schema, so "no rows" is read off a table rather than a missing one
+    result = _cli(tmp_path, ["add", _WORKDAY_URL, "--name", "   "])
+    assert result.exit_code == 1
+    assert "--name must not be blank" in result.output
+    assert _names(tmp_path) == {}
+
+
+def test_add_name_leaves_a_stored_boards_name_alone_and_says_so(tmp_path: Path) -> None:
+    """`companies.name` is a component of the `cross_host` identity, so renaming a stored row
+    stales its identity rows (`identities backfill` is the drain). `add` is not that path: the
+    stored name stands, and the operator is told rather than left believing it was applied."""
+    slug = "acmecorp.wd5.myworkdayjobs.com/acmecorp/AcmeExternal"
+    _seed(tmp_path, [
+        {"name": "acmecorp", "provider": "workday", "slug": slug, "source": "user",
+         "watched": False},
+    ])
+    result = _cli(tmp_path, ["add", _WORKDAY_URL, "--name", "Acme Corp"])
+    assert result.exit_code == 0, result.output
+    assert _names(tmp_path) == {_WORKDAY_BOARD: "acmecorp"}
+    flat = re.sub(r"\s+", " ", result.output)
+    assert "already stored under the name 'acmecorp'" in flat
+    assert "--name names a new board only" in flat
 
 
 # ---------------------------------------------------------------- the repair sweep

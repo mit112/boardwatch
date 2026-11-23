@@ -83,6 +83,12 @@ _UNPROVEN = frozenset({BoardHealth.DEAD, BoardHealth.ERROR, BoardHealth.UNREACHA
 
 _VERIFY_HELP = "Probe each board before watching it; skip any that cannot be confirmed."
 
+_NAME_HELP = (
+    "The employer's name, for a board not stored yet. A Workday or Eightfold host names only "
+    "its tenant, which cannot group with the same employer's other rows; say the name those "
+    "rows carry. A board already stored keeps the name it has."
+)
+
 # Only Workday can be sliced today: the `#group=Descriptor` fragment, the live catalog and the
 # descriptor -> opaque-id resolution all live in `providers/workday.py` and no sibling provider
 # has an equivalent. Named here rather than discovered by probing, so refusing a board of
@@ -151,8 +157,12 @@ def add(
     ctx: typer.Context,
     target: str,
     verify: bool = typer.Option(False, "--verify", help=_VERIFY_HELP),
+    employer_name: str | None = typer.Option(None, "--name", help=_NAME_HELP),
 ) -> None:
     """Watch a board by provider:slug or board URL."""
+    if employer_name is not None and not employer_name.strip():
+        console.print("[red]--name must not be blank.[/red]")
+        raise typer.Exit(code=1)  # no DB write
     try:
         provider, slug = parse_board_target(target)
     except UnknownBoardURL as exc:
@@ -160,12 +170,19 @@ def add(
         raise typer.Exit(code=1) from exc  # no DB write on the failed-validation path
     entry = _catalog_index().get((provider, slug))
     source = "registry" if entry else "user"
-    # Off the registry when it knows this board, and otherwise the employer name its SLUG
-    # names — never the slug itself, which is what named 35 live rows after their hostname and
-    # left `normalize_company` returning a different string for two rows naming one employer
-    # (T74). `derive_employer_name` is the single source of truth for that reading; when it
-    # cannot read one, the slug stands, because a guessed employer name merges two companies.
-    name = entry.name if entry else (derive_employer_name(provider, slug) or slug)
+    # What the operator said, else the registry's when it knows this board, and otherwise the
+    # employer name its SLUG names — never the slug itself, which is what named 35 live rows
+    # after their hostname and left `normalize_company` returning a different string for two rows
+    # naming one employer (T74). `derive_employer_name` is the single source of truth for that
+    # reading; when it cannot read one, the slug stands, because a guessed employer name merges
+    # two companies. A Workday host names only its TENANT (`acmecorp`, where the lane rows say
+    # `Acme Corp`), and no reading of it recovers the spaces: `--name` is how the operator says
+    # what the other rows carry (T273).
+    name = (
+        employer_name.strip()
+        if employer_name is not None
+        else (entry.name if entry else (derive_employer_name(provider, slug) or slug))
+    )
     app_ctx = build_context(ctx.obj)
     if verify:
         health = _probe([(provider, slug)], app_ctx.settings)[(provider, slug)]
@@ -179,6 +196,11 @@ def add(
             )
     with app_ctx.engine.begin() as conn:
         watched = upsert_watch(conn, provider=provider, slug=slug, name=name, source=source)
+        stored_name = conn.execute(
+            sql_select(companies.c.name).where(
+                companies.c.provider == provider, companies.c.slug == watched
+            )
+        ).scalar_one()
     if watched == slug:
         console.print(f"Watching {provider}:{slug} (source={source}).")
     elif "#" in watched and "#" not in slug:
@@ -200,6 +222,14 @@ def add(
             f"board already stored as {provider}:{watched}; no second board was added."
         )
         console.print(f"Watching {provider}:{watched}.")
+    if employer_name is not None and stored_name != name:
+        # `companies.name` is a component of the `cross_host` identity, so renaming a stored row
+        # stales its identity rows; that is `companies names` and `identities backfill`'s path,
+        # never a side effect of watching a board.
+        console.print(
+            f"[yellow]note:[/yellow] {provider}:{watched} is already stored under the name "
+            f"'{escape(stored_name)}'; --name names a new board only, so it was kept."
+        )
     if provider == "smartrecruiters":
         console.print(
             "[yellow]note:[/yellow] SmartRecruiters cannot confirm a board exists — "

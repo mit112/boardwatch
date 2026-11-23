@@ -28,6 +28,11 @@ All notable changes to this project are documented here. The format follows
   folds case, so it read them as one. It now compares the spellings (macOS and Linux behave as before). And a socket
   timeout that fired when the board's deadline and the caller's own timeout were equal (a coarse clock, Windows with
   Python 3.11 or 3.12) was reported as the caller's; it is now the deadline's (T272).
+- **`companies add --name` names a board after its employer, not its host.** A Workday host carries only the tenant
+  (`acmecorp`), so a board watched by URL was stored under that token and could not group with the same employer's
+  lane rows (`Acme Corp`): the two normalized to different strings (the T74 failure). `--name` sets the name of a
+  board that is not stored yet; a stored board keeps its name, and `add` says so, because a rename stales that row's
+  `cross_host` identities (T273).
 - **The per-board apply and the death probe read one board's rows from the company index on every SQLite.** The T256
   `likely()` hint only kept the status term off `ix_postings_status_posted_at` where the planner's estimate agreed: on
   SQLite 3.42 to 3.46 (the Python 3.11.9 builds bundle 3.46.0) three of the four statements answered with a
