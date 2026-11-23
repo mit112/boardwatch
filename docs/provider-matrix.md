@@ -1,7 +1,7 @@
 # Provider compatibility matrix
 
 The twelve providers boardwatch reads, at a glance. For the exact public endpoints and auth,
-see the [Supported boards table in the README](../README.md#supported-boards); for the
+see the [Supported boards table in the user guide](user-guide.md#supported-boards); for the
 behavioural limits behind the last column, see [provider notes](providers.md).
 
 Registry counts are the boards bundled in `src/boardwatch/registry/companies.yaml`. You can

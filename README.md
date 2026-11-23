@@ -158,8 +158,9 @@ More: [the daily pipeline](https://github.com/mit112/boardwatch/blob/main/docs/u
 
 Ranking tells you how well a posting fits. The eligibility audit tells you whether you could
 apply at all, and shows its work. You describe your situation once
-(`boardwatch eligibility facts set work_authorization.status citizen`, and so on), and every
-posting is read for catalogued requirements and resolved against those facts:
+(`boardwatch eligibility facts set work_authorization.status needs_sponsorship`, then the same
+with `work_authorization.jurisdiction us`, and so on), and every posting is read for catalogued
+requirements and resolved against those facts:
 
 ```console
 Eligibility: ineligible
