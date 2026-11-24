@@ -111,7 +111,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     "eightfold": FixtureProvenance(
         captured=date(2026, 9, 6),
         review_by=date(2027, 2, 21),
-        readme_pin="sha256:51f1ad65aa97b0512e6cf1ac0ca5e8cf4097042366be2eb0c91801d1db42cd52",
+        readme_pin="sha256:35959b364818be79d776241c0d6276bc40110ea7af8b59d2cb9692d2e3a8a103",
         extensions=(
             Extension(on=date(2026, 11, 23), reason="live shape re-checked (D-697)"),
         ),

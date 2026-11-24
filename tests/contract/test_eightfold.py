@@ -902,3 +902,142 @@ def test_listing_gate_reads_all_locations_and_scalar_fallback() -> None:
     assert _listing_fields(row) == ("1", "Engineer", ["India", "USA"], "unknown")
     row["locations"] = []
     assert _listing_fields(row) == ("1", "Engineer", ["Canada"], "unknown")
+
+
+# ---------------------------------------------------------------- the legacy SmartApply site
+
+LEGACY_SEARCH = f"https://{SLUG}/api/apply/v2/jobs"
+
+
+def _legacy_boot_html(domain: str = DOMAIN) -> bytes:
+    """A legacy tenant's career page (property 8): NO `pcsx-data`, and the domain in a
+    `<code id="smartApplyData">` element in the same HTML-escaped JSON shape."""
+    escaped = json.dumps({"domain": domain, "user": "", "isUserAuthenticated": False}).replace(
+        '"', "&#34;"
+    )
+    return (
+        b"<!DOCTYPE html><html><body><div id=\"root\"></div>"
+        b'<code id="smartApplyData" style="display:none;" data-nosnippet>'
+        + escaped.encode()
+        + b"</code></body></html>"
+    )
+
+
+def _legacy_row(posting_id: int, name: str, work: str | None = "onsite") -> dict[str, Any]:
+    """A listed legacy position in the recorded shape: snake_case, unenveloped, no body."""
+    return {
+        "id": posting_id, "name": name, "posting_name": name,
+        "location": "Springfield,Oregon,United States of America",
+        "locations": ["Springfield,Oregon,United States of America"],
+        "department": "Platform", "t_create": 1788652800, "t_update": 1790000000,
+        "work_location_option": work, "job_description": "",
+        "canonicalPositionUrl": f"https://{SLUG}/careers/job/{posting_id}?microsite={DOMAIN}",
+    }
+
+
+def _mock_legacy_board(rows: list[dict[str, Any]]) -> None:
+    respx.get(BOOT_URL).mock(return_value=httpx.Response(200, content=_legacy_boot_html()))
+    respx.get(LEGACY_SEARCH, params={"domain": DOMAIN, "start": "0"}).mock(
+        return_value=httpx.Response(200, json={"domain": DOMAIN, "positions": rows,
+                                               "count": len(rows)})
+    )
+    for row in rows:
+        # measured: the detail's work_location_option is null; only the LISTED row carries it
+        detail = {**row, "job_description": f"<p>Body for {row['name']}.</p>",
+                  "work_location_option": None}
+        respx.get(f"{LEGACY_SEARCH}/{row['id']}", params={"domain": DOMAIN}).mock(
+            return_value=httpx.Response(200, json=detail)
+        )
+
+
+def test_a_page_with_only_smart_apply_data_is_paged_through_the_legacy_api() -> None:
+    domain, api = eightfold.board_api(_legacy_boot_html("acmecorp.example"))
+    assert (domain, api.legacy) == ("acmecorp.example", True)
+
+
+def test_a_page_carrying_both_blobs_stays_on_pcsx() -> None:
+    domain, api = eightfold.board_api(_boot_html() + _legacy_boot_html("other.example"))
+    assert (domain, api.legacy) == (DOMAIN, False)
+
+
+def test_a_malformed_pcsx_blob_never_falls_back_to_the_legacy_api() -> None:
+    # a PCSX tenant whose blob breaks must FAIL, not drift onto an endpoint it does not serve
+    content = b'<code id="pcsx-data">not json</code>' + _legacy_boot_html()
+    with pytest.raises(ValueError, match="pcsx-data"):
+        eightfold.board_api(content)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b'<code id="smartApplyData">not json</code>',
+        b'<code id="smartApplyData">{&#34;domain&#34;: &#34;&#34;}</code>',
+        b'<code id="smartApplyData">{&#34;domain&#34;: &#34;acme.test&amp;x=1&#34;}</code>',
+    ],
+)
+def test_an_unusable_smart_apply_blob_raises_rather_than_guessing(content: bytes) -> None:
+    with pytest.raises(ValueError, match="smartApplyData"):
+        eightfold.board_api(content)
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_legacy_board_lists_and_parses_every_posting(tmp_path: Path) -> None:
+    rows = [_legacy_row(101, "Software Engineer"), _legacy_row(102, "Data Engineer",
+                                                               "remote_local")]
+    _mock_legacy_board(rows)
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "complete", snapshot.error
+    assert snapshot.listed_ids == frozenset({"101", "102"})
+    assert snapshot.board_reported_total == 2
+    by_id = {p.provider_posting_id: p for p in snapshot.postings}
+    first, second = by_id["101"], by_id["102"]
+    assert first.body_text == "Body for Software Engineer."
+    assert first.url == f"https://{SLUG}/careers/job/101?microsite={DOMAIN}"
+    assert first.locations == ["Springfield,Oregon,United States of America"]
+    assert first.department == "Platform"
+    assert (first.remote_policy, second.remote_policy) == ("onsite", "remote")
+    # t_create, the EARLIER timestamp, is the posted date; t_update never dates a posting fresh
+    assert first.posted_at == datetime(2026, 9, 6, 0, 0)
+
+
+@respx.mock
+def test_a_legacy_listing_that_answers_non_json_fails_the_board(tmp_path: Path) -> None:
+    # what a wrong `domain` (or the service's throttle page) returns: never an empty board
+    respx.get(BOOT_URL).mock(return_value=httpx.Response(200, content=_legacy_boot_html()))
+    respx.get(LEGACY_SEARCH, params={"domain": DOMAIN, "start": "0"}).mock(
+        return_value=httpx.Response(200, content=b"Please try again later")
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "failed"
+    assert "invalid payload" in (snapshot.error or "")
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+@respx.mock
+def test_a_legacy_detail_404_keeps_the_posting_listed(tmp_path: Path) -> None:
+    rows = [_legacy_row(101, "Software Engineer"), _legacy_row(102, "Data Engineer")]
+    _mock_legacy_board(rows)
+    respx.get(f"{LEGACY_SEARCH}/102", params={"domain": DOMAIN}).mock(
+        return_value=httpx.Response(404, json={"message": "Job with ID 102 not found"})
+    )
+    snapshot = provider.fetch_board(_fetcher(tmp_path), _request())
+    assert snapshot.status == "partial"
+    assert snapshot.listed_ids == frozenset({"101", "102"})
+    assert [p.provider_posting_id for p in snapshot.postings] == ["101"]
+
+
+@respx.mock
+def test_healthcheck_a_legacy_board_is_ok(tmp_path: Path) -> None:
+    _mock_legacy_board([_legacy_row(101, "Software Engineer")])
+    assert provider.healthcheck(_fetcher(tmp_path), SLUG) is BoardHealth.OK
+
+
+@respx.mock
+def test_fetch_posting_reads_a_legacy_detail(tmp_path: Path) -> None:
+    _mock_legacy_board([_legacy_row(101, "Software Engineer")])
+    posting = provider.fetch_posting(_fetcher(tmp_path), SLUG, "101")
+    assert posting is not None
+    assert posting.body_text == "Body for Software Engineer."
+    # a lone detail has no listed row to read the remote option from: unknown, never guessed
+    assert posting.remote_policy == "unknown"

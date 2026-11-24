@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- **Eightfold boards still on the legacy SmartApply site can be scanned.** A tenant whose career page carries
+  `smartApplyData` instead of `pcsx-data` healthchecked `error`, because the provider only knew the PCSX API. It now
+  pages such a tenant through `/api/apply/v2/jobs`, reads the full JD from its detail, and takes the remote option
+  from the listed row. PCSX tenants are unchanged, and a malformed `pcsx-data` still fails the board (D-706).
+
 ## [0.7.0] - 2026-11-23
 
 Catches the published package up to `main` (327 commits since 0.6.1). The web app grows from a review queue into

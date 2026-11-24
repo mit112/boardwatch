@@ -5,7 +5,7 @@ Eightfold hosts each employer's career site on the employer's OWN domain as ofte
 `jobs.northropgrumman.com`, `bostonscientific.eightfold.ai`. That is the slug, and the
 identity consequence is spelled out in `board_hosts` below.
 
-Seven measured properties drive this design. Each has a regression test; none should be
+Eight measured properties drive this design. Each has a regression test; none should be
 "simplified" away.
 
 1. THE LISTING NEEDS A `domain` THAT THE HOST DOES NOT CARRY, so a board scan starts with an
@@ -19,7 +19,8 @@ Seven measured properties drive this design. Each has a regression test; none sh
    a composite slug was rejected: it puts a value the user cannot see on the paste path, and
    the page states it on every load.
 
-2. THE OLD `/api/apply/v2/jobs` ENDPOINT IS CLOSED. It answers HTTP 200 with
+2. THE OLD `/api/apply/v2/jobs` ENDPOINT IS CLOSED ON A PCSX TENANT (a legacy tenant is
+   property 8). It answers HTTP 200 with
    `{"message": "Not authorized for PCSX"}` on the eightfold.ai tenants and the SPA HTML on the
    custom domains. `/api/pcsx/search` is what the shipped bundle actually calls, and it needs no
    token, no cookie, no `Referer` and no `X-Requested-With` — a bare GET with a clean jar
@@ -66,6 +67,23 @@ Seven measured properties drive this design. Each has a regression test; none sh
    fetch. 405 is deliberately NOT added to `politeness._RETRYABLE_STATUSES`: on every other
    provider a 405 is a genuine method refusal, and the measurement that makes it transient is
    this service's alone.
+
+8. A TENANT STILL ON THE LEGACY "SMARTAPPLY" SITE SERVES THE OLD API, NOT PCSX (measured
+   2026-11-24 on one employer-owned host, 447 positions). Its career page carries no
+   `pcsx-data` at all; it carries `<code id="smartApplyData">`, the same HTML-escaped JSON with
+   the same `domain` key. On that tenant `/api/pcsx/search` refuses with `{"message": ...}`
+   while `/api/apply/v2/jobs?domain=&start=` answers UNENVELOPED JSON — `positions` and `count`
+   at the top level, ten rows a page whatever `num` says, `start` past the end short — and
+   `/api/apply/v2/jobs/{id}?domain=` is the detail, also unenveloped, answering an unknown id
+   with HTTP 404 `{"message": "Job with ID ... not found"}` (property 6 applies unchanged). A
+   wrong or missing `domain` answers a non-JSON "Please try again later", so a bad value fails
+   as an invalid payload, never as an empty board. The legacy field names are snake_case
+   (`job_description`, `work_location_option`, `canonicalPositionUrl`, `t_create`); the
+   `work_location_option` catalog measured the same two members, `onsite` and `remote_local`.
+   There is no posted time, only `t_create` and `t_update`: `t_create` is read as `posted_at`
+   because it is the EARLIER of the two, so a re-touched requisition is never dated fresh.
+   The legacy API is chosen ONLY when `pcsx-data` is absent and `smartApplyData` present: a
+   page carrying a malformed `pcsx-data` still fails, so no PCSX tenant can drift onto it.
 
 Detail fetches are bounded and skip known postings (the SmartRecruiters pattern), so
 `snapshot.postings` is the newly-fetched subset and `snapshot.listed_ids` carries the FULL live
@@ -119,6 +137,8 @@ _HOST_FORBIDDEN = frozenset(":@?#\\%[]")
 # The SPA's boot blob: HTML-escaped JSON in a <code id="pcsx-data"> element. Non-greedy to the
 # first closing tag, which is correct because the payload is escaped and cannot contain one.
 _PCSX_DATA = re.compile(rb'<code[^>]*id="pcsx-data"[^>]*>(.*?)</code>', re.DOTALL)
+# The legacy site's boot blob (property 8): the same escaped-JSON shape under another id.
+_SMART_APPLY_DATA = re.compile(rb'<code[^>]*id="smartApplyData"[^>]*>(.*?)</code>', re.DOTALL)
 # The `domain` value is interpolated into a query string, so it is validated as the
 # hostname-shaped token every measured tenant reports rather than trusted and quoted.
 _LABEL = r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?"
@@ -291,19 +311,74 @@ def board_domain(content: bytes) -> str:
     a 200 that returns HTML, so an unvalidated value would fail as a parse error one request
     later with nothing pointing back here.
     """
-    match = _PCSX_DATA.search(content)
+    return _blob_domain(content, _PCSX_DATA, "pcsx-data")
+
+
+def _blob_domain(content: bytes, element: re.Pattern[bytes], name: str) -> str:
+    match = element.search(content)
     if match is None:
-        raise ValueError("no <code id=\"pcsx-data\"> element: not an Eightfold career page")
+        raise ValueError(f"no <code id=\"{name}\"> element: not an Eightfold career page")
     try:
         blob = json.loads(html.unescape(match.group(1).decode("utf-8", "replace")))
     except ValueError as exc:
-        raise ValueError(f"pcsx-data is not JSON: {exc}") from exc
+        raise ValueError(f"{name} is not JSON: {exc}") from exc
     if not isinstance(blob, dict):
-        raise ValueError("pcsx-data is not a JSON object")
+        raise ValueError(f"{name} is not a JSON object")
     domain = blob.get("domain")
     if not isinstance(domain, str) or not _DOMAIN_RE.match(domain.strip().lower()):
-        raise ValueError(f"pcsx-data carries no usable domain (got {domain!r})")
+        raise ValueError(f"{name} carries no usable domain (got {domain!r})")
     return domain.strip().lower()
+
+
+@dataclass(frozen=True)
+class _Api:
+    """Which of the tenant's two listing APIs a board is paged through (property 8)."""
+
+    legacy: bool
+
+    def search_url(self, host: str, domain: str, start: int) -> str:
+        if self.legacy:
+            return f"https://{host}/api/apply/v2/jobs?domain={domain}&start={start}"
+        return f"https://{host}/api/pcsx/search?domain={domain}&start={start}"
+
+    def detail_url(self, host: str, domain: str, posting_id: str) -> str:
+        if self.legacy:
+            return f"https://{host}/api/apply/v2/jobs/{posting_id}?domain={domain}"
+        return position_details_url(host, domain, posting_id)
+
+    def data(self, content: bytes) -> dict[str, Any] | None:
+        """The payload object: the PCSX envelope's `data`, or the legacy body itself."""
+        return _json_object(content) if self.legacy else _envelope_data(content)
+
+    def respell(self, row: dict[str, Any]) -> dict[str, Any]:
+        """A legacy listed row or detail in the PCSX spelling `parse_posting` reads. BOTH are
+        respelled: measured, the legacy DETAIL carries `work_location_option: null` and only
+        the LISTED row carries `onsite` / `remote_local`. The legacy keys stay, so `raw_json`
+        still holds what the service sent."""
+        if not self.legacy:
+            return row
+        return {
+            **row,
+            "jobDescription": row.get("job_description"),
+            "workLocationOption": row.get("work_location_option"),
+            "publicUrl": row.get("canonicalPositionUrl"),
+            "postedTs": row.get("t_create"),
+        }
+
+
+_PCSX = _Api(legacy=False)
+_LEGACY = _Api(legacy=True)
+
+
+def board_api(content: bytes) -> tuple[str, _Api]:
+    """The tenant's `domain` and the API that serves it, out of its career page.
+
+    Legacy only when `pcsx-data` is ABSENT and `smartApplyData` is present (property 8); any
+    other page goes through `board_domain`, so a malformed PCSX blob still raises.
+    """
+    if _PCSX_DATA.search(content) is None and _SMART_APPLY_DATA.search(content) is not None:
+        return _blob_domain(content, _SMART_APPLY_DATA, "smartApplyData"), _LEGACY
+    return board_domain(content), _PCSX
 
 
 def validated_host(slug: str) -> str:
@@ -384,12 +459,6 @@ class EightfoldProvider:
         has yielded the tenant's `domain` (property 1)."""
         return f"https://{validated_host(slug)}/careers"
 
-    def _search_url(self, host: str, domain: str, start: int) -> str:
-        return f"https://{host}/api/pcsx/search?domain={domain}&start={start}"
-
-    def _detail_url(self, host: str, domain: str, posting_id: str) -> str:
-        return position_details_url(host, domain, posting_id)
-
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         ledger = _ThrottleLedger()
         try:
@@ -407,11 +476,11 @@ class EightfoldProvider:
                 throttle_retries=ledger.retries, throttle_exhausted=ledger.exhausted,
             )
         try:
-            domain = board_domain(boot.content)
+            domain, api = board_api(boot.content)
         except ValueError as exc:
             return _failed(request.url, f"career page bootstrap: {exc}", ledger)
 
-        listed, total, errors = self._page_listing(fetcher, host, domain, ledger)
+        listed, total, errors = self._page_listing(fetcher, host, domain, api, ledger)
         if listed is None:
             return _failed(request.url, errors[0], ledger)
 
@@ -457,7 +526,7 @@ class EightfoldProvider:
                 break
             posting_id = str(row.get("id"))
             try:
-                detail_res = _get(fetcher, self._detail_url(host, domain, posting_id), ledger)
+                detail_res = _get(fetcher, api.detail_url(host, domain, posting_id), ledger)
             except FetchFailure as exc:
                 # Includes the 404 "Position not found" signature: a FAILURE, never a close
                 # signal (property 6). The id stays in listed_ids.
@@ -465,14 +534,14 @@ class EightfoldProvider:
                 errors.append(f"posting {posting_id} detail: {exc}")
                 first_failure = first_failure or errors[-1]
                 continue
-            detail = _envelope_data(detail_res.content)
+            detail = api.data(detail_res.content)
             if not detail:
                 detail_failures += 1
                 errors.append(f"posting {posting_id} detail: malformed payload")
                 first_failure = first_failure or errors[-1]
                 continue
             try:
-                postings.append(parse_posting(host, row, detail))
+                postings.append(parse_posting(host, row, api.respell(detail)))
             except Exception as exc:  # per-posting isolation
                 errors.append(f"posting {posting_id}: {exc}")
 
@@ -532,20 +601,21 @@ class EightfoldProvider:
         ledger = _ThrottleLedger()
         host = validated_host(slug)
         boot = _get(fetcher, self.board_url(slug), ledger)
-        domain = board_domain(boot.content)
+        domain, api = board_api(boot.content)
         try:
-            result = _get(fetcher, self._detail_url(host, domain, provider_posting_id), ledger)
+            result = _get(fetcher, api.detail_url(host, domain, provider_posting_id), ledger)
         except FetchFailure as exc:
             if exc.status_code == 404:
                 return None
             raise
-        detail = _envelope_data(result.content)
+        detail = api.data(result.content)
         if not detail:
             raise ValueError("detail payload carries no data object")
+        detail = api.respell(detail)
         return parse_posting(host, detail, detail)
 
     def _page_listing(
-        self, fetcher: Fetcher, host: str, domain: str, ledger: _ThrottleLedger
+        self, fetcher: Fetcher, host: str, domain: str, api: _Api, ledger: _ThrottleLedger
     ) -> tuple[list[dict[str, Any]] | None, int | None, list[str]]:
         """(rows, the board's reported count, errors). rows is None iff the FIRST page failed,
         which is the one condition that makes the whole scan `failed` rather than partial —
@@ -556,13 +626,13 @@ class EightfoldProvider:
         for page in range(_MAX_PAGES):
             start = page * _PAGE_SIZE
             try:
-                result = _get(fetcher, self._search_url(host, domain, start), ledger)
+                result = _get(fetcher, api.search_url(host, domain, start), ledger)
             except FetchFailure as exc:
                 if page == 0:
                     return None, None, [f"listing at start 0: {exc}"]
                 errors.append(f"listing at start {start}: {exc}")
                 break
-            data = _envelope_data(result.content)
+            data = api.data(result.content)
             if data is None or not isinstance(data.get("positions"), list):
                 message = f"listing at start {start}: invalid payload"
                 if page == 0:
@@ -572,7 +642,7 @@ class EightfoldProvider:
             if page == 0:
                 count = data.get("count")
                 total = max(0, int(count)) if isinstance(count, int) else None
-            positions = [p for p in data["positions"] if isinstance(p, dict)]
+            positions = [api.respell(p) for p in data["positions"] if isinstance(p, dict)]
             rows.extend(positions)
             if len(data["positions"]) < _PAGE_SIZE:
                 break
@@ -596,14 +666,14 @@ class EightfoldProvider:
         except FetchFailure as exc:
             return health_from_failure(exc)
         try:
-            domain = board_domain(boot.content)
+            domain, api = board_api(boot.content)
         except ValueError:
             return BoardHealth.ERROR
         try:
-            result = _get(fetcher, self._search_url(host, domain, 0), ledger)
+            result = _get(fetcher, api.search_url(host, domain, 0), ledger)
         except FetchFailure as exc:
             return health_from_failure(exc)
-        data = _envelope_data(result.content)
+        data = api.data(result.content)
         if data is None or not isinstance(data.get("positions"), list):
             return BoardHealth.ERROR
         return BoardHealth.OK if data["positions"] else BoardHealth.EMPTY

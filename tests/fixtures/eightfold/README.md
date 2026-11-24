@@ -52,6 +52,14 @@ The live probe forced five corrections to the assumed shape, all reflected here:
    SmartRecruiters' `active: false` — an explicit flag inside a 200 — this is
    indistinguishable from an edge blip, so the provider keeps the id in its live inventory.
 
+## Legacy SmartApply tenants (D-706)
+
+Correction 1 holds on PCSX tenants only. A tenant still on the legacy SmartApply site (measured on one employer-owned
+host on **2026-11-24**) has no `pcsx-data` and states its `domain` in `<code id="smartApplyData">` instead, and there
+`/api/apply/v2/jobs` and `/api/apply/v2/jobs/{id}` are the live, unenveloped listing and detail. Those payloads are
+synthetic literals inlined in `tests/contract/test_eightfold.py` (same reasoning as the boot page). The measured
+detail carries `work_location_option: null`, so the fixture's detail does too, and only the listed row carries it.
+
 ## Which validators the live API serves: none
 
 Across all four probed tenants the career page and `/api/pcsx/search` both return **no
