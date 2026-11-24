@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -83,6 +83,7 @@ from boardwatch.providers.base import (
     apply_listing_gate,
     detail_phase_stops,
     employer_label_from_host,
+    head_shadow,
     health_from_failure,
 )
 
@@ -300,6 +301,7 @@ class OracleHCMProvider:
         total: int | None = None
         observed = None
         capped = True
+        page_ends: list[int] = []  # len(listed) after each page read: the head-scan shadow's pages
 
         for page_index in range(_MAX_PAGES):
             offset = page_index * _PAGE_LIMIT
@@ -364,6 +366,7 @@ class OracleHCMProvider:
                     continue
                 seen_ids.add(key)
                 listed.append(row)
+            page_ends.append(len(listed))
             if len(rows) < _PAGE_LIMIT:
                 # THE termination condition. NOT the echoed `Limit`, which reports whatever
                 # was asked for even when the server clamped the page to 200 (property 2).
@@ -399,6 +402,10 @@ class OracleHCMProvider:
             row for row in listed if str(row["Id"]) not in request.known_posting_ids
         ]
         unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
+        shadow = head_shadow(
+            listed, page_ends, {str(row["Id"]) for row in unseen},
+            lambda row: str(row["Id"]), _listed_day,
+        )
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length.
         unseen_before_truncation = unseen
@@ -465,6 +472,9 @@ class OracleHCMProvider:
             board_enumerated=len(seen_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
             gated_listings=gated,
+            listing_pages=shadow.listing_pages,
+            head_pages=shadow.head_pages,
+            head_missed=shadow.head_missed,
         )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
@@ -515,6 +525,12 @@ def _detail_item(content: bytes) -> dict[str, Any] | None:
     if not items:
         return {}
     return items[0] if isinstance(items[0], dict) else None
+
+
+def _listed_day(row: dict[str, Any], today: date) -> date | None:
+    """The listing's date-only `PostedDate`, or None when it cannot be read (fresh)."""
+    posted = _iso_to_naive_utc(row.get("PostedDate"))
+    return None if posted is None else posted.date()
 
 
 def _listing_fields(row: dict[str, Any]) -> tuple[str, str, list[str], str]:

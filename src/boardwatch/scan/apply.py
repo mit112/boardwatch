@@ -734,5 +734,8 @@ def _scan_row(
                 if snapshot is None or snapshot.board_total_censored is None
                 else int(snapshot.board_total_censored)
             ),
+            listing_pages=None if snapshot is None else snapshot.listing_pages,
+            head_pages=None if snapshot is None else snapshot.head_pages,
+            head_missed=None if snapshot is None else snapshot.head_missed,
         )
     )

@@ -79,7 +79,8 @@ postings only, within the budget.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+import re
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
 
@@ -91,6 +92,7 @@ from boardwatch.providers.base import (
     BoardHealth,
     apply_listing_gate,
     detail_phase_stops,
+    head_shadow,
     health_from_failure,
 )
 from boardwatch.rank.location_gate import resolve_countries
@@ -727,6 +729,7 @@ class WorkdayProvider:
         board_censored: bool | None = None
         observed = None
         capped = True
+        page_ends: list[int] = []  # len(listed) after each page read: the head-scan shadow's pages
 
         for page_index in range(_MAX_PAGES):
             offset = page_index * _PAGE_LIMIT
@@ -774,6 +777,7 @@ class WorkdayProvider:
                 errors.append(
                     f"page at offset {offset}: dropped {dropped} rows with no externalPath"
                 )
+            page_ends.append(len(listed))
             if len(rows) < _PAGE_LIMIT:
                 # THE termination condition. NOT `offset < total`: total is capped at 2000
                 # and offset >= 2000 wraps to page 1, so that loop never terminates.
@@ -826,6 +830,10 @@ class WorkdayProvider:
             (pid, row) for pid, row in by_id.items() if pid not in request.known_posting_ids
         ]
         unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
+        shadow = head_shadow(
+            listed, page_ends, {pid for pid, _ in unseen},
+            lambda row: _posting_id(str(row.get("externalPath") or "")), _listed_day,
+        )
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -891,6 +899,9 @@ class WorkdayProvider:
             detail_deferred=len(unseen_before_truncation) - len(unseen),
             gated_listings=gated,
             board_total_censored=board_censored,
+            listing_pages=shadow.listing_pages,
+            head_pages=shadow.head_pages,
+            head_missed=shadow.head_missed,
         )
 
     def fetch_posting(
@@ -989,6 +1000,21 @@ def _collect(
         seen_paths.add(path)
         listed.append(row)
     return dropped
+
+
+_POSTED_DAYS_AGO = re.compile(r"Posted (\d+)\+? Days Ago")
+
+
+def _listed_day(row: dict[str, Any], today: date) -> date | None:
+    """The listing's `postedOn`, which is relative English text ("Posted Today", "Posted 3 Days
+    Ago", "Posted 30+ Days Ago"), as a date. Anything else is None: unreadable, so fresh."""
+    text = str(row.get("postedOn") or "")
+    if text == "Posted Today":
+        return today
+    if text == "Posted Yesterday":
+        return today - timedelta(days=1)
+    match = _POSTED_DAYS_AGO.fullmatch(text)
+    return today - timedelta(days=int(match.group(1))) if match else None
 
 
 def _listing_fields(item: tuple[str, dict[str, Any]]) -> tuple[str, str, list[str], str]:

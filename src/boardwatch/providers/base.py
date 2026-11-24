@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from datetime import date, timedelta
 from enum import StrEnum
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Any, NamedTuple, Protocol, TypeVar, runtime_checkable
 
+from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardRequest, BoardSnapshot, GatedListing, RawPosting
 from boardwatch.core.politeness import Fetcher, FetchFailure
 
@@ -59,6 +61,65 @@ def board_clock_deferral(deferred: int) -> str:
         f"detail phase stopped before the board deadline: {deferred} unseen postings "
         "deferred to the next scan"
     )
+
+
+_Listed = TypeVar("_Listed")
+
+HEAD_QUIET_PAGES = 2
+"""T340's stop rule, measured by T338 (2026-11-24): a newest-first head scan stops after this many
+consecutive pages holding neither a new row nor a fresh one. At 1 it missed fresh Workday rows."""
+
+
+class HeadShadow(NamedTuple):
+    listing_pages: int
+    head_pages: int
+    head_missed: int
+
+
+def head_scan_shadow(pages: Sequence[Sequence[tuple[bool, bool]]]) -> HeadShadow:
+    """Where a head scan would have stopped on this full listing, and what it would have missed.
+
+    `pages` is the listing as it was requested, one entry per page in order, each row a pair
+    `(new, fresh)`: `new` when the row is not an open posting and the listing gate kept it (a row
+    this scan detail-fetches), `fresh` when its listed date is within the last day. A head scan
+    stops after HEAD_QUIET_PAGES consecutive pages with neither; `head_missed` counts the new rows
+    on the pages it would not have read. This is a SHADOW: nothing reads it to change a scan.
+    """
+    quiet = 0
+    for index, page in enumerate(pages):
+        quiet = 0 if any(new or fresh for new, fresh in page) else quiet + 1
+        if quiet >= HEAD_QUIET_PAGES:
+            missed = sum(new for later in pages[index + 1 :] for new, _ in later)
+            return HeadShadow(len(pages), index + 1, missed)
+    return HeadShadow(len(pages), len(pages), 0)
+
+
+def listed_within_a_day(day: date | None, today: date) -> bool:
+    """A row's freshness for the head scan. An unreadable date is fresh: the head scan then keeps
+    paging, which costs requests and never a lead."""
+    return day is None or day >= today - timedelta(days=1)
+
+
+def head_shadow(
+    listed: Sequence[_Listed],
+    page_ends: Sequence[int],
+    new_ids: frozenset[str] | set[str],
+    row_id: Callable[[_Listed], str],
+    row_day: Callable[[_Listed, date], date | None],
+) -> HeadShadow:
+    """`head_scan_shadow` over a provider's listing: `listed` in listing order, `page_ends[i]` the
+    number of rows collected once page i was read (a page that added none still counts)."""
+    today = utcnow().date()
+    pages, start = [], 0
+    for end in page_ends:
+        pages.append(
+            [
+                (row_id(row) in new_ids, listed_within_a_day(row_day(row, today), today))
+                for row in listed[start:end]
+            ]
+        )
+        start = end
+    return head_scan_shadow(pages)
 
 
 _Row = TypeVar("_Row")

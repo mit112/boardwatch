@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Paged boards record where a head-of-list scan would have stopped (T340 shadow).** On every full listing, Workday,
+  SmartRecruiters and Oracle HCM boards now record on `board_scans` how many listing pages they requested
+  (`listing_pages`), how many a newest-first head scan would have read (`head_pages`: stop after two pages with no new
+  row the listing gate keeps and no row dated within a day), and how many of the rows this scan fetched sat beyond
+  that point (`head_missed`). Nothing reads them to change a scan yet: a week of nightlies checks the rule before it
+  is armed. One additive store migration (`p_head_shadow`).
+
 ### Fixed
 
 - **Eightfold boards still on the legacy SmartApply site can be scanned.** A tenant whose career page carries

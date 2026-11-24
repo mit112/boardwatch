@@ -239,6 +239,13 @@ class BoardSnapshot(BaseModel):
     # keystone invariant refuses (a thing that cannot fire must be visible, not invisible).
     throttle_retries: int | None = None
     throttle_exhausted: int | None = None
+    # T340's shadow, from a paged newest-first provider (Workday, SmartRecruiters, Oracle HCM):
+    # listing pages this scan requested, how many a head scan would have read, and the rows this
+    # scan detail-fetches that sat on the pages it would have skipped (`base.head_shadow`).
+    # `None` means the provider does not compute it, never zero.
+    listing_pages: int | None = None
+    head_pages: int | None = None
+    head_missed: int | None = None
 
     @model_validator(mode="after")
     def _postings_empty_for_unchanged_and_failed(self) -> BoardSnapshot:

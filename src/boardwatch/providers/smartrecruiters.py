@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -49,6 +49,7 @@ from boardwatch.providers.base import (
     BoardHealth,
     apply_listing_gate,
     detail_phase_stops,
+    head_shadow,
     health_from_failure,
 )
 
@@ -149,6 +150,7 @@ class SmartRecruitersProvider:
         except (KeyError, TypeError, ValueError):
             return _failed(request.url, "invalid board payload: missing 'totalFound'")
         listed: list[dict[str, Any]] = [e for e in payload["content"] if isinstance(e, dict)]
+        page_ends = [len(listed)]  # len(listed) after each page read: the head-scan shadow's pages
 
         errors: list[str] = []
         offset = _PAGE_LIMIT
@@ -163,6 +165,7 @@ class SmartRecruitersProvider:
                 errors.append(f"page at offset {offset}: invalid payload")
                 break
             listed.extend(e for e in page_obj["content"] if isinstance(e, dict))
+            page_ends.append(len(listed))
             offset += _PAGE_LIMIT
 
         listed_ids = {str(e["id"]) for e in listed if e.get("id") is not None}
@@ -175,6 +178,10 @@ class SmartRecruitersProvider:
         budget = request.detail_budget
         unseen = [e for e in listed if str(e.get("id")) not in request.known_posting_ids]
         unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
+        shadow = head_shadow(
+            listed, page_ends, {str(e.get("id")) for e in unseen},
+            lambda e: str(e.get("id")), _listed_day,
+        )
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
         # reflects what the budget actually cut, not the post-truncation length (D-271).
         unseen_before_truncation = unseen
@@ -247,6 +254,9 @@ class SmartRecruitersProvider:
             board_enumerated=len(listed_ids),
             detail_deferred=len(unseen_before_truncation) - len(unseen),
             gated_listings=gated,
+            listing_pages=shadow.listing_pages,
+            head_pages=shadow.head_pages,
+            head_missed=shadow.head_missed,
         )
 
     def fetch_posting(
@@ -311,6 +321,12 @@ def parse_posting(listed: dict[str, Any], detail: dict[str, Any]) -> RawPosting:
         body_text=_body_text(detail),
         raw_json={"listed": listed, "detail": detail},
     )
+
+
+def _listed_day(entry: dict[str, Any], today: date) -> date | None:
+    """The listing's `releasedDate` as a UTC date, or None when it cannot be read (fresh)."""
+    released = _iso_to_naive_utc(entry.get("releasedDate"))
+    return None if released is None else released.date()
 
 
 def _listing_fields(entry: dict[str, Any]) -> tuple[str, str, list[str], RemotePolicy]:
