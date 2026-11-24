@@ -64,13 +64,25 @@ and would pollute `content_hash`, which is what detects a real revision. Only th
 this path.
 
 `fetch_board` must never raise: every JSON level is validated as dict/list before use.
+
+6. PAST 10,000 ROWS THE LIST ANSWERS EMPTY (T352). A board over that window is listed as two
+   children instead, by the posting-date facet in the finder: `selectedPostingDatesFacet=30`
+   (under 30 days) and `=31` (over). Measured 2026-11-24, the ids are the same on three tenants
+   and the two children partition each board exactly: ejwl 9,214 + 3,724 = 12,938, jpmc
+   3,420 + 3,403 = 6,823, eigx 331 + 4,250 = 4,581. Facet 7 ("under 7 days") is a SUBSET of 30,
+   so it is never a child. The split board is `complete` only when the children's totals sum to
+   the root's, each is within the window and listed its own total in distinct ids, and nothing
+   failed; a child still over the window leaves the board `partial`.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from functools import partial
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -94,6 +106,12 @@ _PAGE_LIMIT = 200
 # 60 pages x 200 = 12,000, well past the largest board measured (2,273). A backstop only:
 # normal termination is a short page.
 _MAX_PAGES = 60
+# Property 6: the rows a query can page through, and the two posting-date facet values that
+# partition a board (under 30 days, over 30 days). A split board may spend two full windows:
+# each child's pages and the short page that ends it, plus the root's first page.
+_RESULT_WINDOW = 10_000
+_POSTING_DATE_PARTS = ("30", "31")
+_SPLIT_MAX_PAGES = 2 * (_RESULT_WINDOW // _PAGE_LIMIT + 1) + 1
 # The three external sections, in the order they are concatenated. Fixed, because
 # content_hash is order-sensitive and a reordering would read as a revision on every posting.
 _BODY_SECTIONS = (
@@ -212,6 +230,110 @@ def _failed(
     )
 
 
+@dataclass
+class _Listing:
+    """A board's listing as it is read: every row once by `Id`, in request order.
+
+    `requests` counts every listing GET sent, failed ones included, and is what the page budget
+    bounds; `page_ends` has one entry per page READ, which is what `listing_pages` reports."""
+
+    requests: int = 0
+    listed: list[dict[str, Any]] = field(default_factory=list)
+    seen_ids: set[str] = field(default_factory=set)
+    page_ends: list[int] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def read(self, rows: list[dict[str, Any]], scope: set[str]) -> int:
+        """Take one page into the board's inventory and into `scope`, the ids the query that
+        served it has listed, and return how many of its ids that query had ALREADY served. An
+        id-less row is skipped, as it always was: it is counted by `TotalJobsCount`, so a board
+        serving one stays short of complete."""
+        repeated = 0
+        for row in rows:
+            posting_id = row.get("Id")
+            if posting_id is None:
+                continue
+            key = str(posting_id)
+            repeated += key in scope
+            scope.add(key)
+            if key not in self.seen_ids:
+                self.seen_ids.add(key)
+                self.listed.append(row)
+        self.page_ends.append(len(self.listed))
+        return repeated
+
+
+def _page_query(
+    fetcher: Fetcher,
+    page_url: Callable[..., str],
+    first_rows: list[dict[str, Any]],
+    listing: _Listing,
+    *,
+    budget: int,
+    label: str = "",
+    watch_deadline: bool = False,
+) -> tuple[str, set[str], int]:
+    """Page one query to its end, its offset-0 page (`first_rows`) already requested.
+
+    Returns how it ended, the ids THIS query listed, and how many ids it served on more than one
+    page (offset paging over a listing that moved while it was read). "short" is the only complete
+    ending; the others are "repeat", "cap" (`budget` requests spent across the board), "failed"
+    and "deadline". The unsplit listing is exactly the pager this module always ran: the same
+    requests and the same notes. Only a split watches the board's deadline."""
+    scope: set[str] = set()
+    rows, offset, repeated = first_rows, 0, 0
+    while True:
+        before = len(scope)
+        repeated += listing.read(rows, scope)
+        if len(rows) < _PAGE_LIMIT:
+            # THE termination condition. NOT the echoed `Limit`, which reports whatever
+            # was asked for even when the server clamped the page to 200 (property 2).
+            return "short", scope, repeated
+        if len(scope) == before:
+            # A FULL page that added no new id is a repeat of one already collected.
+            # Stop, and stay partial so apply_board does not close postings we stopped
+            # re-listing (the Workday offset-wrap guard, same failure mode).
+            listing.errors.append(
+                f"{label}page at offset {offset} added no new postings; stopping "
+                f"({len(scope)} collected, listing may be incomplete)"
+            )
+            return "repeat", scope, repeated
+        if listing.requests >= budget:
+            return "cap", scope, repeated
+        offset += _PAGE_LIMIT
+        if watch_deadline and not fetcher.request_fits_board_deadline():
+            return "deadline", scope, repeated
+        listing.requests += 1
+        try:
+            page = fetcher.get(page_url(offset=offset))
+        except FetchFailure as exc:
+            listing.errors.append(f"{label}page at offset {offset}: {exc}")
+            return "failed", scope, repeated
+        item = _search_item(page.content)
+        if item is None:
+            listing.errors.append(f"{label}page at offset {offset}: invalid payload")
+            return "failed", scope, repeated
+        next_rows = _requisition_rows(item)
+        if next_rows is None:
+            # Property 1. Distinguished from a short page ([]) on purpose: this is a 200
+            # that enumerates nothing while claiming a total, which must never read as a
+            # complete empty board.
+            listing.errors.append(
+                f"{label}page at offset {offset}: no 'requisitionList' in the response "
+                "(the expand parameter is required to get any rows)"
+            )
+            return "failed", scope, repeated
+        rows = next_rows
+
+
+def _total(item: dict[str, Any]) -> int | None:
+    """`TotalJobsCount`, meaningful at offset 0 only (property 3)."""
+    try:
+        return max(0, int(item["TotalJobsCount"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 class OracleHCMProvider:
     name = "oraclehcm"
     # Oracle Fusion hostnames are unbounded ({tenant}.fa.{region}.oraclecloud.com,
@@ -272,14 +394,18 @@ class OracleHCMProvider:
         the call."""
         return self._page_url(*split_slug(slug), offset=0)
 
-    def _page_url(self, host: str, site: str, *, offset: int) -> str:
+    def _page_url(
+        self, host: str, site: str, *, offset: int, posting_dates: str | None = None
+    ) -> str:
         # `expand` is NOT optional here — without it the response carries no requisitionList
         # at all (property 1). Parameter order is fixed because this string is the cache key.
+        # `posting_dates` is a split child's facet (property 6); the root's URL never has one.
+        facet = "" if posting_dates is None else f",selectedPostingDatesFacet={posting_dates}"
         return (
             f"https://{host}/hcmRestApi/resources/latest/recruitingCEJobRequisitions"
             "?onlyData=true&expand=requisitionList.secondaryLocations"
             f"&finder=findReqs;siteNumber={site},limit={_PAGE_LIMIT},offset={offset}"
-            ",sortBy=POSTING_DATES_DESC"
+            f",sortBy=POSTING_DATES_DESC{facet}"
         )
 
     def _detail_url(self, host: str, site: str, posting_id: str) -> str:
@@ -295,104 +421,50 @@ class OracleHCMProvider:
         except ValueError as exc:
             return _failed(request.url, f"invalid oraclehcm slug: {exc}")
 
-        errors: list[str] = []
-        listed: list[dict[str, Any]] = []
-        seen_ids: set[str] = set()
-        total: int | None = None
-        observed = None
-        capped = True
-        page_ends: list[int] = []  # len(listed) after each page read: the head-scan shadow's pages
-
-        for page_index in range(_MAX_PAGES):
-            offset = page_index * _PAGE_LIMIT
-            url = (
-                request.url
-                if page_index == 0
-                else self._page_url(host, site, offset=offset)
+        try:
+            page = fetcher.get(request.url, validators=request.validators)
+        except FetchFailure as exc:
+            return _failed(request.url, str(exc))
+        if page.not_modified:
+            return BoardSnapshot(
+                status="unchanged", postings=[], url=request.url,
+                observed_validators=None, error=None,
             )
-            try:
-                page = fetcher.get(
-                    url, validators=request.validators if page_index == 0 else None
-                )
-            except FetchFailure as exc:
-                if page_index == 0:
-                    return _failed(request.url, str(exc))
-                errors.append(f"page at offset {offset}: {exc}")
-                capped = False
-                break
-            if page_index == 0:
-                if page.not_modified:
-                    return BoardSnapshot(
-                        status="unchanged", postings=[], url=request.url,
-                        observed_validators=None, error=None,
-                    )
-                observed = page.observed_validators
-            item = _search_item(page.content)
-            if item is None:
-                if page_index == 0:
-                    return _failed(
-                        request.url, "invalid board payload: missing search 'items' envelope"
-                    )
-                errors.append(f"page at offset {offset}: invalid payload")
-                capped = False
-                break
-            rows = _requisition_rows(item)
-            if rows is None:
-                # Property 1. Distinguished from a short page ([]) on purpose: this is a 200
-                # that enumerates nothing while claiming a total, which must never read as a
-                # complete empty board.
-                message = (
-                    f"page at offset {offset}: no 'requisitionList' in the response "
-                    "(the expand parameter is required to get any rows)"
-                )
-                if page_index == 0:
-                    return _failed(request.url, f"invalid board payload: {message}")
-                errors.append(message)
-                capped = False
-                break
-            if page_index == 0:
-                # Property 3: only meaningful here. At any other offset it reads 0.
-                try:
-                    total = max(0, int(item["TotalJobsCount"]))
-                except (KeyError, TypeError, ValueError):
-                    total = None
-            before = len(listed)
-            for row in rows:
-                posting_id = row.get("Id")
-                if posting_id is None:
-                    continue
-                key = str(posting_id)
-                if key in seen_ids:
-                    continue
-                seen_ids.add(key)
-                listed.append(row)
-            page_ends.append(len(listed))
-            if len(rows) < _PAGE_LIMIT:
-                # THE termination condition. NOT the echoed `Limit`, which reports whatever
-                # was asked for even when the server clamped the page to 200 (property 2).
-                capped = False
-                break
-            if len(listed) == before:
-                # A FULL page that added no new id is a repeat of one already collected.
-                # Stop, and stay partial so apply_board does not close postings we stopped
-                # re-listing (the Workday offset-wrap guard, same failure mode).
+        observed = page.observed_validators
+        item = _search_item(page.content)
+        if item is None:
+            return _failed(request.url, "invalid board payload: missing search 'items' envelope")
+        rows = _requisition_rows(item)
+        if rows is None:
+            return _failed(
+                request.url,
+                "invalid board payload: page at offset 0: no 'requisitionList' in the response "
+                "(the expand parameter is required to get any rows)",
+            )
+        total = _total(item)
+        listing = _Listing(requests=1)
+        errors = listing.errors
+        split = total is not None and total > _RESULT_WINDOW
+        if split:
+            assert total is not None
+            # The root's own rows are kept, and not paged further: its children read them again.
+            listing.read(rows, set())
+            self._list_by_posting_date(fetcher, host, site, total, listing)
+        else:
+            ending, _, _ = _page_query(
+                fetcher, partial(self._page_url, host, site), rows, listing, budget=_MAX_PAGES,
+            )
+            if ending == "cap":
                 errors.append(
-                    f"page at offset {offset} added no new postings; stopping "
-                    f"({len(listed)} collected, listing may be incomplete)"
+                    f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete, "
+                    "treating as partial so unseen postings are not closed"
                 )
-                capped = False
-                break
-
-        if capped:
-            errors.append(
-                f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete, "
-                "treating as partial so unseen postings are not closed"
-            )
-        elif total is not None and len(seen_ids) < total:
-            errors.append(
-                f"incomplete listing: collected {len(seen_ids)} of {total} postings; "
-                "treating as partial so unseen postings are not closed"
-            )
+            elif total is not None and len(listing.seen_ids) < total:
+                errors.append(
+                    f"incomplete listing: collected {len(listing.seen_ids)} of {total} postings; "
+                    "treating as partial so unseen postings are not closed"
+                )
+        listed, seen_ids, page_ends = listing.listed, listing.seen_ids, listing.page_ends
 
         # The FULL live inventory, computed BEFORE the detail phase: known and budget-skipped
         # postings must stay in it or apply_board's _process_missing closes them.
@@ -473,9 +545,79 @@ class OracleHCMProvider:
             detail_deferred=len(unseen_before_truncation) - len(unseen),
             gated_listings=gated,
             listing_pages=shadow.listing_pages,
-            head_pages=shadow.head_pages,
-            head_missed=shadow.head_missed,
+            # A split has no single newest-first order, so no head-scan stop point (T352).
+            head_pages=None if split else shadow.head_pages,
+            head_missed=None if split else shadow.head_missed,
         )
+
+    def _list_by_posting_date(
+        self, fetcher: Fetcher, host: str, site: str, total: int, listing: _Listing
+    ) -> None:
+        """List a board over the window as its two posting-date children (property 6), noting in
+        `errors` every way the split falls short: no note left is the certificate.
+
+        Beyond each child's own count, the children's ids together must reach the board's total
+        (two overlapping children can sum right while a row is in neither), and no child may
+        serve an id on two pages: a listing that moved while it was read can push rows past the
+        window, or skip one while a newer row fills the count."""
+        totals: dict[str, int | None] = dict.fromkeys(_POSTING_DATE_PARTS)
+        union: set[str] = set()
+        for part in _POSTING_DATE_PARTS:
+            label = f"posting-date facet {part}: "
+            if listing.requests >= _SPLIT_MAX_PAGES:
+                listing.errors.append(
+                    f"{label}not read, the page budget of {_SPLIT_MAX_PAGES} is spent"
+                )
+                break
+            if not fetcher.request_fits_board_deadline():
+                listing.errors.append(f"{label}not read, the board deadline is near")
+                break
+            listing.requests += 1
+            try:
+                page = fetcher.get(self._page_url(host, site, offset=0, posting_dates=part))
+            except FetchFailure as exc:
+                listing.errors.append(f"{label}page at offset 0: {exc}")
+                continue
+            item = _search_item(page.content)
+            rows = None if item is None else _requisition_rows(item)
+            if item is None or rows is None:
+                listing.errors.append(f"{label}page at offset 0: invalid payload")
+                continue
+            totals[part] = child_total = _total(item)
+            ending, scope, repeated = _page_query(
+                fetcher, partial(self._page_url, host, site, posting_dates=part), rows,
+                listing, budget=_SPLIT_MAX_PAGES, label=label, watch_deadline=True,
+            )
+            union |= scope
+            distinct = len(scope)
+            if repeated:
+                listing.errors.append(
+                    f"{label}{repeated} postings served on two pages: the listing moved while it "
+                    "was read"
+                )
+            if ending == "cap":
+                listing.errors.append(
+                    f"{label}stopped, the page budget of {_SPLIT_MAX_PAGES} is spent"
+                )
+            elif ending == "deadline":
+                listing.errors.append(f"{label}stopped, the board deadline is near")
+            elif ending == "short" and child_total is not None and distinct < child_total:
+                listing.errors.append(
+                    f"{label}incomplete listing: collected {distinct} of {child_total} postings"
+                )
+        recent, older = (totals[part] for part in _POSTING_DATE_PARTS)
+        if (
+            recent is None or older is None or recent + older != total
+            or max(recent, older) > _RESULT_WINDOW
+        ):
+            listing.errors.append(
+                f"posting-date split does not certify: {recent} under 30 days and {older} over, "
+                f"against the board's {total}, with a window of {_RESULT_WINDOW}"
+            )
+        elif len(union) < total:
+            listing.errors.append(
+                f"posting-date split listed {len(union)} distinct postings of the board's {total}"
+            )
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         """NOTE: DEAD IS UNREACHABLE HERE, and for a worse reason than SmartRecruiters'.
