@@ -24,5 +24,6 @@ def test_head_is_the_board_scans_lane_revision() -> None:
     # Verified application destinations are independent of provider URL refreshes, and D-686
     # `p_board_scans_status_index` (the "ever completed a scan" read, from an index) sits on top,
     # and T319 `p_quarantine_last_drained` (a re-held body keeps its drain) on that, and T334
-    # `p_empty_guarded` (the guard's own scan flag, which the death-probe drain counts) on top.
-    assert schema_revision() == "p_empty_guarded"
+    # `p_empty_guarded` (the guard's own scan flag, which the death-probe drain counts) on that, and
+    # T340 `p_head_shadow` (the head-scan shadow: listing, head and missed pages) on top.
+    assert schema_revision() == "p_head_shadow"
