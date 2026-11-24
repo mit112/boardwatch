@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **A Workday board over the 2,000-row censor is listed by facet, and can now be `complete` (T351).** Such a board used
+  to read about 2,000 rows a night, stay `partial`, and never close a posting. Its listing is now split, inside the
+  board's own scope (a slice included), into one query per value of a facet group. A child still censored is split again,
+  and the whole split stays within the 150-page budget. The board is `complete` only when the group covers the board,
+  every child ends on its own last page with that many rows, and nothing fails. At every split, two independent counts
+  must state the same size, and the children together must hold it and every row of the first page. A count match alone
+  never certifies. A board whose plan does not fit is read as before. Live on genpt, 140 pages listed 2,642
+  of 2,645 postings, against 1,994 before. The first two complete sweeps of such a board close the postings it stopped
+  listing long ago: that is the backlog draining (D-708).
+
 - **Paged boards record where a head-of-list scan would have stopped (T340 shadow).** On every full listing, Workday,
   SmartRecruiters and Oracle HCM boards now record on `board_scans` how many listing pages they requested
   (`listing_pages`), how many a newest-first head scan would have read (`head_pages`: stop after two pages with no new

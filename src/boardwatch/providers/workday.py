@@ -74,12 +74,22 @@ across scans. Salary is never mined (D19).
 
 fetch_board pages the full board (trap 2 above), then fetches details for the unseen
 postings only, within the budget.
+
+7. A CENSORED LISTING IS SPLIT BY FACET, INSIDE THE BOARD'S OWN SCOPE (T351). When the
+   offset-0 page reports the censor, the root is not paged further: it is listed instead as one
+   child query per value of a facet group, each the parent's `appliedFacets` plus that value
+   (two groups are an AND, measured on genpt 2026-11-24), and a child still censored is split
+   again. Every row joins one inventory, so a split board is still ONE board. It is `complete`
+   only on the structural certificate `_run_split` checks at every split; a union that matches
+   the facet sum alone never certifies. The whole split stays within `_MAX_PAGES`: a board whose
+   plan does not fit is read blind as before, and stays `partial`.
 """
 
 from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, NamedTuple
 from urllib.parse import urlsplit
@@ -339,8 +349,13 @@ def _failed(
 _TOTAL_CENSOR = 2000
 
 
-def _facet_sum(payload: dict[str, Any]) -> int | None:
+def _facet_sum(payload: dict[str, Any], exclude: frozenset[str] = frozenset()) -> int | None:
     """The board's size by the facets' own aggregation path, or None if it yields nothing.
+
+    `exclude` names the groups the request APPLIED. A filtered response re-aggregates every other
+    group over the filtered rows but answers an applied group with its UNFILTERED counts
+    (measured on genpt 2026-11-24: filtered to one jobFamilyGroup of 393, that group still read
+    1,373 for another value), so an applied group would report its parent's size, not this one's.
 
     Every facet dimension partitions the same corpus, so they agree; the largest non-zero one
     is taken because `locationMainGroup` can sum to 0 on some tenants and would otherwise drag
@@ -360,6 +375,9 @@ def _facet_sum(payload: dict[str, Any]) -> int | None:
     sums: list[int] = []
     for facet in facets:
         if not isinstance(facet, dict):
+            continue
+        parameter = facet.get("facetParameter")
+        if isinstance(parameter, str) and parameter in exclude:
             continue
         values = facet.get("values")
         if not isinstance(values, list):
@@ -562,7 +580,9 @@ def read_facet_catalog(
     return "/".join((host, tenant, site)), facet_buckets(payload)
 
 
-def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
+def _uncapped_total(
+    payload: dict[str, Any], exclude: frozenset[str] = frozenset()
+) -> tuple[int | None, bool | None]:
     """Return (board_total, censored). None means the board stated no total — never 0, and
     censored is itself None in that case: with no total there is nothing to have censored, so
     False (a claim of "not censored") would be a claim this function cannot support.
@@ -574,17 +594,328 @@ def _uncapped_total(payload: dict[str, Any]) -> tuple[int | None, bool | None]:
     "4,589, recovered by a second path" and "at least 2,000, floor only" both reading
     `censored=1`. With None, `censored and board_reported_total is not None` means
     "facet-recovered" and nothing downstream has to parse a message to learn it (D-271).
+
+    `exclude` is the request's applied groups, for the reason `_facet_sum` records.
     """
-    raw = payload.get("total")
-    if raw is None:
-        return None, None
-    try:
-        total = max(0, int(raw))
-    except (TypeError, ValueError):
+    total = _stated_total(payload)
+    if total is None:
         return None, None
     if total != _TOTAL_CENSOR:
         return total, False
-    return _facet_sum(payload), True
+    return _facet_sum(payload, exclude), True
+
+
+def _stated_total(payload: dict[str, Any]) -> int | None:
+    """The page's own `total`, or None when it states none usable."""
+    try:
+        return max(0, int(payload["total"]))
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+# T351: how many facet groups a censored listing may be split on, one under the other.
+_MAX_SPLIT_DEPTH = 3
+
+
+@dataclass
+class _Listing:
+    """A board's listing as it is read: every row once by `externalPath`, in request order.
+
+    `requests` counts every listing POST sent, failed ones included, and is what `_MAX_PAGES`
+    bounds; `page_ends` has one entry per page READ, which is what `listing_pages` reports."""
+
+    requests: int = 0
+    listed: list[dict[str, Any]] = field(default_factory=list)
+    seen_paths: set[str] = field(default_factory=set)
+    page_ends: list[int] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    def read(self, rows: list[dict[str, Any]], scope: set[str], offset: int, label: str) -> None:
+        """Take one page: into the board's inventory, and into `scope`, the paths the query that
+        served it has listed. The two differ only in a split, where a row under two values of a
+        multi-valued group is the board's once and each child's own."""
+        if dropped := _collect(rows, self.listed, self.seen_paths):
+            self.errors.append(
+                f"{label}page at offset {offset}: dropped {dropped} rows with no externalPath"
+            )
+        scope.update(path for row in rows if (path := str(row.get("externalPath") or "")))
+        self.page_ends.append(len(self.listed))
+
+
+def _page_query(
+    fetcher: Fetcher,
+    post_url: str,
+    applied: dict[str, list[str]],
+    first_rows: list[dict[str, Any]],
+    listing: _Listing,
+    *,
+    label: str = "",
+    watch_deadline: bool = False,
+    stated: int | None = None,
+) -> tuple[str, set[str]]:
+    """Page one query to its end, its offset-0 page (`first_rows`) already requested.
+
+    Returns how it ended and the paths THIS query listed. "short" is the only complete
+    ending (trap 2); the others are "wrap", "cap" (`_MAX_PAGES` requests spent across the whole
+    board), "failed" and "deadline". The unsplit listing is exactly the pager this module always
+    ran, so it sends the same requests and records the same notes; only a split watches the
+    board's deadline, because only a split can spend more than a blind read did.
+
+    `stated` is a split child's own uncensored `total`. Workday answers the page past a query's
+    last row with page 1 again instead of a short page when the query's size is a multiple of 20
+    (the Intel tail; live on genpt's 240-row Production child, 2026-11-24). A repeat at exactly
+    `offset == stated`, with that many distinct rows already listed, is therefore the query's
+    end. A repeat anywhere else is still the wrap.
+    """
+    scope: set[str] = set()
+    rows, offset = first_rows, 0
+    while True:
+        before = len(scope)
+        listing.read(rows, scope, offset, label)
+        if len(rows) < _PAGE_LIMIT:
+            # THE termination condition. NOT `offset < total`: total is capped at 2000
+            # and offset >= 2000 wraps to page 1, so that loop never terminates.
+            return "short", scope
+        if len(scope) == before:
+            if stated is not None and offset == stated == len(scope) < _TOTAL_CENSOR:
+                return "short", scope
+            # A FULL page that added no new externalPath is the offset-wrap tail: Workday
+            # serves byte-identical full pages past a board's real count (Intel; and every
+            # board once offset >= 2000 wraps to page 1) instead of a short page, which
+            # would otherwise burn every remaining page up to _MAX_PAGES. Stop, and keep it
+            # partial so apply_board does not close the postings we stopped re-listing.
+            listing.errors.append(
+                f"{label}page at offset {offset} added no new postings; stopping "
+                f"({len(scope)} collected, listing may be incomplete)"
+            )
+            return "wrap", scope
+        if listing.requests >= _MAX_PAGES:
+            return "cap", scope
+        offset += _PAGE_LIMIT
+        if watch_deadline and not fetcher.request_fits_board_deadline():
+            return "deadline", scope
+        listing.requests += 1
+        try:
+            page = fetcher.post_json(post_url, _search_body(offset, applied))
+        except FetchFailure as exc:
+            listing.errors.append(f"{label}page at offset {offset}: {exc}")
+            return "failed", scope
+        next_rows = _postings_list(page.content)
+        if next_rows is None:
+            listing.errors.append(f"{label}page at offset {offset}: invalid payload")
+            return "failed", scope
+        rows = next_rows
+
+
+class _Split(NamedTuple):
+    """One facet group a censored query is split on: one child query per value in `buckets`."""
+
+    group: str
+    buckets: tuple[FacetBucket, ...]
+    covered: int  # the values' counts summed: at least `size` when the group is exhaustive
+    size: int  # the parent query's size: the largest count stated for it (`_scope_size`)
+    witnesses: int  # how many independent counts state exactly `size`
+    pages: int  # the plan's estimated listing requests
+
+    @property
+    def exhaustive(self) -> bool:
+        return self.covered >= self.size
+
+
+def _split_pages(count: int) -> int:
+    """Listing requests a child of `count` rows costs: its full pages and the short page that ends
+    it, plus one for a child still censored, whose offset-0 page is read before it splits again.
+    A floor for that child, whose own children are planned only once its facets are read."""
+    return count // _PAGE_LIMIT + 1 + (1 if count >= _TOTAL_CENSOR else 0)
+
+
+def _scope_size(
+    payload: dict[str, Any], applied: dict[str, list[str]], parent_count: int | None
+) -> tuple[int | None, int]:
+    """(a censored query's size, how many independent counts state exactly that size).
+
+    The counts are the sums of the page's top-level groups not applied (`_facet_sum`'s
+    reading) and, for a child, its bucket's count on the parent's page. The size is the
+    largest. ONE count stating it is not enough to certify on: a group that misses rows sums
+    low, and if it is the only group, or the largest, it would pass the exhaustive test against
+    its own count while its untagged rows sit in no child."""
+    sums: list[int] = []
+    raw = payload.get("facets")
+    for facet in raw if isinstance(raw, list) else []:
+        if not isinstance(facet, dict):
+            continue
+        parameter = facet.get("facetParameter")
+        # a count is a witness only under a real group name: a ragged entry must not corroborate
+        if not (isinstance(parameter, str) and parameter) or parameter in applied:
+            continue
+        if (total := _facet_sum({"facets": [facet]})) is not None:
+            sums.append(total)
+    if parent_count:
+        sums.append(parent_count)
+    if not sums:
+        return None, 0
+    size = max(sums)
+    return size, sums.count(size)
+
+
+def _plan_split(
+    payload: dict[str, Any],
+    applied: dict[str, list[str]],
+    budget: int,
+    parent_count: int | None = None,
+) -> _Split | str:
+    """The facet group to split a censored query on, or why there is none.
+
+    Candidates are the groups of the query's own offset-0 page not already applied, with at least
+    two counted values. A group is EXHAUSTIVE when its counts sum to at least `size`: a
+    single-valued group that sums lower has rows carrying none of its values, and those rows
+    would be in no child. Ranked: exhaustive first; then no child still censored; then, among
+    exhaustive groups, the fewest estimated pages (which also prefers a single-valued group, as a
+    multi-valued one counts a row under each of its values), and among the rest the most rows
+    covered. A non-exhaustive group is used only when it covers more than a blind read reaches,
+    and its board can then never certify. Only plans within `budget` requests are considered.
+    """
+    size, witnesses = _scope_size(payload, applied, parent_count)
+    if size is None:
+        return "no facet sum to size it by"
+    candidates: list[tuple[tuple[bool, bool, int, int], _Split]] = []
+    for order, (group, buckets) in enumerate(facet_buckets(payload).items()):
+        if group in applied:
+            continue
+        values = tuple(bucket for bucket in buckets if bucket.postings)
+        if len(values) < 2:
+            continue
+        counts = [bucket.postings or 0 for bucket in values]
+        plan = _Split(
+            group, values, sum(counts), size, witnesses, sum(_split_pages(c) for c in counts)
+        )
+        if not plan.exhaustive and plan.covered <= _TOTAL_CENSOR:
+            continue
+        rank = (
+            not plan.exhaustive,
+            max(counts) >= _TOTAL_CENSOR,
+            plan.pages if plan.exhaustive else -plan.covered,
+            order,
+        )
+        candidates.append((rank, plan))
+    if not candidates:
+        return f"no facet group can split this listing of {size} postings"
+    fitting = [(rank, plan) for rank, plan in candidates if plan.pages <= budget]
+    if not fitting:
+        cheapest = min(plan.pages for _, plan in candidates)
+        return (
+            f"no facet split fits the page budget: the cheapest plan needs {cheapest} "
+            f"pages, {budget} are left"
+        )
+    return min(fitting, key=lambda item: item[0])[1]
+
+
+def _run_split(
+    fetcher: Fetcher,
+    post_url: str,
+    applied: dict[str, list[str]],
+    plan: _Split,
+    listing: _Listing,
+    depth: int,
+    label: str,
+    first: set[str],
+) -> set[str]:
+    """List a censored query as `plan`'s children, noting in `errors` every way it falls short,
+    and return the paths its children listed. `first` is the query's own first page.
+
+    THE CERTIFICATE IS THAT NO NOTE IS LEFT: any note makes the board `partial`, which closes
+    nothing. A child passes when it ended on its own end, states a total under the censor and
+    listed at least that many distinct rows itself; a child still censored passes through its
+    own split, at most `_MAX_SPLIT_DEPTH` groups deep. At EVERY split, not only the root's, the
+    children together must hold the query's size, stated by at least two independent counts
+    (`_scope_size`), and every row of its first page: one child's growth between requests must
+    not hide another's gap. A non-exhaustive group, a failed child, a payload without a total, a
+    censored child with nothing left to split, a spent page budget and a near board deadline
+    each leave a note too. Children after a failed one are still read: their rows are new
+    postings to fetch even on a board that will close nothing.
+    """
+    if not plan.exhaustive:
+        listing.errors.append(
+            f"{label}split on {plan.group} covers {plan.covered} of {plan.size} postings; "
+            "listing may be incomplete"
+        )
+    if plan.witnesses < 2:
+        listing.errors.append(
+            f"{label}a size of {plan.size} is stated by one count only; listing cannot certify"
+        )
+    subtree: set[str] = set()
+    for bucket in plan.buckets:
+        child = {**applied, plan.group: [bucket.facet_id]}
+        child_label = f"{label}{plan.group}={bucket.descriptor}: "
+        if listing.requests >= _MAX_PAGES:
+            listing.errors.append(
+                f"{child_label}not read, the page budget of {_MAX_PAGES} is spent"
+            )
+            return subtree
+        if not fetcher.request_fits_board_deadline():
+            listing.errors.append(f"{child_label}not read, the board deadline is near")
+            return subtree
+        listing.requests += 1
+        try:
+            page = fetcher.post_json(post_url, _search_body(0, child))
+        except FetchFailure as exc:
+            listing.errors.append(f"{child_label}page at offset 0: {exc}")
+            continue
+        rows = _postings_list(page.content)
+        if rows is None:
+            listing.errors.append(f"{child_label}page at offset 0: invalid payload")
+            continue
+        payload = _payload(page.content) or {}
+        total = _stated_total(payload)
+        if total == _TOTAL_CENSOR:
+            # Its rows past offset 0 are read again in its own children, so it is not paged.
+            child_first: set[str] = set()
+            listing.read(rows, child_first, 0, child_label)
+            subtree |= child_first
+            sub = (
+                _plan_split(payload, child, _MAX_PAGES - listing.requests, bucket.postings)
+                if depth < _MAX_SPLIT_DEPTH
+                else f"no facet group left to split, {_MAX_SPLIT_DEPTH} are applied"
+            )
+            if isinstance(sub, str):
+                listing.errors.append(f"{child_label}censored at {_TOTAL_CENSOR}: {sub}")
+                continue
+            subtree |= _run_split(
+                fetcher, post_url, child, sub, listing, depth + 1, child_label, child_first
+            )
+            continue
+        ending, scope = _page_query(
+            fetcher, post_url, child, rows, listing, label=child_label, watch_deadline=True,
+            stated=total,
+        )
+        subtree |= scope
+        if ending == "cap":
+            listing.errors.append(f"{child_label}stopped, the page budget of {_MAX_PAGES} is spent")
+        elif ending == "deadline":
+            listing.errors.append(f"{child_label}stopped, the board deadline is near")
+        elif ending == "short":  # "wrap" and "failed" left their own note
+            # Against the larger of its own total and its bucket's count on the parent's page:
+            # a row that moved out of this child after the parent was counted, into a child
+            # already read, is in neither, and a sibling's growth could otherwise hide it.
+            expected = max(total or 0, bucket.postings or 0)
+            if total is None:
+                listing.errors.append(f"{child_label}states no total")
+            elif len(scope) < expected:
+                listing.errors.append(
+                    f"{child_label}incomplete listing: collected {len(scope)} of {expected} "
+                    "postings"
+                )
+    if missing := len(first - subtree):
+        listing.errors.append(f"{label}{missing} rows of the first page are in no child")
+    if len(subtree) < plan.size:
+        # Checked even when every child passed: rows moved between requests, or the counts
+        # overstate the query. A union that MEETS the size is necessary, never sufficient;
+        # one that falls short is never complete.
+        listing.errors.append(
+            f"{label}listed {len(subtree)} distinct postings of {plan.size}; "
+            "listing may be incomplete"
+        )
+    return subtree
 
 
 class WorkdayProvider:
@@ -719,102 +1050,71 @@ class WorkdayProvider:
             except FacetUnavailable as exc:
                 return _failed(request.url, str(exc))
 
-        errors: list[str] = []
-        listed: list[dict[str, Any]] = []
-        seen_paths: set[str] = set()
-        total: int | None = None
-        board_total: int | None = None
-        # None, not False: `_uncapped_total`'s own contract is that with no total there is
-        # nothing to have censored, so False would be a claim this initializer cannot support.
-        board_censored: bool | None = None
-        observed = None
-        capped = True
-        page_ends: list[int] = []  # len(listed) after each page read: the head-scan shadow's pages
-
-        for page_index in range(_MAX_PAGES):
-            offset = page_index * _PAGE_LIMIT
-            # every page POSTs to the SAME url; only the body's offset moves. That url is the
-            # cache key for an unsliced board and the key MINUS its fragment for a sliced one,
-            # which is why `request.url` — not `post_url` — is what the snapshot echoes back.
-            try:
-                page = fetcher.post_json(
-                    post_url,
-                    _search_body(offset, applied),
-                    validators=request.validators if page_index == 0 else None,
-                )
-            except FetchFailure as exc:
-                if page_index == 0:
-                    return _failed(request.url, str(exc), dead=exc.status_code == 404)
-                errors.append(f"page at offset {offset}: {exc}")
-                capped = False
-                break
-            if page_index == 0:
-                if page.not_modified:
-                    return BoardSnapshot(
-                        status="unchanged", postings=[], url=request.url,
-                        observed_validators=None, error=None,
-                    )
-                observed = page.observed_validators
-            rows = _postings_list(page.content)
-            if rows is None:
-                if page_index == 0:
-                    return _failed(
-                        request.url, "invalid board payload: missing 'jobPostings' list"
-                    )
-                errors.append(f"page at offset {offset}: invalid payload")
-                capped = False
-                break
-            if page_index == 0:
-                # total and facets are populated ONLY here; offset>0 answers total=0/facets=[]
-                payload = _payload(page.content) or {}
-                try:
-                    total = max(0, int(payload["total"]))
-                except (KeyError, TypeError, ValueError):
-                    total = None
-                board_total, board_censored = _uncapped_total(payload)
-            before = len(listed)
-            if dropped := _collect(rows, listed, seen_paths):
-                errors.append(
-                    f"page at offset {offset}: dropped {dropped} rows with no externalPath"
-                )
-            page_ends.append(len(listed))
-            if len(rows) < _PAGE_LIMIT:
-                # THE termination condition. NOT `offset < total`: total is capped at 2000
-                # and offset >= 2000 wraps to page 1, so that loop never terminates.
-                capped = False
-                break
-            if len(listed) == before:
-                # A FULL page that added no new externalPath is the offset-wrap tail: Workday
-                # serves byte-identical full pages past a board's real count (Intel; and every
-                # board once offset >= 2000 wraps to page 1) instead of a short page, which
-                # would otherwise burn every remaining page up to _MAX_PAGES. Stop, and keep it
-                # partial so apply_board does not close the postings we stopped re-listing.
-                errors.append(
-                    f"page at offset {offset} added no new postings; stopping "
-                    f"({len(listed)} collected, listing may be incomplete)"
-                )
-                capped = False
-                break
-
-        if capped:
-            errors.append(
-                f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete, "
-                "treating as partial so unseen postings are not closed"
+        # The offset-0 page: the only one that carries `total` and `facets` (trap 2), and the only
+        # one that sends validators. Every page POSTs to the SAME url; only the body moves. That
+        # url is the cache key for an unsliced board and the key MINUS its fragment for a sliced
+        # one, which is why `request.url` — not `post_url` — is what the snapshot echoes back.
+        try:
+            page = fetcher.post_json(
+                post_url, _search_body(0, applied), validators=request.validators
             )
-        elif total is not None and len(listed) < total and total < 2000:
-            # 2000 is the server's own reported cap, so a shortfall against it is expected
-            errors.append(f"incomplete listing: collected {len(listed)} of {total} postings")
+        except FetchFailure as exc:
+            return _failed(request.url, str(exc), dead=exc.status_code == 404)
+        if page.not_modified:
+            return BoardSnapshot(
+                status="unchanged", postings=[], url=request.url,
+                observed_validators=None, error=None,
+            )
+        observed = page.observed_validators
+        rows = _postings_list(page.content)
+        if rows is None:
+            return _failed(request.url, "invalid board payload: missing 'jobPostings' list")
+        payload = _payload(page.content) or {}
+        total = _stated_total(payload)
+        board_total, board_censored = _uncapped_total(payload, frozenset(applied))
+        listing = _Listing(requests=1)
+        errors = listing.errors
 
+        # T351: a censored root is listed by facet instead, when a split fits the page budget.
+        plan: _Split | str | None = None
         if board_censored and board_total is not None:
-            # human-readable note for the run log ONLY — the typed pair
-            # (board_total_censored, board_reported_total) already carries the whole fact, and
-            # nothing may ever recover it by grepping `errors`. Keyed on `is not None`, not on
-            # `board_total != _TOTAL_CENSOR`: a facet dimension that legitimately sums to 2000
-            # IS a recovery and used to go unnoted, while an unrecovered board used to be
-            # indistinguishable from it because both persisted 2000.
-            errors.append(
-                f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
-            )
+            plan = _plan_split(payload, applied, _MAX_PAGES - 1)
+        split = isinstance(plan, _Split)
+        if isinstance(plan, _Split):
+            # The root's own rows are kept, and not paged further: its children read them again.
+            first: set[str] = set()
+            listing.read(rows, first, 0, "")
+            _run_split(fetcher, post_url, applied, plan, listing, 1, "split ", first)
+        else:
+            ending, _ = _page_query(fetcher, post_url, applied, rows, listing)
+            if ending == "cap":
+                errors.append(
+                    f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete, "
+                    "treating as partial so unseen postings are not closed"
+                )
+            elif (
+                total is not None and len(listing.listed) < total
+                and (total < _TOTAL_CENSOR or (board_total is None and facet is not None))
+            ):
+                # A shortfall against the censor is expected, and the censor note below makes
+                # that board partial. A censored SLICE whose facets name only its own group has
+                # no recovered size, so no note: this one keeps it partial.
+                errors.append(
+                    f"incomplete listing: collected {len(listing.listed)} of {total} postings"
+                )
+            if isinstance(plan, str):
+                errors.append(f"board not split: {plan}")
+            if board_censored and board_total is not None:
+                # human-readable note for the run log ONLY — the typed pair
+                # (board_total_censored, board_reported_total) already carries the whole fact,
+                # and nothing may ever recover it by grepping `errors`. Keyed on `is not None`,
+                # not on `board_total != _TOTAL_CENSOR`: a facet dimension that legitimately sums
+                # to 2000 IS a recovery and used to go unnoted, while an unrecovered board used
+                # to be indistinguishable from it because both persisted 2000.
+                errors.append(
+                    f"board total censored at {_TOTAL_CENSOR}; facet sum reports {board_total}"
+                )
+        listed = listing.listed
 
         # The FULL live inventory, computed BEFORE the detail phase: known and
         # budget-skipped postings must stay in it or apply_board's _process_missing closes
@@ -831,7 +1131,7 @@ class WorkdayProvider:
         ]
         unseen, gated = apply_listing_gate(request, unseen, _listing_fields)
         shadow = head_shadow(
-            listed, page_ends, {pid for pid, _ in unseen},
+            listed, listing.page_ends, {pid for pid, _ in unseen},
             lambda row: _posting_id(str(row.get("externalPath") or "")), _listed_day,
         )
         # Captured BEFORE the detail-budget slice below rebinds `unseen`, so detail_deferred
@@ -900,8 +1200,9 @@ class WorkdayProvider:
             gated_listings=gated,
             board_total_censored=board_censored,
             listing_pages=shadow.listing_pages,
-            head_pages=shadow.head_pages,
-            head_missed=shadow.head_missed,
+            # A split has no single newest-first order, so no head-scan stop point (T351).
+            head_pages=None if split else shadow.head_pages,
+            head_missed=None if split else shadow.head_missed,
         )
 
     def fetch_posting(
