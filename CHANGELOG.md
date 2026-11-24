@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **An Oracle HCM board past the 10,000-row window is listed by posting date, and can now be `complete` (T352).**
+  Oracle answers an empty page past 10,000 rows, so such a board stayed `partial` every night and never closed a posting.
+  Its listing is now read as two children, posted under 30 days and over 30 days. These partition the board exactly, as
+  measured on three tenants. The board is `complete` only when the two totals sum to the board's, each child is within
+  the window and lists its own total, and nothing fails. A child still over the window leaves it `partial`. ejwl
+  (12,938 postings, 10,000 listed before) needs about 68 pages of the split's 103.
 - **A Workday board over the 2,000-row censor is listed by facet, and can now be `complete` (T351).** Such a board used
   to read about 2,000 rows a night, stay `partial`, and never close a posting. Its listing is now split, inside the
   board's own scope (a slice included), into one query per value of a facet group. A child still censored is split again,
