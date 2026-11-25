@@ -38,6 +38,7 @@ from jsonld_shape import (
     CAREERPLUG_URL,
     CATALOG_DIGEST,
     GRAPH_PAGE,
+    HIREOLOGY_INTEGER_IDENTIFIER,
     HIREOLOGY_PAGE,
     HIREOLOGY_POSTING,
     HIREOLOGY_URL,
@@ -259,15 +260,15 @@ def test_the_dereference_is_load_bearing(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 def test_the_posting_id_comes_from_the_url_never_from_identifier() -> None:
-    """MEASURED: the page at `.../2855936/description` carries `identifier.value == 2855935`.
+    """MEASURED 2026-11-23: Hireology's `identifier.value` is a UUID string, not the URL's id.
 
-    Both numbers are LITERALS. Asserting against the fixture's own `identifier` would restate
+    Both values are LITERALS. Asserting against the fixture's own `identifier` would restate
     whichever value the fixture holds, and the whole point is that the two disagree.
     """
     assert HIREOLOGY_POSTING["identifier"] == {
         "@type": "PropertyValue",
         "name": "Example",
-        "value": 2855935,
+        "value": "5d0c8a3e-7b21-4f6a-9e44-2c1b9d7f3a60",
     }
     resolved = seed_identity(HIREOLOGY_URL, 7)
     assert resolved.posting_id == "2855936"
@@ -275,13 +276,24 @@ def test_the_posting_id_comes_from_the_url_never_from_identifier() -> None:
     assert resolved.slug == "exampletenant"
 
 
-def test_the_id_still_comes_from_the_url_once_the_body_is_read() -> None:
+@pytest.mark.parametrize(
+    "identifier",
+    [
+        HIREOLOGY_POSTING["identifier"],
+        # The 2026-09-01 shape: an integer one less than the URL's id. Kept because a shape
+        # that stopped being observed is not one that cannot return.
+        HIREOLOGY_INTEGER_IDENTIFIER,
+    ],
+    ids=["uuid", "integer-off-by-one"],
+)
+def test_the_id_still_comes_from_the_url_once_the_body_is_read(identifier: object) -> None:
     """The end-to-end half of the claim above: `RawPosting.provider_posting_id` is the URL's.
 
     Separate from the identity test on purpose -- `seed_identity` reading the URL correctly does
     not prove `raw_posting` did not overwrite it from the payload on the way out.
     """
-    posting = raw_posting(HIREOLOGY_POSTING, seed_identity(HIREOLOGY_URL, 7), "body")
+    payload = {**HIREOLOGY_POSTING, "identifier": identifier}
+    posting = raw_posting(payload, seed_identity(HIREOLOGY_URL, 7), "body")
     assert posting.provider_posting_id == "2855936"
 
 

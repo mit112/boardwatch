@@ -195,9 +195,10 @@ reviewed, which is the opposite of what a closed catalog is for.
 
 ## The field mapping, and the four traps in it that were MEASURED rather than assumed
 
-1. **`identifier` IS NOT THE POSTING ID. Parse the URL.** On Hireology the page at
-   `.../hireology2/2855936/description` carries `identifier.value == 2855935` -- an integer, and
-   **off by one from its own URL**. It is absent outright on Paylocity, Breezy and Garmin/iCIMS,
+1. **`identifier` IS NOT THE POSTING ID. Parse the URL.** On Hireology `identifier.value` is a
+   UUID string (measured 2026-11-23, 3 of 3 pages); on 2026-09-01 the page at
+   `.../hireology2/2855936/description` carried `2855935` -- an integer **off by one from its own
+   URL**. It is absent outright on Paylocity, Breezy and Garmin/iCIMS,
    and on JazzHR (which carries `uniqueJobCode` instead). A posting id that disagrees with the URL
    it came from collides on `UNIQUE(company_id, provider_posting_id)` and overwrites a real body
    as a revision, so the URL -- the thing that was actually requested -- is the only source used.

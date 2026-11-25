@@ -5,8 +5,10 @@ recorded page. What IS carried over, verbatim, is the STRUCTURE each vendor was 
 serving on 2026-09-01 -- because the structure is what the lane has to survive, and every one of
 these fixtures exists to reproduce a specific measured trap rather than a happy path:
 
-* `HIREOLOGY_PAGE` -- `identifier.value` is an INTEGER and is **off by one from its own URL**
-  (measured: the page at `.../2855936/description` carries `identifier.value == 2855935`).
+* `HIREOLOGY_PAGE` -- `identifier.value` is NOT the posting id. Measured 2026-11-23 it is a UUID
+  string (3 of 3 pages); measured 2026-09-01 it was an integer one less than the URL's id (the
+  page at `.../2855936/description` carried `2855935`). `HIREOLOGY_INTEGER_IDENTIFIER` keeps
+  that older shape, since a shape that stopped being observed can come back.
 * `CAREERPLUG_PAGE` -- the `description` is HTML-ESCAPED HTML inside the JSON string. Measured:
   151 `&lt;` and ZERO real tags.
 * `ICIMS_PAGE` -- the JD is SPLIT across `description`, `responsibilities` and `qualifications`,
@@ -175,8 +177,11 @@ HIREOLOGY_POSTING: dict[str, object] = {
     "title": "Associate Software Engineer",
     "datePosted": "2026-08-26",
     "employmentType": "FULL_TIME",
-    # THE TRAP: an integer, and one less than the id in the URL above.
-    "identifier": {"@type": "PropertyValue", "name": "Example", "value": 2855935},
+    # THE TRAP: a UUID string (measured 2026-11-23), never the id in the URL above.
+    "identifier": {
+        "@type": "PropertyValue", "name": "Example",
+        "value": "5d0c8a3e-7b21-4f6a-9e44-2c1b9d7f3a60",
+    },
     "hiringOrganization": {"@type": "Organization", "name": "Example Tooling Co"},
     "jobLocation": {
         "@type": "Place",
@@ -190,6 +195,11 @@ HIREOLOGY_POSTING: dict[str, object] = {
     "description": _JD_BODY,
 }
 HIREOLOGY_PAGE = page(HIREOLOGY_POSTING, extra_blocks=(BREADCRUMB_BLOCK,))
+# The 2026-09-01 shape: an integer, one less than the URL's id, so it would collide on
+# `UNIQUE(company_id, provider_posting_id)` with the neighbouring posting if it were read.
+HIREOLOGY_INTEGER_IDENTIFIER: dict[str, object] = {
+    "@type": "PropertyValue", "name": "Example", "value": 2855935,
+}
 
 
 CAREERPLUG_URL = "https://example-partners-llc.careerplug.com/jobs/3570902"
