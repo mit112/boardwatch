@@ -554,6 +554,7 @@ class OracleHCMProvider:
             # A split has no single newest-first order, so no head-scan stop point (T352).
             head_pages=None if split else shadow.head_pages,
             head_missed=None if split else shadow.head_missed,
+            listing_runs=None if split else shadow.listing_runs,
         )
 
     def _list_by_posting_date(

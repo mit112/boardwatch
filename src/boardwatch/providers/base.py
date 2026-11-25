@@ -70,10 +70,17 @@ HEAD_QUIET_PAGES = 2
 consecutive pages holding neither a new row nor a fresh one. At 1 it missed fresh Workday rows."""
 
 
+RUN_RESTART_AGE_DAYS = 20
+"""A listing's date run ends where a row dated within a day follows a row this many days old.
+Measured 2026-11-25 (R-063): some Workday listings are two or more newest-first runs back to back,
+each ending in "30+ Days Ago" before the next starts at "Posted Today"."""
+
+
 class HeadShadow(NamedTuple):
     listing_pages: int
     head_pages: int
     head_missed: int
+    listing_runs: int | None = None
 
 
 def head_scan_shadow(pages: Sequence[Sequence[tuple[bool, bool]]]) -> HeadShadow:
@@ -92,6 +99,26 @@ def head_scan_shadow(pages: Sequence[Sequence[tuple[bool, bool]]]) -> HeadShadow
             missed = sum(new for later in pages[index + 1 :] for new, _ in later)
             return HeadShadow(len(pages), index + 1, missed)
     return HeadShadow(len(pages), len(pages), 0)
+
+
+def date_runs(days: Sequence[date | None], today: date) -> int:
+    """How many newest-first date runs a listing is, in listing order (T340 option 1, D-710).
+
+    A run restarts at a row dated within a day once the current run has reached a row at least
+    RUN_RESTART_AGE_DAYS old. Unreadable dates are skipped: they neither end a run nor start one.
+    A head scan reads only the first run's head, so a listing of 2+ runs gets a full listing.
+    """
+    if not days:
+        return 0
+    runs, oldest = 1, 0
+    for day in days:
+        if day is None:
+            continue
+        age = (today - day).days
+        if age <= 1 and oldest >= RUN_RESTART_AGE_DAYS:
+            runs, oldest = runs + 1, 0
+        oldest = max(oldest, age)
+    return runs
 
 
 def listed_within_a_day(day: date | None, today: date) -> bool:
@@ -119,7 +146,8 @@ def head_shadow(
             ]
         )
         start = end
-    return head_scan_shadow(pages)
+    runs = date_runs([row_day(row, today) for row in listed], today)
+    return head_scan_shadow(pages)._replace(listing_runs=runs)
 
 
 _Row = TypeVar("_Row")

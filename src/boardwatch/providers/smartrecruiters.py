@@ -263,6 +263,7 @@ class SmartRecruitersProvider:
             listing_pages=shadow.listing_pages,
             head_pages=shadow.head_pages,
             head_missed=shadow.head_missed,
+            listing_runs=shadow.listing_runs,
         )
 
     def fetch_posting(

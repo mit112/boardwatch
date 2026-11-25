@@ -22,7 +22,7 @@ from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.providers import base
-from boardwatch.providers.base import HeadShadow, head_scan_shadow, listed_within_a_day
+from boardwatch.providers.base import HeadShadow, date_runs, head_scan_shadow, listed_within_a_day
 from boardwatch.providers.oraclehcm import OracleHCMProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
 from boardwatch.providers.workday import WorkdayProvider, _listed_day
@@ -72,6 +72,31 @@ def test_an_unreadable_date_is_fresh_and_two_days_old_is_not() -> None:
     assert listed_within_a_day(None, TODAY)
     assert listed_within_a_day(date(2026, 11, 23), TODAY)
     assert not listed_within_a_day(date(2026, 11, 22), TODAY)
+
+
+def _days(*ages: int | None) -> list[date | None]:
+    return [None if a is None else date.fromordinal(TODAY.toordinal() - a) for a in ages]
+
+
+@pytest.mark.parametrize(("ages", "runs"), [
+    # KLA, run 2904 (R-063): the first run ends in "30+ Days Ago", then "Posted Today" restarts it.
+    ((1, 2, 5, 30, 30, 0, 1, 5, 30), 2),
+    ((0, 30, 0, 30, 1, 30), 3),
+    # One newest-first run with the small reorderings real listings carry (Danaher "8 8 7 8"):
+    # a restart is only a FRESH row after an OLD one, not any row younger than the last.
+    ((0, 1, 8, 7, 8, 30), 1),
+    ((0, 1, 5, 1, 30), 1),
+    # The age boundary: a run must reach RUN_RESTART_AGE_DAYS (20) before a fresh row restarts it.
+    ((0, 19, 0), 1),
+    ((0, 20, 0), 2),
+    ((0, 20, 2), 1),
+    # An unreadable date neither restarts a run nor counts as fresh.
+    ((0, 30, None, 30), 1),
+    ((None, None), 1),
+    ((), 0),
+])
+def test_a_listing_counts_its_newest_first_date_runs(ages: tuple[int | None, ...], runs: int) -> None:
+    assert date_runs(_days(*ages), TODAY) == runs
 
 
 @pytest.mark.parametrize(("text", "expected"), [
@@ -133,6 +158,36 @@ def test_workday_records_the_shadow(tmp_path: Path) -> None:
     snap = WorkdayProvider().fetch_board(_fetcher(tmp_path), BoardRequest(
         provider="workday", slug=f"{host}/acme/AcmeCareers", url=url, known_posting_ids=known))
     assert _shadow(snap) == EXPECTED
+    assert snap.listing_runs == 1
+
+
+@respx.mock
+def test_workday_records_a_listing_of_two_date_runs(tmp_path: Path) -> None:
+    # Run 2904's shape: an old tail on pages 1-2 stops the head scan, then page 3 restarts at
+    # "Posted Today" with the new row the head scan never reaches. The count is what lets T340
+    # list such a board in full (D-710).
+    host, url = "acme.wd5.myworkdayjobs.com", "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/AcmeCareers/jobs"
+    template = json.loads((FIXTURES / "workday/list_page_full.json").read_text())
+    dates = [["Posted Today"] * 20, ["Posted 30+ Days Ago"] * 20, ["Posted 30+ Days Ago"] * 20,
+             ["Posted Today"] * 20, ["Posted 30+ Days Ago"] * 5]
+    pages, n = [], 0
+    for page_dates in dates:
+        rows = []
+        for text in page_dates:
+            rows.append({**template["jobPostings"][0], "externalPath": f"/job/Austin/Role_JR{n}",
+                         "postedOn": text})
+            n += 1
+        payload = copy.deepcopy(template)
+        payload["jobPostings"] = rows
+        pages.append(payload)
+    respx.post(url).mock(side_effect=[httpx.Response(200, json=p) for p in pages])
+    respx.get(url__regex=rf"https://{host}/wday/cxs/acme/AcmeCareers/job/.*").mock(
+        return_value=httpx.Response(200, json=json.loads((FIXTURES / "workday/detail_normal.json").read_text()))
+    )
+    known = frozenset(f"JR{i}" for i in range(n) if i != 60)  # the one new row opens page 3
+    snap = WorkdayProvider().fetch_board(_fetcher(tmp_path), BoardRequest(
+        provider="workday", slug=f"{host}/acme/AcmeCareers", url=url, known_posting_ids=known))
+    assert (*_shadow(snap), snap.listing_runs) == (5, 3, 1, 2)
 
 
 @respx.mock
@@ -155,6 +210,7 @@ def test_smartrecruiters_records_the_shadow(tmp_path: Path) -> None:
     snap = SmartRecruitersProvider().fetch_board(_fetcher(tmp_path), BoardRequest(
         provider="smartrecruiters", slug="acme", url=url, known_posting_ids=known))
     assert _shadow(snap) == EXPECTED
+    assert snap.listing_runs == 1
 
 
 @respx.mock
@@ -181,6 +237,7 @@ def test_oraclehcm_records_the_shadow(tmp_path: Path) -> None:
         provider="oraclehcm", slug=f"{host}/CX_1", url=provider.board_url(f"{host}/CX_1"),
         known_posting_ids=known))
     assert _shadow(snap) == EXPECTED
+    assert snap.listing_runs == 1
 
 
 # ------------------------------------------------------------------------------ persisted
@@ -199,12 +256,13 @@ def test_the_scan_row_carries_the_shadow_and_null_where_none_was_computed(engine
         )).inserted_primary_key[0])
     run_id = insert_run(engine)
     apply_board(engine, BoardSnapshot(status="partial", postings=[], url="https://x/y",
-                                      listing_pages=40, head_pages=3, head_missed=0),
+                                      listing_pages=40, head_pages=3, head_missed=0,
+                                      listing_runs=2),
                 company_id, run_id)
     apply_board(engine, BoardSnapshot(status="partial", postings=[], url="https://x/y"),
                 company_id, run_id)
     with engine.connect() as conn:
         rows = conn.execute(select(tables.board_scans.c.listing_pages, tables.board_scans.c.head_pages,
-                                   tables.board_scans.c.head_missed)
+                                   tables.board_scans.c.head_missed, tables.board_scans.c.listing_runs)
                             .order_by(tables.board_scans.c.id)).all()
-    assert [tuple(r) for r in rows] == [(40, 3, 0), (None, None, None)]
+    assert [tuple(r) for r in rows] == [(40, 3, 0, 2), (None, None, None, None)]
