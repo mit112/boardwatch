@@ -279,10 +279,12 @@ class Vendor:
 
     `path` must FULLMATCH the URL's path with the leading and trailing slashes stripped, and it
     supplies the `id` group -- and, when the tenant lives in the path rather than the host, the
-    `tenant` group. A closed rule per vendor rather than a shared "last segment" heuristic,
-    because the measured shapes disagree: JazzHR's id is the FIRST path segment under `/apply`
-    and its last segment is a title slug, Breezy's is a hex token glued to a title slug inside one
-    segment, and iCIMS-custom's is followed by nothing but may be preceded by `careers-home`.
+    `tenant` group. An optional `chrome` group is a trailing segment whose page is not the
+    posting: the seed is fetched without it. A closed rule per vendor rather than a shared "last
+    segment" heuristic, because the measured shapes disagree: JazzHR's id is the FIRST path
+    segment under `/apply` and its last segment is a title slug, Breezy's is a hex token glued to
+    a title slug inside one segment, and iCIMS-custom's is followed by nothing but may be preceded
+    by `careers-home`.
 
     `crawl_delay_seconds` is a directive THIS HOST DECLARES that is stricter than the fetcher's
     own >=1.0 s per-host floor. None means the shared pacer is already at least as strict, which
@@ -338,11 +340,13 @@ VENDORS: tuple[Vendor, ...] = (
     # is positional, not a relaxation: there the reference is the LAST segment, so `apply` would
     # BE the reference and every posting at one employer would collide on it. Here the id is at a
     # fixed position under `/p/`, so a trailing chrome segment cannot be mistaken for it. The one
-    # active Breezy record in the lists today carries exactly that suffix.
+    # active Breezy record in the lists today carries exactly that suffix. It is admitted but not
+    # REQUESTED: the `/apply` page carries no JSON-LD (2 of 2 on 2026-11-23, 1 of 1 on 2026-11-25)
+    # and the base `/p/{id}` page does, so the seed is fetched without it (T331).
     Vendor(
         provider="breezy",
         host=".breezy.hr",
-        path=re.compile(r"p/(?P<id>[0-9a-f]+)(?:-[^/]*)?(?:/apply)?"),
+        path=re.compile(r"p/(?P<id>[0-9a-f]+)(?:-[^/]*)?(?P<chrome>/apply)?"),
         tenant_is_subdomain=True,
     ),
     # iCIMS on a CUSTOM domain, one host per employer, so the HOST is the tenant. Per host, and
@@ -520,8 +524,14 @@ def seed_identity(url: str, seed_id: int) -> SeedPosting:
     if not slug:
         # A wildcard vendor addressed at its bare apex (`careerplug.com/jobs/1`) has no tenant.
         raise UnsupportedSeedURL(f"no tenant is recoverable from {url!r}")
+    fetch_url = url.strip()
+    if groups.get("chrome"):
+        parsed = urlparse(fetch_url if "://" in fetch_url else f"https://{fetch_url}")
+        fetch_url = parsed._replace(
+            path=f"/{path[: matched.start('chrome')]}", query="", fragment=""
+        ).geturl()
     return SeedPosting(
-        vendor=vendor, slug=slug, posting_id=groups["id"], url=url.strip(), seed_id=seed_id
+        vendor=vendor, slug=slug, posting_id=groups["id"], url=fetch_url, seed_id=seed_id
     )
 
 
