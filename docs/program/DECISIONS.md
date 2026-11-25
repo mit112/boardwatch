@@ -36864,6 +36864,14 @@ the check firing is visible and never folded into `no qualifying posting`. The h
 target of `any`, or no `leveling.yaml` tier for the declared field, the check is left out and the header says so:
 applying it would make every title abstain and drop every board without a word.
 
+**Names (same change).** A proposed board was named after its slug ("abnormalsecurity"), and `companies.name` feeds
+the cross-host identity, so the 666 boards of 2026-11-04 cannot group with the same employer's LinkedIn and Indeed rows
+("Abnormal Security"). An admitted board is now named as its ATS states it: Greenhouse's `company_name` and
+SmartRecruiters' `company.name` from the postings the probe already read, Workable's account `name` and Ashby's board
+page title for one GET each, made only for admitted boards. A failed lookup falls back to the slug-derived name, as
+before; it is never an error. The 666 existing rows are not renamed here: a wrong name merges two companies' postings,
+so that repair is a reviewed, separate write.
+
 **Drain.** Unchanged from D-673: an `out_of_band` board is stored nowhere and is re-probed on the next run, which is how
 a board that later posts an in-band role comes back.
 

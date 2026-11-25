@@ -29,6 +29,8 @@ re-probes it, and that is its re-entry path: no table, no state file.
 from __future__ import annotations
 
 import gzip
+import html
+import json
 import re
 import threading
 import time
@@ -258,6 +260,9 @@ class ProbeResult:
     open_postings: int = 0
     qualifying: int = 0
     samples: tuple[str, ...] = ()
+    #: The employer's display name as the ATS states it, read for admitted boards only (D-711).
+    #: `None` when the ATS gave none; the caller then falls back to a name derived from the slug.
+    employer: str | None = None
 
 
 def _qualifies(posting: RawPosting, taxonomy: RoleTaxonomy, us_only: bool) -> bool:
@@ -268,6 +273,55 @@ def _qualifies(posting: RawPosting, taxonomy: RoleTaxonomy, us_only: bool) -> bo
     # `us` only, so `unknown` (a bare "Remote") does not count: classify_location fails open,
     # which is right for keeping a posting and wrong for vouching for a board.
     return not us_only or classify_location(posting.locations) == "us"
+
+
+_TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+_BOARD_SUFFIX = re.compile(r"\s*(?:Jobs|Careers)\s*$", re.IGNORECASE)
+
+
+def _clean_name(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    name = " ".join(value.split())
+    return name if 0 < len(name) <= 120 else None
+
+
+def employer_name(
+    provider: str, slug: str, postings: Sequence[RawPosting], fetcher: Fetcher
+) -> str | None:
+    """The employer's name as its own board states it, so a proposed board is named like the
+    lane rows for the same employer and its postings can group with them (D-711). A slug name
+    ("abnormalsecurity") normalizes to a different company than "Abnormal Security" does.
+
+    Greenhouse and SmartRecruiters carry it on every posting the probe already read. Workable
+    states it on the account and Ashby only in its board page's title, so those cost one GET,
+    and only for an admitted board. Any failure is `None`, never an exception: the name is a
+    convenience for the reviewer, and the slug fallback is what the file held before.
+    """
+    if provider == "greenhouse":
+        names = (_clean_name(p.raw_json.get("company_name")) for p in postings)
+        return next((n for n in names if n), None)
+    if provider == "smartrecruiters":
+        for p in postings:
+            listed = p.raw_json.get("listed")
+            company = listed.get("company") if isinstance(listed, dict) else None
+            if isinstance(company, dict) and (n := _clean_name(company.get("name"))):
+                return n
+        return None
+    try:
+        if provider == "workable":
+            body = fetcher.get(f"https://apply.workable.com/api/v1/widget/accounts/{slug}").content
+            payload = json.loads(body)
+            return _clean_name(payload.get("name")) if isinstance(payload, dict) else None
+        if provider == "ashby":
+            page = fetcher.get(f"https://jobs.ashbyhq.com/{slug}").content
+            found = _TITLE.search(page.decode("utf-8", "replace"))
+            if found is None:
+                return None
+            return _clean_name(_BOARD_SUFFIX.sub("", html.unescape(found.group(1))))
+    except Exception:
+        return None
+    return None
 
 
 def _in_band(title: str, company: tuple[str, str], bands: TitleBandReader) -> bool:
@@ -322,6 +376,9 @@ def probe_board(
     return ProbeResult(
         provider.name, slug, outcome, url,
         open_postings=open_count, qualifying=len(hits), samples=tuple(hits[:2]),
+        employer=(
+            employer_name(provider.name, slug, postings, fetcher) if outcome == "admitted" else None
+        ),
     )
 
 

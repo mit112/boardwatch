@@ -912,7 +912,8 @@ def discover_crawl(
     admitted = {k: r for k, r in by_key.items() if r.outcome == "admitted"}
     candidates = tuple(
         BoardCandidate(
-            provider=p, slug=s, name=derive_employer_name(p, s) or s,
+            provider=p, slug=s,
+            name=admitted[(p, s)].employer or derive_employer_name(p, s) or s,
             evidence_url=admitted[(p, s)].board_url, records=admitted[(p, s)].qualifying,
         )
         for p, s in ramp_order(admitted)

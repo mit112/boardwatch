@@ -22,6 +22,7 @@ from boardwatch.cli import companies_cmd
 from boardwatch.cli.app import app
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting
 from boardwatch.core.politeness import Fetcher
+from boardwatch.lanes import common_crawl
 from boardwatch.lanes.common_crawl import Block
 from boardwatch.registry.validate import CompanyEntry, validate_entries
 from boardwatch.store.db import ensure_schema, get_engine
@@ -89,6 +90,11 @@ def _wired(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     FakeAshby.probed = []
     monkeypatch.setattr(companies_cmd, "HttpCrawlSource", FakeSource)
     monkeypatch.setattr(companies_cmd, "build_providers", lambda: {"ashby": FakeAshby()})
+    # The fake provider is named `ashby`, whose name lookup is a page GET: answer it offline.
+    monkeypatch.setattr(
+        common_crawl, "employer_name",
+        lambda provider, slug, postings, fetcher: {"newco": "NewCo, Inc."}.get(slug),
+    )
 
 
 def _run(tmp_path: Path, *args: str) -> Any:
@@ -243,3 +249,11 @@ def test_a_band_with_no_tier_for_the_field_is_reported_not_applied(
     assert result.exit_code == 0, result.output
     assert sorted(e["slug"] for e in yaml.safe_load(result.stdout)["companies"]) == ["newco", "second"]
     assert "| seniority not checked (leveling.yaml has no tier for your field)" in result.stdout
+
+
+def test_a_board_is_named_as_its_ats_states_it_and_falls_back_to_the_slug(tmp_path: Path) -> None:
+    result = _run(tmp_path, "--provider", "ashby", "--limit", "10")
+
+    names = {e["slug"]: e["name"] for e in yaml.safe_load(result.stdout)["companies"]}
+    assert names["newco"] == "NewCo, Inc."
+    assert names["second"] == "second"  # the ATS gave no name: the slug, as before

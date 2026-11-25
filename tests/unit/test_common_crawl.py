@@ -19,6 +19,7 @@ from boardwatch.lanes.common_crawl import (
     Block,
     BlockUnavailable,
     HttpCrawlSource,
+    employer_name,
     enumerate_slugs,
     probe_board,
     probe_candidates,
@@ -198,9 +199,15 @@ def _snap(*postings: RawPosting, status: str = "complete", dead: bool = False) -
     )
 
 
-def _fetcher(tmp_path) -> Fetcher:  # type: ignore[no-untyped-def]
+def _offline(request: httpx.Request) -> httpx.Response:
+    raise AssertionError(f"no network in these tests: {request.url}")
+
+
+def _fetcher(tmp_path, transport=None) -> Fetcher:  # type: ignore[no-untyped-def]
+    """A real `Fetcher` on a mock transport; the default fails any request it is asked for."""
     return Fetcher(
-        Settings(data_dir=tmp_path, config_dir=tmp_path), client=httpx.Client()
+        Settings(data_dir=tmp_path, config_dir=tmp_path, per_host_delay_seconds=0.25),
+        client=httpx.Client(transport=transport or httpx.MockTransport(_offline)),
     )
 
 
@@ -367,6 +374,73 @@ def test_the_band_reaches_every_probe_in_a_run(tmp_path) -> None:  # type: ignor
     )
 
     assert [(r.slug, r.outcome) for r in results] == [("a", "out_of_band"), ("b", "admitted")]
+
+
+def _raw(title: str, raw: dict) -> RawPosting:  # type: ignore[type-arg]
+    return RawPosting(
+        provider_posting_id=title, title=title, url="https://x.test/1", locations=["Austin, TX"],
+        body_text="", raw_json=raw,
+    )
+
+
+def test_greenhouse_and_smartrecruiters_names_come_from_the_postings_already_read(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    fetcher = _fetcher(tmp_path)  # any request would fail the test
+    gh = [_raw("a", {}), _raw("b", {"company_name": "  Abnormal   Security "})]
+    sr = [_raw("a", {"listed": {"company": {"identifier": "acme1", "name": "Acme Corp"}}})]
+
+    assert employer_name("greenhouse", "abnormalsecurity", gh, fetcher) == "Abnormal Security"
+    assert employer_name("smartrecruiters", "acme1", sr, fetcher) == "Acme Corp"
+    assert employer_name("greenhouse", "x", [_raw("a", {"company_name": ""})], fetcher) is None
+    assert employer_name("smartrecruiters", "x", [_raw("a", {"listed": "?"})], fetcher) is None
+
+
+def test_workable_and_ashby_names_cost_one_request_each(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        if request.url.host == "apply.workable.com":
+            return httpx.Response(200, json={"name": "Albert Bartlett", "jobs": []})
+        return httpx.Response(200, text="<html><head><title>Artificial Analysis Jobs</title></head></html>")
+
+    fetcher = _fetcher(tmp_path, httpx.MockTransport(handler))
+
+    assert employer_name("workable", "albert-bartlett", [], fetcher) == "Albert Bartlett"
+    assert employer_name("ashby", "artificialanalysis", [], fetcher) == "Artificial Analysis"
+    assert seen == [
+        "https://apply.workable.com/api/v1/widget/accounts/albert-bartlett",
+        "https://jobs.ashbyhq.com/artificialanalysis",
+    ]
+
+
+def test_a_failed_name_lookup_is_none_never_an_exception(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    broken = _fetcher(tmp_path, httpx.MockTransport(lambda r: httpx.Response(200, text="not json")))
+    untitled = _fetcher(tmp_path, httpx.MockTransport(lambda r: httpx.Response(200, text="<html/>")))
+
+    assert employer_name("workable", "acme", [], broken) is None
+    assert employer_name("ashby", "acme", [], untitled) is None
+    assert employer_name("ashby", "acme", [], _fetcher(tmp_path)) is None  # transport raises
+
+
+def test_only_an_admitted_board_is_named(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        return httpx.Response(200, text="<title>Acme</title>")
+
+    fetcher = _fetcher(tmp_path, httpx.MockTransport(handler))
+    boards = {
+        "good": _snap(_posting("Software Engineer", "Austin, TX")),
+        "sales": _snap(_posting("Account Executive", "Austin, TX")),
+    }
+    provider = FakeProvider(boards)  # named "ashby": the name costs a page GET
+
+    good = probe_board(provider, fetcher, "good", taxonomy=TAXONOMY, us_only=False)
+    sales = probe_board(provider, fetcher, "sales", taxonomy=TAXONOMY, us_only=False)
+
+    assert (good.employer, sales.employer) == ("Acme", None)
+    assert calls == ["/good"]
 
 
 # ---- the HTTP source ----------------------------------------------------------------------
