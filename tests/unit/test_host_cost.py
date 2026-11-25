@@ -115,22 +115,28 @@ def test_a_thread_queued_behind_a_sibling_shows_the_wait_outside_its_service(
     with respx.mock:
         respx.get("https://q.hostcost.example/x").mock(side_effect=slow)
         fetcher = _fetcher(tmp_path)
-        threads = [
-            threading.Thread(target=fetcher.get, args=("https://q.hostcost.example/x",))
-            for _ in range(2)
-        ]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        first = threading.Thread(target=fetcher.get, args=("https://q.hostcost.example/x",))
+        second = threading.Thread(target=fetcher.get, args=("https://q.hostcost.example/x",))
+        first.start()
+        deadline = time.monotonic() + 5
+        while fetcher.host_costs().get("q.hostcost.example") is None or (
+            fetcher.host_costs()["q.hostcost.example"].attempts == 0
+        ):  # the first is sending, so the second queues behind its hold
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        second.start()
+        first.join()
+        second.join()
     cost = fetcher.host_costs()["q.hostcost.example"]
     assert cost.requests == 2
     # each send slept _SLOW, and nothing else counts as service
     assert 2 * _SLOW <= cost.service_seconds < 2 * _SLOW + 0.5, cost
-    # the second thread waited for the first's whole hold of the lock
-    assert cost.lock_wait_seconds >= _SLOW, cost
-    # the second request paced after the first ended (pacing from the request's end by default)
-    assert cost.pace_seconds >= 0.2, cost
+    # the second thread waited for most of the first's send; a meter that drops the wait reads 0.
+    # Not a tighter bound: it asked a scheduling slice after the first began sending.
+    assert cost.lock_wait_seconds >= 0.5 * _SLOW, cost
+    # the second request paced after the first ended (pacing from the request's end by default);
+    # its own wake-up after the release comes out of the 0.25 s, so the bound sits well under it
+    assert cost.pace_seconds >= 0.1, cost
     # the chain is the two holds back to back; the queue wait is not added on top of it
     held = cost.service_seconds + cost.pace_seconds
     assert held <= cost.span_seconds < held + 0.5, cost
