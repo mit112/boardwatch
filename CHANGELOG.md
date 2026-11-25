@@ -54,6 +54,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A Breezy seed ending `/apply` is fetched at its base `/p/{id}` page (T331).** The `/apply` page carries no JSON-LD,
+  so every such seed spent its three attempts on a page that could never resolve. The lane now requests the posting page
+  the suffix decorates; the posting id is unchanged. The three seeds already retired this way are not retried by this
+  change alone.
 - **The death probe asks a legacy SmartApply Eightfold tenant (Netflix, Liberty Mutual, New York Life) its own job
   resource (T346).** These tenants have no `position_details`, so the probe read only the career page, which answers 200
   for a closed position too and cleared the posting's strikes. It now asks `/api/apply/v2/jobs/{id}`: a 200 carrying the

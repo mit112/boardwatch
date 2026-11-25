@@ -541,6 +541,35 @@ def test_the_snapshot_is_always_partial(respx_mock: respx.Router, tmp_path: Path
     assert result.snapshots[0].snapshot.board_reported_total is None
 
 
+def test_a_breezy_apply_seed_is_requested_at_the_page_that_carries_the_posting() -> None:
+    """T331: the `/apply` page carries no JSON-LD (measured 2026-11-23 and 2026-11-25), the base
+    `/p/{id}` page does. The fetched URL drops the suffix and the query; the identity is kept."""
+    resolved = seed_identity(f"{BREEZY_APPLY_URL}?source=indeed", 1)
+    assert resolved.url == "https://example-improvements.breezy.hr/p/824adfc228b2"
+    assert resolved.posting_id == "824adfc228b2"
+    assert seed_identity(BREEZY_URL, 1).url == BREEZY_URL  # no suffix: requested as given
+
+
+@respx.mock
+def test_a_breezy_apply_seed_resolves_from_the_base_page(
+    respx_mock: respx.Router, tmp_path: Path
+) -> None:
+    _mock_lists(respx_mock)
+    base = respx_mock.get("https://example-improvements.breezy.hr/p/824adfc228b2").mock(
+        return_value=httpx.Response(200, text=BREEZY_PAGE)
+    )
+    apply_page = respx_mock.get(BREEZY_APPLY_URL).mock(
+        return_value=httpx.Response(200, text="<html>apply form, no JSON-LD</html>")
+    )
+    lane = JsonLdLane(list_repos=LISTS, seeds=_Reader((_seed(BREEZY_APPLY_URL),)))
+
+    result = lane.collect(_fetcher(tmp_path), _Admits())
+
+    assert base.call_count == 1 and not apply_page.called
+    [posting] = result.snapshots[0].snapshot.postings
+    assert posting.provider_posting_id == "824adfc228b2"
+
+
 @respx.mock
 def test_an_admission_never_asks_for_its_board_to_be_watched(
     respx_mock: respx.Router, tmp_path: Path

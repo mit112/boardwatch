@@ -57,7 +57,7 @@ REVIEW_BY = date(2027, 2, 21)
 # A LITERAL, never a recomputation of the value under test: an assertion that recomputes the
 # thing it is checking passes against any catalog, which is the vacuity this repo has been bitten
 # by before. Editing this line is the reviewer step for admitting a host.
-CATALOG_DIGEST = "cba1969b33f55b761b07f5f5d272b6d7022f3e2381cc3d5909af12b6e8c317ac"
+CATALOG_DIGEST = "aebfd639a24f71a36d1bf5f0d206355fe11f48830bb5640800bc2bf9d5f91fa1"
 
 # THE MEASURED KEY SETS, one per shipped vendor, taken from the JSON-LD block of the REAL page
 # each probe fetched on 2026-09-01. This is the provenance the authored pages below are checked
