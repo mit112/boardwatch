@@ -744,5 +744,6 @@ def _scan_row(
             listing_pages=None if snapshot is None else snapshot.listing_pages,
             head_pages=None if snapshot is None else snapshot.head_pages,
             head_missed=None if snapshot is None else snapshot.head_missed,
+            listing_runs=None if snapshot is None else snapshot.listing_runs,
         )
     )

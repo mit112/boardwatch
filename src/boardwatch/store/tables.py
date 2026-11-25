@@ -226,6 +226,7 @@ board_scans = Table(
     Column("listing_pages", Integer, nullable=True),
     Column("head_pages", Integer, nullable=True),
     Column("head_missed", Integer, nullable=True),
+    Column("listing_runs", Integer, nullable=True),  # `BoardSnapshot.listing_runs` (D-710)
     # Which subsystem wrote this row (D-285). A lane touching an already-watched board writes a
     # SECOND row for the same (company_id, run_id); coverage joins one BoardCoverage per row, so
     # without this the company is counted twice. Defaulted 'board': every pre-existing row is one.

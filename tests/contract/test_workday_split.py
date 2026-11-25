@@ -205,6 +205,7 @@ def test_a_censored_board_is_split_and_lists_exactly_the_planted_ids(tmp_path: P
     assert len(tenant.bodies) <= workday._MAX_PAGES
     assert snapshot.listing_pages == len(tenant.bodies)
     assert snapshot.head_pages is None and snapshot.head_missed is None
+    assert snapshot.listing_runs is None
 
 
 def test_a_split_on_a_multi_valued_group_lists_each_row_once(tmp_path: Path) -> None:

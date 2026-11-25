@@ -22,6 +22,12 @@ All notable changes to this project are documented here. The format follows
   in flight when the scan ended (a board abandoned at its deadline), whose time is in none of the sums. `funnel-<id>.json` gains `scan.host_cost` (the 20
   longest spans, and how many hosts there were in all) and the markdown a matching table. The artifact version is
   unchanged, on the `scan.fetch_cost` precedent. Per-board request counts are the second part, still to come.
+- **Each full listing records how many newest-first date runs it is (`board_scans.listing_runs`, D-710).** Some Workday
+  listings are two or more runs back to back: the first ends in "30+ Days Ago" and the next starts again at "Posted
+  Today". A head scan stops in the first run's tail and misses every fresh row after it. That happened to 290 rows on 15
+  boards in the first shadow night. T340 will list such a board in full instead. Recorded for Workday, SmartRecruiters
+  and Oracle HCM; NULL for a split listing. Nothing reads it yet, so no scan behavior changes. Migration
+  `p_listing_runs`: one nullable column.
 - **`boardwatch run --continue-scan` continues a killed or aborted pipeline scan from the boards it committed (T353).**
   A retry used to mint a new run and read every board again, so a board that finished before the kill took a second miss
   for one absence in one night, and two misses close a posting. The flag continues the newest pipeline scan, if it never

@@ -27,5 +27,6 @@ def test_head_is_the_board_scans_lane_revision() -> None:
     # `p_empty_guarded` (the guard's own scan flag, which the death-probe drain counts) on that, and
     # T340 `p_head_shadow` (the head-scan shadow: listing, head and missed pages) on that, and
     # T353 `p_scan_manifests` (what each scan was asked to do, for `run --continue-scan`) on that,
-    # and T355 `p_http_cache_gate_key` (the listing gate a stored validator was learned under) on top.
-    assert schema_revision() == "p_http_cache_gate_key"
+    # and T355 `p_http_cache_gate_key` (the listing gate a stored validator was learned under) on that,
+    # and D-710 `p_listing_runs` (how many newest-first date runs a full listing was) on top.
+    assert schema_revision() == "p_listing_runs"

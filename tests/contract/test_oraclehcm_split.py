@@ -132,6 +132,7 @@ def test_a_board_past_the_window_is_listed_as_its_two_posting_date_children(
     assert snapshot.board_reported_total == 7
     assert snapshot.listing_pages == 6
     assert snapshot.head_pages is None and snapshot.head_missed is None
+    assert snapshot.listing_runs is None
 
 
 def test_a_child_still_past_the_window_is_partial_with_both_childrens_counts(
