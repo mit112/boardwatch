@@ -253,6 +253,7 @@ def test_coordinator_passes_known_posting_ids_after_first_scan(
     class _Recorder:
         name = "greenhouse"
         board_hosts = ("boards.greenhouse.io",)
+        reads_known_ids = True  # it reads them, so it declares it (T350)
 
         def board_url(self, slug: str) -> str:
             return (

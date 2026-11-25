@@ -277,6 +277,9 @@ def _post_location_id(loc: dict[str, Any]) -> str:
 
 class AppleProvider:
     name = "apple"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     board_hosts: tuple[str, ...] = (_HOST,)
     # A board is a COUNTRY, and a country lives in the QUERY STRING (`?location=...`), never in
     # the path -- the only path segment before `search` is the locale (`en-us`). So no path

@@ -108,6 +108,9 @@ def _json_object(content: bytes) -> dict[str, Any] | None:
 
 class SmartRecruitersProvider:
     name = "smartrecruiters"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     board_hosts: tuple[str, ...] = ("jobs.smartrecruiters.com",)
 
     @staticmethod

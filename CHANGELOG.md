@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **A scan no longer loads every board's open posting ids before its first request (T350 item 1).** Only the six
+  providers that skip detail reads for known ids (Workday, Oracle HCM, SmartRecruiters, Eightfold, Phenom, Apple) are
+  handed them, and each board's set is read when the board starts. On an offline 5x-fleet benchmark, peak memory fell
+  from 1,183 MB to 163 MB and the first request came at 0.9 s instead of 6.4 s.
+
 ### Added
 
 - **`boardwatch run --continue-scan` continues a killed or aborted pipeline scan from the boards it committed (T353).**

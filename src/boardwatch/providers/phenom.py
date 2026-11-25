@@ -154,6 +154,9 @@ def _rows(widget: dict[str, Any]) -> list[dict[str, Any]] | None:
 
 class PhenomProvider:
     name = "phenom"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     # The career site is on the EMPLOYER's own domain, so there is neither a paste host nor a
     # bounded host suffix to register. A pasted Phenom URL is not recognized by design.
     board_hosts: tuple[str, ...] = ()
