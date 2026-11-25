@@ -40,10 +40,14 @@ def test_a_validator_stored_before_the_column_reads_null(tmp_path: Path) -> None
 
 def test_a_retry_and_a_round_trip_succeed(tmp_path: Path) -> None:
     db = tmp_path / "round.db"
+    engine = create_engine(f"sqlite:///{db}")
+
+    def columns() -> list[str]:
+        with engine.connect() as conn:
+            return [r[1] for r in conn.execute(text("PRAGMA table_info(http_cache)"))]
+
     command.upgrade(_cfg(db), HEAD)
     command.downgrade(_cfg(db), BASE)
+    assert "gate_key" not in columns()
     command.upgrade(_cfg(db), HEAD)
-    engine = create_engine(f"sqlite:///{db}")
-    with engine.connect() as conn:
-        columns = [r[1] for r in conn.execute(text("PRAGMA table_info(http_cache)"))]
-    assert "gate_key" in columns
+    assert "gate_key" in columns()

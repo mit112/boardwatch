@@ -160,3 +160,30 @@ def test_a_non_gating_provider_keeps_its_validator_across_a_gate_change(tmp_path
     _pass(data)
     _gate(data, [])
     assert _pass(data)["sent"]["gh"] == ETAG  # Greenhouse stores every row: no gate to bind
+
+
+def test_each_input_of_the_gate_changes_its_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A missed input is a silent bypass: each one alone must move the key."""
+    from dataclasses import replace
+
+    from boardwatch.rank import listing_gate
+    from boardwatch.rank.heuristic import ProfileView
+    from boardwatch.rank.role_taxonomy import parse_role_taxonomy
+
+    view = ProfileView(skills=frozenset({"python"}), target_titles=("Engineer",),
+                       exclude_titles=("warehouse",), locations=("Austin",), remote_only=False)
+    taxonomy = parse_role_taxonomy({"version": 1, "field": "software", "bundled": True})
+    base = listing_gate.listing_gate_key(view, taxonomy, "soft")
+    variants = {
+        "exclude_titles": listing_gate.listing_gate_key(
+            replace(view, exclude_titles=()), taxonomy, "soft"),
+        "skills": listing_gate.listing_gate_key(
+            replace(view, skills=frozenset()), taxonomy, "soft"),
+        "taxonomy": listing_gate.listing_gate_key(view, None, "soft"),
+        "location_filter_mode": listing_gate.listing_gate_key(view, taxonomy, "hard"),
+    }
+    monkeypatch.setattr(listing_gate, "_gate_code_digest", lambda: "relaxed veto")
+    variants["code"] = listing_gate.listing_gate_key(view, taxonomy, "soft")
+    for name, key in variants.items():
+        assert key != base, name
+    assert base != listing_gate.LISTING_GATE_OFF_KEY
