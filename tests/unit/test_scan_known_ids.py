@@ -18,6 +18,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.models import BoardRequest, BoardSnapshot
 from boardwatch.core.settings import load_settings
 from boardwatch.providers.registry import build_providers
+from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
@@ -93,3 +94,41 @@ def test_each_reading_board_gets_its_own_open_ids_and_no_other_board_gets_any(
         "empty": frozenset(),
     }
     assert plain.seen == {"c": frozenset()}
+
+
+@pytest.mark.usefixtures("no_real_sleep")
+def test_a_boards_ids_are_read_when_it_is_dispatched_not_for_the_fleet_up_front(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The memory claim: only boards in flight hold their sets. One worker, so each read must
+    sit right before its own board's fetch, and a board that does not read ids is never read."""
+    data = tmp_path / "data"
+    engine = get_engine(data)
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        _board(conn, "reader", "a", {"1": "open"})
+        _board(conn, "reader", "b", {"2": "open"})
+        _board(conn, "plain", "c", {"3": "open"})
+    events: list[str] = []
+    real = coordinator._known_posting_ids
+
+    def recording(engine_: object, company_id: int) -> frozenset[str]:
+        events.append(f"read {company_id}")
+        return real(engine_, company_id)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(coordinator, "_known_posting_ids", recording)
+
+    class _Ordered(_Recorder):
+        def fetch_board(self, fetcher: object, request: BoardRequest) -> BoardSnapshot:
+            events.append(f"fetch {request.slug}")
+            return super().fetch_board(fetcher, request)
+
+    providers = {"reader": _Ordered("reader", reads=True), "plain": _Ordered("plain", reads=False)}
+    settings = load_settings(data_dir=data).model_copy(update={"scan_workers": 1})
+    run_scan(engine, settings, providers=providers)  # type: ignore[arg-type]
+
+    reads = [i for i, e in enumerate(events) if e.startswith("read ")]
+    assert len(reads) == 2  # boards a and b; never c
+    for i in reads:
+        assert events[i + 1].startswith("fetch "), events  # each read is its own board's dispatch
+    assert events.count("fetch c") == 1
