@@ -46,6 +46,7 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.scan.board_moves import DeadBoard, dead_boards_alert, dead_for_three_scans
 from boardwatch.scan.resume import (
     ResumePoint,
+    require_current_schema,
     resolve_resume,
     scan_manifest,
     settled_event_counts,
@@ -487,6 +488,8 @@ def _run_scan_locked(
     console: Console | None = None,
     continue_scan: bool = False,
 ) -> ScanSummary:
+    if continue_scan:
+        require_current_schema(engine)
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
 

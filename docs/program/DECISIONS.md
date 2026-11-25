@@ -36785,13 +36785,16 @@ before the kill takes a second miss for one absence in one night (`CLOSE_AFTER_M
 flag that continues the killed run under its own id, gated on a manifest of what the scan was asked to do.
 
 **Choice.** `boardwatch run --continue-scan` (`--resume` is the résumé option). The unattended tick never passes it.
-Every scan writes a `scan_manifests` row beside `insert_run` (one additive migration, `p_scan_manifests`): the sorted
-watched company ids, the `--company`/`--provider` filters, the listing gate's key, `location_filter_mode`,
-`detail_fetch_budget`, `validator_max_age_hours`, and `scan_code_digest()`, which is `digest_of_sources` over `scan/`,
-`providers/` and `core/politeness.py`. `finalize_run` stamps `scan_finalized_at` in the same transaction as the counts.
+Every scan writes a `scan_manifests` row beside `insert_run` (one additive migration, `p_scan_manifests`): each
+watched board as `(id, provider, slug, name)`, the `--company`/`--provider` filters, the listing gate's key,
+`location_filter_mode`, `detail_fetch_budget`, `validator_max_age_hours`, and `scan_code_digest()`, which is
+`digest_of_sources` over `scan/`, `providers/`, `rank/` and `core/politeness.py`. `finalize_run` stamps `scan_finalized_at` in the same transaction as the counts.
 The gate key is `rank/listing_gate.listing_gate_key`, a SHA-256 over the whole profile view, the taxonomy digest and
-`location_filter_mode`, with `LISTING_GATE_OFF_KEY` for no gate. T355 and T339 reuse it. Five points the ticket left
-open:
+`location_filter_mode`, with `LISTING_GATE_OFF_KEY` for no gate. T355 and T339 reuse it. Review round 1 widened three
+points past the ticket's list: a board is fingerprinted by slug and name, not id alone, because a slug edited in place
+keeps its id but reads another listing; `rank/` is digested, because the gate runs its vetoes and the key covers only
+the gate's inputs; and a store the migrations have not reached refuses before `ensure_schema` would migrate it. Five
+points the ticket left open:
 1. **The newest scan's manifest only, never an older unfinished one.** A fresh scan after the kill has already read
    every board, so continuing the killed run behind it would charge those boards the second miss again. A standalone
    scan writes a manifest too, for this reason: it becomes the newest and blocks the resume, because it writes no
@@ -36814,4 +36817,6 @@ apply runs at the join after the scan, which a killed scan never reached.
 `runs`*: a CLI row would carry them NULL forever, and a separate table keys one scan per row. *Resolving the resume
 inside the pipeline before the scan*: the coordinator has to recompute the manifest under the lease anyway, so one
 place resolves it, before `insert_run`. *A production kill hook*: the test patches `_scan_row` and `apply_board` in the
-subprocess instead.
+subprocess instead. *Deadlines, retries and pacing in the manifest* (raised in review): they change how a board's read
+ends, not what is read, and a shorter deadline can only leave a board `failed` or `partial`, neither of which counts a
+miss. Adding them would refuse resumes for no correctness gain.

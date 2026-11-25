@@ -14,6 +14,7 @@ by that field's name before anything is written. The operator then runs fresh, a
 
 from __future__ import annotations
 
+import json
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
@@ -22,10 +23,12 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import Connection, exists, func, select
+from alembic.migration import MigrationContext
+from sqlalchemy import Connection, Engine, exists, func, select
 
 from boardwatch.core.settings import Settings
 from boardwatch.eligibility.engine import digest_of_sources
+from boardwatch.store.db import schema_revision
 from boardwatch.store.tables import board_scans, posting_events, postings, runs, scan_manifests
 
 #: A same-night retry, never the next night's tick (04:00): a run that started longer ago than
@@ -53,7 +56,9 @@ class ScanManifest:
     """What one scan was asked to do. Two scans with equal manifests read the same boards the
     same way, so the second may carry on from the first's committed boards."""
 
-    company_ids: tuple[int, ...]
+    #: `(id, provider, slug, name)` per board: a slug edited in place keeps its id but reads a
+    #: different listing, and the name feeds the posting identities the apply writes.
+    boards: tuple[tuple[int, str, str, str], ...]
     company: str | None
     provider: tuple[str, ...] | None
     listing_gate_key: str
@@ -87,14 +92,16 @@ class ResumePoint:
 
 def _scan_sources() -> list[Path]:
     root = Path(__file__).resolve().parent.parent
-    files = sorted((root / "scan").glob("*.py")) + sorted((root / "providers").glob("*.py"))
+    files = [path for package in ("scan", "providers", "rank")
+             for path in sorted((root / package).glob("*.py"))]
     return [*files, root / "core" / "politeness.py"]
 
 
 @lru_cache(maxsize=1)
 def scan_code_digest() -> str:
-    """A digest of the code that fetches and applies a board: the `scan` and `providers` packages
-    and `core/politeness.py`. `engine_version()` digests only the eligibility modules, so it
+    """A digest of the code that fetches and applies a board: the `scan` and `providers` packages,
+    `core/politeness.py`, and `rank`, whose vetoes the listing gate runs (the gate key digests
+    only the gate's inputs). `engine_version()` digests only the eligibility modules, so it
     cannot see a scan change. Through the same `digest_of_sources`, so a comment or formatting
     edit does not change it and a semantic one does.
     """
@@ -112,7 +119,9 @@ def scan_manifest(
     if provider is not None:
         providers = tuple(sorted([provider] if isinstance(provider, str) else provider))
     return ScanManifest(
-        company_ids=tuple(sorted(int(row.id) for row in company_rows)),
+        boards=tuple(sorted(
+            (int(row.id), str(row.provider), str(row.slug), str(row.name)) for row in company_rows
+        )),
         company=company,
         provider=providers,
         listing_gate_key=listing_gate_key,
@@ -125,7 +134,24 @@ def scan_manifest(
 
 def _normalized(manifest: dict[str, Any]) -> dict[str, Any]:
     """The stored JSON reads tuples back as lists; compare in one shape."""
-    return {k: list(v) if isinstance(v, tuple) else v for k, v in manifest.items()}
+    normalized: dict[str, Any] = json.loads(json.dumps(manifest))
+    return normalized
+
+
+def require_current_schema(engine: Engine) -> None:
+    """Refuse a resume against a store the bundled migrations have not reached, before
+    `ensure_schema` would migrate it: a refused resume writes nothing, a migration included. Such
+    a store has no manifest from this code anyway, so nothing on it could be continued.
+    """
+    database = engine.url.database
+    if not database or not Path(database).exists():
+        raise ScanResumeRefusedError("there is no store to continue a scan in")
+    with engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    if current != schema_revision():
+        raise ScanResumeRefusedError(
+            f"the store is at schema {current or 'none'}, not {schema_revision()}"
+        )
 
 
 def resolve_resume(conn: Connection, manifest: ScanManifest, now: datetime) -> ResumePoint:

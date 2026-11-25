@@ -31,7 +31,7 @@ import httpx
 import pytest
 import respx
 from rich.console import Console
-from sqlalchemy import func, insert, select, update
+from sqlalchemy import func, insert, inspect, select, update
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings, load_settings
@@ -76,13 +76,18 @@ def _body(provider: str, ids: list[str]) -> bytes:
 
 
 def _listing(slug: str, *, night: bool) -> list[str]:
-    """Two postings per board. Tonight `gh-a` drops the sentinel and `ab-b` gains one."""
+    """Two postings per board. Tonight `gh-a` drops the sentinel and gains one, and `ab-b` gains
+    one: a new posting on each side of the kill."""
     ids = [f"{slug}-1", f"{slug}-2"]
     if slug == "gh-a" and not night:
         ids.append(SENTINEL)
-    if slug == "ab-b" and night:
+    if slug in ("gh-a", "ab-b") and night:
         ids.append(f"{slug}-3")
     return ids
+
+
+#: Tonight this board answers 500, before either kill, so a settled `failed` board is carried.
+FAILING = "gh-b"
 
 
 def _settings(data_dir: Path) -> Settings:
@@ -100,6 +105,8 @@ def _routes(night: bool, log: Path | None = None) -> Iterator[dict[str, respx.Ro
             if log is not None:
                 with log.open("a") as handle:
                     handle.write(slug + "\n")
+            if night and slug == FAILING:
+                return httpx.Response(500)
             return httpx.Response(200, content=content)
         return respond
 
@@ -290,8 +297,10 @@ def test_the_continued_run_reports_the_whole_scan_and_keeps_the_kill_on_record(
             select(tables.scan_manifests.c.scan_finalized_at)
             .where(tables.scan_manifests.c.run_id == summary.run_id)
         ).scalar_one()
-    assert (row.boards_attempted, row.boards_complete) == (len(BOARDS), len(BOARDS))
-    assert (row.new_count, row.closed_count) == (1, 0)  # ab-b's new posting; nothing closes
+    assert (row.boards_attempted, row.boards_complete, row.boards_failed) == (len(BOARDS), 5, 1)
+    # gh-a's new posting (before the kill) and ab-b's (after it); nothing closes.
+    assert (row.new_count, row.closed_count) == (2, 0)
+    assert any(note.startswith(f"{FAILING}: ") for note in row.errors_json)
     assert row.status == "running"  # the pipeline owns the terminal status
     assert row.finished_at is None
     assert any(note.startswith("scan: resumed at ") for note in row.errors_json)
@@ -314,7 +323,8 @@ def _dump(data_dir: Path) -> dict[str, list[tuple[Any, ...]]]:
 @pytest.mark.usefixtures("no_real_sleep")
 @pytest.mark.parametrize(("edit", "field"), [
     ("profile", "listing_gate_key"),
-    ("watch", "company_ids"),
+    ("watch", "boards"),
+    ("slug", "boards"),  # edited in place: the id stays, the listing it reads does not
 ])
 def test_a_changed_manifest_field_refuses_and_writes_nothing(
     tmp_path: Path, edit: str, field: str
@@ -326,9 +336,12 @@ def test_a_changed_manifest_field_refuses_and_writes_nothing(
     with engine.begin() as conn:
         if edit == "profile":
             conn.execute(update(tables.profile).values(exclude_titles_json=["staff", "intern"]))
-        else:
+        elif edit == "watch":
             conn.execute(update(tables.companies).where(tables.companies.c.slug == "ab-b")
                          .values(watched=False))
+        else:
+            conn.execute(update(tables.companies).where(tables.companies.c.slug == "ab-b")
+                         .values(slug="ab-b-narrower"))
     before = _dump(data)
     with _routes(night=True) as routes, pytest.raises(ScanResumeRefusedError) as refusal:
         run_scan(engine, _settings(data), finish=False, continue_scan=True)
@@ -409,9 +422,36 @@ def test_the_scan_code_digest_covers_the_scan_the_providers_and_the_pacing() -> 
     names = {path.relative_to(REPO / "src" / "boardwatch").as_posix()
              for path in resume_module._scan_sources()}
     expected = {f"scan/{p.name}" for p in (REPO / "src/boardwatch/scan").glob("*.py")}
-    expected |= {f"providers/{p.name}" for p in (REPO / "src/boardwatch/providers").glob("*.py")}
+    for package in ("providers", "rank"):
+        expected |= {f"{package}/{p.name}" for p in (REPO / f"src/boardwatch/{package}").glob("*.py")}
     assert names == expected | {"core/politeness.py"}
-    assert {"scan/coordinator.py", "scan/apply.py", "providers/workday.py"} <= names
+    assert {"scan/coordinator.py", "scan/apply.py", "providers/workday.py",
+            "rank/listing_gate.py", "rank/heuristic.py"} <= names
+
+
+def test_a_store_the_migrations_have_not_reached_refuses_unmigrated(tmp_path: Path) -> None:
+    """`ensure_schema` would migrate it; a refused resume writes nothing, a migration included."""
+    from alembic import command
+    from alembic.config import Config
+
+    from boardwatch.store.db import DB_FILENAME
+
+    data = tmp_path / "data"
+    data.mkdir()
+    cfg = Config()
+    cfg.set_main_option("script_location", str(REPO / "src/boardwatch/store/migrations"))
+    cfg.set_main_option("sqlalchemy.url", f"sqlite:///{data / DB_FILENAME}")
+    command.upgrade(cfg, "p_head_shadow")
+    with pytest.raises(ScanResumeRefusedError, match="schema p_head_shadow"):
+        run_scan(get_engine(data), _settings(data), finish=False, continue_scan=True)
+    engine = get_engine(data)
+    with engine.connect() as conn:
+        assert "scan_manifests" not in inspect(conn).get_table_names()
+    engine.dispose()
+
+    missing = tmp_path / "missing"
+    with pytest.raises(ScanResumeRefusedError, match="no store"):
+        run_scan(get_engine(missing), _settings(missing), finish=False, continue_scan=True)
 
 
 @pytest.mark.usefixtures("no_real_sleep")
