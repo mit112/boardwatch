@@ -1833,6 +1833,34 @@ class ProviderFetchCost:
 
 
 @dataclass(frozen=True)
+class HostFetchCost:
+    """One host's chain through the scan's `Fetcher` (T343; `core/politeness.HostCost`).
+
+    Requests to one host are serial, so the scan cannot end before its longest host chain does
+    (T349). `span_seconds` is that chain, from its first request asking for the host's lock to its
+    last releasing it; `service_seconds` and `pace_seconds` are the time the lock was held, sending
+    (retries and backoff included) and pacing; the rest of the span is the host idle.
+    `lock_wait_seconds` is summed over threads, so it can exceed the span. `attempts` counts
+    physical sends (retries and redirect hops included). `in_flight` is requests not yet ended
+    when the scan finished (a board abandoned at its deadline): their time is in no sum here.
+    """
+
+    host: str
+    requests: int
+    attempts: int
+    span_seconds: float
+    service_seconds: float
+    pace_seconds: float
+    lock_wait_seconds: float
+    in_flight: int = 0
+
+
+#: The artifact keeps the longest chains only: a nightly reaches ~1,500 hosts, nearly all of them
+#: one Workday tenant each, and the question is which chain ends the scan.
+HOST_COST_ROWS = 20
+
+
+@dataclass(frozen=True)
 class ScanContext:
     """Scan throughput. Deliberately NOT a funnel edge.
 
@@ -1873,6 +1901,10 @@ class ScanContext:
     # None means NOT MEASURED (a `--no-scan` run, or a stored funnel written before D-330),
     # which is a different statement from an empty tuple ("scanned, and nothing was timed").
     fetch_cost: tuple[ProviderFetchCost, ...] | None = None
+    # T343. Every host the scan's `Fetcher` reached, None when not measured (on the `fetch_cost`
+    # rule). The lanes use their own `Fetcher`, so their requests are absent here, but their
+    # hold on a shared host's lock shows as this scan's `lock_wait_seconds`.
+    host_cost: tuple[HostFetchCost, ...] | None = None
     # T117. The STANDING population no liveness owner can retire: watched boards with no
     # `complete` scan EVER recorded, and the open postings under them. Absence closure needs a
     # `complete` snapshot (`scan/apply.py`) and the death sweep excludes a watched company by
@@ -3062,6 +3094,37 @@ def _fetch_cost_markdown(rows: tuple[ProviderFetchCost, ...] | None) -> list[str
     return out
 
 
+def _longest_chains(rows: tuple[HostFetchCost, ...]) -> list[HostFetchCost]:
+    return sorted(rows, key=lambda r: (-r.span_seconds, r.host))[:HOST_COST_ROWS]
+
+
+def _host_cost_markdown(rows: tuple[HostFetchCost, ...] | None) -> list[str]:
+    """The longest same-host chains, or an explicit statement that they were not measured."""
+    if rows is None:
+        return ["", "Host chains: **not measured** this run."]
+    if not rows:
+        return ["", "Host chains: scanned, but **no request was sent**."]
+    shown = _longest_chains(rows)
+    out = [
+        "",
+        f"**Longest host chains** ({len(shown)} of {len(rows)} hosts). Requests to one host are "
+        "serial, so the scan cannot end before its longest chain. Span = first request to "
+        "last; service and pacing are time holding the host; lock wait is summed over threads. "
+        "Sends are physical (retries and redirects included); a request still in flight when "
+        "the scan ended is in no sum, so its chain is unfinished.",
+        "",
+        "| host | requests | sends | in flight | span s | service s | pacing s | lock wait s |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in shown:
+        out.append(
+            f"| `{row.host}` | {row.requests} | {row.attempts} | {row.in_flight} | "
+            f"{row.span_seconds:.1f} | {row.service_seconds:.1f} | {row.pace_seconds:.1f} | "
+            f"{row.lock_wait_seconds:.1f} |"
+        )
+    return out
+
+
 def _stage_durations_markdown(rows: tuple[StageDuration, ...] | None) -> list[str]:
     """Where the run's wall clock went, or an explicit statement that it was not timed."""
     if rows is None:
@@ -3288,6 +3351,23 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                     funnel.scan.fetch_cost, key=lambda r: r.seconds, reverse=True
                 )
             ],
+            # T343. The longest chains first; `hosts` counts every host, so the cut shows.
+            "host_cost": None if funnel.scan.host_cost is None else {
+                "hosts": len(funnel.scan.host_cost),
+                "rows": [
+                    {
+                        "host": row.host,
+                        "requests": row.requests,
+                        "attempts": row.attempts,
+                        "span_seconds": round(row.span_seconds, 3),
+                        "service_seconds": round(row.service_seconds, 3),
+                        "pace_seconds": round(row.pace_seconds, 3),
+                        "lock_wait_seconds": round(row.lock_wait_seconds, 3),
+                        "in_flight": row.in_flight,
+                    }
+                    for row in _longest_chains(funnel.scan.host_cost)
+                ],
+            },
         },
         # Where the run's wall clock went. Ordered as the stages RAN, not by cost: the whole
         # point is that consecutive marks sum to the run, so an unaccounted block shows up as a
@@ -3721,6 +3801,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
         lines.extend(_watched_never_complete_markdown(funnel.scan.watched_never_complete))
         lines.extend(_watched_stale_complete_markdown(funnel.scan.watched_stale_complete))
         lines.extend(_fetch_cost_markdown(funnel.scan.fetch_cost))
+        lines.extend(_host_cost_markdown(funnel.scan.host_cost))
     else:
         lines.append("skipped (`--no-scan`) — the corpus below is whatever was already stored.")
 

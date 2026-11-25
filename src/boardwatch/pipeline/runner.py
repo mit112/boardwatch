@@ -157,6 +157,7 @@ from boardwatch.reports.run_funnel import (
     DeathProbeReport,
     ExecutionProvenance,
     GateCounters,
+    HostFetchCost,
     LaneReport,
     LivenessCheck,
     ProviderFetchCost,
@@ -4766,6 +4767,15 @@ def _emit_funnel(
                     seconds=cost.seconds, untimed=cost.untimed,
                 )
                 for provider, cost in scan_summary.fetch_cost.items()
+            ),
+            host_cost=None if scan_summary is None else tuple(
+                HostFetchCost(
+                    host=host, requests=cost.requests, attempts=cost.attempts,
+                    span_seconds=cost.span_seconds, service_seconds=cost.service_seconds,
+                    pace_seconds=cost.pace_seconds, lock_wait_seconds=cost.lock_wait_seconds,
+                    in_flight=cost.in_flight,
+                )
+                for host, cost in scan_summary.host_cost.items()
             ),
             watched_never_complete=watched_never_complete,
             watched_stale_complete=watched_stale_complete,
