@@ -102,11 +102,12 @@ def head_scan_shadow(pages: Sequence[Sequence[tuple[bool, bool]]]) -> HeadShadow
 
 
 def date_runs(days: Sequence[date | None], today: date) -> int:
-    """How many newest-first date runs a listing is, in listing order (T340 option 1, D-710).
+    """How many newest-first date runs a listing is, in listing order (D-710).
 
     A run restarts at a row dated within a day once the current run has reached a row at least
     RUN_RESTART_AGE_DAYS old. Unreadable dates are skipped: they neither end a run nor start one.
-    A head scan reads only the first run's head, so a listing of 2+ runs gets a full listing.
+    A head scan reads only the first run's head, so T340's recommended option lists such a board
+    in full.
     """
     if not days:
         return 0

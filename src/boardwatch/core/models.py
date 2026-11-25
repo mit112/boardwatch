@@ -246,8 +246,8 @@ class BoardSnapshot(BaseModel):
     listing_pages: int | None = None
     head_pages: int | None = None
     head_missed: int | None = None
-    # How many newest-first date runs the listing was (`base.date_runs`, D-710): a board whose
-    # last full listing had 2+ gets a full listing instead of a head scan.
+    # How many newest-first date runs the listing was (`base.date_runs`, D-710). T340's recommended
+    # option lists a board in full when its last full listing had 2+.
     listing_runs: int | None = None
 
     @model_validator(mode="after")

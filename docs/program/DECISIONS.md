@@ -740,7 +740,7 @@ and is a no-op when the index is already right. `make index-check` reports drift
 | D-707 | DECISIONS.md | 36722 | The one-host floor (Greenhouse, Ashby) is answered by yield cadence, measured per host first; the 1.0 s gap stays (T349) |
 | D-708 | DECISIONS.md | 36742 | A censored Workday listing is split by facet within `_MAX_PAGES`; the plan is chosen by cost, and a leaf may end on the Intel tail (T351) |
 | D-709 | DECISIONS.md | 36781 | `run --continue-scan` continues the NEWEST scan only, under its own run id, from a manifest table; a refusal writes nothing (T353) |
-| D-710 | DECISIONS.md | 36825 | T340 on Workday: a board whose last full listing had 2+ date runs gets a full listing; every listing records its run count (T340 option 1) |
+| D-710 | DECISIONS.md | 36825 | Every full listing records its newest-first date-run count; T340's Workday option stays the owner's (option 1 recommended) |
 
 ---
 
@@ -36822,7 +36822,7 @@ subprocess instead. *Deadlines, retries and pacing in the manifest* (raised in r
 ends, not what is read, and a shorter deadline can only leave a board `failed` or `partial`, neither of which counts a
 miss. Adding them would refuse resumes for no correctness gain.
 
-## D-710 — T340 on Workday: a board whose last full listing had 2+ date runs gets a full listing; every listing records its run count (T340 option 1)
+## D-710 — Every full listing records its newest-first date-run count; T340's Workday option stays the owner's (option 1 recommended)
 
 **Context.** Run 2904, the first night of the T340 shadow (2026-11-25), recorded 593 rows a head scan would have missed.
 Re-listing the boards (R-063, private ops) named every one: 287 on four first-scan boards, 16 rows the store never keeps,
@@ -36831,15 +36831,17 @@ head scan stops in the first run's "30+ Days Ago" tail and never reaches the run
 Nothing in a listing row says which run it belongs to, and Workday ignores `sortBy`. On T338's 244 boards re-listed a
 day later, 36 had 2+ runs, and the runs moved overnight (4 boards gained a run, 7 merged).
 
-**Choice (owner ruling, 2026-11-25).** Option 1 of the amended T340. When the head scan is built, a board whose most
-recent full listing had 2+ date runs gets a full listing in place of a head scan; every other board is head-scanned as T338 measured. Every full listing
-now records `board_scans.listing_runs` (`providers/base.date_runs`). A run restarts at a row dated within a day once the
+**Choice (2026-11-25).** Every full listing records `board_scans.listing_runs` (`providers/base.date_runs`, #739).
+**Corrected the same day: T340's Workday option is NOT ruled.** This entry first recorded a 07:29 reply as the owner
+choosing option 1; the owner's ruling is to decide after one or two more nightlies. Option 1 is the recommendation:
+when the head scan is built, a board whose most recent full listing had 2+ date runs gets a full listing in place of a
+head scan, and every other board is head-scanned as T338 measured. A run restarts at a row dated within a day once the
 current run has reached a row 20+ days old; unreadable dates are skipped. Split listings record NULL. The shadow keeps
-running, so the remaining 6 nights measure the risk this choice leaves, a board that gains a run between full
+running, so the coming nights measure the risk option 1 would leave, a board that gains a run between full
 listings, as misses on boards whose previous listing had one run. The arming gate of D-707 still holds.
 On T338's sample this keeps 60% of Workday listing pages saved, against 81% under the unguarded rule.
 
-**Rejected.** *Head-scan from each run start the last full listing recorded*: it saves more pages, but the starts move
-overnight, so a recorded offset goes stale between sweeps. *Drop Workday from T340*: it gives up the saving on the 85% of
-boards that list one run. *Wait for more shadow nights before choosing*: the run structure is a property of the
-listings, not of one night, and recording the count is what the remaining nights need to measure option 1.
+**Not recommended (still the owner's to choose).** *Head-scan from each run start the last full listing recorded*: it
+saves more pages, but the starts move overnight, so a recorded offset goes stale between sweeps. *Drop Workday from
+T340*: it gives up the saving on the 85% of boards that list one run. Recording the count serves every option: it is
+what the coming nights need to measure option 1.
