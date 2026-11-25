@@ -1,7 +1,7 @@
 """`board_scans` gains `listing_runs`: how many newest-first date runs a full listing was (D-710).
 
-T340 option 1: a board whose last full listing had 2+ date runs gets a full listing instead of a
-head scan, because the head scan stops in the first run's old tail and never reaches the next
+T340's recommended option 1 (not yet ruled) lists a board in full when its last full listing had
+2+ date runs, because the head scan stops in the first run's old tail and never reaches the next
 run's fresh rows (R-063: 290 such rows on 15 Workday boards in run 2904's shadow).
 
 Additive: one nullable column, no default, no rebuild, no backfill. NULL means the provider does

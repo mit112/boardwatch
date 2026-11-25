@@ -25,7 +25,7 @@ All notable changes to this project are documented here. The format follows
 - **Each full listing records how many newest-first date runs it is (`board_scans.listing_runs`, D-710).** Some Workday
   listings are two or more runs back to back: the first ends in "30+ Days Ago" and the next starts again at "Posted
   Today". A head scan stops in the first run's tail and misses every fresh row after it. That happened to 290 rows on 15
-  boards in the first shadow night. T340 will list such a board in full instead. Recorded for Workday, SmartRecruiters
+  boards in the first shadow night. Under T340's recommended option, such a board gets a full listing. Recorded for Workday, SmartRecruiters
   and Oracle HCM; NULL for a split listing. Nothing reads it yet, so no scan behavior changes. Migration
   `p_listing_runs`: one nullable column.
 - **`boardwatch run --continue-scan` continues a killed or aborted pipeline scan from the boards it committed (T353).**
