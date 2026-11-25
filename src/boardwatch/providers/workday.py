@@ -923,6 +923,9 @@ class WorkdayProvider:
     # Skips the detail read for an id the store holds open (T350): the scan loads the set only
     # for a provider that declares this.
     reads_known_ids = True
+    # Discards rows through the listing gate unstored, so its validators are bound to the gate's
+    # key (T355).
+    gates_listings = True
     # Workday hostnames are UNBOUNDED ({tenant}.wd{N}.myworkdayjobs.com; wd1..wd12 observed),
     # so identity is a SUFFIX and there are no exact paste hosts.
     board_hosts: tuple[str, ...] = ()

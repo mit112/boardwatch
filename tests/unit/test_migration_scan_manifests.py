@@ -8,7 +8,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 BASE = "p_head_shadow"
-HEAD = "p_scan_manifests"
+HEAD = "p_scan_manifests"  # this migration, not the chain head
 MIGRATIONS = Path("src/boardwatch/store/migrations")
 
 

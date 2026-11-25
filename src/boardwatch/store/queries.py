@@ -490,21 +490,30 @@ def get_validators(
     *,
     max_age: timedelta | None = None,
     now: datetime | None = None,
+    gate_key: str | None = None,
 ) -> ResponseValidators | None:
     """Cached conditional-request validators for ``url``, or None when none are usable.
 
     ``max_age`` forces periodic revalidation: a validator whose ``fetched_at`` is older than it
     is dropped, so the next scan refetches unconditionally instead of trusting a possibly-stale
     upstream ETag forever. ``max_age=None`` (the default) never expires a validator.
+
+    ``gate_key`` is passed for a provider that gates listings (T355): its validator is returned
+    only when stored under that same key. A 304 skips the gate, so a validator learned under
+    another gate would hide the rows that gate rejected unstored. A row from before the key was
+    recorded (NULL) never matches: one full read, then it is rewritten with its key.
     """
     row = conn.execute(
-        select(http_cache.c.etag, http_cache.c.last_modified, http_cache.c.fetched_at).where(
-            http_cache.c.url == url
-        )
+        select(
+            http_cache.c.etag, http_cache.c.last_modified, http_cache.c.fetched_at,
+            http_cache.c.gate_key,
+        ).where(http_cache.c.url == url)
     ).one_or_none()
     if row is None:
         return None
     if max_age is not None and (utcnow() if now is None else now) - row.fetched_at > max_age:
+        return None
+    if gate_key is not None and row.gate_key != gate_key:
         return None
     return ResponseValidators(etag=row.etag, last_modified=row.last_modified)
 

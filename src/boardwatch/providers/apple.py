@@ -280,6 +280,9 @@ class AppleProvider:
     # Skips the detail read for an id the store holds open (T350): the scan loads the set only
     # for a provider that declares this.
     reads_known_ids = True
+    # Discards rows through the listing gate unstored, so its validators are bound to the gate's
+    # key (T355).
+    gates_listings = True
     board_hosts: tuple[str, ...] = (_HOST,)
     # A board is a COUNTRY, and a country lives in the QUERY STRING (`?location=...`), never in
     # the path -- the only path segment before `search` is the locale (`en-us`). So no path

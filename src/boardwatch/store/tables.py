@@ -446,6 +446,9 @@ http_cache = Table(
     Column("last_modified", Text, nullable=True),
     Column("fetched_at", DateTime, nullable=False),
     Column("status", Integer, nullable=False),
+    # T355: the listing gate's key (`rank/listing_gate.listing_gate_key`) the validator was learned
+    # under. NULL means stored before this column; a gating provider never reuses such a row.
+    Column("gate_key", Text, nullable=True),
 )
 
 applications = Table(

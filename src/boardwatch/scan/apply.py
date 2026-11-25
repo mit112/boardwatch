@@ -76,6 +76,7 @@ def apply_board(
     scan_kind: str = "board",
     lane: str | None = None,
     pipeline_scan: bool = False,
+    gate_key: str | None = None,
 ) -> ApplyResult:
     """Apply one board snapshot. `scan_kind` says which subsystem produced it (D-285), and `lane`
     which lane, when one did (T199).
@@ -152,7 +153,7 @@ def apply_board(
                 result.closed = _process_missing(
                     conn, snapshot.postings, snapshot.listed_ids, company_id, run_id
                 )
-                _persist_validators(conn, snapshot)
+                _persist_validators(conn, snapshot, gate_key)
         _scan_row(
             conn, run_id, company_id, started_at, snapshot.status,
             len(snapshot.postings), snapshot.error, snapshot=snapshot, scan_kind=scan_kind,
@@ -666,8 +667,12 @@ def _process_missing(
     return closed
 
 
-def _persist_validators(conn: Connection, snapshot: BoardSnapshot) -> None:
-    """D22: complete snapshots only; same transaction as the applied inventory."""
+def _persist_validators(
+    conn: Connection, snapshot: BoardSnapshot, gate_key: str | None = None
+) -> None:
+    """D22: complete snapshots only; same transaction as the applied inventory. `gate_key` is the
+    listing gate the scan ran under (T355), stored so a gating provider reuses the validator only
+    under that gate."""
     observed = snapshot.observed_validators
     if observed is None:
         return
@@ -677,6 +682,7 @@ def _persist_validators(conn: Connection, snapshot: BoardSnapshot) -> None:
         last_modified=observed.last_modified,
         fetched_at=utcnow(),
         status=200,
+        gate_key=gate_key,
     )
     conn.execute(
         stmt.on_conflict_do_update(
@@ -686,6 +692,7 @@ def _persist_validators(conn: Connection, snapshot: BoardSnapshot) -> None:
                 "last_modified": stmt.excluded.last_modified,
                 "fetched_at": stmt.excluded.fetched_at,
                 "status": stmt.excluded.status,
+                "gate_key": stmt.excluded.gate_key,
             },
         )
     )
