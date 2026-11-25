@@ -62,6 +62,7 @@ from boardwatch.store.queries import (
     get_validators,
     get_watched_companies,
     insert_run,
+    open_as_filter,
     reopen_run,
     write_scan_manifest,
 )
@@ -298,9 +299,10 @@ def host_queues(
     ends late by. `sorted` is stable, so equal-depth hosts keep their stored order and a fleet
     with no host collision at all is untouched.
 
-    **The split cannot change what a completed run persists.** `known_posting_ids` and
-    `detail_budget` are built for every board before this runs; the queues partition the work, so
-    the set of boards and their per-board closure sets are identical. Suppression is unaffected
+    **The split cannot change what a completed run persists.** `detail_budget` is built for every
+    board before this runs, and `known_posting_ids` is a board's own open set, which only its own
+    apply changes (T350 loads it at dispatch); the queues partition the work, so the set of boards
+    and their per-board closure sets are identical. Suppression is unaffected
     because `exact_quad` — the only suppressing kind — keys on `company_id`, and two boards are
     two `companies` rows, so no cross-host pair can ever collide. What DOES move is which
     boards a run killed midway got through: each apply commits on its own, so an interrupted
@@ -550,6 +552,26 @@ def _reads_known_ids(provider: Provider | None) -> bool:
     return bool(getattr(provider, "reads_known_ids", False))
 
 
+def _known_posting_ids(engine: Engine, company_id: int) -> frozenset[str]:
+    """One board's open ids, read when the board is handed to the pool (T350 item 1).
+
+    Read then, not for the whole fleet at scan start, so the resident sets are those of the
+    boards in flight. The set is the one a scan-start read would have built: only a board's own
+    apply changes its open postings, and that apply runs after this board's fetch. Company index,
+    as `scan/apply._process_missing` reads it: `open_as_filter` keeps `status` out of index
+    selection.
+    """
+    with engine.connect() as conn:
+        return frozenset(
+            str(posting_id)
+            for posting_id in conn.execute(
+                select(postings.c.provider_posting_id).where(
+                    postings.c.company_id == company_id, open_as_filter()
+                )
+            ).scalars()
+        )
+
+
 def _carry_settled(
     engine: Engine,
     summary: ScanSummary,
@@ -627,20 +649,6 @@ def _scan_body(
     work: list[tuple[Any, Provider, BoardRequest]] = []
     listing_gate = None if gate_inputs is None else build_listing_gate(*gate_inputs)
     with engine.connect() as conn:
-        # Only a provider that declares `reads_known_ids` is handed the set (T350): the other six
-        # never read it, and their 162,518 live ids were loaded for nothing every scan.
-        company_ids = [
-            row.id for row in company_rows if _reads_known_ids(providers.get(row.provider))
-        ]
-        grouped: dict[int, set[str]] = defaultdict(set)
-        if company_ids:
-            for r in conn.execute(
-                select(postings.c.company_id, postings.c.provider_posting_id).where(
-                    postings.c.company_id.in_(company_ids),
-                    postings.c.status == "open",
-                )
-            ).all():
-                grouped[r.company_id].add(str(r.provider_posting_id))
         for row in company_rows:
             prov = providers.get(row.provider)
             if prov is None:
@@ -667,7 +675,7 @@ def _scan_body(
                         validators=get_validators(
                             conn, url, max_age=timedelta(hours=settings.validator_max_age_hours)
                         ),
-                        known_posting_ids=frozenset(grouped.get(row.id, ())),
+                        # Loaded when the board is handed to the pool (`_submit_ready`), T350.
                         detail_budget=settings.detail_fetch_budget,
                         listing_gate=listing_gate,
                     ),
@@ -728,6 +736,10 @@ def _scan_body(
             for row, prov, request in take_ready(
                 queues, busy, settings.scan_workers - len(future_map) - len(abandoned), in_flight
             ):
+                if _reads_known_ids(prov):
+                    request = request.model_copy(
+                        update={"known_posting_ids": _known_posting_ids(engine, row.id)}
+                    )
                 # ONE instant for both halves of the cap: this loop's `wait` and the thread's
                 # own clock inside `Fetcher` (T192c).
                 start = time.monotonic()
