@@ -17,8 +17,9 @@ All notable changes to this project are documented here. The format follows
 
 - **The run funnel names the scan's longest same-host chains (T343, first part).** Requests to one host are serial, so
   the scan cannot end before its longest host chain does (T349). The scan's `Fetcher` now records, per host, the
-  requests and physical sends (so the retries), the time spent sending, the pacing sleep, the time its threads queued for
-  the host's lock, and the span from the first request to the last. `funnel-<id>.json` gains `scan.host_cost` (the 20
+  requests and physical sends (retries and redirect hops included), the time spent sending, the pacing sleep, the time
+  its threads queued for the host's lock, the span from the first request to the last, and how many requests were still
+  in flight when the scan ended (a board abandoned at its deadline), whose time is in none of the sums. `funnel-<id>.json` gains `scan.host_cost` (the 20
   longest spans, and how many hosts there were in all) and the markdown a matching table. The artifact version is
   unchanged, on the `scan.fetch_cost` precedent. Per-board request counts are the second part, still to come.
 - **`boardwatch run --continue-scan` continues a killed or aborted pipeline scan from the boards it committed (T353).**

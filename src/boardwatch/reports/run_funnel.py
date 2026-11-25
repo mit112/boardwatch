@@ -1840,7 +1840,9 @@ class HostFetchCost:
     (T349). `span_seconds` is that chain, from its first request asking for the host's lock to its
     last releasing it; `service_seconds` and `pace_seconds` are the time the lock was held, sending
     (retries and backoff included) and pacing; the rest of the span is the host idle.
-    `lock_wait_seconds` is summed over threads, so it can exceed the span.
+    `lock_wait_seconds` is summed over threads, so it can exceed the span. `attempts` counts
+    physical sends (retries and redirect hops included). `in_flight` is requests not yet ended
+    when the scan finished (a board abandoned at its deadline): their time is in no sum here.
     """
 
     host: str
@@ -1850,6 +1852,7 @@ class HostFetchCost:
     service_seconds: float
     pace_seconds: float
     lock_wait_seconds: float
+    in_flight: int = 0
 
 
 #: The artifact keeps the longest chains only: a nightly reaches ~1,500 hosts, nearly all of them
@@ -3106,14 +3109,16 @@ def _host_cost_markdown(rows: tuple[HostFetchCost, ...] | None) -> list[str]:
         "",
         f"**Longest host chains** ({len(shown)} of {len(rows)} hosts). Requests to one host are "
         "serial, so the scan cannot end before its longest chain. Span = first request to "
-        "last; service and pacing are time holding the host; lock wait is summed over threads.",
+        "last; service and pacing are time holding the host; lock wait is summed over threads. "
+        "Sends are physical (retries and redirects included); a request still in flight when "
+        "the scan ended is in no sum, so its chain is unfinished.",
         "",
-        "| host | requests | retries | span s | service s | pacing s | lock wait s |",
-        "|---|---:|---:|---:|---:|---:|---:|",
+        "| host | requests | sends | in flight | span s | service s | pacing s | lock wait s |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in shown:
         out.append(
-            f"| `{row.host}` | {row.requests} | {row.attempts - row.requests} | "
+            f"| `{row.host}` | {row.requests} | {row.attempts} | {row.in_flight} | "
             f"{row.span_seconds:.1f} | {row.service_seconds:.1f} | {row.pace_seconds:.1f} | "
             f"{row.lock_wait_seconds:.1f} |"
         )
@@ -3358,6 +3363,7 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                         "service_seconds": round(row.service_seconds, 3),
                         "pace_seconds": round(row.pace_seconds, 3),
                         "lock_wait_seconds": round(row.lock_wait_seconds, 3),
+                        "in_flight": row.in_flight,
                     }
                     for row in _longest_chains(funnel.scan.host_cost)
                 ],

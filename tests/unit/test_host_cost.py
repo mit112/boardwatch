@@ -50,6 +50,61 @@ def test_physical_sends_match_the_transports_own_count(tmp_path: Path) -> None:
     assert sum(c.attempts for c in costs.values()) == a.call_count + b.call_count
 
 
+def test_a_redirect_hop_is_a_send_charged_to_the_host_whose_lock_it_ran_under(
+    tmp_path: Path,
+) -> None:
+    with respx.mock:
+        hop = respx.get("https://r.hostcost.example/old").mock(
+            return_value=httpx.Response(302, headers={"Location": "https://t.hostcost.example/new"})
+        )
+        target = respx.get("https://t.hostcost.example/new").mock(return_value=httpx.Response(200))
+        fetcher = _fetcher(tmp_path)
+        fetcher.get("https://r.hostcost.example/old")
+    costs = fetcher.host_costs()
+    assert costs["r.hostcost.example"].requests == 1
+    assert costs["r.hostcost.example"].attempts == hop.call_count + target.call_count == 2
+    assert "t.hostcost.example" not in costs  # the hop held r's lock, never t's
+
+
+def test_a_request_its_board_deadline_ends_before_it_sends_makes_no_send(tmp_path: Path) -> None:
+    with respx.mock:
+        route = respx.get("https://d.hostcost.example/x").mock(return_value=httpx.Response(200))
+        fetcher = _fetcher(tmp_path)
+        fetcher.get("https://d.hostcost.example/x")  # stamps the host, so the next one paces 0.25 s
+        with fetcher.under_deadline(time.monotonic() + 0.05, 0.05), pytest.raises(FetchFailure):
+            fetcher.get("https://d.hostcost.example/x")  # the deadline passes while it paces
+    cost = fetcher.host_costs()["d.hostcost.example"]
+    assert route.call_count == 1
+    assert (cost.requests, cost.attempts, cost.in_flight) == (2, 1, 0)
+    assert cost.pace_seconds >= 0.2, cost  # the pacing it did spend is still counted
+
+
+def test_a_request_still_running_shows_in_flight_and_in_no_sum(tmp_path: Path) -> None:
+    release = threading.Event()
+
+    def held(_request: httpx.Request) -> httpx.Response:
+        release.wait(5)
+        return httpx.Response(200)
+
+    with respx.mock:
+        respx.get("https://f.hostcost.example/x").mock(side_effect=held)
+        fetcher = _fetcher(tmp_path)
+        worker = threading.Thread(target=fetcher.get, args=("https://f.hostcost.example/x",))
+        worker.start()
+        deadline = time.monotonic() + 5
+        while fetcher.host_costs().get("f.hostcost.example") is None or (
+            fetcher.host_costs()["f.hostcost.example"].attempts == 0
+        ):
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        during = fetcher.host_costs()["f.hostcost.example"]
+        release.set()
+        worker.join()
+    after = fetcher.host_costs()["f.hostcost.example"]
+    assert (during.in_flight, during.requests, during.service_seconds) == (1, 0, 0.0)
+    assert (after.in_flight, after.requests) == (0, 1)
+
+
 def test_a_thread_queued_behind_a_sibling_shows_the_wait_outside_its_service(
     tmp_path: Path,
 ) -> None:
@@ -92,8 +147,8 @@ def test_a_copy_is_returned_so_a_reader_cannot_move_the_meter(tmp_path: Path) ->
 
 def _row(host: str, span: float, requests: int = 1) -> HostFetchCost:
     return HostFetchCost(
-        host=host, requests=requests, attempts=requests + 1, span_seconds=span,
-        service_seconds=span / 2, pace_seconds=span / 4, lock_wait_seconds=0.0,
+        host=host, requests=requests, attempts=requests + 2, span_seconds=span,
+        service_seconds=span / 2, pace_seconds=span / 4, lock_wait_seconds=0.0, in_flight=4,
     )
 
 
@@ -104,7 +159,8 @@ def test_markdown_names_the_longest_chain_first_and_says_how_many_were_cut() -> 
     assert len(table) == HOST_COST_ROWS
     assert table[0].startswith(f"| `h{HOST_COST_ROWS + 4}.example` |")
     assert f"({HOST_COST_ROWS} of {HOST_COST_ROWS + 5} hosts)" in "\n".join(lines)
-    assert "| 1 |" in table[0]  # retries = attempts - requests
+    # requests, sends and in flight, each its own column and never a difference of two
+    assert f"| `h{HOST_COST_ROWS + 4}.example` | 1 | 3 | 4 |" in table[0]
 
 
 def test_markdown_tells_not_measured_from_measured_and_empty() -> None:
@@ -121,6 +177,7 @@ def test_the_funnel_carries_the_cut_and_the_host_count() -> None:
         f"h{HOST_COST_ROWS + 1}.example", f"h{HOST_COST_ROWS}.example",
     ]
     assert len(block["rows"]) == HOST_COST_ROWS
+    assert (block["rows"][0]["attempts"], block["rows"][0]["in_flight"]) == (3, 4)
     assert "**Longest host chains**" in funnel_to_markdown(measured)
     unmeasured = funnel(scan=ScanContext(ran=True, boards_attempted=1))
     assert funnel_to_dict(unmeasured)["scan"]["host_cost"] is None  # type: ignore[index]

@@ -4773,6 +4773,7 @@ def _emit_funnel(
                     host=host, requests=cost.requests, attempts=cost.attempts,
                     span_seconds=cost.span_seconds, service_seconds=cost.service_seconds,
                     pace_seconds=cost.pace_seconds, lock_wait_seconds=cost.lock_wait_seconds,
+                    in_flight=cost.in_flight,
                 )
                 for host, cost in scan_summary.host_cost.items()
             ),

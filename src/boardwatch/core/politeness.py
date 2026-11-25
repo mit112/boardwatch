@@ -176,7 +176,9 @@ class HostCost:
     each other or behind another `Fetcher` sharing the process's pacing (the lane stage's), and
     it is summed over threads, so it can exceed `span_seconds`. `span_seconds` runs from the
     first request asking for the lock to the last one releasing it. `attempts` counts physical
-    sends; `attempts - requests` is the retries.
+    sends, each retry and redirect hop included; a request its deadline ends before it sends
+    makes none. `in_flight` counts requests that had asked for the lock and not yet ended when
+    the copy was taken: their time is in none of the sums, so a chain with one is unfinished.
     """
 
     requests: int = 0
@@ -184,6 +186,7 @@ class HostCost:
     service_seconds: float = 0.0
     pace_seconds: float = 0.0
     lock_wait_seconds: float = 0.0
+    in_flight: int = 0
     first_at: float | None = None
     last_at: float | None = None
 
@@ -645,6 +648,7 @@ class Fetcher:
         asked = time.monotonic()
         with self._costs_guard:
             cost.first_at = asked if cost.first_at is None else min(cost.first_at, asked)
+            cost.in_flight += 1  # until the `finally` below; nothing between ordinarily raises
         with self._host_lock(host):  # same-host requests serialize for their full duration
             held = time.monotonic()
             self._pace(host, min_host_delay)
@@ -670,6 +674,7 @@ class Fetcher:
                     took = done - sent
                     board.slowest = took if board.slowest is None else max(board.slowest, took)
                 with self._costs_guard:  # a failed request costs the host too
+                    cost.in_flight -= 1
                     cost.requests += 1
                     cost.lock_wait_seconds += held - asked
                     cost.pace_seconds += sent - held
@@ -758,9 +763,6 @@ class Fetcher:
         deadline: float,
     ) -> FetchResult:
         self._check_deadline(url, deadline)  # a backoff can spend the budget before an attempt
-        cost = self._host_cost(host_key(url))
-        with self._costs_guard:
-            cost.attempts += 1
         headers: dict[str, str] = dict(extra_headers or {})
         if validators is not None:
             if validators.etag:
@@ -802,6 +804,9 @@ class Fetcher:
             # A client injected without that transport keeps only the two clocks above.
             _REQUEST_DEADLINE.at = self._effective_deadline(deadline)
             try:
+                cost = self._host_cost(host_key(url))  # the lock's host, every hop (T343)
+                with self._costs_guard:
+                    cost.attempts += 1
                 streamed = self._client.send(request, stream=True, follow_redirects=False)
                 response = self._read_body(streamed, url, deadline)
             except httpx.TimeoutException as exc:
