@@ -17,7 +17,10 @@ has. data.commoncrawl.org is the one host it reaches, at no more than one reques
 
 A CRAWL SLUG IS A CLAIM, NOT A BOARD: it is any first path segment that ever appeared under the
 host, so it is probed through the provider, and a board is proposed only when it answers with a
-posting the ranker's own role gate calls in-field (and, under `us_only`, a US location).
+posting the ranker's own role gate calls in-field (and, under `us_only`, a US location) whose title
+the seniority gate reads as inside the profile's target band (D-711). Without that last check the
+2026-11-04 run admitted boards whose only in-field openings were Staff and Senior roles: its 666
+boards built 0.07-0.11 leads each in three weeks, against 0.17-0.24 on the boards watched before.
 
 DRAIN. A board dropped here for having no qualifying posting today is persisted nowhere. Re-running
 re-probes it, and that is its re-entry path: no table, no state file.
@@ -46,6 +49,8 @@ from boardwatch.providers.base import Provider
 from boardwatch.rank.location_gate import classify_location
 from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy
+from boardwatch.rank.seniority_gate import seniority_verdict
+from boardwatch.rank.title_band import TitleBandReader
 
 CC_DATA = "https://data.commoncrawl.org/"
 COLLINFO_URL = "https://index.commoncrawl.org/collinfo.json"
@@ -241,7 +246,7 @@ def enumerate_slugs(
     )
 
 
-Outcome = Literal["admitted", "dead", "failed", "empty", "no_qualifying"]
+Outcome = Literal["admitted", "dead", "failed", "empty", "no_qualifying", "out_of_band"]
 
 
 @dataclass(frozen=True)
@@ -265,11 +270,31 @@ def _qualifies(posting: RawPosting, taxonomy: RoleTaxonomy, us_only: bool) -> bo
     return not us_only or classify_location(posting.locations) == "us"
 
 
+def _in_band(title: str, company: tuple[str, str], bands: TitleBandReader) -> bool:
+    # `in_band` only, the same rule as `_qualifies`: `uncertain` (a level token with no scheme
+    # bound) is not evidence that the board hires at the profile's level.
+    verdict, _reason = seniority_verdict(
+        title, bands.schemes.get(company), bands.target_band, bands.tier, bands.catalog
+    )
+    return verdict == "in_band"
+
+
 def probe_board(
-    provider: Provider, fetcher: Fetcher, slug: str, *, taxonomy: RoleTaxonomy, us_only: bool
+    provider: Provider,
+    fetcher: Fetcher,
+    slug: str,
+    *,
+    taxonomy: RoleTaxonomy,
+    us_only: bool,
+    bands: TitleBandReader | None = None,
 ) -> ProbeResult:
     """One board through the real provider. A failure is a counted outcome, never an exception:
-    a crawl slug is third-party input and one bad board must not end a long probe."""
+    a crawl slug is third-party input and one bad board must not end a long probe.
+
+    `bands` is the seniority check; `None` leaves it out, which the caller must say in the file
+    header. A board with in-field postings but none in band is `out_of_band`, counted apart from
+    `no_qualifying` so the check firing is visible rather than folded into a smaller admit count.
+    """
     url = provider.board_url(slug)
     request = BoardRequest(
         provider=provider.name, slug=slug, url=url, detail_budget=PROBE_DETAIL_BUDGET
@@ -288,9 +313,14 @@ def probe_board(
         if snapshot.board_reported_total is not None
         else max(len(postings), len(snapshot.listed_ids))
     )
-    hits = [p.title for p in postings if _qualifies(p, taxonomy, us_only)]
+    in_field = [p.title for p in postings if _qualifies(p, taxonomy, us_only)]
+    hits = (
+        in_field if bands is None
+        else [t for t in in_field if _in_band(t, (provider.name, slug), bands)]
+    )
+    outcome: Outcome = "admitted" if hits else ("out_of_band" if in_field else "no_qualifying")
     return ProbeResult(
-        provider.name, slug, "admitted" if hits else "no_qualifying", url,
+        provider.name, slug, outcome, url,
         open_postings=open_count, qualifying=len(hits), samples=tuple(hits[:2]),
     )
 
@@ -304,6 +334,7 @@ def probe_candidates(
     us_only: bool,
     cap: int,
     on_result: Callable[[ProbeResult], None] | None = None,
+    bands: TitleBandReader | None = None,
 ) -> list[ProbeResult]:
     """Probe every provider's queue, one worker per provider, until `cap` boards are admitted.
 
@@ -322,7 +353,9 @@ def probe_candidates(
         for slug in queues[name]:
             if stop.is_set():
                 break
-            result = probe_board(providers[name], fetcher, slug, taxonomy=taxonomy, us_only=us_only)
+            result = probe_board(
+                providers[name], fetcher, slug, taxonomy=taxonomy, us_only=us_only, bands=bands
+            )
             done.append(result)
             with lock:
                 if result.outcome == "admitted":
@@ -353,6 +386,7 @@ class CrawlCensus:
     no_qualifying: int
     admitted: int
     refused: int
+    out_of_band: int = 0
 
     @property
     def not_probed(self) -> int:
@@ -369,6 +403,7 @@ def crawl_header(
     us_only: bool,
     generated_on: date,
     enumeration: Enumeration,
+    seniority: str = "not checked",
 ) -> str:
     """Comment header: the census, then one checkable evidence line per candidate."""
     lines = [
@@ -376,12 +411,13 @@ def crawl_header(
         "for review before import",
         "#",
         f"# generated {generated_on.isoformat()} from {collection} | providers "
-        f"{', '.join(providers)} | us-only {'yes' if us_only else 'no'}",
+        f"{', '.join(providers)} | us-only {'yes' if us_only else 'no'} | seniority {seniority}",
         f"# index blocks read {enumeration.blocks_read} | failed {enumeration.blocks_failed} "
         f"| omitted by --max-blocks {enumeration.blocks_omitted}",
         f"# enumerated {census.enumerated} | already stored {census.already_known} "
         f"| probed {census.probed} | dead {census.dead} | failed {census.failed} "
         f"| empty {census.empty} | no qualifying posting {census.no_qualifying} "
+        f"| none in band {census.out_of_band} "
         f"| admitted {census.admitted} | held back by the cap {census.refused} "
         f"| not probed {census.not_probed}",
         "#",

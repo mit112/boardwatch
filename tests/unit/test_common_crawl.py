@@ -26,6 +26,8 @@ from boardwatch.lanes.common_crawl import (
     slug_from_key,
 )
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, parse_role_taxonomy
+from boardwatch.rank.title_band import TitleBandReader, title_band_reader
+from tests.conftest import write_bundled_role_taxonomy
 
 ASHBY = "com,ashbyhq,jobs)/"
 TAXONOMY: RoleTaxonomy = parse_role_taxonomy({"version": 1, "field": "software", "bundled": True})
@@ -202,10 +204,21 @@ def _fetcher(tmp_path) -> Fetcher:  # type: ignore[no-untyped-def]
     )
 
 
-def _probe(tmp_path, boards, slug, *, us_only=False):  # type: ignore[no-untyped-def]
+def _probe(tmp_path, boards, slug, *, us_only=False, bands=None):  # type: ignore[no-untyped-def]
     return probe_board(
-        FakeProvider(boards), _fetcher(tmp_path), slug, taxonomy=TAXONOMY, us_only=us_only
+        FakeProvider(boards), _fetcher(tmp_path), slug, taxonomy=TAXONOMY, us_only=us_only,
+        bands=bands,
     )
+
+
+def _entry_bands(tmp_path) -> TitleBandReader:  # type: ignore[no-untyped-def]
+    """The bundled leveling catalog read for a software profile targeting `entry`."""
+    config = tmp_path / "cfg"
+    config.mkdir(exist_ok=True)
+    write_bundled_role_taxonomy(config)
+    bands = title_band_reader(Settings(data_dir=tmp_path, config_dir=config), "entry")
+    assert bands.tier is not None  # else every title abstains and the tests below prove nothing
+    return bands
 
 
 def test_a_dead_board_is_counted_and_a_raising_provider_is_not_propagated(tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -295,6 +308,65 @@ def test_probing_stops_at_the_cap_and_runs_one_worker_per_provider(tmp_path) -> 
 
     assert [r.slug for r in results] == ["a", "b"]
     assert provider.probed == ["a", "b"]
+
+
+def test_a_board_whose_in_field_titles_are_all_above_the_band_is_out_of_band(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    boards = {
+        "senior": _snap(
+            _posting("Senior Software Engineer", "Austin, TX"),
+            _posting("Staff Software Engineer", "Austin, TX"),
+        )
+    }
+
+    # Control: without the check the same board is admitted, so the band is what rejects it.
+    assert _probe(tmp_path, boards, "senior").outcome == "admitted"
+    result = _probe(tmp_path, boards, "senior", bands=_entry_bands(tmp_path))
+
+    assert (result.outcome, result.qualifying, result.samples) == ("out_of_band", 0, ())
+
+
+def test_only_the_in_band_titles_count_as_a_boards_evidence(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    boards = {
+        "mixed": _snap(
+            _posting("Senior Software Engineer", "Austin, TX"),
+            _posting("Software Engineer", "Austin, TX"),
+            _posting("Account Executive", "Austin, TX"),
+        )
+    }
+
+    result = _probe(tmp_path, boards, "mixed", bands=_entry_bands(tmp_path))
+
+    assert (result.outcome, result.qualifying, result.samples) == (
+        "admitted", 1, ("Software Engineer",)
+    )
+
+
+def test_an_out_of_field_board_stays_no_qualifying_under_the_band(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`out_of_band` is for in-field boards only, so the two counts never overlap."""
+    boards = {"sales": _snap(_posting("Senior Account Executive", "Austin, TX"))}
+
+    assert _probe(tmp_path, boards, "sales", bands=_entry_bands(tmp_path)).outcome == "no_qualifying"
+
+
+def test_a_title_whose_level_the_gate_cannot_read_is_not_in_band(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """`uncertain` is an abstain, not evidence of the band: "L4" never resolves without a scheme."""
+    boards = {"levelled": _snap(_posting("Software Engineer L4", "Austin, TX"))}
+
+    assert _probe(tmp_path, boards, "levelled").outcome == "admitted"
+    assert _probe(tmp_path, boards, "levelled", bands=_entry_bands(tmp_path)).outcome == "out_of_band"
+
+
+def test_the_band_reaches_every_probe_in_a_run(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    senior = _snap(_posting("Senior Software Engineer", "Austin, TX"))
+    junior = _snap(_posting("Software Engineer", "Austin, TX"))
+    provider = FakeProvider({"a": senior, "b": junior})
+
+    results = probe_candidates(
+        {"ashby": ["a", "b"]}, {"ashby": provider}, _fetcher(tmp_path),
+        taxonomy=TAXONOMY, us_only=False, cap=5, bands=_entry_bands(tmp_path),
+    )
+
+    assert [(r.slug, r.outcome) for r in results] == [("a", "out_of_band"), ("b", "admitted")]
 
 
 # ---- the HTTP source ----------------------------------------------------------------------

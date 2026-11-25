@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import gzip
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -127,7 +128,9 @@ def test_a_known_slug_in_another_case_is_dropped_and_never_probed(tmp_path: Path
     assert "lightfield" not in FakeAshby.probed
     # Enumerated: lightfield, newco, sales, second, ghost (`embed` is chrome). One is known.
     assert "enumerated 5 | already stored 1 | probed 4 | dead 1 | failed 0 | empty 0" in result.stdout
-    assert "no qualifying posting 1 | admitted 2 | held back by the cap 0" in result.stdout
+    assert "no qualifying posting 1 | none in band 0 | admitted 2 | held back by the cap 0" in result.stdout
+    # No profile row: the target band reads `any`, so the header says the check was left out.
+    assert "| seniority not checked (target_seniority_band is `any`)" in result.stdout
     validate_entries([CompanyEntry(**e) for e in entries])
 
 
@@ -199,3 +202,44 @@ def test_no_role_taxonomy_is_refused_rather_than_dropping_every_board(
 
 def test_an_unsupported_provider_is_refused(tmp_path: Path) -> None:
     assert _run(tmp_path, "--provider", "lever").exit_code == 1
+
+
+def test_a_profile_band_drops_boards_with_only_senior_openings_and_counts_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _store(tmp_path, ("ashby", "Lightfield"))
+    monkeypatch.setitem(BOARDS, "second", [_posting("Senior Software Engineer", "Austin, TX")])
+    monkeypatch.setattr(
+        companies_cmd, "get_profile", lambda conn: SimpleNamespace(target_seniority_band="entry")
+    )
+
+    result = _run(tmp_path, "--provider", "ashby", "--limit", "10")
+
+    assert result.exit_code == 0, result.output
+    assert [e["slug"] for e in yaml.safe_load(result.stdout)["companies"]] == ["newco"]
+    assert "| seniority in band `entry`" in result.stdout
+    assert "no qualifying posting 1 | none in band 1 | admitted 1" in result.stdout
+
+
+def test_a_band_with_no_tier_for_the_field_is_reported_not_applied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every title would abstain, so applying the check would drop every board silently."""
+    _store(tmp_path, ("ashby", "Lightfield"))
+    monkeypatch.setitem(BOARDS, "second", [_posting("Senior Software Engineer", "Austin, TX")])
+    monkeypatch.setattr(
+        companies_cmd, "get_profile", lambda conn: SimpleNamespace(target_seniority_band="entry")
+    )
+    real = companies_cmd.title_band_reader
+    monkeypatch.setattr(
+        companies_cmd, "title_band_reader",
+        lambda settings, band: real(settings, band).__class__(
+            **{**vars(real(settings, band)), "tier": None}
+        ),
+    )
+
+    result = _run(tmp_path, "--provider", "ashby", "--limit", "10")
+
+    assert result.exit_code == 0, result.output
+    assert sorted(e["slug"] for e in yaml.safe_load(result.stdout)["companies"]) == ["newco", "second"]
+    assert "| seniority not checked (leveling.yaml has no tier for your field)" in result.stdout

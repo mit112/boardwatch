@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`companies discover-crawl` admits a board only on a posting inside your seniority band (D-711).** A posting now
+  counts only if the seniority gate reads its title as inside the profile's `target_seniority_band`, on top of the
+  role and location checks. A board whose in-field postings are all outside the band is counted as `none in band`
+  in the header, which also names the band applied, or says the check was left out (no target band, or no
+  seniority tier for your field). The 2026-11-04 run had admitted boards whose only matching openings were senior.
 - **A scan no longer loads every board's open posting ids before its first request (T350 item 1).** Only the six
   providers that skip detail reads for known ids (Workday, Oracle HCM, SmartRecruiters, Eightfold, Phenom, Apple) are
   handed them, and each board's set is read when the board starts. On an offline 5x-fleet benchmark, peak memory fell
