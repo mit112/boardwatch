@@ -25,5 +25,6 @@ def test_head_is_the_board_scans_lane_revision() -> None:
     # `p_board_scans_status_index` (the "ever completed a scan" read, from an index) sits on top,
     # and T319 `p_quarantine_last_drained` (a re-held body keeps its drain) on that, and T334
     # `p_empty_guarded` (the guard's own scan flag, which the death-probe drain counts) on that, and
-    # T340 `p_head_shadow` (the head-scan shadow: listing, head and missed pages) on top.
-    assert schema_revision() == "p_head_shadow"
+    # T340 `p_head_shadow` (the head-scan shadow: listing, head and missed pages) on that, and
+    # T353 `p_scan_manifests` (what each scan was asked to do, for `run --continue-scan`) on top.
+    assert schema_revision() == "p_scan_manifests"

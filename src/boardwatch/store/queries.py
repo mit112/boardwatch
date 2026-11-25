@@ -47,6 +47,7 @@ from boardwatch.store.tables import (
     postings,
     profile,
     runs,
+    scan_manifests,
 )
 
 # An alias so the "no newer version exists" correlated EXISTS can compare a row against
@@ -248,6 +249,48 @@ def finalize_run(
         values["status"] = _checked_status(status)
     with engine.begin() as conn:
         conn.execute(update(runs).where(runs.c.id == run_id).values(**values))
+        # T353: the scan reached its counts, so `run --continue-scan` must never pick it up. In
+        # the same transaction as the counts, so no kill can land between the two.
+        conn.execute(
+            update(scan_manifests)
+            .where(scan_manifests.c.run_id == run_id)
+            .values(scan_finalized_at=utcnow())
+        )
+
+
+def write_scan_manifest(engine: Engine, run_id: int, manifest: dict[str, object]) -> None:
+    """Record what the scan of `run_id` was asked to do (T353), right after `insert_run`.
+
+    A separate transaction from the insert: a kill between the two leaves a run with no manifest,
+    which `--continue-scan` can never pick, so the gap fails toward a fresh scan.
+    """
+    with engine.begin() as conn:
+        conn.execute(insert(scan_manifests).values(run_id=run_id, manifest_json=manifest))
+
+
+def reopen_run(engine: Engine, run_id: int, note: str) -> list[str]:
+    """Return a killed or aborted run to `running` so its scan can continue (T353), and give back
+    its errors with `note` appended.
+
+    The abort record the scan's handler wrote is kept: the run did abort, and the note says it
+    was resumed. The errors come back because `finalize_run` REPLACES `errors_json`, so the
+    resumed scan must carry them into its own list or the finalize would erase them. The UPDATE
+    runs first, as in `finish_run`, so the read sits inside the write lock it took.
+    """
+    with engine.begin() as conn:
+        conn.execute(
+            update(runs)
+            .where(runs.c.id == run_id)
+            .values(
+                status=RUN_RUNNING,
+                finished_at=None,
+                errors_json=func.json_insert(
+                    func.coalesce(runs.c.errors_json, literal_column("'[]'")), "$[#]", note
+                ),
+            )
+        )
+        errors = conn.execute(select(runs.c.errors_json).where(runs.c.id == run_id)).scalar_one()
+    return [str(error) for error in errors or []]
 
 
 #: How many `(path, value)` pairs one `json_insert` call may carry. SQLite bounds a function's

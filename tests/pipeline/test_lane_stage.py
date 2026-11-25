@@ -2044,6 +2044,7 @@ def _fake_run_scan_that_sleeps(delay: float) -> Callable[..., ScanSummary]:
         finish: bool = True,
         on_run_started: Callable[[int], None] | None = None,
         console: Console | None = None,
+        continue_scan: bool = False,
     ) -> ScanSummary:
         run_id = insert_run(engine)
         if on_run_started is not None:
@@ -2075,6 +2076,7 @@ def _fake_run_scan_that_rendezvous(
         finish: bool = True,
         on_run_started: Callable[[int], None] | None = None,
         console: Console | None = None,
+        continue_scan: bool = False,
     ) -> ScanSummary:
         run_id = insert_run(engine)
         if start_lanes_first and on_run_started is not None:
@@ -2245,6 +2247,7 @@ def test_a_fatally_refusing_run_fetches_in_the_background_but_lands_no_lane_rows
         finish: bool = True,
         on_run_started: Callable[[int], None] | None = None,
         console: Console | None = None,
+        continue_scan: bool = False,
     ) -> ScanSummary:
         run_id = insert_run(engine)
         if on_run_started is not None:

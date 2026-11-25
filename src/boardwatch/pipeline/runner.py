@@ -2512,6 +2512,7 @@ def run_pipeline(
     form_fetcher: Fetcher | None = None,
     seed_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
+    continue_scan: bool = False,
 ) -> PipelineSummary:
     """Run `_run_pipeline_leased` holding the scan lease for the WHOLE run (T133).
 
@@ -2526,6 +2527,8 @@ def run_pipeline(
     # extending the lease for it would spend the wall clock SP2 bought back.
     if fresh_hours is not None and (not skip_scan or fresh_hours < 1):
         raise ValueError("fresh_hours requires skip_scan and an integer >= 1")
+    if continue_scan and skip_scan:
+        raise ValueError("continue_scan continues a scan, so it cannot be combined with skip_scan")
     with scan_lease(settings):
         return _run_pipeline_leased(
             engine,
@@ -2542,6 +2545,7 @@ def run_pipeline(
             form_fetcher=form_fetcher,
             seed_fetcher=seed_fetcher,
             queue_root=queue_root,
+            continue_scan=continue_scan,
         )
 
 
@@ -2561,8 +2565,13 @@ def _run_pipeline_leased(
     form_fetcher: Fetcher | None = None,
     seed_fetcher: Fetcher | None = None,
     queue_root: Path | None = None,
+    continue_scan: bool = False,
 ) -> PipelineSummary:
     """Run scan → eligibility → tailor under one run row and return what each stage did.
+
+    `continue_scan` (T353) continues the newest unfinished pipeline scan under its own run id,
+    fetching only the boards it never committed, and runs the later stages under that id. A
+    refusal raises `ScanResumeRefusedError` from the scan having written nothing.
 
     `queue_root=None` (the default) leaves `_sync_queue` reading `DEFAULT_QUEUE_ROOT` from this
     module's namespace at call time, exactly as before T5 (`run_cmd --queue-root` threads a value
@@ -2617,10 +2626,12 @@ def _run_pipeline_leased(
     # P3 slice 2 (D-046): drain any crashed/killed prior run before minting this one's row.
     # Never touches the row this run is about to create (it doesn't exist yet). Swallowed and
     # logged, mirroring `_emit_funnel` below: a drain failure must never block a new run.
-    try:
-        reap_stale_runs(engine, older_than=timedelta(hours=settings.reap_stale_after_hours))
-    except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
-        console.print(f"  ! stale-run reap failed: {exc}", markup=False)
+    # Skipped on `continue_scan`: a refused resume writes nothing, and the next fresh run reaps.
+    if not continue_scan:
+        try:
+            reap_stale_runs(engine, older_than=timedelta(hours=settings.reap_stale_after_hours))
+        except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+            console.print(f"  ! stale-run reap failed: {exc}", markup=False)
 
     # Started BEFORE the scan, so the scan is the first mark rather than untimed work the
     # run's own artifact cannot see.
@@ -2676,7 +2687,8 @@ def _run_pipeline_leased(
         # Not wrapped, and under the lease `run_pipeline` already holds: a second acquisition of
         # `scan.lock` from this process would contend with that one (T133).
         scan_summary = scan_under_lease(
-            engine, settings, finish=False, on_run_started=_start_lane_stage, console=console
+            engine, settings, finish=False, on_run_started=_start_lane_stage, console=console,
+            continue_scan=continue_scan,
         )
         run_id = scan_summary.run_id
     else:

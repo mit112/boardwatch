@@ -35,11 +35,22 @@ from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.base import Provider
 from boardwatch.providers.registry import build_providers
-from boardwatch.rank.heuristic import profile_view_from_row
-from boardwatch.rank.listing_gate import build_listing_gate
-from boardwatch.rank.role_taxonomy import RoleTaxonomyError, load_role_taxonomy
+from boardwatch.rank.heuristic import ProfileView, profile_view_from_row
+from boardwatch.rank.listing_gate import (
+    LISTING_GATE_OFF_KEY,
+    build_listing_gate,
+    listing_gate_key,
+)
+from boardwatch.rank.role_taxonomy import RoleTaxonomy, RoleTaxonomyError, load_role_taxonomy
 from boardwatch.scan.apply import apply_board
 from boardwatch.scan.board_moves import DeadBoard, dead_boards_alert, dead_for_three_scans
+from boardwatch.scan.resume import (
+    ResumePoint,
+    require_current_schema,
+    resolve_resume,
+    scan_manifest,
+    settled_event_counts,
+)
 from boardwatch.scan.workers import board_deadline_snapshot, fetch_board_job
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
@@ -51,6 +62,8 @@ from boardwatch.store.queries import (
     get_validators,
     get_watched_companies,
     insert_run,
+    reopen_run,
+    write_scan_manifest,
 )
 from boardwatch.store.tables import postings
 
@@ -198,10 +211,17 @@ class ScanSummary:
     run_id: int = 0
 
 
-def _armed_listing_gate(conn: Connection, settings: Settings) -> ListingGate | None:
-    """The gate for this scan, from today's profile and taxonomy, and a fresh audit file.
+_GateInputs = tuple[ProfileView, RoleTaxonomy | None, str]
+
+
+def _listing_gate_inputs(
+    conn: Connection, settings: Settings, *, fresh_audit: bool = True
+) -> _GateInputs | None:
+    """What this scan's gate is built from, today's profile and taxonomy, or None for no gate.
 
     Built per scan, so a changed profile or taxonomy applies to every listing the next scan reads.
+    `fresh_audit` truncates the audit file. A continued scan (T353) appends to its run's trace
+    instead, so the killed attempt's gated listings stay readable.
     """
     if not settings.listing_gate:
         return None
@@ -210,12 +230,17 @@ def _armed_listing_gate(conn: Connection, settings: Settings) -> ListingGate | N
         return None
     try:
         taxonomy = load_role_taxonomy(settings.config_dir)
-        _gated_audit_path(settings).write_text("")
+        if fresh_audit:
+            _gated_audit_path(settings).write_text("")
     except (RoleTaxonomyError, OSError, UnicodeError):
         return None  # the ranker reports a broken taxonomy; fetching everything loses nothing
-    return build_listing_gate(
-        profile_view_from_row(row), taxonomy, settings.location_filter_mode
-    )
+    return profile_view_from_row(row), taxonomy, settings.location_filter_mode
+
+
+def _armed_listing_gate(conn: Connection, settings: Settings) -> ListingGate | None:
+    """The gate for this scan, and a fresh audit file."""
+    inputs = _listing_gate_inputs(conn, settings)
+    return None if inputs is None else build_listing_gate(*inputs)
 
 
 def _gated_audit_path(settings: Settings) -> Path:
@@ -397,6 +422,7 @@ def run_scan(
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
+    continue_scan: bool = False,
 ) -> ScanSummary:
     """`on_run_started`, if given, fires with the run id right after it is minted (SP2) --
     INSIDE this lock, before any board is fetched. It exists so a caller can start work that
@@ -414,6 +440,7 @@ def run_scan(
             finish=finish,
             on_run_started=on_run_started,
             console=console,
+            continue_scan=continue_scan,
         )
 
 
@@ -428,8 +455,13 @@ def scan_under_lease(
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
+    continue_scan: bool = False,
 ) -> ScanSummary:
-    """`run_scan` without the acquisition, for a caller already inside `scan_lease`."""
+    """`run_scan` without the acquisition, for a caller already inside `scan_lease`.
+
+    `continue_scan` (T353) continues the newest unfinished pipeline scan under its own run id
+    instead of minting one, or raises `ScanResumeRefusedError` having written nothing.
+    """
     return _run_scan_locked(
         engine,
         settings,
@@ -440,6 +472,7 @@ def scan_under_lease(
         finish,
         on_run_started,
         console,
+        continue_scan,
     )
 
 
@@ -453,19 +486,40 @@ def _run_scan_locked(
     finish: bool = True,
     on_run_started: Callable[[int], None] | None = None,
     console: Console | None = None,
+    continue_scan: bool = False,
 ) -> ScanSummary:
+    if continue_scan:
+        require_current_schema(engine)
     ensure_schema(engine)  # deferred to inside the lock: a REJECTED scan writes nothing
     summary = ScanSummary()
 
     with engine.connect() as conn:
         company_rows = get_watched_companies(conn, slug=company, provider=provider)
-    # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
-    # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
-    # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
-    active_run_id = insert_run(
-        engine, incremental=company is not None or provider is not None,
-        kind="scan" if finish else "delivery",
-    )
+        gate_inputs = _listing_gate_inputs(conn, settings, fresh_audit=not continue_scan)
+        manifest = scan_manifest(
+            company_rows, company, provider,
+            LISTING_GATE_OFF_KEY if gate_inputs is None else listing_gate_key(*gate_inputs),
+            settings,
+        )
+        # Resolved before any write, so a refused resume (a changed manifest field, no run to
+        # continue) leaves the store exactly as it found it.
+        resume = resolve_resume(conn, manifest, utcnow()) if continue_scan else None
+    if resume is not None:
+        active_run_id = resume.run_id
+        summary.errors = reopen_run(
+            engine, active_run_id,
+            f"scan: resumed at {utcnow().isoformat(timespec='seconds')} with "
+            f"{len(resume.settled)} boards already settled",
+        )
+    else:
+        # The insert stays INSIDE the lock, so a scan rejected for contention writes nothing at
+        # all. `finish=False` means this scan is stage one of a pipeline: it records its counts
+        # but the pipeline stamps finished_at, so a run is not "finished" the moment scan returns.
+        active_run_id = insert_run(
+            engine, incremental=company is not None or provider is not None,
+            kind="scan" if finish else "delivery",
+        )
+        write_scan_manifest(engine, active_run_id, manifest.as_json())
     summary.run_id = active_run_id
     if on_run_started is not None:
         on_run_started(active_run_id)
@@ -473,6 +527,7 @@ def _run_scan_locked(
         return _scan_body(
             engine, settings, fetcher, providers, company, provider,
             summary, company_rows, active_run_id, finish, console,
+            gate_inputs=gate_inputs, resume=resume,
         )
     except BaseException as exc:
         # The row exists from here on, and on an exception the caller never learns its id —
@@ -490,6 +545,51 @@ def _run_scan_locked(
         raise
 
 
+def _carry_settled(
+    engine: Engine,
+    summary: ScanSummary,
+    company_rows: Sequence[Any],
+    resume: ResumePoint,
+    finish: bool,
+    dead_errors: dict[int, str],
+) -> set[str]:
+    """Count the boards a continued run already committed into this attempt's summary, so the
+    run's final counts cover the whole scan, and return their providers.
+
+    Read back from each board's own `board_scans` row and the events it wrote, exactly as the
+    fetch loop below would have counted them, error lines included. What the killed attempt kept
+    only in memory is not recoverable: its fetch cost, throttle retries and gated-listing counts
+    cover this attempt alone. `postings_seen` reads `postings_listed`, which counts a snapshot's
+    rows before the apply collapses a repeated id, so a board that served one twice counts it
+    twice here.
+    """
+    slugs = {int(row.id): (str(row.slug), str(row.provider)) for row in company_rows}
+    for board in resume.settled:
+        slug, _ = slugs[board.company_id]
+        summary.companies += 1
+        summary.postings_seen += board.postings_listed
+        if board.empty_guarded:
+            summary.empty_complete_guarded.append(slug)
+        if board.status == "complete":
+            summary.complete += 1
+        elif board.status == "partial":
+            summary.partial += 1
+        elif board.status == "unchanged":
+            summary.unchanged += 1
+        else:
+            summary.failed += 1
+            if not finish and board.dead:
+                dead_errors[board.company_id] = f"{slug}: {board.error}"
+            else:
+                summary.errors.append(f"{slug}: {board.error}")
+    with engine.connect() as conn:
+        events = settled_event_counts(conn, resume.run_id, [b.company_id for b in resume.settled])
+    summary.new += events["new"]
+    summary.closed += events["closed"]
+    summary.reopened += events["reopened"]
+    return {slugs[board.company_id][1] for board in resume.settled}
+
+
 def _scan_body(
     engine: Engine,
     settings: Settings,
@@ -502,14 +602,26 @@ def _scan_body(
     active_run_id: int,
     finish: bool,
     console: Console | None = None,
+    *,
+    gate_inputs: _GateInputs | None = None,
+    resume: ResumePoint | None = None,
 ) -> ScanSummary:
 
+    dead_errors: dict[int, str] = {}
+    settled_providers: set[str] = set()
+    if resume is not None:
+        # T353: the boards this run already committed are counted, never fetched again.
+        settled_providers = _carry_settled(
+            engine, summary, company_rows, resume, finish, dead_errors
+        )
+        settled = {board.company_id for board in resume.settled}
+        company_rows = [row for row in company_rows if row.id not in settled]
     progress = StageProgress(
         "scan", sum(row.provider in providers for row in company_rows), console=console
     )
     work: list[tuple[Any, Provider, BoardRequest]] = []
+    listing_gate = None if gate_inputs is None else build_listing_gate(*gate_inputs)
     with engine.connect() as conn:
-        listing_gate = _armed_listing_gate(conn, settings)
         company_ids = [row.id for row in company_rows]
         grouped: dict[int, set[str]] = defaultdict(set)
         if company_ids:
@@ -553,7 +665,7 @@ def _scan_body(
                 )
             )
     summary.companies += len(work)
-    summary.providers = len({row.provider for row, _, _ in work})
+    summary.providers = len({row.provider for row, _, _ in work} | settled_providers)
 
     # Explicit lifecycle rather than `with ThreadPoolExecutor(...) as pool:`, and the ONLY
     # reason is `cancel_futures`. The context manager shuts down with `wait=True` and no
@@ -590,7 +702,6 @@ def _scan_body(
     # counts its provider took; one whose thread has not ended when the scan has nothing else left
     # to wait on is recorded then, without them — waiting on it is the stall the cap exists to end.
     unrecorded: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, float]] = {}
-    dead_errors: dict[int, str] = {}
     try:
         queues = host_queues(work)
         busy: set[str] = set()
