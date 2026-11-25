@@ -310,6 +310,26 @@ def test_an_id_less_row_makes_the_listing_incomplete_not_silently_short(
 
 
 @respx.mock
+def test_a_non_object_row_makes_the_listing_partial_even_without_a_count(
+    tmp_path: Path,
+) -> None:
+    """T345: with `count` absent the shortfall check is off, so the dropped row must be
+    reported by the pager itself, or the known posting behind it can be closed."""
+    payload = _fx("search_normal.json")
+    first = payload["data"]["positions"][0]
+    payload["data"]["positions"] = [first, None]
+    del payload["data"]["count"]
+    _mock_boot()
+    respx.get(_search_url(0)).mock(return_value=httpx.Response(200, json=payload))
+    snapshot = provider.fetch_board(
+        _fetcher(tmp_path), _request(known=frozenset({str(first["id"])}))
+    )
+    assert snapshot.status == "partial"
+    assert "1 non-object row(s) dropped" in (snapshot.error or "")
+    assert snapshot.board_reported_total is None
+
+
+@respx.mock
 def test_an_id_less_row_is_never_detail_fetched_or_materialised(tmp_path: Path) -> None:
     """The counterpart to the two tests above, on the DETAIL side, and the one that keeps an
     id-less row from minting an identity.

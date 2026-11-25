@@ -47,6 +47,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **An Eightfold listing page with a `null` or non-object row is now `partial` (T345).** The row was dropped from
+  the inventory with no error, and when the page carried no `count` nothing noticed, so the board could end `complete`
+  and close the posting behind the dropped row. Every measured payload carries `count`, so this was not reached live.
 - **A profile or taxonomy edit no longer hides, for up to a day, the listings the old listing gate rejected (T355).** A
   gating provider (in practice SmartRecruiters, 175 of 177 boards holding an ETag) stored its list ETag after the gate
   had discarded some rows unstored, so the next scan under a different gate got a 304 and never saw them. A stored
