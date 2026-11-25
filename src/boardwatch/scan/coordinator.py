@@ -529,7 +529,7 @@ def _run_scan_locked(
         return _scan_body(
             engine, settings, fetcher, providers, company, provider,
             summary, company_rows, active_run_id, finish, console,
-            gate_inputs=gate_inputs, resume=resume,
+            gate_inputs=gate_inputs, gate_key=manifest.listing_gate_key, resume=resume,
         )
     except BaseException as exc:
         # The row exists from here on, and on an exception the caller never learns its id —
@@ -550,6 +550,11 @@ def _run_scan_locked(
 def _reads_known_ids(provider: Provider | None) -> bool:
     """Whether the provider skips the detail read for an id the store holds open (T350)."""
     return bool(getattr(provider, "reads_known_ids", False))
+
+
+def _gates_listings(provider: Provider) -> bool:
+    """Whether the provider discards rows through the listing gate before storing them (T355)."""
+    return bool(getattr(provider, "gates_listings", False))
 
 
 def _known_posting_ids(engine: Engine, company_id: int) -> frozenset[str]:
@@ -631,6 +636,7 @@ def _scan_body(
     console: Console | None = None,
     *,
     gate_inputs: _GateInputs | None = None,
+    gate_key: str = LISTING_GATE_OFF_KEY,
     resume: ResumePoint | None = None,
 ) -> ScanSummary:
 
@@ -672,8 +678,11 @@ def _scan_body(
                     prov,
                     BoardRequest(
                         provider=row.provider, slug=row.slug, url=url,
+                        # T355: a gating provider's validator is sent only under the gate it was
+                        # learned under, so a 304 never hides rows a new gate would keep.
                         validators=get_validators(
-                            conn, url, max_age=timedelta(hours=settings.validator_max_age_hours)
+                            conn, url, max_age=timedelta(hours=settings.validator_max_age_hours),
+                            gate_key=gate_key if _gates_listings(prov) else None,
                         ),
                         # Loaded when the board is handed to the pool (`_submit_ready`), T350.
                         detail_budget=settings.detail_fetch_budget,
@@ -846,7 +855,8 @@ def _scan_body(
                     cost.seconds += snapshot.fetch_seconds
                 try:
                     result = apply_board(
-                        engine, snapshot, row.id, active_run_id, pipeline_scan=not finish
+                        engine, snapshot, row.id, active_run_id, pipeline_scan=not finish,
+                        gate_key=gate_key,
                     )
                 except Exception as exc:  # noqa: BLE001 - one board's apply must not abort the scan
                     # A single board's apply failing — a data quirk tripping a DB constraint, as a

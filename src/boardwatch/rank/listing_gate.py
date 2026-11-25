@@ -11,8 +11,11 @@ import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import asdict
+from functools import lru_cache
+from pathlib import Path
 
 from boardwatch.core.models import ListingGate
+from boardwatch.eligibility.engine import digest_of_sources
 from boardwatch.rank.heuristic import ProfileView, hard_filter_verdict
 from boardwatch.rank.role_gate import taxonomy_role_verdict
 from boardwatch.rank.role_taxonomy import RoleTaxonomy, role_taxonomy_digest
@@ -51,15 +54,26 @@ def listing_gate_key(
 
     The WHOLE profile view, not only the fields the two vetoes read today: a field left out is a
     gate change this key cannot see, and an extra field costs at most one unneeded full read.
+    The gate's own code is in it too, every module of `rank/`, whose vetoes the gate runs: a
+    release that relaxes a veto must not reuse a validator learned under the stricter one.
     T353's scan manifest and T355's validator binding both use this one function (and T339's
     `gate_key` is to).
     """
     view = asdict(profile)
     view["skills"] = sorted(profile.skills)
     payload = {
+        "code": _gate_code_digest(),
         "profile": view,
         "taxonomy": role_taxonomy_digest(taxonomy),
         "location_filter_mode": location_filter_mode,
     }
     encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def _gate_code_digest() -> str:
+    """A digest of `rank/`, through the same `digest_of_sources` as the scan-code digest, so a
+    comment or formatting edit does not change it."""
+    files = sorted(Path(__file__).resolve().parent.glob("*.py"))
+    return digest_of_sources([path.read_text(encoding="utf-8") for path in files])

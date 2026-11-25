@@ -339,6 +339,9 @@ class OracleHCMProvider:
     # Skips the detail read for an id the store holds open (T350): the scan loads the set only
     # for a provider that declares this.
     reads_known_ids = True
+    # Discards rows through the listing gate unstored, so its validators are bound to the gate's
+    # key (T355).
+    gates_listings = True
     # Oracle Fusion hostnames are unbounded ({tenant}.fa.{region}.oraclecloud.com,
     # fa-{x}-saasfaprod1.fa.ocs.oraclecloud.com), so identity is a SUFFIX and there are no
     # exact paste hosts.

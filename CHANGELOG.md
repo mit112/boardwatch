@@ -47,6 +47,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **A profile or taxonomy edit no longer hides, for up to a day, the listings the old listing gate rejected (T355).** A
+  gating provider (in practice SmartRecruiters, 175 of 177 boards holding an ETag) stored its list ETag after the gate
+  had discarded some rows unstored, so the next scan under a different gate got a 304 and never saw them. A stored
+  validator now carries the gate's key (new column `http_cache.gate_key`) and a gating provider sends it only under the
+  same key. The first scan after any gate change, or after this upgrade, reads such a board in full once. Providers that
+  do not gate keep their validators as before.
+
 - **Eightfold boards still on the legacy SmartApply site can be scanned.** A tenant whose career page carries
   `smartApplyData` instead of `pcsx-data` healthchecked `error`, because the provider only knew the PCSX API. It now
   pages such a tenant through `/api/apply/v2/jobs`, reads the full JD from its detail, and takes the remote option
