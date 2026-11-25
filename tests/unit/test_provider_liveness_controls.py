@@ -34,6 +34,7 @@ import respx
 
 from boardwatch.core.liveness import (
     verdict_for_adp_requisition,
+    verdict_for_eightfold_legacy_job,
     verdict_for_eightfold_position,
     verdict_for_smartrecruiters_posting,
 )
@@ -399,6 +400,74 @@ def test_an_eightfold_position_details_wall_is_unknown(tmp_path: Path, status: i
     respx.get(api_url).mock(return_value=httpx.Response(status, content=body))
 
     assert build_prober(_settings(tmp_path))(7, page_url).verdict == "unknown"
+
+
+# --- Eightfold legacy SmartApply tenants (D-706): `/api/apply/v2/jobs/{id}` ---------------
+# Measured 2026-11-25 on three legacy tenants: listed positions answer 200 with their own `id`;
+# an id never listed answers this 404. No legacy position had closed, so there is no closed
+# control and the 404 is `unknown`, never `dead` (D-684).
+
+LEGACY_HOST, LEGACY_DOMAIN, LEGACY_ID = "careers.acmecorp.example", "acmecorp.example", "790298013499"
+LEGACY_NOT_FOUND = json.dumps({"message": f"Job with ID {LEGACY_ID} not found"}).encode() + b"\n"
+
+
+def _legacy_page() -> bytes:
+    blob = html.escape(json.dumps({"domain": LEGACY_DOMAIN, "user": ""}), quote=True)
+    return f'<html><code id="smartApplyData" style="display:none">{blob}</code></html>'.encode()
+
+
+def test_a_legacy_job_answering_its_own_id_is_alive() -> None:
+    body = json.dumps({"id": int(LEGACY_ID), "name": "Engineer"}).encode()
+    result = verdict_for_eightfold_legacy_job(1, 200, body, position_id=LEGACY_ID)
+    assert (result.verdict, result.signal) == ("alive", "refetch_ok")
+
+
+@pytest.mark.parametrize(
+    ("status", "body"),
+    [
+        (404, LEGACY_NOT_FOUND),  # measured for an unlisted id; no closed control yet
+        (404, b'{"message": "Job with ID 1 not found"}'),  # another id
+        (404, WALL),
+        (404, b""),
+        (403, WALL),
+        (200, CHALLENGE),
+        (200, b'{"id": 1}'),  # another position
+        (200, b"[]"),
+    ],
+)
+def test_every_other_legacy_job_answer_is_unknown(status: int, body: bytes) -> None:
+    result = verdict_for_eightfold_legacy_job(1, status, body, position_id=LEGACY_ID)
+    assert (result.verdict, result.signal) == ("unknown", "refetch_error")
+
+
+def test_the_legacy_not_found_is_counted_under_its_own_detail() -> None:
+    result = verdict_for_eightfold_legacy_job(1, 404, LEGACY_NOT_FOUND, position_id=LEGACY_ID)
+    assert "no known-closed control yet" in (result.detail or "")
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (200, json.dumps({"id": int(LEGACY_ID)}).encode(), "alive"),
+        # The page alone reads `alive` for a closed position; the API's 404 must not.
+        (404, LEGACY_NOT_FOUND, "unknown"),
+    ],
+)
+@respx.mock
+def test_the_production_prober_asks_a_legacy_tenants_own_job_resource(
+    tmp_path: Path, status: int, body: bytes, expected: str
+) -> None:
+    page_url = f"https://{LEGACY_HOST}/careers/job/{LEGACY_ID}?microsite={LEGACY_DOMAIN}"
+    respx.get(page_url).mock(return_value=httpx.Response(200, content=_legacy_page()))
+    pcsx = respx.get(f"https://{LEGACY_HOST}/api/pcsx/position_details")
+    api = respx.get(
+        f"https://{LEGACY_HOST}/api/apply/v2/jobs/{LEGACY_ID}", params={"domain": LEGACY_DOMAIN}
+    ).mock(return_value=httpx.Response(status, content=body))
+
+    result = build_prober(_settings(tmp_path))(7, page_url)
+
+    assert api.call_count == 1 and not pcsx.called
+    assert result.verdict == expected
 
 
 # --- ADP: the requisition resource answering an empty requisition -------------------------

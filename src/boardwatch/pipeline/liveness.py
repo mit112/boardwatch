@@ -29,6 +29,7 @@ from boardwatch.core.liveness import (
     LinkedInGuestObservation,
     Liveness,
     verdict_for_adp_requisition,
+    verdict_for_eightfold_legacy_job,
     verdict_for_eightfold_position,
     verdict_for_failure,
     verdict_for_linkedin_guest,
@@ -45,8 +46,7 @@ from boardwatch.lanes.linkedin import guest_posting_url
 from boardwatch.pipeline.progress import StageProgress
 from boardwatch.providers.adp import requisition_url_for_page
 from boardwatch.providers.eightfold import (
-    board_domain,
-    position_details_url,
+    board_api,
     position_page_target,
 )
 from boardwatch.providers.oraclehcm import details_url_for_page
@@ -207,16 +207,20 @@ def build_prober(settings: Settings) -> LivenessProber:
         if page is None or verdict.verdict != "alive":
             return verdict
         try:
-            domain = board_domain(page.content)
+            domain, api = board_api(page.content)
         except ValueError:
             return verdict  # not an Eightfold career page: today's reading of the page stands
-        details = position_details_url(host, domain, position_id)
+        # A legacy SmartApply tenant (D-706) has no `position_details`; it is asked through its
+        # own detail resource, which has its own answer shapes.
+        classify = (
+            verdict_for_eightfold_legacy_job if api.legacy else verdict_for_eightfold_position
+        )
         # The page's 200 is no evidence here (a closed position serves it), so an API answer that
         # says nothing is `unknown`, not the page's `alive`: that would clear earned strikes.
         return ask_json(
             posting_id,
-            details,
-            lambda pid, status, body, *, redirected: verdict_for_eightfold_position(
+            api.detail_url(host, domain, position_id),
+            lambda pid, status, body, *, redirected: classify(
                 pid, status, body, position_id=position_id, redirected=redirected
             ),
         )

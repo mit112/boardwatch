@@ -47,6 +47,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **The death probe asks a legacy SmartApply Eightfold tenant (Netflix, Liberty Mutual, New York Life) its own job
+  resource (T346).** These tenants have no `position_details`, so the probe read only the career page, which answers 200
+  for a closed position too and cleared the posting's strikes. It now asks `/api/apply/v2/jobs/{id}`: a 200 carrying the
+  position's own id is `alive`, and anything else, the tenant's `Job with ID … not found` 404 included, is `unknown`.
+  That 404 becomes a closing signal only once closed positions from two tenants have been captured as controls (D-684).
 - **An Eightfold listing page with a `null` or non-object row is now `partial` (T345).** The row was dropped from
   the inventory with no error, and when the page carried no `count` nothing noticed, so the board could end `complete`
   and close the posting behind the dropped row. Every measured payload carries `count`, so this was not reached live.
