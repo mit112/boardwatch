@@ -279,6 +279,10 @@ _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
 _BOARD_SUFFIX = re.compile(r"\s*(?:Jobs|Careers)\s*$", re.IGNORECASE)
 
 
+def _compact(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.lower())
+
+
 def _clean_name(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -295,7 +299,9 @@ def employer_name(
 
     Greenhouse and SmartRecruiters carry it on every posting the probe already read. Workable
     states it on the account and Ashby only in its board page's title, so those cost one GET,
-    and only for an admitted board. Any failure is `None`, never an exception: the name is a
+    and only for an admitted board. An Ashby title is kept only when it spells the slug's
+    employer ("Artificial Analysis" for `artificialanalysis`), so a challenge page never names
+    a board. Any failure is `None`, never an exception: the name is a
     convenience for the reviewer, and the slug fallback is what the file held before.
     """
     if provider == "greenhouse":
@@ -318,7 +324,13 @@ def employer_name(
             found = _TITLE.search(page.decode("utf-8", "replace"))
             if found is None:
                 return None
-            return _clean_name(_BOARD_SUFFIX.sub("", html.unescape(found.group(1))))
+            name = _clean_name(_BOARD_SUFFIX.sub("", html.unescape(found.group(1))))
+            # A page title is not a name field: a challenge page answers 200 too, and two boards
+            # both named "Just a moment..." would merge. Keep a title only when it and the slug
+            # spell the same employer; otherwise the slug fallback stands.
+            if name is None or not (slug_key := _compact(slug)) or not (key := _compact(name)):
+                return None
+            return name if key in slug_key or slug_key in key else None
     except Exception:
         return None
     return None

@@ -36868,8 +36868,10 @@ applying it would make every title abstain and drop every board without a word.
 the cross-host identity, so the 666 boards of 2026-11-04 cannot group with the same employer's LinkedIn and Indeed rows
 ("Abnormal Security"). An admitted board is now named as its ATS states it: Greenhouse's `company_name` and
 SmartRecruiters' `company.name` from the postings the probe already read, Workable's account `name` and Ashby's board
-page title for one GET each, made only for admitted boards. A failed lookup falls back to the slug-derived name, as
-before; it is never an error. The 666 existing rows are not renamed here: a wrong name merges two companies' postings,
+page title for one GET each, made only for admitted boards. A page title is not a name field (a challenge page
+answers 200 with its own), so an Ashby title is kept only when it and the slug spell the same employer; on today's
+110 Ashby imports that keeps 105 names. A failed lookup falls back to the slug-derived name, as before; it is never an
+error. The 666 existing rows are not renamed here: a wrong name merges two companies' postings,
 so that repair is a reviewed, separate write.
 
 **Drain.** Unchanged from D-673: an `out_of_band` board is stored nowhere and is re-probed on the next run, which is how

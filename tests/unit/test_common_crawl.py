@@ -431,16 +431,35 @@ def test_only_an_admitted_board_is_named(tmp_path) -> None:  # type: ignore[no-u
 
     fetcher = _fetcher(tmp_path, httpx.MockTransport(handler))
     boards = {
-        "good": _snap(_posting("Software Engineer", "Austin, TX")),
+        "acme": _snap(_posting("Software Engineer", "Austin, TX")),
         "sales": _snap(_posting("Account Executive", "Austin, TX")),
+        "senior": _snap(_posting("Senior Software Engineer", "Austin, TX")),
     }
     provider = FakeProvider(boards)  # named "ashby": the name costs a page GET
+    bands = _entry_bands(tmp_path)
 
-    good = probe_board(provider, fetcher, "good", taxonomy=TAXONOMY, us_only=False)
-    sales = probe_board(provider, fetcher, "sales", taxonomy=TAXONOMY, us_only=False)
+    results = [
+        probe_board(provider, fetcher, slug, taxonomy=TAXONOMY, us_only=False, bands=bands)
+        for slug in ("acme", "sales", "senior")
+    ]
 
-    assert (good.employer, sales.employer) == ("Acme", None)
-    assert calls == ["/good"]
+    assert [(r.outcome, r.employer) for r in results] == [
+        ("admitted", "Acme"), ("no_qualifying", None), ("out_of_band", None)
+    ]
+    assert calls == ["/acme"]
+
+
+def test_an_ashby_title_that_does_not_spell_the_slug_is_not_a_name(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """A challenge page answers 200 with its own title; two boards named by it would merge."""
+    challenge = _fetcher(
+        tmp_path, httpx.MockTransport(lambda r: httpx.Response(200, text="<title>Just a moment...</title>"))
+    )
+    real = _fetcher(
+        tmp_path, httpx.MockTransport(lambda r: httpx.Response(200, text="<title>Bags</title>"))
+    )
+
+    assert employer_name("ashby", "artificialanalysis", [], challenge) is None
+    assert employer_name("ashby", "bagsfm", [], real) == "Bags"  # the slug holds the title
 
 
 # ---- the HTTP source ----------------------------------------------------------------------
