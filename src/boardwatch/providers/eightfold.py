@@ -284,7 +284,8 @@ def position_page_target(url: str) -> tuple[str, str] | None:
 
     The shape alone does not prove the host is Eightfold (a custom domain cannot be told from the
     employer's own site, property 1), so the liveness probe still requires the page it fetches
-    to carry a `pcsx-data` boot blob before it asks the API (D-684). Exactly
+    to carry a `pcsx-data` (or, on a legacy tenant, `smartApplyData`) boot blob before it asks
+    the API (D-684, D-706). Exactly
     `https://{host}/careers/job/{id}`, query ignored.
     """
     parts = urlsplit(url)

@@ -579,6 +579,34 @@ def verdict_for_eightfold_position(
     )
 
 
+def verdict_for_eightfold_legacy_job(
+    posting_id: int,
+    status_code: int,
+    body: bytes,
+    *,
+    position_id: str,
+    redirected: bool = False,
+) -> Liveness:
+    """Classify an answer from a legacy SmartApply tenant's `/api/apply/v2/jobs/{id}` (D-706).
+
+    Measured 2026-11-25 on three tenants: 9 of 9 listed positions answered 200 with their own
+    `id`, and an id never listed answered 404 `{"message": "Job with ID {id} not found"}`. No
+    position on a legacy tenant had closed yet, so that 404 is NOT a death: D-684 admits one only
+    after known-closed controls from two tenants. It reads `unknown` under its own detail, so a
+    closed position stops reading `alive` off its page (which serves 200) and the answer can be
+    counted until the controls exist.
+    """
+    record = _json_object(body)
+    if status_code == 200 and record is not None and str(record.get("id")) == position_id:
+        return verdict_for_status(posting_id, status_code)
+    if status_code == 404 and record == {"message": f"Job with ID {position_id} not found"}:
+        # Not `dead` until known-closed controls from two tenants exist (D-684).
+        return _unknown(
+            posting_id, "eightfold legacy job 404 not found; no known-closed control yet"
+        )
+    return _unknown(posting_id, f"eightfold legacy job HTTP {status_code} without this position")
+
+
 def verdict_for_adp_requisition(
     posting_id: int, status_code: int, body: bytes, *, redirected: bool = False
 ) -> Liveness:
