@@ -29,7 +29,7 @@ from sqlalchemy import Connection, Engine, func, select
 from boardwatch.core.clock import utcnow
 from boardwatch.core.lock_reclaim import RECLAIM_POLL_SECONDS, RECLAIM_WINDOW_SECONDS
 from boardwatch.core.models import BoardRequest, BoardSnapshot, ListingGate
-from boardwatch.core.politeness import Fetcher, host_key
+from boardwatch.core.politeness import Fetcher, HostCost, host_key
 from boardwatch.core.settings import Settings
 from boardwatch.notify.scan_health import degraded_scan_alert
 from boardwatch.pipeline.progress import StageProgress
@@ -203,6 +203,8 @@ class ScanSummary:
     # FETCH wall clock per provider (D-330). Keyed by `BoardRequest.provider`, so a provider
     # that contributed no work is absent rather than present at zero.
     fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
+    #: T343. What each host cost this scan's `Fetcher`, keyed by `host_key`.
+    host_cost: dict[str, HostCost] = field(default_factory=dict)
     #: Listings ruled out by the listing gate, by veto. Empty when the gate is not armed.
     listing_gated: Counter[str] = field(default_factory=Counter)
     errors: list[str] = field(default_factory=list)
@@ -940,6 +942,7 @@ def _scan_body(
         )
         if degraded is not None:
             summary.errors.append(degraded)
+    summary.host_cost = fetcher.host_costs()
     finalize_run(
         engine, active_run_id,
         boards_attempted=summary.companies,

@@ -165,6 +165,35 @@ class BoardClock:
     slowest: float | None = None
 
 
+@dataclass
+class HostCost:
+    """What one host cost the requests ONE `Fetcher` made to it (T343).
+
+    The scan ends when its slowest same-host chain ends (T349), so these are the parts of that
+    chain. `service_seconds` is the time inside the send, its retries and their backoff
+    included; `pace_seconds` the pacing sleep before it; both are spent HOLDING the host's lock.
+    `lock_wait_seconds` is the time this Fetcher's threads spent queued for that lock, behind
+    each other or behind another `Fetcher` sharing the process's pacing (the lane stage's), and
+    it is summed over threads, so it can exceed `span_seconds`. `span_seconds` runs from the
+    first request asking for the lock to the last one releasing it. `attempts` counts physical
+    sends; `attempts - requests` is the retries.
+    """
+
+    requests: int = 0
+    attempts: int = 0
+    service_seconds: float = 0.0
+    pace_seconds: float = 0.0
+    lock_wait_seconds: float = 0.0
+    first_at: float | None = None
+    last_at: float | None = None
+
+    @property
+    def span_seconds(self) -> float:
+        if self.first_at is None or self.last_at is None:
+            return 0.0
+        return self.last_at - self.first_at
+
+
 _T = TypeVar("_T")
 
 #: The instant (`time.monotonic()`) the request running on THIS thread must be done by, set by
@@ -486,6 +515,17 @@ class Fetcher:
         self._deadline = settings.fetch_deadline_seconds
         self._pacing = pacing if pacing is not None else _PROCESS_PACING
         self._board = threading.local()  # `.deadline`: the `BoardClock` while a board runs
+        self._costs: dict[str, HostCost] = {}
+        self._costs_guard = threading.Lock()
+
+    def host_costs(self) -> dict[str, HostCost]:
+        """A copy of what each host has cost this Fetcher's requests so far (T343)."""
+        with self._costs_guard:
+            return {host: HostCost(**vars(cost)) for host, cost in self._costs.items()}
+
+    def _host_cost(self, host: str) -> HostCost:
+        with self._costs_guard:
+            return self._costs.setdefault(host, HostCost())
 
     @contextmanager
     def under_deadline(self, at: float, seconds: float) -> Iterator[BoardClock]:
@@ -601,7 +641,12 @@ class Fetcher:
     ) -> FetchResult:
         host = host_key(url)
         self._check_board_deadline(url)  # past the board cap: no lock, no pacing, no send
+        cost = self._host_cost(host)
+        asked = time.monotonic()
+        with self._costs_guard:
+            cost.first_at = asked if cost.first_at is None else min(cost.first_at, asked)
         with self._host_lock(host):  # same-host requests serialize for their full duration
+            held = time.monotonic()
             self._pace(host, min_host_delay)
             # Stamping BEFORE the send makes the delay an interval between request STARTS;
             # stamping in the `finally` makes it a gap between the previous END and the next
@@ -620,9 +665,16 @@ class Fetcher:
                 if not self._pace_from_start:
                     self._pacing.last_request_at[host] = time.monotonic()
                 board: BoardClock | None = getattr(self._board, "deadline", None)
+                done = time.monotonic()
                 if board is not None:  # a failed request's time counts too (T243 round 2)
-                    took = time.monotonic() - sent
+                    took = done - sent
                     board.slowest = took if board.slowest is None else max(board.slowest, took)
+                with self._costs_guard:  # a failed request costs the host too
+                    cost.requests += 1
+                    cost.lock_wait_seconds += held - asked
+                    cost.pace_seconds += sent - held
+                    cost.service_seconds += done - sent
+                    cost.last_at = done if cost.last_at is None else max(cost.last_at, done)
 
     def _host_lock(self, host: str) -> threading.Lock:
         with self._pacing.guard:
@@ -706,6 +758,9 @@ class Fetcher:
         deadline: float,
     ) -> FetchResult:
         self._check_deadline(url, deadline)  # a backoff can spend the budget before an attempt
+        cost = self._host_cost(host_key(url))
+        with self._costs_guard:
+            cost.attempts += 1
         headers: dict[str, str] = dict(extra_headers or {})
         if validators is not None:
             if validators.etag:
