@@ -920,6 +920,9 @@ def _run_split(
 
 class WorkdayProvider:
     name = "workday"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     # Workday hostnames are UNBOUNDED ({tenant}.wd{N}.myworkdayjobs.com; wd1..wd12 observed),
     # so identity is a SUFFIX and there are no exact paste hosts.
     board_hosts: tuple[str, ...] = ()

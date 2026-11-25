@@ -336,6 +336,9 @@ def _total(item: dict[str, Any]) -> int | None:
 
 class OracleHCMProvider:
     name = "oraclehcm"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     # Oracle Fusion hostnames are unbounded ({tenant}.fa.{region}.oraclecloud.com,
     # fa-{x}-saasfaprod1.fa.ocs.oraclecloud.com), so identity is a SUFFIX and there are no
     # exact paste hosts.

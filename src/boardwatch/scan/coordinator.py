@@ -545,6 +545,11 @@ def _run_scan_locked(
         raise
 
 
+def _reads_known_ids(provider: Provider | None) -> bool:
+    """Whether the provider skips the detail read for an id the store holds open (T350)."""
+    return bool(getattr(provider, "reads_known_ids", False))
+
+
 def _carry_settled(
     engine: Engine,
     summary: ScanSummary,
@@ -622,7 +627,11 @@ def _scan_body(
     work: list[tuple[Any, Provider, BoardRequest]] = []
     listing_gate = None if gate_inputs is None else build_listing_gate(*gate_inputs)
     with engine.connect() as conn:
-        company_ids = [row.id for row in company_rows]
+        # Only a provider that declares `reads_known_ids` is handed the set (T350): the other six
+        # never read it, and their 162,518 live ids were loaded for nothing every scan.
+        company_ids = [
+            row.id for row in company_rows if _reads_known_ids(providers.get(row.provider))
+        ]
         grouped: dict[int, set[str]] = defaultdict(set)
         if company_ids:
             for r in conn.execute(

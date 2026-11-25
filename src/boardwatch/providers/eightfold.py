@@ -400,6 +400,9 @@ def validated_host(slug: str) -> str:
 
 class EightfoldProvider:
     name = "eightfold"
+    # Skips the detail read for an id the store holds open (T350): the scan loads the set only
+    # for a provider that declares this.
+    reads_known_ids = True
     # At most this many Eightfold boards are fetched at once, across ALL tenants (T323, D-700);
     # `scan.coordinator.take_ready` reads it. `Fetcher` paces per HOST, and these tenants are
     # different hosts on ONE backend whose throttle (the 405 above) spans them: five 2,000-listing
