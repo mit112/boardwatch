@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`boardwatch run --continue-scan` continues a killed or aborted pipeline scan from the boards it committed (T353).**
+  A retry used to mint a new run and read every board again, so a board that finished before the kill took a second miss
+  for one absence in one night, and two misses close a posting. The flag continues the newest pipeline scan, if it never
+  finished and started under 12 hours ago, under its own run id: it fetches only the boards with no `board_scans` row
+  and keeps the gate's audit file. Each scan now records a manifest of what it was asked to do (new table
+  `scan_manifests`): the boards, filters, listing-gate key, scan settings and a digest of the scan code. If any of these
+  has changed, the resume refuses by that field's name and writes nothing (exit 2). The nightly tick never resumes (D-709).
 - **An Oracle HCM board past the 10,000-row window is listed by posting date, and can now be `complete` (T352).**
   Oracle answers an empty page past 10,000 rows, so such a board stayed `partial` every night and never closed a posting.
   Its listing is now read as two children, posted under 30 days and over 30 days. These partition the board exactly, as

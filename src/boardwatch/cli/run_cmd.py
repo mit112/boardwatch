@@ -21,6 +21,7 @@ from boardwatch.pipeline.death_probe import GUARD_DRAIN_NIGHTS, build_listing_pr
 from boardwatch.pipeline.liveness import build_prober
 from boardwatch.pipeline.runner import DEFAULT_TOP_N, PipelineSummary, run_pipeline
 from boardwatch.scan.coordinator import ScanLockHeldError
+from boardwatch.scan.resume import ScanResumeRefusedError
 
 console = Console()
 
@@ -155,6 +156,13 @@ def run(
     skip_scan: bool = typer.Option(
         False, "--no-scan", help="Reuse already-fetched postings instead of refetching boards."
     ),
+    continue_scan: bool = typer.Option(
+        False,
+        "--continue-scan",
+        help="Continue the newest pipeline scan that was killed or aborted in the last 12 hours, "
+        "under its own run id, fetching only the boards it never committed. Refuses, writing "
+        "nothing, if anything the scan was asked to do has changed since.",
+    ),
     fresh_hours: int | None = typer.Option(
         None, "--fresh-hours", min=1,
         help="Only postings first seen in the last N hours. Requires --no-scan.",
@@ -191,6 +199,10 @@ def run(
     # that first created a run row would burn a row per typo.
     if fresh_hours is not None and not skip_scan:
         raise typer.BadParameter("--fresh-hours requires --no-scan", param_hint="--fresh-hours")
+    if continue_scan and skip_scan:
+        raise typer.BadParameter(
+            "--continue-scan continues a scan; --no-scan runs none", param_hint="--continue-scan"
+        )
     if project and resume_path is not None:
         raise typer.BadParameter(
             "--resume names an authored résumé and --project renders each lead from the "
@@ -256,9 +268,13 @@ def run(
             # `None` unless given, same reasoning as `web_cmd`'s `--queue-root` resolution: a
             # relative root would price a shorter destination than the one actually written.
             queue_root=queue_root.expanduser().resolve() if queue_root is not None else None,
+            continue_scan=continue_scan,
         )
     except ScanLockHeldError as exc:
         console.print(str(exc))  # names the blocking pid when the sidecar has one (D-043)
+        raise typer.Exit(code=2) from None
+    except ScanResumeRefusedError as exc:
+        console.print(str(exc), markup=False)
         raise typer.Exit(code=2) from None
 
     if summary.no_fresh_postings and summary.fatal is None:

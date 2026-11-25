@@ -425,6 +425,19 @@ app_state = Table(
     Column("value", Text, nullable=True),
 )
 
+scan_manifests = Table(
+    "scan_manifests",
+    metadata,
+    # T353: what a scan was asked to do, written beside `insert_run`, so `run --continue-scan` can
+    # tell a same-night retry of THIS scan from a different one. Keyed on the run: one scan per row.
+    Column("run_id", Integer, ForeignKey("runs.id"), primary_key=True),
+    Column("manifest_json", JSON, nullable=False),
+    # Stamped by `finalize_run`. NULL means the scan never reached its counts: killed, aborted or
+    # still running. `runs.boards_attempted` cannot say this, since it is 0 both at insert and for
+    # an empty fleet.
+    Column("scan_finalized_at", DateTime, nullable=True),
+)
+
 http_cache = Table(
     "http_cache",
     metadata,

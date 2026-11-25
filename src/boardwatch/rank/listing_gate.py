@@ -7,12 +7,19 @@ they cannot read, and a missing taxonomy abstains.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Sequence
+from dataclasses import asdict
 
 from boardwatch.core.models import ListingGate
 from boardwatch.rank.heuristic import ProfileView, hard_filter_verdict
 from boardwatch.rank.role_gate import taxonomy_role_verdict
-from boardwatch.rank.role_taxonomy import RoleTaxonomy
+from boardwatch.rank.role_taxonomy import RoleTaxonomy, role_taxonomy_digest
+
+#: The key of a scan that ran with no gate: the setting off, no profile, or a taxonomy that would
+#: not load. Not a digest, so no armed gate's key can equal it.
+LISTING_GATE_OFF_KEY = "listing-gate-off"
 
 
 def build_listing_gate(
@@ -34,3 +41,25 @@ def build_listing_gate(
         return "out_of_field" if role == "out_of_field" else None
 
     return gate
+
+
+def listing_gate_key(
+    profile: ProfileView, taxonomy: RoleTaxonomy | None, location_filter_mode: str
+) -> str:
+    """A digest of everything `build_listing_gate` is built from, so two gates share a key only
+    when they rule identically on every listing.
+
+    The WHOLE profile view, not only the fields the two vetoes read today: a field left out is a
+    gate change this key cannot see, and an extra field costs at most one unneeded full read.
+    T353's scan manifest and T355's validator binding both use this one function (and T339's
+    `gate_key` is to).
+    """
+    view = asdict(profile)
+    view["skills"] = sorted(profile.skills)
+    payload = {
+        "profile": view,
+        "taxonomy": role_taxonomy_digest(taxonomy),
+        "location_filter_mode": location_filter_mode,
+    }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
