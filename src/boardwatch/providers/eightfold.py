@@ -649,6 +649,11 @@ class EightfoldProvider:
                 count = data.get("count")
                 total = max(0, int(count)) if isinstance(count, int) else None
             positions = [api.respell(p) for p in data["positions"] if isinstance(p, dict)]
+            # A non-object row cannot enter `listed_ids`, and the count shortfall check that
+            # would notice it is off when `count` is absent: say so, or the board ends
+            # `complete` and `apply_board` may close the posting behind the dropped row.
+            if dropped := len(data["positions"]) - len(positions):
+                errors.append(f"listing at start {start}: {dropped} non-object row(s) dropped")
             rows.extend(positions)
             if len(data["positions"]) < _PAGE_SIZE:
                 break
