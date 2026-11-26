@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`companies discover-crawl` strips a board's furniture from every ATS's name, and flags a name a watched board
+  already has (T356).** Greenhouse, SmartRecruiters and Workable names lose a trailing `Careers`, `Jobs`, `Job Board`,
+  `Job Posting`, `(Website)` and the like, as Ashby titles already did ("Sony Music Global Job Board" is proposed as
+  "Sony Music Global"; a bare "Referral Board" keeps the slug name). A proposed board whose name normalizes like a
+  watched board's ends its evidence line with `same name as watched <board>`: imported as is, the two would group
+  as one employer.
 - **`companies discover-crawl` admits a board only on a posting inside your seniority band (D-711).** A posting now
   counts only if the seniority gate reads its title as inside the profile's `target_seniority_band`, on top of the
   role and location checks. A board whose in-field postings are all outside the band is counted as `none in band`

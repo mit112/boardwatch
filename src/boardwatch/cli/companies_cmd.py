@@ -20,6 +20,7 @@ from boardwatch.cli._json_out import emit_json, narrative
 from boardwatch.cli.context import build_context
 from boardwatch.core.board_urls import UnknownBoardURL, parse_board_target
 from boardwatch.core.clock import utcnow
+from boardwatch.core.normalize import normalize_company
 from boardwatch.core.politeness import Fetcher, FetchFailure
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.lanes.admission import CompanyBudget
@@ -873,7 +874,16 @@ def discover_crawl(
 
     has_companies = inspect(app_ctx.engine).has_table("companies")
     queues: dict[str, list[str]] = {}
+    watched_names: dict[str, str] = {}
     with app_ctx.engine.connect() as conn:
+        if has_companies:
+            for row in conn.execute(
+                sql_select(companies.c.provider, companies.c.slug, companies.c.name).where(
+                    companies.c.watched.is_(True)
+                )
+            ):
+                if key := normalize_company(row.name):
+                    watched_names.setdefault(key, f"{row.provider}:{row.slug} ({row.name})")
         target = profile_target_band(
             get_profile(conn) if inspect(app_ctx.engine).has_table("profile") else None
         )
@@ -933,6 +943,11 @@ def discover_crawl(
     document = crawl_header(
         selection, census, by_key, collection=collection, providers=names, us_only=us_only,
         generated_on=utcnow().date(), enumeration=enumeration, seniority=seniority,
+        collisions={
+            (c.provider, c.slug): clash
+            for c in selection.admitted
+            if (clash := watched_names.get(normalize_company(c.name)))
+        },
     ) + registry_yaml(selection)
     if out is None:
         typer.echo(document, nl=False)

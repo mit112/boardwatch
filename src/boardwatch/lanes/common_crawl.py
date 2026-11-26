@@ -276,7 +276,16 @@ def _qualifies(posting: RawPosting, taxonomy: RoleTaxonomy, us_only: bool) -> bo
 
 
 _TITLE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
-_BOARD_SUFFIX = re.compile(r"\s*(?:Jobs|Careers)\s*$", re.IGNORECASE)
+# A board's own furniture after the employer's name, measured on 363 Greenhouse and Ashby board
+# names (2026-11-26, T356): "AccuWeather Careers", "Sony Music Global Job Board", "Upbound - Job
+# Posting", "Businessolver - Invitation Only Job Board", "Exadel Inc (Website)", a bare "Referral
+# Board". A " - " segment goes with the furniture it ends in; a hyphen inside a name has no spaces.
+_BOARD_FURNITURE = re.compile(
+    r"(?:\s+[-\u2013|]\s+[^-\u2013|]*?)?\s*\b(?:(?:job|jobs|referral|linkedin)\s+board"
+    r"|job\s+posting|careers\s+marketplace|careers|jobs)\s*$"
+    r"|\s*\((?:website|alternative)\)\s*$",
+    re.IGNORECASE,
+)
 
 
 def _compact(value: str) -> str:
@@ -284,9 +293,10 @@ def _compact(value: str) -> str:
 
 
 def _clean_name(value: object) -> str | None:
+    """The name, whitespace folded and the board's furniture stripped; None if nothing is left."""
     if not isinstance(value, str):
         return None
-    name = " ".join(value.split())
+    name = _BOARD_FURNITURE.sub("", " ".join(value.split())).strip()
     return name if 0 < len(name) <= 120 else None
 
 
@@ -324,7 +334,7 @@ def employer_name(
             found = _TITLE.search(page.decode("utf-8", "replace"))
             if found is None:
                 return None
-            name = _clean_name(_BOARD_SUFFIX.sub("", html.unescape(found.group(1))))
+            name = _clean_name(html.unescape(found.group(1)))
             # A page title is not a name field: a challenge page answers 200 too, and two boards
             # both named "Just a moment..." would merge. Keep a title only when it and the slug
             # spell the same employer; otherwise the slug fallback stands.
@@ -473,8 +483,14 @@ def crawl_header(
     generated_on: date,
     enumeration: Enumeration,
     seniority: str = "not checked",
+    collisions: Mapping[tuple[str, str], str] | None = None,
 ) -> str:
-    """Comment header: the census, then one checkable evidence line per candidate."""
+    """Comment header: the census, then one checkable evidence line per candidate.
+
+    `collisions` maps a candidate to the watched board its name normalizes like (T356): imported
+    under that name, its postings would group with that board's as one employer, so the line says
+    so for the reviewer instead of leaving two employers to merge silently.
+    """
     lines = [
         "# boardwatch companies discover-crawl - candidate boards from the Common Crawl index, "
         "for review before import",
@@ -493,12 +509,19 @@ def crawl_header(
     ]
     if selection.admitted:
         lines.append("# Check each board URL names a real employer:")
+        if collisions:
+            lines.append(
+                "# A line ending `same name as watched` would group with that board's postings: "
+                "rename it, or confirm they are one employer."
+            )
         for c in selection.admitted:
             r = results[(c.provider, c.slug)]
             samples = "; ".join(one_line(t) for t in r.samples)
+            clash = (collisions or {}).get((c.provider, c.slug))
             lines.append(
                 f"#   {c.provider}:{one_line(c.slug)} | {one_line(r.board_url)} "
                 f"| {r.open_postings} open | {r.qualifying} qualifying | e.g. {samples}"
+                + (f" | same name as watched {one_line(clash)}" if clash else "")
             )
     else:
         lines.append("# No new boards. Nothing to import.")

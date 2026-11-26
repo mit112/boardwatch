@@ -257,3 +257,31 @@ def test_a_board_is_named_as_its_ats_states_it_and_falls_back_to_the_slug(tmp_pa
     names = {e["slug"]: e["name"] for e in yaml.safe_load(result.stdout)["companies"]}
     assert names["newco"] == "NewCo, Inc."
     assert names["second"] == "second"  # the ATS gave no name: the slug, as before
+
+
+def test_a_name_that_normalizes_like_a_watched_board_is_flagged_on_its_line(tmp_path: Path) -> None:
+    """Imported as is, NewCo, Inc. would group with the watched NewCo's postings (T356)."""
+    engine = get_engine(tmp_path / "data")
+    ensure_schema(engine)
+    with engine.begin() as conn:
+        upsert_watch(conn, provider="greenhouse", slug="newco-hq", name="NewCo", source="user")
+        # An unwatched row with the same name is a lane row, not a board: no flag from it alone.
+        upsert_watch(conn, provider="workable", slug="second-co", name="second", source="user")
+        conn.execute(text("UPDATE companies SET watched = 0 WHERE slug = 'second-co'"))
+    engine.dispose()
+
+    result = _run(tmp_path, "--provider", "ashby", "--limit", "10")
+
+    lines = {
+        line.split(" | ")[0].strip("# "): line
+        for line in result.stdout.splitlines() if line.startswith("#   ashby:")
+    }
+    assert lines["ashby:newco"].endswith(" | same name as watched greenhouse:newco-hq (NewCo)")
+    assert "same name as watched" not in lines["ashby:second"]
+    assert "rename it, or confirm they are one employer" in result.stdout
+
+
+def test_no_name_collision_writes_no_flag(tmp_path: Path) -> None:
+    result = _run(tmp_path, "--provider", "ashby", "--limit", "10")
+
+    assert "same name as watched" not in result.stdout
