@@ -51,9 +51,10 @@ with an empty board instead of an error. The API cannot page past 10,000 results
 a board is one category: the largest held 3,370 postings when measured, so each board is read
 whole. Bodies arrive with the listing.
 
-**TikTok honest limits.** One board, `tiktok:tiktok`, for the lifeattiktok.com careers site, worldwide
-(4,141 postings when measured, 1,806 in the US). The slug is the site the API serves, from a closed
-catalog: ByteDance's site is not on this API, so it is not a board here. Bodies arrive with the
+**TikTok honest limits.** Two boards, `tiktok:tiktok` for the lifeattiktok.com careers site, worldwide
+(4,141 postings when measured, 1,806 in the US), and `tiktok:bytedance` for joinbytedance.com, which the
+same API serves as its `en` site (1,405 postings when measured, 600 in the US). The slug names the site,
+from a closed catalog. A posting both sites list (10 when measured) is one row on each board. Bodies arrive with the
 listing, one request for the whole board (pages of 5,000). The listing carries no posting date, so `posted_at` is
 always empty. A walk that collects fewer postings than the board states is reported `partial`.
 

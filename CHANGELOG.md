@@ -30,6 +30,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **ByteDance's careers site is a second board of the `tiktok` provider (D-713).** joinbytedance.com is served by
+  the same search API as TikTok's, as its `en` site: `tiktok:bytedance`, or paste a joinbytedance.com/search URL
+  (1,405 postings when measured, 600 in the US). The job-apps lane now files a joinbytedance.com link under that
+  board's own posting id. No board is watched by this change.
 - **A `tiktok` provider reads TikTok's careers site (D-712).** One board, `tiktok:tiktok`, for lifeattiktok.com:
   the site's own public search API, one request for the whole board with every body inline (4,141 postings when
   measured, 1,806 in the US). The listing has no posting date. Paste a lifeattiktok.com/search URL or use

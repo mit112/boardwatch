@@ -77,8 +77,10 @@ def _pages(*bodies: Any) -> Any:
 
 def test_the_slug_is_a_closed_catalog_of_tenant_sites() -> None:
     assert provider.normalize_slug("  TikTok ") == "tiktok"
-    for bad in ("", "bytedance", "tiktokusds", "search"):
-        with pytest.raises(ValueError, match="expected one of tiktok"):
+    assert provider.normalize_slug("ByteDance") == "bytedance"
+    # `en` is ByteDance's `website-path`, not a board slug: the header token names no employer.
+    for bad in ("", "en", "tiktokusds", "search"):
+        with pytest.raises(ValueError, match="expected one of bytedance, tiktok"):
             provider.normalize_slug(bad)
 
 
@@ -92,10 +94,14 @@ def test_any_careers_page_names_the_one_tenant_board() -> None:
         "tiktok", "tiktok"
     )
     assert parse_board_target("https://lifeattiktok.com/search") == ("tiktok", "tiktok")
+    assert parse_board_target("https://joinbytedance.com/search/7673306902554102069") == (
+        "tiktok", "bytedance"
+    )
 
 
 def test_the_employer_is_named_by_the_site() -> None:
     assert provider.employer_name_from_slug("tiktok") == "TikTok"
+    assert provider.employer_name_from_slug("bytedance") == "ByteDance"
 
 
 # --- the request ---------------------------------------------------------------------------
@@ -112,6 +118,22 @@ def test_the_request_is_a_post_with_the_tenant_header_and_the_pinned_page(tmp_pa
     body = json.loads(sent.content)
     assert (body["limit"], body["offset"], body["keyword"]) == (PAGE_LIMIT, 0, "")
     assert body["location_code_list"] == [] and body["job_category_id_list"] == []
+
+
+@respx.mock
+def test_the_bytedance_board_asks_its_own_tenant_and_links_its_own_site(tmp_path: Path) -> None:
+    """ByteDance is the API's `en` tenant; its postings live on joinbytedance.com (D-713)."""
+    route = respx.post(SEARCH).mock(return_value=httpx.Response(200, json=_fixture_json("normal.json")))
+    board_url = provider.board_url("bytedance")
+
+    snap = provider.fetch_board(
+        _fetcher(tmp_path), BoardRequest(provider="tiktok", slug="bytedance", url=board_url)
+    )
+
+    assert board_url == f"{SEARCH}#site=bytedance"
+    assert route.calls.last.request.headers["website-path"] == "en"
+    assert snap.status == "complete"
+    assert snap.postings[0].url == "https://joinbytedance.com/search/9000000000000000001"
 
 
 # --- a normal board ----------------------------------------------------------------------------
@@ -289,7 +311,7 @@ def test_an_out_of_catalog_slug_fails_without_a_request(tmp_path: Path) -> None:
     with respx.mock(assert_all_called=False) as mock:
         route = mock.post(SEARCH)
         snap = provider.fetch_board(
-            _fetcher(tmp_path), BoardRequest(provider="tiktok", slug="bytedance", url=BOARD_URL)
+            _fetcher(tmp_path), BoardRequest(provider="tiktok", slug="en", url=BOARD_URL)
         )
     assert snap.status == "failed"
     assert not route.called
@@ -313,3 +335,6 @@ def test_healthcheck(tmp_path: Path, response: httpx.Response, expected: BoardHe
 
     assert provider.healthcheck(_fetcher(tmp_path), "tiktok") == expected
     assert json.loads(route.calls.last.request.content)["limit"] == 1
+    assert route.calls.last.request.headers["website-path"] == "tiktok"
+    assert provider.healthcheck(_fetcher(tmp_path), "bytedance") == expected
+    assert route.calls.last.request.headers["website-path"] == "en"

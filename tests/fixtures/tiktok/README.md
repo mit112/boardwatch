@@ -24,8 +24,9 @@ contact appears here. The employer is the invented "Acme Corp"; posting ids are
 `9000000000000000001`–`9000000000000000003`, requisition codes `A90001`–`A90003`. The location
 names are ordinary place names, not recorded rows.
 
-**One thing is deliberately real:** the API host `api.lifeattiktok.com` and the tenant token
-`tiktok`, because the provider's identity *is* that host and token.
+**One thing is deliberately real:** the API host `api.lifeattiktok.com` and the tenant tokens
+`tiktok` and `en`, because the provider's identity *is* that host and those tokens. The ByteDance
+board's tests reuse `normal.json`: its rows have the same shape (2026-11-26, two requests).
 
 The contract tests never reach the network; they only read these files.
 
@@ -59,6 +60,7 @@ expiry) was null on every row read, so there is no posting date and no salary to
 | `offset` 4139, `limit` 5 | 2 rows: a short page ends the walk |
 | a keyword that matches nothing | `code` 0, `count` 0, empty list (`empty.json`) |
 | `website-path: bytedance`, on this host and on `api.joinbytedance.com` | not JSON: not a tenant here |
+| `website-path: en` (2026-11-26, joinbytedance.com's own site config) | ByteDance's board: `count` 1405, the same envelope and the same 15 per-job fields, `job_post_info` all null; 25 of the store's 26 joinbytedance.com ids in it, none in `tiktok` |
 
 ## Files
 
