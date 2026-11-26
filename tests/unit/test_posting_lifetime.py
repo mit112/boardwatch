@@ -388,11 +388,14 @@ def test_an_undone_application_adds_no_wait_and_no_exclusion(engine: Engine) -> 
         acme = _company(conn, "Acme", "ashby")
         _, undone = _posting(conn, acme, "a", run=run)
         _, kept = _posting(conn, acme, "b", run=run)
+        _, undone_import = _posting(conn, acme, "c", run=run)
         _apply(conn, undone, "2026-11-03 12:00:00", status="withdrawn")
+        stamp = "2026-11-06 12:00:00"
+        _apply(conn, undone_import, stamp, imported_recorded=stamp, status="withdrawn")
         _apply(conn, kept, "2026-11-05 12:00:00", status="interviewing")
         got = posting_lifetime(conn)
 
-    # Only job b's 4.0-day wait; the undone mark on job a is neither a wait nor an exclusion.
+    # Only job b's 4.0-day wait. Undone marks are neither a wait (a) nor an import exclusion (c).
     assert got["to_apply"] == {
         "count": 1,
         "median_days": 4.0,
