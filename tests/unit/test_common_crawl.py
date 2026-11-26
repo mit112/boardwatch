@@ -394,6 +394,41 @@ def test_greenhouse_and_smartrecruiters_names_come_from_the_postings_already_rea
     assert employer_name("smartrecruiters", "x", [_raw("a", {"listed": "?"})], fetcher) is None
 
 
+# Measured board names (Greenhouse, 2026-11-26, T356) and what the employer is called.
+_FURNISHED = [
+    ("AccuWeather Careers", "AccuWeather"),
+    ("Accenture Federal Services Careers Marketplace", "Accenture Federal Services"),
+    ("Businessolver - Invitation Only Job Board", "Businessolver"),
+    ("Exadel Inc (Website)", "Exadel Inc"),
+    ("Rithum LinkedIn Board", "Rithum"),
+    ("Sony Music Global Job Board", "Sony Music Global"),
+    ("Tenstorrent University Jobs", "Tenstorrent University"),
+    ("Upbound - Job Posting", "Upbound"),
+    ("YipitData (Alternative)", "YipitData"),
+    ("Referral Board", None),  # nothing but furniture: the slug fallback stands
+    # Controls: a name whose furniture words are not at its end, or not separate words, stays.
+    ("Rolls-Royce", "Rolls-Royce"),
+    ("Jobs for Humanity", "Jobs for Humanity"),
+    ("Hyperjobs", "Hyperjobs"),
+    ("24 Hour Home Care - Corporate Division", "24 Hour Home Care - Corporate Division"),
+]
+
+
+@pytest.mark.parametrize(("stated", "expected"), _FURNISHED)
+def test_every_providers_name_loses_the_boards_furniture(  # type: ignore[no-untyped-def]
+    tmp_path, stated: str, expected: str | None
+) -> None:
+    fetcher = _fetcher(tmp_path)  # any request would fail the test
+    sr = [_raw("a", {"listed": {"company": {"identifier": "x", "name": stated}}})]
+    workable = _fetcher(
+        tmp_path, httpx.MockTransport(lambda r: httpx.Response(200, json={"name": stated}))
+    )
+
+    assert employer_name("greenhouse", "x", [_raw("a", {"company_name": stated})], fetcher) == expected
+    assert employer_name("smartrecruiters", "x", sr, fetcher) == expected
+    assert employer_name("workable", "x", [], workable) == expected
+
+
 def test_workable_and_ashby_names_cost_one_request_each(tmp_path) -> None:  # type: ignore[no-untyped-def]
     seen: list[str] = []
 
