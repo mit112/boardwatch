@@ -120,6 +120,7 @@ def _apply(
     *,
     attempt: int = 1,
     imported_recorded: str | None = None,
+    status: str = "applied",
 ) -> None:
     """A submitted application. `imported_recorded` makes it a `track import` row made at that
     stamp, `create_application`'s shape: `created_at` is the import time, `submitted_at` the
@@ -128,9 +129,9 @@ def _apply(
     app_id = conn.execute(
         text(
             "INSERT INTO applications (job_id, attempt_no, status, created_at, updated_at,"
-            " submitted_at) VALUES (:j, :n, 'applied', :c, :c, :s)"
+            " submitted_at) VALUES (:j, :n, :st, :c, :c, :s)"
         ),
-        {"j": job, "n": attempt, "s": stamp, "c": made},
+        {"j": job, "n": attempt, "st": status, "s": stamp, "c": made},
     ).lastrowid
     if imported_recorded is not None:
         conn.execute(
@@ -377,6 +378,26 @@ def test_import_stamped_applications_are_left_out_and_counted(engine: Engine) ->
         "median_days": 2.5,
         "p90_days": 2.9,
         "excluded_imports": 1,
+    }
+
+
+def test_an_undone_application_adds_no_wait_and_no_exclusion(engine: Engine) -> None:
+    # The Applied page's undo writes `withdrawn` and keeps `submitted_at` (T336).
+    with engine.begin() as conn:
+        run = _run(conn)
+        acme = _company(conn, "Acme", "ashby")
+        _, undone = _posting(conn, acme, "a", run=run)
+        _, kept = _posting(conn, acme, "b", run=run)
+        _apply(conn, undone, "2026-11-03 12:00:00", status="withdrawn")
+        _apply(conn, kept, "2026-11-05 12:00:00", status="interviewing")
+        got = posting_lifetime(conn)
+
+    # Only job b's 4.0-day wait; the undone mark on job a is neither a wait nor an exclusion.
+    assert got["to_apply"] == {
+        "count": 1,
+        "median_days": 4.0,
+        "p90_days": 4.0,
+        "excluded_imports": 0,
     }
 
 

@@ -73,6 +73,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- **Time to apply leaves out an application you undid (T336).** The Applied page's undo keeps the submission date, and
+  the posting-lifetime view still read it as an application and added a wait. It now counts only applications still
+  marked applied, as lead aging already did.
 - **A Breezy seed ending `/apply` is fetched at its base `/p/{id}` page (T331).** The `/apply` page carries no JSON-LD,
   so every such seed spent its three attempts on a page that could never resolve. The lane now requests the posting page
   the suffix decorates; the posting id is unchanged. The three seeds already retired this way are not retried by this
