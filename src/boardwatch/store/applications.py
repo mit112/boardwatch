@@ -245,7 +245,11 @@ def set_application_status(
     ).one()
     occurred = occurred_at or utcnow()
     submitted_at = current.submitted_at
-    if submitted_at is None and to_status == "applied":
+    # Stamped on a move into applied from outside the applied set: the first submission, or a
+    # new one after an undo (`withdrawn`), whose date the earlier mark's would misstate (T335).
+    if to_status == "applied" and (
+        submitted_at is None or current.status not in APPLIED_STATUSES
+    ):
         submitted_at = occurred
     conn.execute(
         update(applications)
@@ -322,8 +326,9 @@ def mark_job_applied(conn: Connection, *, posting_id: int, source: str) -> MarkR
 
     The unit is the canonical `job_id`, never the posting (`applications` keys on it), so
     marking one posting applied makes every sibling posting on the same job read as applied.
-    `submitted_at` is set by `set_application_status` on the first transition into applied and
-    is never re-stamped, because the `UNCHANGED` path never writes.
+    `submitted_at` is set by `set_application_status` on a transition into applied from outside
+    `APPLIED_STATUSES`, and a repeat mark never re-stamps it, because the `UNCHANGED` path never
+    writes. Re-marking an attempt that was undone does re-stamp it: that is a new submission.
 
     Runs entirely in the caller's transaction; it never begins or commits.
     """
@@ -379,9 +384,9 @@ def mark_job_unapplied(conn: Connection, *, posting_id: int, source: str) -> Mar
 
     **The applied event is never deleted or rewritten.** `set_application_status` appends a
     second `status_change` row, so the log reads "applied, then withdrawn" — which is what
-    happened. `submitted_at` is left standing for the same reason: it is stamped once, on the
-    first transition into applied, and erasing it would make an application that really was
-    submitted read as one that never was.
+    happened. `submitted_at` is left standing for the same reason: erasing it would make an
+    application that really was submitted read as one that never was. A later re-mark moves the
+    attempt back into applied from outside the set, and `set_application_status` re-stamps it then.
 
     Idempotency mirrors `mark_job_applied` and is the exact complement of it. That function
     returns `UNCHANGED` precisely when the latest attempt is in `APPLIED_STATUSES`; this one

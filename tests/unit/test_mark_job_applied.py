@@ -6,7 +6,8 @@ contract rather than implementation detail:
 * a repeat mark appends **no** `application_events` row — counted before and after, because
   "no new event" is the only thing that stops a refresh-happy browser tab from writing a
   history of duplicate transitions;
-* `submitted_at` records the FIRST transition into applied and is never re-stamped;
+* `submitted_at` records the transition into applied and a repeat mark never re-stamps it;
+  re-marking an undone (`withdrawn`) attempt is a new submission and does;
 * the unit is the canonical `job_id`, not the posting, so a sibling posting on the same job
   reads as applied the moment either one is marked.
 """
@@ -30,6 +31,7 @@ from boardwatch.store.applications import (
     get_application_events,
     get_applications,
     mark_job_applied,
+    mark_job_unapplied,
     set_application_status,
 )
 from boardwatch.store.db import ensure_schema, get_engine
@@ -267,6 +269,73 @@ def test_submitted_at_survives_a_repeat_mark(engine: Engine) -> None:
         app = get_application(conn, app_id)
     assert app is not None
     assert app.submitted_at == applied_at
+    _assert_fks_clean(engine)
+
+
+def test_a_reapplied_attempt_carries_the_new_date_not_the_undone_one(engine: Engine) -> None:
+    """Applied 11-02, undone five minutes later, applied again 11-12: the date is 11-12 (T335)."""
+    first = NOW.replace(year=2026, month=11, day=2, hour=12, minute=0, second=0, microsecond=0)
+    undone = first + timedelta(minutes=5)
+    again = first + timedelta(days=10)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        _posting(conn, job_id=job_id)
+        app_id = create_application(conn, job_id=job_id, status="interested", source="user")
+        for status, at in (("applied", first), ("withdrawn", undone), ("applied", again)):
+            set_application_status(
+                conn, application_id=app_id, to_status=status, source="user", occurred_at=at
+            )
+    with engine.connect() as conn:
+        app = get_application(conn, app_id)
+    assert app is not None
+    assert app.status == "applied"
+    assert app.submitted_at == again
+    _assert_fks_clean(engine)
+
+
+def test_a_move_within_the_applied_set_keeps_the_date(engine: Engine) -> None:
+    """Only a move into applied from outside the set stamps; applied -> interviewing does not."""
+    applied_at = NOW - timedelta(days=3)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        _posting(conn, job_id=job_id)
+        app_id = create_application(conn, job_id=job_id, status="interested", source="user")
+        set_application_status(
+            conn, application_id=app_id, to_status="applied", source="user",
+            occurred_at=applied_at,
+        )
+        set_application_status(conn, application_id=app_id, to_status="interviewing", source="user")
+        set_application_status(conn, application_id=app_id, to_status="applied", source="user")
+    with engine.connect() as conn:
+        app = get_application(conn, app_id)
+    assert app is not None
+    assert app.submitted_at == applied_at
+    _assert_fks_clean(engine)
+
+
+def test_the_web_undo_then_remark_moves_the_date(engine: Engine) -> None:
+    """The Applied page's path: `mark_job_unapplied`, then `mark_job_applied` on the same job."""
+    applied_at = NOW - timedelta(days=10)
+    with engine.begin() as conn:
+        job_id = _job(conn)
+        posting_id, _ = _posting(conn, job_id=job_id)
+        app_id = create_application(conn, job_id=job_id, status="interested", source="user")
+        set_application_status(
+            conn, application_id=app_id, to_status="applied", source="user",
+            occurred_at=applied_at,
+        )
+    with engine.begin() as conn:
+        mark_job_unapplied(conn, posting_id=posting_id, source="web")
+    with engine.connect() as conn:
+        held = get_application(conn, app_id)
+    with engine.begin() as conn:
+        result = mark_job_applied(conn, posting_id=posting_id, source="web")
+    with engine.connect() as conn:
+        app = get_application(conn, app_id)
+    assert held is not None and held.submitted_at == applied_at   # the undo keeps the date
+    assert result.outcome is MarkOutcome.TRANSITIONED
+    assert app is not None
+    assert app.submitted_at is not None and app.submitted_at >= NOW
     _assert_fks_clean(engine)
 
 

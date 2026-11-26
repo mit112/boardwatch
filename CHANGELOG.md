@@ -78,6 +78,9 @@ All notable changes to this project are documented here. The format follows
   marked applied, as lead aging already did.
 - **The viewer answers 404 to a numeric id too long for the store (T337).** An id past 18 digits overflowed SQLite's
   integer, and the viewer closed the connection without a reply. Every id route now caps its id at 18 digits.
+- **An application you undo and then record again carries the new date (T335).** Recording it again kept the undone
+  mark's submission date, so lead aging, time to apply and the JD-change view measured from the earlier mark. The date
+  now moves whenever an attempt re-enters applied from outside the applied set; a repeat mark still leaves it alone.
 - **A Breezy seed ending `/apply` is fetched at its base `/p/{id}` page (T331).** The `/apply` page carries no JSON-LD,
   so every such seed spent its three attempts on a page that could never resolve. The lane now requests the posting page
   the suffix decorates; the posting id is unchanged. The three seeds already retired this way are not retried by this
