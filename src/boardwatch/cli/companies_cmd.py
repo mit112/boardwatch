@@ -57,12 +57,14 @@ from boardwatch.providers.base import BoardHealth, Provider
 from boardwatch.providers.registry import PROVIDER_NAMES, build_providers, derive_employer_name
 from boardwatch.providers.workday import FacetBucket, FacetUnavailable, read_facet_catalog
 from boardwatch.rank.role_taxonomy import RoleTaxonomyError, load_role_taxonomy
+from boardwatch.rank.title_band import TitleBandReader, profile_target_band, title_band_reader
 from boardwatch.registry.loader import load_catalog
 from boardwatch.registry.validate import CatalogError, CompanyEntry, validate_entries
 from boardwatch.scan.coordinator import default_providers
 from boardwatch.store.queries import (
     companies_named_by_slug,
     company_exists,
+    get_profile,
     list_watches,
     set_company_name,
     stored_slug,
@@ -830,7 +832,10 @@ def discover_crawl(
     Enumerates board slugs from Common Crawl's static index files, drops every slug already in
     `companies` (watched or not, any case), probes each remaining board through its real provider,
     and admits one only if a posting passes the ranker's role gate for YOUR role taxonomy as
-    `in_field` (and, under `--us-only`, reads as located in the US; `unknown` does not count).
+    `in_field` (and, under `--us-only`, reads as located in the US; `unknown` does not count)
+    and the seniority gate reads its title as inside your profile's target band. A board whose
+    in-field postings are all outside the band is counted as `none in band`. With no target band,
+    or no seniority tier for your field, the header says the check was not applied.
 
     Writes a registry-format file and NOTHING ELSE: no store write, and nothing persisted while
     it runs, so an interrupt loses only the run. Review it, then `companies import`. That human
@@ -869,6 +874,19 @@ def discover_crawl(
     has_companies = inspect(app_ctx.engine).has_table("companies")
     queues: dict[str, list[str]] = {}
     with app_ctx.engine.connect() as conn:
+        target = profile_target_band(
+            get_profile(conn) if inspect(app_ctx.engine).has_table("profile") else None
+        )
+        reader = title_band_reader(app_ctx.settings, target)
+        bands: TitleBandReader | None = reader
+        if target == "any":
+            bands, seniority = None, "not checked (target_seniority_band is `any`)"
+        elif reader.tier is None:
+            # Every title would abstain and every board would read `none in band`: a check that
+            # cannot fire is reported, not applied.
+            bands, seniority = None, "not checked (leveling.yaml has no tier for your field)"
+        else:
+            seniority = f"in band `{target}`"
         for name, slugs in enumeration.slugs.items():
             queues[name] = [
                 s for s in slugs
@@ -888,13 +906,14 @@ def discover_crawl(
     results = probe_candidates(
         queues, {n: p for n, p in build_providers().items() if n in queues},
         Fetcher(app_ctx.settings), taxonomy=taxonomy, us_only=us_only, cap=cap,
-        on_result=progress,
+        on_result=progress, bands=bands,
     )
     by_key = {(r.provider, r.slug): r for r in results}
     admitted = {k: r for k, r in by_key.items() if r.outcome == "admitted"}
     candidates = tuple(
         BoardCandidate(
-            provider=p, slug=s, name=derive_employer_name(p, s) or s,
+            provider=p, slug=s,
+            name=admitted[(p, s)].employer or derive_employer_name(p, s) or s,
             evidence_url=admitted[(p, s)].board_url, records=admitted[(p, s)].qualifying,
         )
         for p, s in ramp_order(admitted)
@@ -909,11 +928,11 @@ def discover_crawl(
         enumerated=enumerated, already_known=known, probed=len(results),
         dead=count.count("dead"), failed=count.count("failed"), empty=count.count("empty"),
         no_qualifying=count.count("no_qualifying"), admitted=len(selection.admitted),
-        refused=len(selection.refused),
+        refused=len(selection.refused), out_of_band=count.count("out_of_band"),
     )
     document = crawl_header(
         selection, census, by_key, collection=collection, providers=names, us_only=us_only,
-        generated_on=utcnow().date(), enumeration=enumeration,
+        generated_on=utcnow().date(), enumeration=enumeration, seniority=seniority,
     ) + registry_yaml(selection)
     if out is None:
         typer.echo(document, nl=False)
