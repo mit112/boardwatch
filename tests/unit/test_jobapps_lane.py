@@ -1380,3 +1380,17 @@ def test_the_header_strip_still_runs_before_the_unescape(tmp_path):
     root = tmp_path / "queue"
     _write(root, "Greenhouse", "noheader", jd=f"Company: Acme\n\n{_ESCAPED_BAR}\n")
     assert _postings(_collect(root, tmp_path)) == []
+
+
+def test_a_bytedance_careers_link_files_under_the_bytedance_board(tmp_path):
+    """joinbytedance.com is the same API's `en` tenant, and its links file under that board."""
+    root = tmp_path / "queue"
+    _write(
+        root, "Other", "a",
+        company="ByteDance",
+        direct_url="https://joinbytedance.com/search/7673306902554102069",
+        posting_id="pst_b",
+    )
+    (snapshot,) = _collect(root, tmp_path).snapshots
+    assert (snapshot.provider, snapshot.slug) == ("tiktok", "bytedance")
+    assert snapshot.snapshot.postings[0].provider_posting_id == "7673306902554102069"

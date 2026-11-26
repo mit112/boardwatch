@@ -215,8 +215,9 @@ postings is a COMPANY DISCOVERY problem and the entry point for that is `amazon:
 What would have to change to lift this is not a rule here but the identity: a board keyed on
 something a posting URL actually names. Out-of-catalog stays a failure, never a guess.
 
-TIKTOK (lifeattiktok.com) — READ POSITIONALLY, like oraclehcm. The board is the site's one tenant,
-so the host alone names the slug and no path segment does. A posting URL is `search/{id}`, the
+TIKTOK (lifeattiktok.com, and joinbytedance.com for the `bytedance` board, D-713) — READ
+POSITIONALLY, like oraclehcm. The board is the site's one tenant, so the host alone names the slug
+and no path segment does. A posting URL is `search/{id}`, the
 `id` `providers/tiktok.py` stores as `provider_posting_id`; all 134 lifeattiktok.com links in the
 live store on 2026-11-25 had exactly that shape. Without this branch a lane link on the host
 would be filed under the `tiktok` board with the lane's own key, which no board scan lists, so

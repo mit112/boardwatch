@@ -32,16 +32,21 @@ def _fixture_json(provider: str, name: str) -> Any:
     return json.loads((FIXTURES / provider / name).read_bytes())
 
 
-def test_tiktok_round_trip_lands_on_the_boards_own_posting_key() -> None:
+@pytest.mark.parametrize(
+    ("host", "slug"), [("lifeattiktok.com", "tiktok"), ("joinbytedance.com", "bytedance")]
+)
+def test_tiktok_round_trip_lands_on_the_boards_own_posting_key(host: str, slug: str) -> None:
     """The id a board scan lists is the id a lane link converges onto, so a lane row is never
-    filed under a key the board cannot list (and close)."""
+    filed under a key the board cannot list (and close). Each tenant's links land on its own
+    board (D-713)."""
     jobs = _fixture_json("tiktok", "normal.json")["data"]["job_post_list"]
     assert jobs
     for job in jobs:
-        posting = tiktok.parse_job(job)
+        posting = tiktok.parse_job(job, host=host)
+        assert posting.url.startswith(f"https://{host}/search/")
         target = parse_posting_target(posting.url)
         assert target == PostingTarget(
-            provider="tiktok", slug="tiktok", posting_ref=posting.provider_posting_id
+            provider="tiktok", slug=slug, posting_ref=posting.provider_posting_id
         )
 
 
@@ -52,6 +57,7 @@ def test_tiktok_round_trip_lands_on_the_boards_own_posting_key() -> None:
         "https://lifeattiktok.com/search/abc",
         "https://lifeattiktok.com/search/123/apply",
         "https://lifeattiktok.com/position/123",
+        "https://joinbytedance.com/search/123/apply",
     ],
 )
 def test_a_tiktok_url_that_is_not_search_id_refuses(url: str) -> None:

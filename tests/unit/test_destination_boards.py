@@ -128,7 +128,7 @@ def test_two_destinations_on_one_board_are_one_candidate() -> None:
 
 
 def test_a_destination_on_an_unregistered_host_is_counted_not_proposed() -> None:
-    boards, census = _boards([(1, "https://joinbytedance.com/search/7668484998475663621")])
+    boards, census = _boards([(1, "https://careers-daddario.icims.com/jobs/2680/job")])
     assert boards == ()  # type: ignore[comparison-overlap]
     assert (census.unparsed, census.parsed) == (1, 0)
 

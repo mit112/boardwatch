@@ -29,7 +29,9 @@ def test_each_provider_declares_public_board_hosts() -> None:
     assert SmartRecruitersProvider().board_hosts == ("jobs.smartrecruiters.com",)
     assert AmazonProvider().board_hosts == ("www.amazon.jobs", "amazon.jobs")
     assert AppleProvider().board_hosts == ("jobs.apple.com",)
-    assert TikTokProvider().board_hosts == ("lifeattiktok.com", "www.lifeattiktok.com")
+    assert TikTokProvider().board_hosts == (
+        "lifeattiktok.com", "www.lifeattiktok.com", "joinbytedance.com", "www.joinbytedance.com"
+    )
 
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:

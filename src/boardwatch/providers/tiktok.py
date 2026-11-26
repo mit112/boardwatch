@@ -1,4 +1,5 @@
-"""TikTok provider: the lifeattiktok.com careers search API (live-verified 2026-11-25).
+"""TikTok provider: the lifeattiktok.com careers search API (live-verified 2026-11-25), which also
+serves ByteDance's joinbytedance.com site (2026-11-26, D-713).
 
 `POST https://api.lifeattiktok.com/api/v1/public/supplier/search/job/posts` with a JSON body
 `{"keyword": "", "limit": k, "offset": n, ...}` and ONE required header, `website-path: tiktok`,
@@ -28,9 +29,12 @@ MEASURED LIMITS (2026-11-25):
 4. The listing carries NO posting date: every date-like key under `job_post_info` was null on
    every row read, so `posted_at` is NULL by measurement, not by omission.
 
-THE SLUG IS THE TENANT SITE, and the catalog is closed. `website-path` is the API's own tenant
-key; only `tiktok` was measured, and `bytedance` answered non-JSON on both this host and
-`api.joinbytedance.com`, so it is NOT a slug here. An out-of-catalog token is a failure, never a
+THE SLUG NAMES A TENANT SITE, and the catalog is closed. `website-path` is the API's own tenant
+key. Two were measured: `tiktok` (lifeattiktok.com) and `en`, which is ByteDance's joinbytedance.com
+(1,405 rows on 2026-11-26, the same 15 fields; 25 of the 26 joinbytedance.com ids in the store were
+in it and none in `tiktok`). The token `en` names no employer, so the board slug is `bytedance` and
+`_TENANTS` maps it; `bytedance` itself as a `website-path` answers HTTP 400. Ten ids were listed by
+both tenants that day: each board keeps its own row. An out-of-catalog slug is a failure, never a
 new board: an unknown tenant is a request this API was never seen to answer, and a board that
 reads empty is the one status that would close every posting it holds.
 
@@ -43,6 +47,7 @@ insertion that cancel out, which is why the page size keeps the board to one req
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from boardwatch.core.models import BoardRequest, BoardSnapshot, RawPosting
@@ -51,30 +56,46 @@ from boardwatch.providers.base import BoardHealth, count_listed_ids, health_from
 
 _API_HOST = "api.lifeattiktok.com"
 _SEARCH_URL = f"https://{_API_HOST}/api/v1/public/supplier/search/job/posts"
-_SITE_HOST = "lifeattiktok.com"
 _PAGE_LIMIT = 5000  # served in full when measured: the whole board in one request
 # 4 x 5000 = 20,000 rows, about five times the measured board. The real termination is always a
 # short page; this bound only stops a server that keeps serving full pages forever.
 _MAX_PAGES = 4
-# Tenant site -> the employer it is. Closed: see the module docstring.
-_SITES: dict[str, str] = {"tiktok": "TikTok"}
-# Paste host -> tenant site, so a pasted careers URL names its board.
-_HOST_SITE: dict[str, str] = {_SITE_HOST: "tiktok", f"www.{_SITE_HOST}": "tiktok"}
+
+
+@dataclass(frozen=True)
+class _Tenant:
+    site: str  # the `website-path` header value
+    employer: str
+    host: str  # the public careers site, which posting URLs are on
+
+
+# Board slug -> tenant. Closed: see the module docstring.
+_TENANTS: dict[str, _Tenant] = {
+    "tiktok": _Tenant(site="tiktok", employer="TikTok", host="lifeattiktok.com"),
+    "bytedance": _Tenant(site="en", employer="ByteDance", host="joinbytedance.com"),
+}
+# Paste host -> board slug, so a pasted careers URL names its board.
+_HOST_SITE: dict[str, str] = {
+    host: slug
+    for slug, tenant in _TENANTS.items()
+    for host in (tenant.host, f"www.{tenant.host}")
+}
 
 
 class TikTokProvider:
     name = "tiktok"
     board_hosts: tuple[str, ...] = tuple(_HOST_SITE)
     slug_help = (
-        "a TikTok careers board is one tenant site; paste a lifeattiktok.com/search URL, "
-        "or add it as tiktok:tiktok"
+        "a TikTok or ByteDance careers board is one tenant site; paste a lifeattiktok.com or "
+        "joinbytedance.com /search URL, or add it as tiktok:tiktok or tiktok:bytedance"
     )
 
     @staticmethod
     def employer_name_from_slug(slug: str) -> str | None:
         """The employer the tenant site belongs to. The slug is a site token, not an employer
         spelling, so the default rule (the slug is the employer) would name it `tiktok`."""
-        return _SITES.get(slug.strip().lower())
+        tenant = _TENANTS.get(slug.strip().lower())
+        return tenant.employer if tenant is not None else None
 
     @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
@@ -84,11 +105,11 @@ class TikTokProvider:
 
     @staticmethod
     def normalize_slug(slug: str) -> str:
-        """The lowercased site token. Raises ValueError outside `_SITES`, which
+        """The lowercased board slug. Raises ValueError outside `_TENANTS`, which
         `board_urls._normalize_slug` turns into UnknownBoardURL."""
         token = slug.strip().lower()
-        if token not in _SITES:
-            raise ValueError(f"expected one of {', '.join(sorted(_SITES))}, got {slug!r}")
+        if token not in _TENANTS:
+            raise ValueError(f"expected one of {', '.join(sorted(_TENANTS))}, got {slug!r}")
         return token
 
     def board_url(self, slug: str) -> str:
@@ -98,7 +119,7 @@ class TikTokProvider:
 
     def fetch_board(self, fetcher: Fetcher, request: BoardRequest) -> BoardSnapshot:
         try:
-            site = self.normalize_slug(request.slug)
+            tenant = _TENANTS[self.normalize_slug(request.slug)]
         except ValueError as exc:
             return _failed(request.url, f"invalid tiktok slug: {exc}")
 
@@ -114,7 +135,7 @@ class TikTokProvider:
             first = page == 0
             try:
                 result = fetcher.post_json(
-                    _SEARCH_URL, _body(offset, _PAGE_LIMIT), headers={"website-path": site}
+                    _SEARCH_URL, _body(offset, _PAGE_LIMIT), headers={"website-path": tenant.site}
                 )
             except FetchFailure as exc:
                 if first:
@@ -186,7 +207,7 @@ class TikTokProvider:
         row_errors: list[str] = []
         for row in rows:
             try:
-                postings.append(parse_job(row))
+                postings.append(parse_job(row, host=tenant.host))
             except Exception as exc:  # per-row isolation: one bad row never fails the board
                 row_errors.append(f"job {row.get('id', '?')}: {exc}")
         if row_errors and not postings and rows:
@@ -210,7 +231,7 @@ class TikTokProvider:
 
     def healthcheck(self, fetcher: Fetcher, slug: str) -> BoardHealth:
         try:
-            site = self.normalize_slug(slug)
+            site = _TENANTS[self.normalize_slug(slug)].site
         except ValueError:
             return BoardHealth.ERROR
         try:
@@ -264,11 +285,11 @@ def _stated_total(data: dict[str, Any]) -> int | None:
     return max(0, raw)
 
 
-def parse_job(job: dict[str, Any]) -> RawPosting:
+def parse_job(job: dict[str, Any], *, host: str = "lifeattiktok.com") -> RawPosting:
     """One listing row -> RawPosting. Raises for a row that cannot be keyed or titled;
-    `fetch_board` isolates the failure to that row.
+    `fetch_board` isolates the failure to that row. `host` is the tenant's careers site.
 
-    `id` is the posting id the public URL carries (`lifeattiktok.com/search/{id}`, the form the
+    `id` is the posting id the public URL carries (`{host}/search/{id}`, the form the
     store's application links already hold); `code` (`A15293`) is a requisition code and stays in
     `raw_json`. No salary keys carry values (`job_post_info.min_salary` and friends were null on
     every row read), so the salary scalars keep their NULL defaults.
@@ -286,7 +307,7 @@ def parse_job(job: dict[str, Any]) -> RawPosting:
     return RawPosting(
         provider_posting_id=posting_id,
         title=title,
-        url=f"https://{_SITE_HOST}/search/{posting_id}",
+        url=f"https://{host}/search/{posting_id}",
         locations=_locations(job),
         department=department,
         remote_policy="unknown",
