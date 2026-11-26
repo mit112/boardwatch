@@ -2559,7 +2559,7 @@ def test_an_unknown_application_is_404_on_every_application_route(
 _ID_ROUTES = (
     ("/api/queue/{id}", "GET"),
     ("/api/queue/{id}/applied", "POST"),
-    ("/api/applied/{id}/followup", "POST"),
+    ("/api/applied/{id}/unfollowup", "POST"),  # `followup` refuses a dateless body first
     ("/api/applications/{id}/events", "GET"),
     ("/api/pdf/{id}", "GET"),
     ("/api/postings/{id}/diff?from=1&to=2", "GET"),
