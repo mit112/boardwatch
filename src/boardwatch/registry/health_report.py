@@ -47,9 +47,21 @@ def _render_summary(rows: list[HealthRow]) -> str:
     return "\n".join(lines)
 
 
+def _render_not_ok(rows: list[HealthRow]) -> str:
+    """One line per entry that is not OK, for the step log: the summary table lands on the run's
+    summary tab only, so without these lines a failed run's log names no entry (T330)."""
+    bad = [r for r in rows if r.status is not BoardHealth.OK]
+    if not bad:
+        return f"all {len(rows)} entries ok"
+    lines = [f"{len(bad)} of {len(rows)} entries not ok:"]
+    lines += [f"  {r.name} ({r.provider}:{r.slug}): {r.status.value}" for r in bad]
+    return "\n".join(lines)
+
+
 def main() -> int:
     """Entrypoint: probe the catalog, write a Markdown table to GITHUB_STEP_SUMMARY (or stdout),
-    and return a non-zero code iff any entry is DEAD/ERROR/UNREACHABLE (EMPTY does not fail)."""
+    print every non-OK entry to stdout, and return a non-zero code iff any entry is
+    DEAD/ERROR/UNREACHABLE (EMPTY does not fail)."""
     rows = check_catalog()
     summary = _render_summary(rows)
     out = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -58,6 +70,7 @@ def main() -> int:
             fh.write(summary + "\n")
     else:
         print(summary)
+    print(_render_not_ok(rows))
     return 1 if has_failures(r.status for r in rows) else 0
 
 

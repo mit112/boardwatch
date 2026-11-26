@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The weekly registry-health check now says what failed, and opens an issue when it does (T330).** Its step log
+  names every catalog entry that is not ok (name, provider, slug, status); before, the table went to the run's summary
+  tab only and the log ended with `exit code 1`. A new `registry-watch` job opens one issue while the check fails,
+  comments on it each failing run, and closes it when the check passes. The 2026-11-09 and 2026-11-16 failures
+  (`lever:mistral`, `ashby:browserbase`) went two weeks unnoticed.
 - **`companies discover-crawl` strips a board's furniture from every ATS's name, and flags a name a watched board
   already has (T356).** Greenhouse, SmartRecruiters and Workable names lose a trailing `Careers`, `Jobs`, `Job Board`,
   `Job Posting`, `(Website)` and the like, as Ashby titles already did ("Sony Music Global Job Board" is proposed as

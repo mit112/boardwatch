@@ -14,3 +14,78 @@ jobs:
       - run: pip install uv && uv sync
       # exits non-zero iff DEAD/ERROR/UNREACHABLE → drift is visible; EMPTY passes (§3.2-valid)
       - run: uv run python -m boardwatch.registry.health_report
+
+  # Opens one issue when `health` fails, comments on it while it keeps failing, and closes it when
+  # `health` passes again (T330). Not schedule-only, unlike ci.yml's nightly-watch: a dispatch is the
+  # only way to exercise it before a real Monday failure. Its own marker, so a green nightly CI run
+  # cannot close this issue, nor a green registry run close the nightly one.
+  registry-watch:
+    name: registry-watch
+    if: ${{ always() }}
+    needs: [health]
+    runs-on: ubuntu-latest
+    # One watch at a time: two overlapping runs could both find no open issue and open two.
+    concurrency:
+      group: registry-health-watch
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/github-script@v7
+        env:
+          HEALTH_RESULT: ${{ needs.health.result }}
+        with:
+          script: |
+            const marker = '<!-- registry-health-watch -->';
+            const result = process.env.HEALTH_RESULT;
+            const { owner, repo } = context.repo;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            // A cancelled or skipped `health` says nothing about the catalog: leave the issue as it is.
+            if (result !== 'success' && result !== 'failure') {
+              core.info(`health result is ${result}; no issue change`);
+              return;
+            }
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, state: 'open', per_page: 100,
+            });
+            const open = issues.find(
+              (issue) => !issue.pull_request && (issue.body || '').includes(marker),
+            );
+
+            if (result === 'success') {
+              if (open) {
+                await github.rest.issues.createComment({
+                  owner, repo, issue_number: open.number,
+                  body: `Registry health recovered: every catalog entry passed in ${runUrl}. Closing.`,
+                });
+                await github.rest.issues.update({
+                  owner, repo, issue_number: open.number, state: 'closed',
+                });
+              }
+              return;
+            }
+
+            const body = [
+              marker,
+              '## Registry health is failing',
+              '',
+              `Run: ${runUrl} (commit \`${context.sha.slice(0, 7)}\`, ref \`${context.ref}\`)`,
+              '',
+              'At least one catalog entry in `src/boardwatch/registry/companies.yaml` answered',
+              '**dead**, **error** or **unreachable**. The `health` step log names each entry',
+              'that is not ok; the run summary holds the full table.',
+              '',
+              'Usual cause: the employer moved ATS. Re-point or remove the entry (`src/boardwatch/registry/README.md`,',
+              'maintenance loop). Re-check with `gh workflow run registry-health.yml --ref main`.',
+            ].join('\n');
+
+            if (open) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: open.number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title: 'Registry health is failing', body,
+              });
+            }
