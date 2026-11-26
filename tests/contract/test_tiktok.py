@@ -335,5 +335,6 @@ def test_healthcheck(tmp_path: Path, response: httpx.Response, expected: BoardHe
 
     assert provider.healthcheck(_fetcher(tmp_path), "tiktok") == expected
     assert json.loads(route.calls.last.request.content)["limit"] == 1
+    assert route.calls.last.request.headers["website-path"] == "tiktok"
     assert provider.healthcheck(_fetcher(tmp_path), "bytedance") == expected
     assert route.calls.last.request.headers["website-path"] == "en"
