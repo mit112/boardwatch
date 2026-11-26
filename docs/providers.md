@@ -51,6 +51,12 @@ with an empty board instead of an error. The API cannot page past 10,000 results
 a board is one category: the largest held 3,370 postings when measured, so each board is read
 whole. Bodies arrive with the listing.
 
+**TikTok honest limits.** One board, `tiktok:tiktok`, for the lifeattiktok.com careers site, worldwide
+(4,141 postings when measured, 1,806 in the US). The slug is the site the API serves, from a closed
+catalog: ByteDance's site is not on this API, so it is not a board here. Bodies arrive with the
+listing, five requests for the whole board. The listing carries no posting date, so `posted_at` is
+always empty. A walk that collects fewer postings than the board states is reported `partial`.
+
 **Apple honest limits.** A board is one country (`apple:united-states`), checked against a closed
 catalog when you add it. jobs.apple.com has no public JSON API: boardwatch reads the data the
 public search page embeds, and one detail page per unseen posting, bounded by

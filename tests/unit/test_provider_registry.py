@@ -13,6 +13,7 @@ from boardwatch.providers.jibe import JibeProvider
 from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.phenom import PhenomProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
+from boardwatch.providers.tiktok import TikTokProvider
 from boardwatch.providers.workable import WorkableProvider
 from boardwatch.providers.workday import WorkdayProvider
 
@@ -28,13 +29,14 @@ def test_each_provider_declares_public_board_hosts() -> None:
     assert SmartRecruitersProvider().board_hosts == ("jobs.smartrecruiters.com",)
     assert AmazonProvider().board_hosts == ("www.amazon.jobs", "amazon.jobs")
     assert AppleProvider().board_hosts == ("jobs.apple.com",)
+    assert TikTokProvider().board_hosts == ("lifeattiktok.com", "www.lifeattiktok.com")
 
 
 def test_build_providers_one_instance_per_class_keyed_by_name() -> None:
     built = registry.build_providers()
     assert set(built) == {
         "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-        "oraclehcm", "phenom", "eightfold", "amazon", "apple",
+        "oraclehcm", "phenom", "eightfold", "amazon", "apple", "tiktok",
     }
     for name, inst in built.items():
         assert inst.name == name
@@ -44,7 +46,7 @@ def test_provider_names_matches_registered_set() -> None:
     assert registry.PROVIDER_NAMES == frozenset(
         {
             "greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "jibe",
-            "oraclehcm", "phenom", "eightfold", "amazon", "apple",
+            "oraclehcm", "phenom", "eightfold", "amazon", "apple", "tiktok",
         }
     )
 

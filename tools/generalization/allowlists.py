@@ -252,6 +252,21 @@ SHIPPED_DATA: dict[str, DataEntry] = {
         reason=_FIXTURE,
         pin="sha256:8deb20aa7bb90721b8a371d4f5fcc3fb5bf6c04726f3087361d9e3f1875d51f3",
     ),
+    "tests/fixtures/tiktok/empty.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:674f076a2b1a5f46e8442e0b8f1e16d4d17b6d6dc418ae770bbed7700246c3c6",
+    ),
+    "tests/fixtures/tiktok/normal.json": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:85264f7a5213dbdb0846c753654095ff14f24c582f04516cadaf1ea62836e7f5",
+    ),
+    "tests/fixtures/tiktok/refused.txt": DataEntry(
+        kind="fixture",
+        reason=_FIXTURE,
+        pin="sha256:8daf3a87752350ff241e60916dbc991186f6e62c834160ced5d623610ae70b6e",
+    ),
     "tests/fixtures/apple/detail_missing.json": DataEntry(
         kind="fixture",
         reason=_FIXTURE,

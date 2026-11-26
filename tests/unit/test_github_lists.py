@@ -419,7 +419,7 @@ def test_candidates_are_ordered_cheapest_provider_first():
     server-fixed at 10.
     """
     assert PROVIDER_PRIORITY == (
-        "greenhouse", "lever", "ashby", "workable", "jibe", "amazon", "workday",
+        "greenhouse", "lever", "ashby", "workable", "jibe", "amazon", "tiktok", "workday",
         "smartrecruiters", "oraclehcm", "phenom", "apple", "eightfold",
     )
     providers = [c.provider for c in discover(_sources()).candidates]
@@ -665,7 +665,7 @@ def test_the_ramp_ranks_every_registered_provider_and_no_others():
     from boardwatch.providers.registry import PROVIDER_NAMES
 
     assert set(PROVIDER_PRIORITY) == set(PROVIDER_NAMES)
-    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 12
+    assert len(PROVIDER_PRIORITY) == len(set(PROVIDER_PRIORITY)) == 13
 
 
 def test_an_unranked_provider_is_a_failure_and_not_a_quiet_last_place():

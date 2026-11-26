@@ -126,6 +126,8 @@ _SLUG_SHAPES: dict[str, tuple[str, str]] = {
     # a job category, and a country
     "amazon": ("software-development", "Amazon"),
     "apple": ("united-states", "Apple"),
+    # a tenant SITE token, which names one employer's careers site
+    "tiktok": ("tiktok", "TikTok"),
 }
 
 
@@ -146,7 +148,7 @@ def test_only_providers_whose_slug_is_not_the_employer_token_declare_a_deriver()
     """Pins the split so a sixth deriver has to justify itself, and so a provider losing its
     deriver in a refactor is a failing test rather than a silently mis-named company."""
     assert set(employer_name_map()) == {
-        "amazon", "apple", "eightfold", "jibe", "oraclehcm", "phenom", "workday",
+        "amazon", "apple", "eightfold", "jibe", "oraclehcm", "phenom", "tiktok", "workday",
     }
 
 

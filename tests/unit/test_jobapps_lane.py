@@ -1049,12 +1049,25 @@ def test_tier_three_falls_back_to_the_lane_namespace(tmp_path):
     _write(
         root, "Other", "a",
         company="TikTok Inc.",
-        direct_url="https://lifeattiktok.com/search/123",
+        direct_url="https://careers.unserved.test/search/123",
         posting_id="pst_y",
     )
     (snapshot,) = _collect(root, tmp_path).snapshots
     assert (snapshot.provider, snapshot.slug) == ("jobapps", "tiktok-inc")
     assert snapshot.snapshot.postings[0].provider_posting_id == "pst_y"
+
+
+def test_a_tiktok_careers_link_files_under_the_tiktok_board(tmp_path):
+    """lifeattiktok.com is one tenant's own site, so any page of it names the `tiktok` board."""
+    root = tmp_path / "queue"
+    _write(
+        root, "Other", "a",
+        company="TikTok Inc.",
+        direct_url="https://lifeattiktok.com/search/7509598272319719687",
+        posting_id="pst_t",
+    )
+    (snapshot,) = _collect(root, tmp_path).snapshots
+    assert (snapshot.provider, snapshot.slug) == ("tiktok", "tiktok")
 
 
 def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
@@ -1090,7 +1103,7 @@ def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):
     "direct_url,posting_id",
     [
         ("https://jobs.ashbyhq.com/openai", "pst_x"),          # tier 2: board, no posting ref
-        ("https://lifeattiktok.com/search/123", "pst_y"),      # tier 3: the lane namespace
+        ("https://careers.unserved.test/search/123", "pst_y"),      # tier 3: the lane namespace
     ],
 )
 def test_a_record_filed_under_its_own_key_declares_only_liveness(
@@ -1120,7 +1133,7 @@ def test_two_spellings_of_one_lane_company_still_collapse_to_one_slug(tmp_path):
         _write(
             root, "Other", f"a{index}",
             company=spelling,
-            direct_url=f"https://lifeattiktok.com/search/{index}",
+            direct_url=f"https://careers.unserved.test/search/{index}",
             posting_id=f"pst_{index}",
         )
     (snapshot,) = _collect(root, tmp_path).snapshots
@@ -1135,7 +1148,7 @@ def test_the_first_spelling_wins_the_display_name(tmp_path):
         _write(
             root, "Other", f"a{index}",
             company=spelling,
-            direct_url=f"https://lifeattiktok.com/search/{index}",
+            direct_url=f"https://careers.unserved.test/search/{index}",
             posting_id=f"pst_{index}",
         )
     (snapshot,) = _collect(root, tmp_path).snapshots

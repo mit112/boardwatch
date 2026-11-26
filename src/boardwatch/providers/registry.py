@@ -30,6 +30,7 @@ from boardwatch.providers.lever import LeverProvider
 from boardwatch.providers.oraclehcm import OracleHCMProvider
 from boardwatch.providers.phenom import PhenomProvider
 from boardwatch.providers.smartrecruiters import SmartRecruitersProvider
+from boardwatch.providers.tiktok import TikTokProvider
 from boardwatch.providers.workable import WorkableProvider
 from boardwatch.providers.workday import WorkdayProvider
 
@@ -43,6 +44,7 @@ PROVIDER_CLASSES = (
     EightfoldProvider,
     AmazonProvider,
     AppleProvider,
+    TikTokProvider,
 )
 
 

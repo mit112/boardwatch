@@ -97,7 +97,10 @@ PROVIDER_TIERS: tuple[tuple[str, ...], ...] = (
     # query parameter, so `slug_from_path` extracts nothing and `parse_board_target` never
     # returns it. It is ranked because PROVIDER_PRIORITY must cover the registry -- an unranked
     # provider raises UnrankedProvider rather than being sorted quietly to the end.
-    ("jibe", "amazon"),
+    # `tiktok` sits here on its measured cost: every body inline, the listing paged at 1,000 rows
+    # (five requests for its 4,141-posting board). Unlike amazon it IS reachable from a listing
+    # URL, because every lifeattiktok.com page belongs to its one tenant site.
+    ("jibe", "amazon", "tiktok"),
     # Spends `detail_fetch_budget` on a per-posting GET for every unseen posting.
     ("workday",),
     # The same, and boardwatch watches none of them, so a first exposure here is the one cost this

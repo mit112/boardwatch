@@ -1,0 +1,14 @@
+{
+  "code": 0,
+  "data": {
+    "job_post_list": [],
+    "count": 0,
+    "BaseResp": {
+      "StatusMessage": "Success",
+      "StatusCode": 0,
+      "Extra": null
+    }
+  },
+  "message": "ok",
+  "error": null
+}

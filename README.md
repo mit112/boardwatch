@@ -33,8 +33,8 @@ search history) between you and postings that are **already public**.
 
 boardwatch takes the direct route. Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday,
 Eightfold, Oracle HCM, Phenom and Jibe each serve every board they host from a **public, keyless
-endpoint**, the same data the company's own careers page renders; Amazon's and Apple's own career
-sites are read the same way. boardwatch polls those endpoints politely, on your schedule, and
+endpoint**, the same data the company's own careers page renders; Amazon's, Apple's and TikTok's
+own career sites are read the same way. boardwatch polls those endpoints politely, on your schedule, and
 tells you what's *new* since last time.
 
 |                          | boardwatch            | LinkedIn/Indeed        | Paid trackers          |
@@ -46,7 +46,7 @@ tells you what's *new* since last time.
 | Cost                     | free (self-hosted)    | free-ish (ad-driven)   | subscription           |
 | Auto-apply / spam        | never                 | no comment             | sometimes              |
 
-**Honest limits.** It covers companies hosted on the providers above, plus Amazon and Apple: a
+**Honest limits.** It covers companies hosted on the providers above, plus Amazon, Apple and TikTok: a
 large slice of tech, but not everyone (no Taleo yet). Its bundled role knowledge covers software
 roles; another field can declare its own role families at `init`, but the eligibility catalog is
 still software-first. Opt-in discovery lanes can add postings from beyond the ATS boards and are
@@ -201,7 +201,7 @@ All of it is in the [user guide](https://github.com/mit112/boardwatch/blob/main/
 ## Supported boards
 
 Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Oracle HCM, Eightfold, Phenom and
-Jibe, plus Amazon's and Apple's career sites, all through public endpoints with no
+Jibe, plus Amazon's, Apple's and TikTok's career sites, all through public endpoints with no
 authentication. `boardwatch companies add https://boards.greenhouse.io/acme` just works for most
 of them. A bundled registry of 37 verified public boards, 15 of them a starter set, lets `init`
 work offline.
