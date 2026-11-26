@@ -76,6 +76,8 @@ All notable changes to this project are documented here. The format follows
 - **Time to apply leaves out an application you undid (T336).** The Applied page's undo keeps the submission date, and
   the posting-lifetime view still read it as an application and added a wait. It now counts only applications still
   marked applied, as lead aging already did.
+- **The viewer answers 404 to a numeric id too long for the store (T337).** An id past 18 digits overflowed SQLite's
+  integer, and the viewer closed the connection without a reply. Every id route now caps its id at 18 digits.
 - **A Breezy seed ending `/apply` is fetched at its base `/p/{id}` page (T331).** The `/apply` page carries no JSON-LD,
   so every such seed spent its three attempts on a page that could never resolve. The lane now requests the posting page
   the suffix decorates; the posting id is unchanged. The three seeds already retired this way are not retried by this
