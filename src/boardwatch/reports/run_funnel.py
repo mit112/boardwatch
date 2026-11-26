@@ -42,7 +42,7 @@ from __future__ import annotations
 import json
 import statistics
 from collections import Counter
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, fields
 from datetime import datetime
 from pathlib import Path
@@ -859,6 +859,34 @@ class LivenessCheck:
         return self.checked - self.dead - self.unknown
 
 
+#: The artifact keeps the costliest death-probe rows only; the rest are summed into `other`, so
+#: the rows still reconcile to what the sweep asked.
+DEATH_PROBE_COST_ROWS = 20
+
+
+@dataclass(frozen=True)
+class DeathProbeCost:
+    """T344: what one (kind, host) of the death-probe sweep cost and what it found.
+
+    `kind` is `url` (a posting's own URL), `linkedin_guest` (a LinkedIn job view asked through the
+    guest endpoint) or `listing` (a company's list endpoint). `host` is the stored URL's host for
+    the first two (`politeness.host_key`, the key the Fetcher paces on) and the provider for
+    `listing`. `seconds` is wall time inside the prober call, pacing waits included, because the
+    sweep is serial and that is what it costs the run. The unit of `asked` is the posting for
+    `url`/`linkedin_guest` and the COMPANY for `listing`; `gone`/`alive`/`unknown`/`closed` count
+    postings on all three (for `listing`: rows absent, present and unknown in the list).
+    """
+
+    kind: str
+    host: str
+    asked: int
+    seconds: float
+    gone: int
+    alive: int
+    unknown: int
+    closed: int
+
+
 @dataclass(frozen=True)
 class DeathProbeReport:
     """D-325: what the measured-death sweep did to the postings the scanner cannot reach.
@@ -939,6 +967,8 @@ class DeathProbeReport:
     guard_rows_unjudgeable: int = 0
     guard_attempted: int = 0
     guard_closed: int = 0
+    # T344. None when the sweep that built this report did not time its probes.
+    cost: tuple[DeathProbeCost, ...] | None = None
 
     @property
     def closed(self) -> int:
@@ -977,6 +1007,7 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
             "guard_rows_unjudgeable": None,
             "guard_attempted": None,
             "guard_closed": None,
+            "cost": None,
         }
     return {
         "instrumented": True,
@@ -1005,6 +1036,39 @@ def death_probe_to_dict(report: DeathProbeReport | None) -> dict[str, object]:
         "guard_rows_unjudgeable": report.guard_rows_unjudgeable,
         "guard_attempted": report.guard_attempted,
         "guard_closed": report.guard_closed,
+        "cost": None if report.cost is None else _death_probe_cost_to_dict(report.cost),
+    }
+
+
+_COST_COUNTS = ("asked", "gone", "alive", "unknown", "closed")
+
+
+def _cost_sum(rows: Iterable[DeathProbeCost]) -> dict[str, object]:
+    listed = list(rows)
+    out: dict[str, object] = {k: sum(getattr(r, k) for r in listed) for k in _COST_COUNTS}
+    out["seconds"] = round(sum(r.seconds for r in listed), 3)
+    return out
+
+
+def _costliest(rows: tuple[DeathProbeCost, ...]) -> list[DeathProbeCost]:
+    return sorted(rows, key=lambda r: (-r.seconds, r.kind, r.host))
+
+
+def _death_probe_cost_to_dict(rows: tuple[DeathProbeCost, ...]) -> dict[str, object]:
+    """T344. Per kind in full; per host, the costliest rows and the rest summed as `other`."""
+    ranked = _costliest(rows)
+    shown, rest = ranked[:DEATH_PROBE_COST_ROWS], ranked[DEATH_PROBE_COST_ROWS:]
+    return {
+        **_cost_sum(rows),
+        "by_kind": [
+            {"kind": kind, **_cost_sum(r for r in rows if r.kind == kind)}
+            for kind in sorted({r.kind for r in rows})
+        ],
+        "hosts": len(rows),
+        "rows": [
+            {"kind": r.kind, "host": r.host, **_cost_sum([r])} for r in shown
+        ],
+        "other": _cost_sum(rest) if rest else None,
     }
 
 
@@ -3098,6 +3162,43 @@ def _longest_chains(rows: tuple[HostFetchCost, ...]) -> list[HostFetchCost]:
     return sorted(rows, key=lambda r: (-r.span_seconds, r.host))[:HOST_COST_ROWS]
 
 
+def _death_probe_cost_markdown(probe: DeathProbeReport | None) -> list[str]:
+    """T344: where the sweep's time went, per kind and for the costliest hosts."""
+    if probe is None:
+        return []
+    if probe.cost is None:
+        return ["", "probe cost: **not measured** this run."]
+    if not probe.cost:
+        return ["", "probe cost: nothing was asked."]
+    out = [
+        "",
+        "**Probe cost** (seconds inside each probe, pacing included; the sweep is serial):",
+        "",
+    ]
+    for kind in sorted({r.kind for r in probe.cost}):
+        rows = [r for r in probe.cost if r.kind == kind]
+        asked = sum(r.asked for r in rows)
+        seconds = sum(r.seconds for r in rows)
+        out.append(
+            f"- `{kind}`: {asked} asked in {seconds:.1f} s ({seconds / asked:.2f} s each) · "
+            f"{sum(r.gone for r in rows)} gone · {sum(r.closed for r in rows)} closed"
+        )
+    shown = _costliest(probe.cost)[:10]
+    out += [
+        "",
+        f"Costliest {len(shown)} of {len(probe.cost)} hosts:",
+        "",
+        "| kind | host | asked | seconds | gone | alive | unknown | closed |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    out += [
+        f"| {r.kind} | `{r.host}` | {r.asked} | {r.seconds:.1f} | {r.gone} | {r.alive} | "
+        f"{r.unknown} | {r.closed} |"
+        for r in shown
+    ]
+    return out
+
+
 def _host_cost_markdown(rows: tuple[HostFetchCost, ...] | None) -> list[str]:
     """The longest same-host chains, or an explicit statement that they were not measured."""
     if rows is None:
@@ -4115,6 +4216,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
             f"{probe.guard_closed} closed) · {probe.guard_rows_unjudgeable} rows on Ashby or "
             "Greenhouse stay open, because their dead URL answers alive"
         ),
+        *_death_probe_cost_markdown(probe),
         "",
         # D-314: lane postings can never close by absence. D-647: the Workday CXS probe.
         "*The only mechanism that can close a posting whose company is `watched = 0` — a lane "

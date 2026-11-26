@@ -304,6 +304,7 @@ def test_a_run_with_no_prober_reports_the_sweep_as_UNMEASURED(  # noqa: N802
         "guard_rows_unjudgeable": None,
         "guard_attempted": None,
         "guard_closed": None,
+        "cost": None,
     }
 
 

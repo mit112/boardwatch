@@ -21,12 +21,15 @@ budget_refused`, `companies_due = companies_attempted + companies_refused`, and
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 from boardwatch.eligibility.catalog import load_rules
 from boardwatch.reports.abstain import build_abstain_report
 from boardwatch.reports.run_funnel import (
     ARTIFACT_VERSION,
+    DEATH_PROBE_COST_ROWS,
+    DeathProbeCost,
     DeathProbeReport,
     RunFunnel,
     RunManifest,
@@ -132,6 +135,7 @@ def test_every_probe_bucket_reaches_the_artifact() -> None:
         "guard_rows_unjudgeable": 0,
         "guard_attempted": 0,
         "guard_closed": 0,
+        "cost": None,
     }
 
 
@@ -195,6 +199,7 @@ def test_an_unswept_run_reports_UNMEASURED_rather_than_zero() -> None:  # noqa: 
         "guard_rows_unjudgeable": None,
         "guard_attempted": None,
         "guard_closed": None,
+        "cost": None,
     }
 
 
@@ -258,3 +263,54 @@ def test_closed_is_the_sum_of_the_two_halves_by_construction(tmp_path: object) -
     assert payload["closed"] == payload["closed_by_url"] + payload["closed_by_listing"]
     # And it cannot be set independently: there is no `closed` field to pass.
     assert "closed" not in DeathProbeReport.__dataclass_fields__
+
+
+def _cost(
+    kind: str, host: str, seconds: float, *, asked: int = 1, closed: int = 0
+) -> DeathProbeCost:
+    return DeathProbeCost(
+        kind=kind, host=host, asked=asked, seconds=seconds, gone=closed, alive=asked - closed,
+        unknown=0, closed=closed,
+    )
+
+
+def test_the_probe_cost_keeps_the_costliest_hosts_and_sums_the_rest_so_it_reconciles() -> None:
+    """T344. The artifact keeps DEATH_PROBE_COST_ROWS hosts, costliest first; the rest are summed
+    into `other`, so rows + other == the totals == by_kind, and a close on a cheap host is not
+    lost from the table's sums."""
+    cheap = [_cost("url", f"h{i:02d}.example", 1.0 + i) for i in range(DEATH_PROBE_COST_ROWS)]
+    rest = [
+        _cost("url", "tail-a.example", 0.5, closed=1),
+        _cost("linkedin_guest", "www.linkedin.com", 0.25, asked=3),
+    ]
+    big = _cost("listing", "ashby", 99.0, asked=2, closed=2)
+    report = replace(_sample(), cost=(*cheap, *rest, big))
+
+    payload = funnel_to_dict(_funnel(report))["death_probe"]
+    assert isinstance(payload, dict)
+    cost = payload["cost"]
+    assert cost["hosts"] == DEATH_PROBE_COST_ROWS + 3
+    assert [r["host"] for r in cost["rows"]][:2] == ["ashby", "h19.example"]
+    assert len(cost["rows"]) == DEATH_PROBE_COST_ROWS
+    # Shown: `ashby` and h19..h01. Outside the cut: h00 (1.0 s), tail-a (0.5 s, the close) and
+    # LinkedIn (0.25 s, 3 asked).
+    assert cost["other"] == {
+        "asked": 1 + 1 + 3, "gone": 1, "alive": 1 + 0 + 3, "unknown": 0, "closed": 1,
+        "seconds": 1.75,
+    }
+    every = (*cheap, *rest, big)
+    shown_asked = sum(r["asked"] for r in cost["rows"])
+    assert cost["asked"] == sum(r.asked for r in every) == shown_asked + cost["other"]["asked"]
+    assert cost["closed"] == 3
+    assert {k["kind"]: (k["asked"], k["closed"]) for k in cost["by_kind"]} == {
+        "linkedin_guest": (3, 0), "listing": (2, 2), "url": (DEATH_PROBE_COST_ROWS + 1, 1),
+    }
+
+    rendered = funnel_to_markdown(_funnel(report))
+    assert "- `listing`: 2 asked in 99.0 s (49.50 s each) · 2 gone · 2 closed" in rendered
+    assert "| listing | `ashby` | 2 | 99.0 | 2 | 0 | 0 | 2 |" in rendered
+
+
+def test_a_sweep_that_did_not_time_its_probes_says_so() -> None:
+    assert funnel_to_dict(_funnel(_sample()))["death_probe"]["cost"] is None  # type: ignore[index]
+    assert "probe cost: **not measured** this run." in funnel_to_markdown(_funnel(_sample()))
