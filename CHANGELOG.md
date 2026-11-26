@@ -25,7 +25,7 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - **A `tiktok` provider reads TikTok's careers site (D-712).** One board, `tiktok:tiktok`, for lifeattiktok.com:
-  the site's own public search API, five requests for the whole board with every body inline (4,141 postings when
+  the site's own public search API, one request for the whole board with every body inline (4,141 postings when
   measured, 1,806 in the US). The listing has no posting date. Paste a lifeattiktok.com/search URL or use
   `tiktok:tiktok`; the job-apps lane now files a TikTok posting link under that board's own posting id. No board is watched by this change.
 - **The run funnel names the scan's longest same-host chains (T343, first part).** Requests to one host are serial, so

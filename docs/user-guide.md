@@ -452,7 +452,7 @@ bundle to a PDF.
 | Jibe            | `<careers-host>/api/jobs?page=<n>&limit=100` on the employer's own domain | none |
 | Amazon          | `www.amazon.jobs/en/search.json`, one job category per board | none |
 | Apple           | `jobs.apple.com/en-us/search` — the data embedded in the public search page, one country per board (plus one detail page per unseen posting) | none |
-| TikTok          | `POST api.lifeattiktok.com/api/v1/public/supplier/search/job/posts` with the site named in a `website-path` header, paginated at 1,000/page | none |
+| TikTok          | `POST api.lifeattiktok.com/api/v1/public/supplier/search/job/posts` with the site named in a `website-path` header, the whole board in one 5,000-row page | none |
 
 **Naming a board.** `companies add` takes a board URL or a `provider:slug`:
 

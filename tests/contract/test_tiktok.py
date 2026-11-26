@@ -26,7 +26,7 @@ pytestmark = pytest.mark.usefixtures("no_real_sleep")
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "tiktok"
 SEARCH = "https://api.lifeattiktok.com/api/v1/public/supplier/search/job/posts"
 BOARD_URL = f"{SEARCH}#site=tiktok"
-PAGE_LIMIT = 1000
+PAGE_LIMIT = 5000
 
 provider = TikTokProvider()
 
@@ -162,7 +162,9 @@ def test_a_full_page_is_followed_and_a_short_page_ends_the_walk(tmp_path: Path) 
     snap = provider.fetch_board(_fetcher(tmp_path), _request())
 
     assert [_offset(c.request) for c in route.calls] == [0, PAGE_LIMIT]
-    assert (snap.status, snap.board_enumerated, len(snap.postings)) == ("complete", 1002, 1002)
+    assert (snap.status, snap.board_enumerated, len(snap.postings)) == (
+        "complete", PAGE_LIMIT + 2, PAGE_LIMIT + 2
+    )
 
 
 @respx.mock
@@ -174,32 +176,53 @@ def test_a_row_served_twice_across_pages_is_kept_once_and_the_shortfall_is_parti
     respx.post(SEARCH).mock(
         side_effect=_pages(
             _page(_clone_rows(PAGE_LIMIT, 1), PAGE_LIMIT + 2),
-            _page(_clone_rows(2, PAGE_LIMIT), PAGE_LIMIT + 2),  # row 1000 again
+            _page(_clone_rows(2, PAGE_LIMIT), PAGE_LIMIT + 2),  # row N again
         )
     )
 
     snap = provider.fetch_board(_fetcher(tmp_path), _request())
 
-    assert (snap.status, snap.board_enumerated, len(snap.postings)) == ("partial", 1001, 1001)
-    assert "collected 1001 of 1002" in (snap.error or "")
+    assert (snap.status, snap.board_enumerated, len(snap.postings)) == (
+        "partial", PAGE_LIMIT + 1, PAGE_LIMIT + 1
+    )
+    assert f"collected {PAGE_LIMIT + 1} of {PAGE_LIMIT + 2}" in (snap.error or "")
 
 
 @respx.mock
 def test_a_count_that_moves_between_pages_is_partial_even_when_the_totals_match(
     tmp_path: Path,
 ) -> None:
-    """Page 1 states 1,002 and serves 1-1000; a posting lands, page 2 states 1,003 and serves
-    1000, 1003 and 1002. 1,002 distinct ids match the FIRST count, yet 1001 slipped past the
-    boundary unread: `complete` would close it."""
+    """Page 1 states N+2 and serves 1..N; a posting lands, page 2 states N+3 and serves N, N+3
+    and N+2. N+2 distinct ids match the FIRST count, yet N+1 slipped past the boundary unread:
+    `complete` would close it."""
     first = _page(_clone_rows(PAGE_LIMIT, 1), PAGE_LIMIT + 2)
-    moved = [{**r, "id": i} for r, i in zip(_clone_rows(3, 1), ("1000", "1003", "1002"), strict=True)]
+    ids = (str(PAGE_LIMIT), str(PAGE_LIMIT + 3), str(PAGE_LIMIT + 2))
+    moved = [{**r, "id": i} for r, i in zip(_clone_rows(3, 1), ids, strict=True)]
     respx.post(SEARCH).mock(side_effect=_pages(first, _page(moved, PAGE_LIMIT + 3)))
 
     snap = provider.fetch_board(_fetcher(tmp_path), _request())
 
-    assert (snap.board_enumerated, snap.board_reported_total) == (1002, 1002)
+    assert (snap.board_enumerated, snap.board_reported_total) == (PAGE_LIMIT + 2, PAGE_LIMIT + 2)
     assert snap.status == "partial"
-    assert "board count moved during the walk (1002, 1003)" in (snap.error or "")
+    assert f"board count moved during the walk ({PAGE_LIMIT + 2}, {PAGE_LIMIT + 3})" in (
+        snap.error or ""
+    )
+
+
+@respx.mock
+def test_a_first_page_without_a_count_does_not_switch_the_shortfall_check_off(
+    tmp_path: Path,
+) -> None:
+    first = _page(_clone_rows(PAGE_LIMIT, 1), 0)
+    del first["data"]["count"]
+    respx.post(SEARCH).mock(
+        side_effect=_pages(first, _page(_clone_rows(1, PAGE_LIMIT + 1), PAGE_LIMIT + 2))
+    )
+
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+
+    assert snap.status == "partial"
+    assert f"collected {PAGE_LIMIT + 1} of {PAGE_LIMIT + 2}" in (snap.error or "")
 
 
 @respx.mock

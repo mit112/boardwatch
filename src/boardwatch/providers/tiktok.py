@@ -11,13 +11,16 @@ Shape: `{"code": 0, "message": "ok", "error": null, "data": {"job_post_list": [ 
 2026-11-25).
 
 BODIES ARE INLINE AND THERE IS NO DETAIL ENDPOINT. `description` and `requirement` are full
-plain text on the listing row, so `detail_deferred` is always 0. The whole board is five
-requests at the page size below.
+plain text on the listing row, so `detail_deferred` is always 0. The whole board is ONE request
+at the page size below.
 
 MEASURED LIMITS (2026-11-25):
 
-1. `limit` 1, 200 and 1000 were all served in full (1000 rows from one request), so the page
-   size is pinned at 1000, the largest value measured. A larger one was not tried.
+1. `limit` 1, 200, 1000 and 5000 were all served in full; 5000 returned the whole 4,142-row
+   board (18 MB, 3 s). The page size is pinned at 5000 so the board is read in ONE request:
+   with no page boundary, a posting that lands or leaves mid-walk cannot push another past an
+   offset unread. Past 5000 rows the walk pages again, and that residual risk returns, guarded
+   only by the stated count (below).
 2. An offset past the tail serves a short page (offset 4,139, limit 5: 2 rows), which is the
    walk's end.
 3. A search that matches nothing answers `code: 0`, `count: 0` and an empty list, so an empty
@@ -32,7 +35,9 @@ new board: an unknown tenant is a request this API was never seen to answer, and
 reads empty is the one status that would close every posting it holds.
 
 PAGINATION IS NOT ASSUMED STABLE. No sort parameter was found, so rows are deduped by `id`
-across pages and a walk that collects fewer distinct ids than `count` is `partial`.
+across pages, and a walk is `partial` when it collects fewer distinct ids than the largest
+`count` any page stated, or when the count moved between pages. Neither can see a removal and an
+insertion that cancel out, which is why the page size keeps the board to one request.
 """
 
 from __future__ import annotations
@@ -47,10 +52,10 @@ from boardwatch.providers.base import BoardHealth, count_listed_ids, health_from
 _API_HOST = "api.lifeattiktok.com"
 _SEARCH_URL = f"https://{_API_HOST}/api/v1/public/supplier/search/job/posts"
 _SITE_HOST = "lifeattiktok.com"
-_PAGE_LIMIT = 1000  # the largest page size measured to be served in full
-# 20 x 1000 = 20,000 rows, about five times the measured board. The real termination is always a
+_PAGE_LIMIT = 5000  # served in full when measured: the whole board in one request
+# 4 x 5000 = 20,000 rows, about five times the measured board. The real termination is always a
 # short page; this bound only stops a server that keeps serving full pages forever.
-_MAX_PAGES = 20
+_MAX_PAGES = 4
 # Tenant site -> the employer it is. Closed: see the module docstring.
 _SITES: dict[str, str] = {"tiktok": "TikTok"}
 # Paste host -> tenant site, so a pasted careers URL names its board.
@@ -131,9 +136,10 @@ class TikTokProvider:
                 errors.append(f"offset {offset}: missing 'job_post_list'")
                 break
             stated = _stated_total(data)
-            if first:
-                reported_total = stated
             if stated is not None:
+                # The first count any page states. A first page with none must not switch the
+                # shortfall check off for the rest of the walk.
+                reported_total = stated if reported_total is None else reported_total
                 counts_seen.add(stated)
             page_rows = [job for job in listed if isinstance(job, dict)]
             if len(page_rows) < len(listed):
@@ -169,10 +175,10 @@ class TikTokProvider:
             )
         if idless:
             errors.append(f"skipped {idless} rows with no id")
-        if reported_total is not None and enumerated < reported_total:
+        if counts_seen and enumerated < max(counts_seen):
             # A short page is not proof the board ended; `complete` would close the rest.
             errors.append(
-                f"incomplete listing: collected {enumerated} of {reported_total} postings; "
+                f"incomplete listing: collected {enumerated} of {max(counts_seen)} postings; "
                 "treating as partial so unseen postings are not closed"
             )
 

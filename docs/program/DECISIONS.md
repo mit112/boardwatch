@@ -36891,9 +36891,10 @@ through the LinkedIn, Indeed and job-apps lanes (R-065, private ops), with no cl
 them under. Its careers site is a single-page app over one public search API, measured on 2026-11-25 with about a
 dozen requests (fixtures README).
 
-**Choice.** `providers/tiktok.py` POSTs the site's own unfiltered search, pages of 1,000 (the largest measured), deduped
-by `id`, `partial` whenever fewer distinct ids arrive than the stated `count` or the `count` moves between pages (a
-row can then slip past a page boundary unread), and a non-zero `code` is a refusal even on HTTP 200. The tenant is a header, `website-path`, so it rides on `post_json`'s existing `headers` parameter, scoped to
+**Choice.** `providers/tiktok.py` POSTs the site's own unfiltered search in pages of 5,000, which read the whole measured board
+(4,142 rows, 18 MB) in one request, so no page boundary exists for a posting to slip past. Rows are deduped by `id`;
+the walk is `partial` whenever fewer distinct ids arrive than the largest stated `count` or the count moves between
+pages (past 5,000 rows, where a removal and an insertion that cancel out would still go unseen), and a non-zero `code` is a refusal even on HTTP 200. The tenant is a header, `website-path`, so it rides on `post_json`'s existing `headers` parameter, scoped to
 the one request, and the board URL carries it in a fragment that is never sent. The slug is the tenant site from a
 closed catalog of one, `tiktok`; `bytedance` was probed and is not served by this API, so it is not a slug. A
 lifeattiktok.com URL names the board, and `lanes/dereference` reads a posting URL `search/{id}` onto the board's own

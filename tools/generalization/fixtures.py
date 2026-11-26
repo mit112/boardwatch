@@ -181,7 +181,7 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
     "tiktok": FixtureProvenance(
         captured=date(2026, 11, 25),
         review_by=date(2027, 2, 23),
-        readme_pin="sha256:18cc73211388af282f6e1fd6275fc43dc032202ef96766a151be0a4acc1a0d5a",
+        readme_pin="sha256:4c50fd9e0f146b0261ba2e4b9daf02d4a1226a2edf75ad6141d3b8d2ab00e09a",
     ),
 }
 

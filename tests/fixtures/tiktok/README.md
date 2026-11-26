@@ -55,6 +55,7 @@ expiry) was null on every row read, so there is no posting date and no salary to
 |---|---|
 | no `website-path` header (with or without `Origin`/`Referer`) | HTTP 400, body `invalid request` (`refused.txt`) |
 | `website-path: tiktok`, `limit` 1 / 200 / 1000 | 1 / 200 / 1000 rows, `count` 4141 |
+| `limit` 5000 | the whole board in one answer: 4,142 distinct rows, 18 MB, about 3 s |
 | `offset` 4139, `limit` 5 | 2 rows: a short page ends the walk |
 | a keyword that matches nothing | `code` 0, `count` 0, empty list (`empty.json`) |
 | `website-path: bytedance`, on this host and on `api.joinbytedance.com` | not JSON: not a tenant here |
