@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The run funnel's `death_probe` section records what each host and kind of probe cost (T344).** A new `cost`
+  block holds the sweep's probe seconds, asked, gone, alive, unknown and closed: per kind (`url`, `linkedin_guest`,
+  `listing`) in full, and per host for the 20 costliest, with the rest summed as `other` so the rows still add up to
+  the totals. The run's markdown shows the per-kind lines and the 10 costliest hosts. The sweep has spent about 18
+  minutes a night closing 5 to 7 postings, and nothing said where that time went. No change to what the sweep asks
+  or closes.
 - **The weekly registry-health check now says what failed, and opens an issue when it does (T330).** Its step log
   names every catalog entry that is not ok (name, provider, slug, status); before, the table went to the run's summary
   tab only and the log ended with `exit code 1`. A new `registry-watch` job opens one issue while the check fails,

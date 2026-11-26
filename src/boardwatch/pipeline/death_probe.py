@@ -130,9 +130,11 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from time import monotonic
+from typing import Any, Literal
 from urllib.parse import quote
 
+import httpx
 from rich.console import Console
 from sqlalchemy import (
     ColumnElement,
@@ -150,12 +152,12 @@ from sqlalchemy import (
 
 from boardwatch.core.clock import utcnow
 from boardwatch.core.liveness import Liveness
-from boardwatch.core.politeness import Fetcher, FetchFailure
+from boardwatch.core.politeness import Fetcher, FetchFailure, host_key
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.linkedin import LANE_PROVIDER as LINKEDIN_PROVIDER
 from boardwatch.pipeline.liveness import LivenessProber
 from boardwatch.pipeline.progress import StageProgress
-from boardwatch.reports.run_funnel import DeathProbeReport
+from boardwatch.reports.run_funnel import DeathProbeCost, DeathProbeReport
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES
 from boardwatch.store.db import write_connection
 from boardwatch.store.delivery_queries import standing_lead_job_ids
@@ -467,6 +469,39 @@ def _due_predicate(cutoff: datetime) -> ColumnElement[bool]:
     return and_(unreachable_by_the_scanner(), _past_ttl(cutoff))
 
 
+_CostKind = Literal["url", "linkedin_guest", "listing"]
+
+
+class _CostTally:
+    """T344: one (kind, host)'s running cost during a sweep; frozen into `DeathProbeCost`."""
+
+    __slots__ = ("alive", "asked", "closed", "gone", "seconds", "unknown")
+
+    def __init__(self) -> None:
+        self.asked = self.gone = self.alive = self.unknown = self.closed = 0
+        self.seconds = 0.0
+
+
+def _probe_host(url: str) -> str:
+    """The stored URL's host as the Fetcher keys it. A URL httpx refuses still gets a row: the
+    prober answers such a URL `unknown`, and accounting must never end a sweep the probe did not.
+    `ValueError` covers `idna.IDNAError` (a malformed `xn--` label)."""
+    try:
+        return host_key(url)
+    except (httpx.InvalidURL, ValueError):
+        return "(invalid url)"
+
+
+def _frozen_costs(tallies: dict[tuple[_CostKind, str], _CostTally]) -> tuple[DeathProbeCost, ...]:
+    return tuple(
+        DeathProbeCost(
+            kind=kind, host=host, asked=t.asked, seconds=t.seconds, gone=t.gone,
+            alive=t.alive, unknown=t.unknown, closed=t.closed,
+        )
+        for (kind, host), t in tallies.items()
+    )
+
+
 def sweep_unwatched_deaths(
     engine: Engine,
     *,
@@ -745,9 +780,15 @@ def sweep_unwatched_deaths(
     gone = unknown = alive = closed_by_url = strikes_cleared = 0
     guard_attempted = guard_closed = 0
     linkedin_guest: dict[str, int] | None = None
+    tallies: dict[tuple[_CostKind, str], _CostTally] = {}
     for row in candidates:
         guard_attempted += 1 if row.guarded else 0
+        started = monotonic()
         result = prober(int(row.id), str(row.url))
+        kind: _CostKind = "url" if result.linkedin_guest is None else "linkedin_guest"
+        tally = tallies.setdefault((kind, _probe_host(str(row.url))), _CostTally())
+        tally.asked += 1
+        tally.seconds += monotonic() - started
         if result.linkedin_guest is not None:
             if linkedin_guest is None:
                 linkedin_guest = dict.fromkeys(
@@ -765,9 +806,11 @@ def sweep_unwatched_deaths(
         strikes = int(row.death_strikes)
         if result.signal in CLOSING_SIGNALS:
             gone += 1
+            tally.gone += 1
             strikes += 1
         elif result.verdict == "alive":
             alive += 1
+            tally.alive += 1
             # The drain. A strike is a suspicion, not a sentence.
             strikes_cleared += 1 if strikes else 0
             strikes = 0
@@ -776,6 +819,7 @@ def sweep_unwatched_deaths(
             # silently absorbed: that bucket is the one that can disarm this check with no other
             # number moving, exactly as it can for the shortlist probe (D-113).
             unknown += 1
+            tally.unknown += 1
 
         values: dict[str, object] = {
             "death_strikes": strikes,
@@ -789,6 +833,7 @@ def sweep_unwatched_deaths(
             values["status"] = "closed"
             values["closed_at"] = now
             closed_by_url += 1
+            tally.closed += 1
             guard_closed += 1 if row.guarded else 0
         # One transaction per posting, mirroring `apply_board`'s per-board atomicity: the row
         # update and its event commit or vanish together, and a probe that raises mid-sweep
@@ -806,9 +851,13 @@ def sweep_unwatched_deaths(
             "death probe listings", len(asked_companies), console=console
         )
         for company in asked_companies:
+            started = monotonic()
             listing = listing_prober(
                 int(company.id), str(company.provider), str(company.slug)
             )
+            tally = tallies.setdefault(("listing", str(company.provider)), _CostTally())
+            tally.asked += 1
+            tally.seconds += monotonic() - started
             # One transaction per COMPANY — the unit that was actually asked about, mirroring
             # `apply_board`'s per-board atomicity. The open rows are re-read inside it so the
             # membership test runs against the same snapshot the writes land on.
@@ -846,10 +895,12 @@ def sweep_unwatched_deaths(
                         # observation, and there is no report field that could carry a
                         # third state without going unread.
                         listing_absent += 1
+                        tally.gone += 1
                         if past_ttl:
                             strikes += 1
                     elif signal == "listing_present":
                         listing_present += 1
+                        tally.alive += 1
                         # The drain, and the stronger half of it: a board that LISTS the posting
                         # is the same positive evidence `_apply_listed` acts on. Allowed inside
                         # the per-row TTL as well — every quarantine's drain runs on both sides
@@ -861,6 +912,7 @@ def sweep_unwatched_deaths(
                         # Neither increments nor resets, exactly as an `unknown` URL probe does
                         # not.
                         listing_unknown += 1
+                        tally.unknown += 1
 
                     values = {"death_strikes": strikes}
                     if past_ttl:
@@ -876,6 +928,7 @@ def sweep_unwatched_deaths(
                         values["status"] = "closed"
                         values["closed_at"] = now
                         closed_by_listing += 1
+                        tally.closed += 1
                     write.execute(
                         update(postings).where(postings.c.id == row.id).values(**values)
                     )
@@ -907,6 +960,7 @@ def sweep_unwatched_deaths(
         guard_rows_unjudgeable=guard_rows_unjudgeable,
         guard_attempted=guard_attempted,
         guard_closed=guard_closed,
+        cost=_frozen_costs(tallies),
     )
 
 

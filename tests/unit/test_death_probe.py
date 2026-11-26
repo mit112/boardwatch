@@ -1435,3 +1435,88 @@ def test_over_cap_guest_response_counts_as_other_non_200(tmp_path: Path) -> None
     assert block["other_non_200"] == 1
     assert block["no_response"] == 0
     assert report.unknown == 1
+
+
+# --- T344: what each host and kind of probe cost -----------------------------------------
+
+
+def test_the_sweep_times_each_probe_and_files_it_under_its_kind_and_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T344. Seconds come from a fake clock the probers advance, so each (kind, host) row must
+    hold exactly its own probes' time; asked and closed are checked against the probers' own
+    call logs and the store, not against the tally that produced them."""
+    from boardwatch.core.liveness import LinkedInGuestObservation
+    from boardwatch.pipeline import death_probe
+
+    clock = [100.0]
+    monkeypatch.setattr(death_probe, "monotonic", lambda: clock[0])
+    cost_of = {"a.example": 2.0, "b.example": 0.5, "www.linkedin.com": 3.0}
+    asked_hosts: list[str] = []
+
+    def prober(posting_id: int, url: str) -> Liveness:
+        host = url.split("/")[2]
+        asked_hosts.append(host)
+        clock[0] += cost_of[host]
+        if host == "www.linkedin.com":
+            return Liveness(
+                posting_id=posting_id, verdict="unknown", signal="refetch_error",
+                detail="HTTP 429", linkedin_guest=LinkedInGuestObservation(status_code=429),
+            )
+        return (_gone if host == "a.example" else _alive)(posting_id, url)
+
+    def listing(company_id: int, provider: str, slug: str) -> Listing:
+        clock[0] += 7.0
+        return Listing(company_id, frozenset({"kept"}), "1 listed")
+
+    engine = _store(tmp_path)
+    lane = _company(engine, slug="lane", watched=False)
+    a1 = _posting(engine, lane, pid="a1", url="https://a.example/j/1", death_strikes=1)
+    _posting(engine, lane, pid="a2", url="https://a.example/j/2")
+    _posting(engine, lane, pid="b1", url="https://b.example/j/1")
+    _posting(engine, lane, pid="li", url="https://www.linkedin.com/jobs/view/1")
+    ashby = _company(engine, slug="acme", watched=False, provider="ashby")
+    _posting(engine, ashby, pid="kept")
+    dropped = _posting(engine, ashby, pid="dropped", death_strikes=1)
+
+    report = _sweep(engine, prober, listing_prober=listing)
+
+    assert report.cost is not None
+    rows = {(c.kind, c.host): c for c in report.cost}
+    assert set(rows) == {
+        ("url", "a.example"), ("url", "b.example"), ("linkedin_guest", "www.linkedin.com"),
+        ("listing", "ashby"),
+    }
+    assert asked_hosts.count("a.example") == rows["url", "a.example"].asked == 2
+    assert rows["url", "a.example"].seconds == pytest.approx(4.0)
+    assert (rows["url", "a.example"].gone, rows["url", "a.example"].closed) == (2, 1)
+    assert _row(engine, a1)[0] == "closed"
+    assert (rows["url", "b.example"].asked, rows["url", "b.example"].alive) == (1, 1)
+    assert rows["url", "b.example"].seconds == pytest.approx(0.5)
+    li = rows["linkedin_guest", "www.linkedin.com"]
+    assert (li.asked, li.unknown, li.seconds) == (1, 1, pytest.approx(3.0))
+    # The listing half: one COMPANY asked, its rows counted absent/present, the close attributed.
+    board = rows["listing", "ashby"]
+    assert (board.asked, board.gone, board.alive, board.closed) == (1, 1, 1, 1)
+    assert board.seconds == pytest.approx(7.0)
+    assert _row(engine, dropped)[0] == "closed"
+    assert sum(c.asked for c in report.cost if c.kind != "listing") == report.attempted
+    assert sum(c.closed for c in report.cost) == report.closed
+
+
+@pytest.mark.parametrize("url", ["https://xn--.example/jobs/1", "http://a:xx/jobs/1"])
+def test_a_url_httpx_cannot_parse_is_costed_under_one_row_and_never_ends_the_sweep(
+    tmp_path: Path, url: str
+) -> None:
+    """T344 review: `host_key` raises on these (IDNA, port), while the prober answers them
+    `unknown`. The sweep must go on to the next row and record both."""
+    engine = _store(tmp_path)
+    lane = _company(engine, slug="lane", watched=False)
+    _posting(engine, lane, pid="bad", url=url)
+    _posting(engine, lane, pid="ok", url="https://b.example/j/1")
+
+    report = _sweep(engine, _error)
+
+    assert report.attempted == 2 and report.unknown == 2
+    assert report.cost is not None
+    assert {(c.host, c.asked) for c in report.cost} == {("(invalid url)", 1), ("b.example", 1)}
