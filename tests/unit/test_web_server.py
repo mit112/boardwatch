@@ -2556,6 +2556,29 @@ def test_an_unknown_application_is_404_on_every_application_route(
     assert _events(engine) == []
 
 
+_ID_ROUTES = (
+    ("/api/queue/{id}", "GET"),
+    ("/api/queue/{id}/applied", "POST"),
+    ("/api/applied/{id}/unfollowup", "POST"),  # `followup` refuses a dateless body first
+    ("/api/applications/{id}/events", "GET"),
+    ("/api/pdf/{id}", "GET"),
+    ("/api/postings/{id}/diff?from=1&to=2", "GET"),
+    ("/api/runs/{id}", "GET"),
+)
+
+
+@pytest.mark.parametrize(("route", "method"), _ID_ROUTES)
+def test_a_path_id_past_sqlites_integer_is_answered_not_dropped(
+    live: Live, route: str, method: str
+) -> None:
+    """20 digits overflow SQLite's INTEGER; the server must still answer (T337)."""
+    response = call(live, route.format(id="9" * 20), method=method, bearer=live.token)
+    assert response.status == 404, response.body[:200]
+    # The control: the largest id the cap admits still reaches the mounted route.
+    mounted = call(live, route.format(id="9" * 18), method=method, bearer=live.token)
+    assert b"is not a route" not in mounted.body, mounted.body[:200]
+
+
 def test_withdrawing_through_the_status_route_returns_the_lead_and_reapplying_removes_it(
     live: Live, engine: Engine, ctx: ApiContext
 ) -> None:

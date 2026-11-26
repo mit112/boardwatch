@@ -210,7 +210,9 @@ _T = TypeVar("_T")
 
 _ASSET_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _QUEUE = re.compile(r"^/api/queue$")
-_QUEUE_ITEM = re.compile(r"^/api/queue/(\d+)$")
+#: Every path id is capped at 18 digits, inside SQLite's signed 64-bit INTEGER, so a longer one is
+#: not a route (a 404) instead of an `OverflowError` that drops the connection unanswered (T337).
+_QUEUE_ITEM = re.compile(r"^/api/queue/(\d{1,18})$")
 #: The BATCH skip and manual moves, and their undos. Disjoint from `_QUEUE_ACTION` by
 #: construction: that one requires a posting id, so `skip` can never be read as one.
 _QUEUE_BATCH = re.compile(r"^/api/queue/(skip|unskip|manual|unmanual)$")
@@ -223,7 +225,7 @@ _BATCH_WRITES: dict[str, tuple[Callable[[Connection, int, datetime], None], str]
     "unmanual": (lambda conn, job_id, _at: unmark_job_manual(conn, job_id=job_id), "manual"),
 }
 _QUEUE_ACTION = re.compile(
-    r"^/api/queue/(\d+)/"
+    r"^/api/queue/(\d{1,18})/"
     r"(applied|unapplied|skipped|unskip|reported|unreport|disputed|undispute|followup|unfollowup"
     r"|manual|unmanual|reveal)$"
 )
@@ -232,17 +234,17 @@ _QUEUE_ACTION = re.compile(
 #: delivered, so `_QUEUE_ACTION` can never reach it, while the stored key was job-keyed from the
 #: start (`queue.followup.<job_id>`). Only these two actions are mounted here — a page that is
 #: otherwise read-only gains no lane, verdict or applied-state write.
-_APPLIED_ACTION = re.compile(r"^/api/applied/(\d+)/(followup|unfollowup)$")
+_APPLIED_ACTION = re.compile(r"^/api/applied/(\d{1,18})/(followup|unfollowup)$")
 #: One APPLICATION, keyed on `applications.id` — a different id space from both the posting ids of
 #: `_QUEUE_ACTION` and the job ids of `_APPLIED_ACTION`, which is why it has its own prefix: an id
 #: read in the wrong space would write to somebody else's application.
 #: `_note_field`'s "already answered with a 400", distinct from None, which means "no note".
 _INVALID = object()
 
-_APPLICATION = re.compile(r"^/api/applications/(\d+)/(events|status|note)$")
-_PDF = re.compile(r"^/api/pdf/(\d+)$")
-_POSTING_DIFF = re.compile(r"^/api/postings/(\d+)/diff$")
-_RUN = re.compile(r"^/api/runs/(\d+)$")
+_APPLICATION = re.compile(r"^/api/applications/(\d{1,18})/(events|status|note)$")
+_PDF = re.compile(r"^/api/pdf/(\d{1,18})$")
+_POSTING_DIFF = re.compile(r"^/api/postings/(\d{1,18})/diff$")
+_RUN = re.compile(r"^/api/runs/(\d{1,18})$")
 _ASSET = re.compile(r"^/assets/(.+)$")
 #: A probe's challenge: 16 random bytes as hex, and nothing else.
 _NONCE = re.compile(r"[0-9a-f]{32}")
