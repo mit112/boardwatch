@@ -35,6 +35,7 @@ from typing import Any
 
 from sqlalchemy import Connection, Engine, exists, func, select, text
 
+from boardwatch.store.applications import APPLIED_STATUSES
 from boardwatch.store.lead_aging_queries import _days, _naive, _summary
 from boardwatch.store.tables import (
     application_events,
@@ -217,7 +218,9 @@ def _cached_aggregate(conn: Connection, provider_of: dict[int, str]) -> _Aggrega
 
 def _applied_waits(conn: Connection) -> tuple[list[tuple[str, float]], int]:
     """(provider, days from first seen to the earliest submission) per applied job, and the number
-    of applied jobs left out because every submission is an import-time stamp."""
+    of applied jobs left out because every submission is an import-time stamp. Only an application
+    still in `APPLIED_STATUSES` counts, as in lead aging: the Applied page's undo writes `withdrawn`
+    and keeps `submitted_at`."""
     imported = exists().where(
         application_events.c.application_id == applications.c.id,
         application_events.c.event_type == "created",
@@ -231,7 +234,10 @@ def _applied_waits(conn: Connection) -> tuple[list[tuple[str, float]], int]:
             applications.c.created_at,
             applications.c.submitted_at,
             imported.label("imported"),
-        ).where(applications.c.submitted_at.is_not(None))
+        ).where(
+            applications.c.submitted_at.is_not(None),
+            applications.c.status.in_(APPLIED_STATUSES),
+        )
     ):
         job = int(r.job_id)
         seen_jobs.add(job)
