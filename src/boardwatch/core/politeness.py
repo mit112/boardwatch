@@ -626,8 +626,9 @@ class Fetcher:
         returns 400), and a 2000-posting board is 100+ requests to one host, so routing
         POST through the existing per-host serialization is the point, not a formality.
 
-        `headers` is the same escape hatch `get()` documents, and it has ONE caller: the Indeed
-        lane, whose endpoint answers only to that vendor's own app headers. It cannot be a
+        `headers` is the same escape hatch `get()` documents, and it has two callers: the Indeed
+        lane, whose endpoint answers only to that vendor's own app headers, and the TikTok
+        provider, whose search API names its tenant site in a `website-path` header. It cannot be a
         client-level header set for the reason `get()`'s own note gives — one `Fetcher` serves
         every lane, and those headers must not leak onto a request to any other host. Merged
         UNDER the conditional-GET validators, exactly as `get()` merges them."""

@@ -178,6 +178,11 @@ FIXTURE_PROVENANCE: dict[str, FixtureProvenance] = {
             Extension(on=date(2026, 11, 2), reason="live shape re-checked (D-664)"),
         ),
     ),
+    "tiktok": FixtureProvenance(
+        captured=date(2026, 11, 25),
+        review_by=date(2027, 2, 23),
+        readme_pin="sha256:4c50fd9e0f146b0261ba2e4b9daf02d4a1226a2edf75ad6141d3b8d2ab00e09a",
+    ),
 }
 
 # Whole-file byte pin, not a digest over the parsed rows. CASES is a mutable list consumed by

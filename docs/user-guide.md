@@ -452,6 +452,7 @@ bundle to a PDF.
 | Jibe            | `<careers-host>/api/jobs?page=<n>&limit=100` on the employer's own domain | none |
 | Amazon          | `www.amazon.jobs/en/search.json`, one job category per board | none |
 | Apple           | `jobs.apple.com/en-us/search` — the data embedded in the public search page, one country per board (plus one detail page per unseen posting) | none |
+| TikTok          | `POST api.lifeattiktok.com/api/v1/public/supplier/search/job/posts` with the site named in a `website-path` header, the whole board in one 5,000-row page | none |
 
 **Naming a board.** `companies add` takes a board URL or a `provider:slug`:
 
@@ -472,6 +473,8 @@ bundle to a PDF.
 - **Amazon and Apple** are one board per job category or country: `amazon:<category>` (for
   example `amazon:software-development`) and `apple:<country>` (for example
   `apple:united-states`).
+- **TikTok** is one board for its careers site: paste a `lifeattiktok.com/search` URL, or
+  `tiktok:tiktok`.
 
 boardwatch ships a bundled **registry** of 37 verified public boards on Greenhouse, Lever,
 Ashby, Workable and SmartRecruiters, 15 of them a curated **starter set**, so `init` works

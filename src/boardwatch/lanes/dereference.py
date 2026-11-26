@@ -215,6 +215,13 @@ postings is a COMPANY DISCOVERY problem and the entry point for that is `amazon:
 What would have to change to lift this is not a rule here but the identity: a board keyed on
 something a posting URL actually names. Out-of-catalog stays a failure, never a guess.
 
+TIKTOK (lifeattiktok.com) — READ POSITIONALLY, like oraclehcm. The board is the site's one tenant,
+so the host alone names the slug and no path segment does. A posting URL is `search/{id}`, the
+`id` `providers/tiktok.py` stores as `provider_posting_id`; all 134 lifeattiktok.com links in the
+live store on 2026-11-25 had exactly that shape. Without this branch a lane link on the host
+would be filed under the `tiktok` board with the lane's own key, which no board scan lists, so
+two `complete` scans would close a posting that is still open (D-712). Any other path refuses.
+
 APPLE (jobs.apple.com) — REFUSED, and it is the sharpest version of amazon's problem because
 here the posting reference IS recoverable and the refusal is entirely about the board.
 
@@ -408,6 +415,8 @@ def parse_posting_target(url: str) -> PostingTarget:
         return _workday_posting_target(url, slug)
     if provider == "oraclehcm":
         return _oraclehcm_posting_target(url, slug)
+    if provider == "tiktok":
+        return _tiktok_posting_target(url, slug)
     shape = _POSTING_PATH_SHAPES.get(provider)
     if shape is None:
         raise UnresolvablePostingURL(
@@ -432,6 +441,17 @@ def parse_posting_target(url: str) -> PostingTarget:
             f"{provider!r} posting reference is not readable from {segments[-1]!r} in {url!r}"
         )
     return PostingTarget(provider=provider, slug=slug, posting_ref=matched.group(1))
+
+
+def _tiktok_posting_target(url: str, slug: str) -> PostingTarget:
+    """`search/{id}` and nothing else: the id is the board's own posting key (see the TIKTOK
+    section above). A longer path, a bare `search` or a non-numeric id refuses."""
+    segments = _path_segments(url)
+    if len(segments) != 2 or segments[0].lower() != "search" or not segments[1].isdigit():
+        raise UnresolvablePostingURL(
+            f"tiktok posting URLs are search/{{posting_ref}}; {url!r} is not that shape"
+        )
+    return PostingTarget(provider="tiktok", slug=slug, posting_ref=segments[1])
 
 
 def _oraclehcm_posting_target(url: str, slug: str) -> PostingTarget:

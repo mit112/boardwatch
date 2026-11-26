@@ -63,7 +63,7 @@ def test_scope_covers_data_files_repo_wide() -> None:
     # facet catalog and its two sliced pages, 115 -> 118; T70 added the apple provider's
     # eight, 118 -> 126; T75 added Workday's second facet catalog, the one whose tenant spells
     # the group `Job_Family_Group` and nests three location groups, 126 -> 127; D-684 added three
-    # liveness-control fixtures, 127 -> 130. The count is
+    # liveness-control fixtures, 127 -> 130; the tiktok provider added its three, 130 -> 133. The count is
     # pinned so a data file cannot enter the wheel without someone acknowledging it here;
     # bumping this line IS that acknowledgement, and an addition must be paired with a
     # SHIPPED_DATA entry in allowlists.py.
@@ -83,7 +83,7 @@ def test_scope_covers_data_files_repo_wide() -> None:
     assert "tests/fixtures/phenom/list_normal.json" in scope
     assert "tests/fixtures/amazon/facets_category.json" in scope
     assert "tests/fixtures/apple/search_normal.json" in scope
-    assert len(scope) == 130
+    assert len(scope) == 133
 
 
 def test_every_bundle_example_file_is_pinned_and_synthetic() -> None:
