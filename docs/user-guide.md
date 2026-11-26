@@ -473,7 +473,7 @@ bundle to a PDF.
 - **Amazon and Apple** are one board per job category or country: `amazon:<category>` (for
   example `amazon:software-development`) and `apple:<country>` (for example
   `apple:united-states`).
-- **TikTok** is one board for its careers site: paste any `lifeattiktok.com` URL, or
+- **TikTok** is one board for its careers site: paste a `lifeattiktok.com/search` URL, or
   `tiktok:tiktok`.
 
 boardwatch ships a bundled **registry** of 37 verified public boards on Greenhouse, Lever,

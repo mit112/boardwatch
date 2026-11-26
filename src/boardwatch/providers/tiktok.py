@@ -60,7 +60,10 @@ _HOST_SITE: dict[str, str] = {_SITE_HOST: "tiktok", f"www.{_SITE_HOST}": "tiktok
 class TikTokProvider:
     name = "tiktok"
     board_hosts: tuple[str, ...] = tuple(_HOST_SITE)
-    slug_help = "a TikTok careers board is one tenant site; add it as tiktok:tiktok"
+    slug_help = (
+        "a TikTok careers board is one tenant site; paste a lifeattiktok.com/search URL, "
+        "or add it as tiktok:tiktok"
+    )
 
     @staticmethod
     def employer_name_from_slug(slug: str) -> str | None:
@@ -70,7 +73,8 @@ class TikTokProvider:
 
     @staticmethod
     def slug_from_path(host: str, parts: list[str]) -> str | None:
-        """Every page of a careers site belongs to its one tenant, whatever the path."""
+        """Every page of a careers site belongs to its one tenant, whatever the path. (A bare
+        host with no path is not offered to an extractor by `parse_board_target` at all.)"""
         return _HOST_SITE.get(host.lower())
 
     @staticmethod
@@ -98,6 +102,7 @@ class TikTokProvider:
         seen: set[str] = set()
         idless = 0
         reported_total: int | None = None
+        counts_seen: set[int] = set()
 
         for page in range(_MAX_PAGES):
             offset = page * _PAGE_LIMIT
@@ -125,8 +130,11 @@ class TikTokProvider:
                     return _failed(request.url, "invalid board payload: missing 'job_post_list'")
                 errors.append(f"offset {offset}: missing 'job_post_list'")
                 break
+            stated = _stated_total(data)
             if first:
-                reported_total = _stated_total(data)
+                reported_total = stated
+            if stated is not None:
+                counts_seen.add(stated)
             page_rows = [job for job in listed if isinstance(job, dict)]
             if len(page_rows) < len(listed):
                 # Never silent: an entry we cannot read is a posting we cannot key, and a
@@ -151,6 +159,14 @@ class TikTokProvider:
             errors.append(f"page cap of {_MAX_PAGES} pages reached; listing may be incomplete")
 
         enumerated = count_listed_ids(rows, "id")
+        if len(counts_seen) > 1:
+            # The board changed size mid-walk, so a row can have moved past a page boundary
+            # unread even when the distinct total matches the first page's count. `complete`
+            # would close it; the walk is `partial` (D-712).
+            errors.append(
+                f"board count moved during the walk ({', '.join(map(str, sorted(counts_seen)))}); "
+                "treating as partial so unseen postings are not closed"
+            )
         if idless:
             errors.append(f"skipped {idless} rows with no id")
         if reported_total is not None and enumerated < reported_total:

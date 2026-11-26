@@ -185,6 +185,24 @@ def test_a_row_served_twice_across_pages_is_kept_once_and_the_shortfall_is_parti
 
 
 @respx.mock
+def test_a_count_that_moves_between_pages_is_partial_even_when_the_totals_match(
+    tmp_path: Path,
+) -> None:
+    """Page 1 states 1,002 and serves 1-1000; a posting lands, page 2 states 1,003 and serves
+    1000, 1003 and 1002. 1,002 distinct ids match the FIRST count, yet 1001 slipped past the
+    boundary unread: `complete` would close it."""
+    first = _page(_clone_rows(PAGE_LIMIT, 1), PAGE_LIMIT + 2)
+    moved = [{**r, "id": i} for r, i in zip(_clone_rows(3, 1), ("1000", "1003", "1002"), strict=True)]
+    respx.post(SEARCH).mock(side_effect=_pages(first, _page(moved, PAGE_LIMIT + 3)))
+
+    snap = provider.fetch_board(_fetcher(tmp_path), _request())
+
+    assert (snap.board_enumerated, snap.board_reported_total) == (1002, 1002)
+    assert snap.status == "partial"
+    assert "board count moved during the walk (1002, 1003)" in (snap.error or "")
+
+
+@respx.mock
 def test_a_short_first_page_against_a_larger_count_is_partial(tmp_path: Path) -> None:
     respx.post(SEARCH).mock(return_value=httpx.Response(200, json=_page(_clone_rows(2, 1), 5)))
 

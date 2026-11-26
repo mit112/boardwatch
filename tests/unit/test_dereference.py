@@ -22,7 +22,7 @@ from boardwatch.lanes.dereference import (
     UnresolvablePostingURL,
     parse_posting_target,
 )
-from boardwatch.providers import ashby, greenhouse, lever, workable, workday
+from boardwatch.providers import ashby, greenhouse, lever, tiktok, workable, workday
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 _WORKDAY_REF = _POSTING_REF_PATTERNS["workday"]
@@ -30,6 +30,33 @@ _WORKDAY_REF = _POSTING_REF_PATTERNS["workday"]
 
 def _fixture_json(provider: str, name: str) -> Any:
     return json.loads((FIXTURES / provider / name).read_bytes())
+
+
+def test_tiktok_round_trip_lands_on_the_boards_own_posting_key() -> None:
+    """The id a board scan lists is the id a lane link converges onto, so a lane row is never
+    filed under a key the board cannot list (and close)."""
+    jobs = _fixture_json("tiktok", "normal.json")["data"]["job_post_list"]
+    assert jobs
+    for job in jobs:
+        posting = tiktok.parse_job(job)
+        target = parse_posting_target(posting.url)
+        assert target == PostingTarget(
+            provider="tiktok", slug="tiktok", posting_ref=posting.provider_posting_id
+        )
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://lifeattiktok.com/search",
+        "https://lifeattiktok.com/search/abc",
+        "https://lifeattiktok.com/search/123/apply",
+        "https://lifeattiktok.com/position/123",
+    ],
+)
+def test_a_tiktok_url_that_is_not_search_id_refuses(url: str) -> None:
+    with pytest.raises(UnresolvablePostingURL):
+        parse_posting_target(url)
 
 
 def test_greenhouse_round_trip() -> None:

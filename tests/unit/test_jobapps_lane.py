@@ -1068,6 +1068,9 @@ def test_a_tiktok_careers_link_files_under_the_tiktok_board(tmp_path):
     )
     (snapshot,) = _collect(root, tmp_path).snapshots
     assert (snapshot.provider, snapshot.slug) == ("tiktok", "tiktok")
+    # Tier 1: the board's own posting key, never the lane's `pst_` reference, which no board
+    # scan lists and two complete scans would close.
+    assert snapshot.snapshot.postings[0].provider_posting_id == "7509598272319719687"
 
 
 def test_a_tier_one_record_declares_every_field_secondhand(tmp_path):

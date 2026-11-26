@@ -36892,19 +36892,21 @@ them under. Its careers site is a single-page app over one public search API, me
 dozen requests (fixtures README).
 
 **Choice.** `providers/tiktok.py` POSTs the site's own unfiltered search, pages of 1,000 (the largest measured), deduped
-by `id`, `partial` whenever fewer distinct ids arrive than the stated `count`, and a non-zero `code` is a refusal even on
-HTTP 200. The tenant is a header, `website-path`, so it rides on `post_json`'s existing `headers` parameter, scoped to
+by `id`, `partial` whenever fewer distinct ids arrive than the stated `count` or the `count` moves between pages (a
+row can then slip past a page boundary unread), and a non-zero `code` is a refusal even on HTTP 200. The tenant is a header, `website-path`, so it rides on `post_json`'s existing `headers` parameter, scoped to
 the one request, and the board URL carries it in a fragment that is never sent. The slug is the tenant site from a
-closed catalog of one, `tiktok`; `bytedance` was probed and is not served by this API, so it is not a slug. Any
-lifeattiktok.com URL names the board, so the job-apps lane now files a TikTok link under `tiktok:tiktok` (its
-tier-2 path) instead of the lane namespace, and `companies discover` can propose it from a list.
+closed catalog of one, `tiktok`; `bytedance` was probed and is not served by this API, so it is not a slug. A
+lifeattiktok.com URL names the board, and `lanes/dereference` reads a posting URL `search/{id}` onto the board's own
+posting key (all 134 stored links have that shape), so the job-apps lane files a TikTok posting link under
+`tiktok:tiktok` with the id a board scan lists. Without that, a lane row would sit under the board with the lane's own
+key, and two `complete` scans would close it while the job is open. `companies discover` can propose the board from a
+list.
 
 **Not armed.** No board is watched by this change. A watched TikTok board is a live-store write, made after the next
 nightly is read, because the job-apps lane's filing change reaches the run as soon as the primary is pulled.
 
 **Alternatives rejected.** *A US-only board through `location_code_list`*: it needs location codes the API does not
 document, and the listing gate already reads every row's location chain, which `classify_location` resolves (1,806 US
-of 4,141 measured). *Browser headers (`Origin`, `Referer`)*: measured unnecessary; only the tenant header is sent.
-*Dereferencing lane links onto the board's posting key*: the URL carries the posting `id`, so it is possible, and is
-left for a follow-up once the board is watched; until then lane rows group through the cross-host identity.
+of 4,141 measured). *Browser headers (`Origin`, `Referer`)*: measured unnecessary; only the tenant header is sent. *Claiming the host
+without the posting dereference*: it files lane rows under a key the board never lists (above).
 
