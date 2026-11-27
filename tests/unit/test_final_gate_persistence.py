@@ -17,12 +17,12 @@ from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.eligibility.read import current_gate_verdicts
 from boardwatch.eligibility.resolve import declared_fields
 from boardwatch.store.db import ensure_schema
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
     jobs,
     posting_versions,
-    postings,
 )
 
 
@@ -42,11 +42,11 @@ def seed_posting_version(conn: Connection, *, body_text: str, slug: str = "acme-
         name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
     )).inserted_primary_key[0])
     job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-    posting_id = int(conn.execute(insert(postings).values(
+    posting_id = int(insert_posting(conn,
         company_id=company_id, job_id=job_id, provider_posting_id=f"p-{slug}",
         title="Eng", normalized_title="eng", first_seen_at=now, last_seen_at=now,
         status="open", consecutive_missing=0, content_hash=f"h-{slug}", body_text=body_text,
-    )).inserted_primary_key[0])
+    ))
     return int(conn.execute(insert(posting_versions).values(
         posting_id=posting_id, content_hash=f"h-{slug}", body_text=body_text,
         captured_at=now, run_id=None, capture_reason="new",

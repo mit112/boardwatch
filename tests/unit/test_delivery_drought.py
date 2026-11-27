@@ -13,6 +13,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.notify.delivery_drought import DELIVERY_DROUGHT_WINDOW, check_delivery_drought
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import RUN_KIND_PREFIX, RUN_OK, set_state
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 
@@ -34,15 +35,13 @@ def _seed_input(engine: Engine) -> int:
             )
         ).inserted_primary_key[0]
         job_id = conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
-        posting_id = conn.execute(
-            insert(tables.postings).values(
+        posting_id = insert_posting(conn,
                 company_id=company_id, provider_posting_id="p1", job_id=job_id,
                 title="Backend Engineer", normalized_title="backend engineer",
                 url="https://x.test/1", locations_json=["Remote"], remote_policy="remote",
                 first_seen_at=now, last_seen_at=now, status="open", consecutive_missing=0,
                 content_hash="h1", body_text="body",
             )
-        ).inserted_primary_key[0]
         pv_id = conn.execute(
             insert(tables.posting_versions).values(
                 posting_id=posting_id, content_hash="h1", body_text="body",

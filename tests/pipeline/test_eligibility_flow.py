@@ -20,6 +20,7 @@ from boardwatch.eligibility.facts import parse_facts, parse_policy
 from boardwatch.eligibility.preflight import current_identity, run_eligibility
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting, update_posting
 from boardwatch.store.queries import get_profile, save_profile
 from tests.conftest import write_bundled_role_taxonomy
 
@@ -60,15 +61,13 @@ def _seed_posting(
         )
         job_id = int(conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, provider_posting_id=f"p-{slug}", title="Backend Engineer",
                     normalized_title="backend engineer", url="https://example.test/j",
                     locations_json=["Remote"], remote_policy="remote", first_seen_at=now,
                     last_seen_at=now, status=status, consecutive_missing=0,
                     content_hash=f"h-{slug}", body_text=body, job_id=job_id,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(
@@ -173,11 +172,7 @@ def test_revise_then_render_slices_the_original_version(env: Path) -> None:
                 captured_at=now + timedelta(minutes=1), capture_reason="revised",
             )
         )
-        conn.execute(
-            update(tables.postings).where(tables.postings.c.id == posting_id).values(
-                content_hash="h-rev", body_text=REVISED_BODY
-            )
-        )
+        update_posting(conn, posting_id, {"content_hash": "h-rev", "body_text": REVISED_BODY})
     catalog = load_rules(env.parent / "cfg")
     with engine.connect() as conn:
         view = load_audit(conn, posting_id, catalog)
@@ -291,15 +286,13 @@ def _seed_many(data_dir: Path, count: int) -> None:
                 conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
             )
             posting_id = int(
-                conn.execute(
-                    insert(tables.postings).values(
+                insert_posting(conn,
                         company_id=company_id, provider_posting_id=f"p{i}", title="Backend Engineer",
                         normalized_title="backend engineer", url="https://example.test/j",
                         locations_json=["Remote"], remote_policy="remote", first_seen_at=now,
                         last_seen_at=now, status="open", consecutive_missing=0,
                         content_hash=f"h{i}", body_text=PLAIN_BODY, job_id=job_id,
                     )
-                ).inserted_primary_key[0]
             )
             conn.execute(
                 insert(tables.posting_versions).values(

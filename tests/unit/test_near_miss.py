@@ -39,6 +39,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.delivery.api import ApiContext, compute_near_miss_report
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.near_miss_queries import near_misses
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
@@ -46,7 +47,6 @@ from boardwatch.store.tables import (
     eligibility_requirements,
     jobs,
     posting_versions,
-    postings,
 )
 from tests.conftest import write_bundled_role_taxonomy
 from tests.unit.test_web_server import (
@@ -155,8 +155,7 @@ def _posting(
 ) -> int:
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company,
                 job_id=job,
                 provider_posting_id=key,
@@ -171,7 +170,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text=BODY,
             )
-        ).inserted_primary_key[0]
     )
     version = _version(conn, posting, NOW)
     _evaluate(conn, version, verdict, rows, profile=profile)

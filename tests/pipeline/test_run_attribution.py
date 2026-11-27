@@ -20,6 +20,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.eligibility.preflight import run_eligibility
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import ensure_run, finish_run, insert_run
 from tests.conftest import write_test_resume_template
 
@@ -56,8 +57,7 @@ def _seed_posting(data_dir: Path, *, slug: str = "acme2") -> int:
             conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
         )
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, provider_posting_id=f"p-{slug}",
                     title="Backend Engineer", normalized_title="backend engineer",
                     url="https://example.test/j", locations_json=["Remote"],
@@ -65,7 +65,6 @@ def _seed_posting(data_dir: Path, *, slug: str = "acme2") -> int:
                     status="open", consecutive_missing=0, content_hash=f"h-{slug}",
                     body_text=BODY, job_id=job_id,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(

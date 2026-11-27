@@ -20,6 +20,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.providers.base import BoardHealth
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 
 runner = CliRunner()
 
@@ -52,7 +53,7 @@ def _scan_rows(engine: Engine, company_id: int) -> list[Any]:
 
 def _posting(engine: Engine, company_id: int, pid: str | None = None) -> Any:
     with engine.connect() as conn:
-        stmt = select(tables.postings).where(tables.postings.c.company_id == company_id)
+        stmt = select(tables.postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(tables.postings.c.company_id == company_id)
         if pid is not None:
             stmt = stmt.where(tables.postings.c.provider_posting_id == pid)
         return conn.execute(stmt).one()

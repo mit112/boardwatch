@@ -18,6 +18,7 @@ from boardwatch.core.liveness import Liveness
 from boardwatch.pipeline.death_probe import sweep_unwatched_deaths
 from boardwatch.pipeline.local_twin import find_closed_twin_wrappers
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 from boardwatch.store.tables import companies, jobs, postings
 
@@ -61,8 +62,7 @@ def _posting(
 ) -> int:
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -80,7 +80,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
 
 
@@ -129,8 +128,7 @@ def test_a_closed_twin_with_no_url_still_counts_as_the_second_match(engine: Engi
         _posting(conn, board, "t1", locations=["US,TX,Austin"], status="closed")
         # A second requisition, same title and city, with no URL the writer could use.
         job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=board,
                 job_id=job,
                 provider_posting_id="t2",
@@ -148,7 +146,6 @@ def test_a_closed_twin_with_no_url_still_counts_as_the_second_match(engine: Engi
                 content_hash="hash-t2",
                 body_text="body",
             )
-        )
         wrapper = _wrapper(conn)
     assert _queued(engine, [wrapper]) == ()
 

@@ -36,6 +36,7 @@ from boardwatch.store.applications import (
     set_application_status,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import application_events, applications, companies, jobs, postings
 
 NOW = utcnow()
@@ -67,14 +68,12 @@ def _posting(
         ).inserted_primary_key[0]
     )
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    conn.execute(
-        insert(postings).values(
+    insert_posting(conn,
             company_id=company_id, job_id=job_id, provider_posting_id=key, title=title,
             normalized_title=title.lower(), url=url, locations_json=["Remote"],
             remote_policy="remote", first_seen_at=NOW, last_seen_at=NOW, status=status,
             consecutive_missing=0, content_hash=key, body_text=f"body {key}",
         )
-    )
     return job_id
 
 
@@ -444,14 +443,12 @@ def test_a_url_seen_twice_under_one_job_still_writes_once(engine: Engine, tmp_pa
     with engine.begin() as conn:
         job = _posting(conn, key="a", url="https://boards.example.test/acme/1")
         company_id = conn.execute(select(postings.c.company_id).where(postings.c.job_id == job)).scalar_one()
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job, provider_posting_id="b", title="Software Engineer",
                 normalized_title="software engineer", url="https://www.boards.example.test/acme/1/?utm_source=x",
                 locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash="b", body_text="body b",
             )
-        )
     rows, malformed = parse_history(
         _write(tmp_path, "h.csv", "company,title,url\nAcme,SWE,https://boards.example.test/acme/1\n")
     )

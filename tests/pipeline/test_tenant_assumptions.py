@@ -30,6 +30,7 @@ from boardwatch.rank.role_taxonomy import (
 )
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from tests.pipeline.test_pipeline_run import _ready
 
 _NO_CAN_PACK = "missing_country_pack:CAN"
@@ -69,15 +70,13 @@ def _add_posting(data_dir: Path, slug: str, title: str, locations: list[str]) ->
             )
         ).inserted_primary_key[0]
         job_id = conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
-        posting_id = conn.execute(
-            insert(tables.postings).values(
+        posting_id = insert_posting(conn,
                 company_id=company_id, provider_posting_id=f"p-{slug}", title=title,
                 normalized_title=title.lower(), url=f"https://example.test/{slug}",
                 locations_json=locations, remote_policy="onsite", first_seen_at=now,
                 last_seen_at=now, status="open", consecutive_missing=0,
                 content_hash=f"h-{slug}", body_text=body, job_id=job_id,
             )
-        ).inserted_primary_key[0]
         conn.execute(
             insert(tables.posting_versions).values(
                 posting_id=posting_id, content_hash=f"h-{slug}", body_text=body,

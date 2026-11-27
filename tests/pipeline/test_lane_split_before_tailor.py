@@ -34,6 +34,7 @@ from boardwatch.reports.tailor import run_tailor
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import delivered_unapplied
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli, _seed_posting
@@ -76,8 +77,7 @@ def _seed_review_posting(data_dir: Path, *, slug: str) -> int:
             conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
         )
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     provider_posting_id=f"p-{slug}",
                     title="Backend Engineer",
@@ -93,7 +93,6 @@ def _seed_review_posting(data_dir: Path, *, slug: str) -> int:
                     body_text=_REVIEW_BODY,
                     job_id=job_id,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(

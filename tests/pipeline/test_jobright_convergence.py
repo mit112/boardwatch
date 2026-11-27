@@ -97,7 +97,7 @@ def _postings(engine: Engine) -> list[tuple[str, str, str, bool, str]]:
 
 def _bodies(engine: Engine) -> list[str]:
     with engine.connect() as conn:
-        return [row.body_text for row in conn.execute(select(tables.postings.c.body_text)).all()]
+        return [row.body_text for row in conn.execute(select(tables.posting_blobs.c.body.label("body_text"))).all()]
 
 
 def _versions(engine: Engine) -> int:

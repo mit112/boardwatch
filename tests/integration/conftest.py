@@ -22,7 +22,8 @@ from sqlalchemy import Connection, insert, select
 
 from boardwatch.core.clock import utcnow
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import board_scans, companies, jobs, postings, runs
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import board_scans, companies, jobs, runs
 
 
 @pytest.fixture()
@@ -87,8 +88,7 @@ class _Board:
             job_id = int(
                 self.conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0]
             )
-            self.conn.execute(
-                insert(postings).values(
+            insert_posting(self.conn,
                     company_id=self.company_id,
                     job_id=job_id,
                     provider_posting_id=f"p-{self.company_id}-{seq}",
@@ -102,7 +102,6 @@ class _Board:
                     content_hash=f"h-{self.company_id}-{seq}",
                     body_text="body",
                 )
-            )
         self._held_so_far = max(self._held_so_far, held)
 
 

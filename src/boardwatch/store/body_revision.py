@@ -1,10 +1,10 @@
 """One corrected body persisted as a revision, by a writer that has no run to attribute it to.
 
-WHY IT IS A FUNCTION. `postings.body_text`/`content_hash` and the immutable `posting_versions`
-row have to move together or eligibility reads a body whose hash names a version that is no
-longer current — the D-414(a) half-write, stated at `scan/apply.py`'s revision branch. Until now
-`cli/postings_cmd.py` was the only non-run writer and spelled the pair out inline; it has a
-second caller, so the pair lives in one place rather than two.
+WHY IT IS A FUNCTION. The posting's body (`posting_blobs`, T364), `content_hash` and the
+immutable `posting_versions` row have to move together or eligibility reads a body whose hash
+names a version that is no longer current — the D-414(a) half-write, stated at `scan/apply.py`'s
+revision branch. Until now `cli/postings_cmd.py` was the only non-run writer and spelled the pair
+out inline; it has a second caller, so the pair lives in one place rather than two.
 
 NOT THE SCAN PATH, and the differences are schema facts rather than taste. `scan/apply.py`
 additionally appends a `revised` `posting_events` row and a `posting_version_sources` row.
@@ -35,9 +35,10 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Connection, insert, update
+from sqlalchemy import Connection, insert
 
-from boardwatch.store.tables import posting_versions, postings
+from boardwatch.store.posting_blobs import update_posting
+from boardwatch.store.tables import posting_versions
 
 
 def record_body_revision(
@@ -53,11 +54,7 @@ def record_body_revision(
     Returns the new `posting_versions.id`. Takes the caller's open connection and neither begins
     nor commits: the two statements are one atomic change or they are a half-write.
     """
-    conn.execute(
-        update(postings)
-        .where(postings.c.id == posting_id)
-        .values(content_hash=content_hash, body_text=body_text)
-    )
+    update_posting(conn, posting_id, {"content_hash": content_hash, "body_text": body_text})
     return int(
         conn.execute(
             insert(posting_versions).values(

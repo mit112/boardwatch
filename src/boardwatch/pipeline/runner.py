@@ -201,6 +201,7 @@ from boardwatch.store.facet_queries import delivered_postings, facet_trials
 from boardwatch.store.identity_queries import load_identities
 from boardwatch.store.ledger_queries import live_dispositions, record_disposition
 from boardwatch.store.owner_holds import OwnerHoldError, owner_holds
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -1891,7 +1892,7 @@ def _execution_inputs(
     with engine.connect() as conn:
         row = conn.execute(select(
             postings.c.job_id, postings.c.status, postings.c.title, postings.c.locations_json,
-            postings.c.remote_policy, postings.c.content_hash, postings.c.body_text,
+            postings.c.remote_policy, postings.c.content_hash, posting_body().label("body_text"),
             postings.c.url, effective_apply_url().label("apply_url"),
             verified_application_url().label("verified_url"),
             companies.c.provider, companies.c.name, jobapps_employer_url().label("employer_url"),

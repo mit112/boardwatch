@@ -32,6 +32,7 @@ from boardwatch.rank.heuristic import score_posting
 from boardwatch.rank.sponsors import SPONSORS_FILENAME
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 
 _REAL_SCORE = score_posting
 BODY = "We are hiring a backend engineer to work on Python and PostgreSQL services."
@@ -97,13 +98,13 @@ def _seed(data_dir: Path, facts: Facts | None) -> dict[str, int]:
                 name=company, provider="greenhouse", slug=f"co{n}", source="user", watched=False,
             )))
             job_id = _pk(conn.execute(insert(tables.jobs).values(created_at=now)))
-            posting_id = _pk(conn.execute(insert(tables.postings).values(
+            posting_id = (insert_posting(conn,
                 company_id=company_id, provider_posting_id=f"p-{n}", job_id=job_id,
                 title=title, normalized_title=f"backend engineer {n}",
                 url=f"https://jobs.example/{n}", locations_json=["Remote"],
                 remote_policy="remote", first_seen_at=now, last_seen_at=now, status="open",
                 consecutive_missing=0, content_hash=f"h-{n}", body_text=body,
-            )))
+            ))
             conn.execute(insert(tables.posting_versions).values(
                 posting_id=posting_id, content_hash=f"h-{n}", body_text=body,
                 captured_at=now, capture_reason="new",

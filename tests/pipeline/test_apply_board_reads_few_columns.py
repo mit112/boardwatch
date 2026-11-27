@@ -3,7 +3,7 @@
 A `postings` row averages 17.4 KB, 17 KB of it `body_text` and `raw_json`. `_apply_listed` used to
 `select(postings)` for the whole board, closed history included, on every scan of a board that
 listed. It now reads the columns its loop consumes, and fetches a body by id only for a row the
-snapshot lists. The stored result must not move.
+snapshot lists. The stored result must not move. Since T364 the two blobs are `posting_blobs`' columns.
 """
 
 from __future__ import annotations
@@ -19,6 +19,7 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.identity_queries import load_identities
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.queries import insert_run
 
 URL = "https://boards.example/acme"
@@ -50,13 +51,13 @@ def _snapshot(listed: list[RawPosting]) -> BoardSnapshot:
 
 
 def _blob_selects(engine: Engine) -> list[str]:
-    """Collected SELECT statements that read a blob column of `postings` (a list that grows)."""
+    """Collected SELECT statements that read a blob column (a list that grows)."""
     seen: list[str] = []
 
     @event.listens_for(engine, "before_cursor_execute")
     def _spy(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
         sql = " ".join(statement.split())
-        if sql.startswith("SELECT") and re.search(r"postings\.(body_text|raw_json)", sql):
+        if sql.startswith("SELECT") and re.search(r"posting_blobs\.(body|raw)\b", sql):
             seen.append(sql)
 
     return seen
@@ -91,8 +92,8 @@ def test_the_board_read_leaves_the_blobs_of_unlisted_rows_unread(tmp_path: Path)
     )
 
     assert len(seen) == 1, seen  # A's body, once
-    assert "postings.body_text" in seen[0] and "postings.raw_json" not in seen[0]
-    assert re.search(r"postings\.id = \?", seen[0]), seen[0]  # by id, not for the whole board
+    assert "posting_blobs.body" in seen[0] and "posting_blobs.raw" not in seen[0]
+    assert re.search(r"posting_blobs\.posting_id = \?", seen[0]), seen[0]  # by id, not the board
 
 
 def test_the_result_is_what_it_was(tmp_path: Path) -> None:
@@ -121,7 +122,9 @@ def test_the_result_is_what_it_was(tmp_path: Path) -> None:
     with engine.connect() as conn:
         rows = {
             r.provider_posting_id: r
-            for r in conn.execute(select(tables.postings)).all()
+            for r in conn.execute(
+                select(tables.postings, posting_body().label("body_text"))
+            ).all()
         }
         versions = conn.execute(
             select(tables.posting_versions.c.posting_id, tables.posting_versions.c.capture_reason)

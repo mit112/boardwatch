@@ -25,7 +25,8 @@ from boardwatch.store.application_history import (
 from boardwatch.store.applications import applied_job_ids
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.jobapps_history import read_jobapps_dir
-from boardwatch.store.tables import applications, companies, jobs, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import applications, companies, jobs
 
 NOW = utcnow()
 
@@ -48,14 +49,12 @@ def _posting(
         ).inserted_primary_key[0]
     )
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    conn.execute(
-        insert(postings).values(
+    insert_posting(conn,
             company_id=company_id, job_id=job_id, provider_posting_id=key, title=title,
             normalized_title=title.lower(), url=url, locations_json=["Remote"],
             remote_policy="remote", first_seen_at=NOW, last_seen_at=NOW, status="open",
             consecutive_missing=0, content_hash=key, body_text=f"body {key}",
         )
-    )
     return job_id
 
 

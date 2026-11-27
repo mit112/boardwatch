@@ -30,6 +30,7 @@ from boardwatch.eligibility.engine import evaluate
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
 from tests.conftest import write_bundled_role_taxonomy
 
@@ -636,15 +637,13 @@ class TestCatalogChangeReEvaluates:
                 conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
             )
             posting_id = int(
-                conn.execute(
-                    insert(tables.postings).values(
+                insert_posting(conn,
                         company_id=company_id, provider_posting_id="p1",
                         title="Backend Engineer", normalized_title="backend engineer",
                         remote_policy="unknown", first_seen_at=now, last_seen_at=now,
                         status="open", consecutive_missing=0, content_hash="h1",
                         body_text=body, job_id=job_id,
                     )
-                ).inserted_primary_key[0]
             )
             conn.execute(
                 insert(tables.posting_versions).values(

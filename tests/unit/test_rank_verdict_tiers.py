@@ -29,8 +29,9 @@ from boardwatch.eligibility.catalog import RulesCatalog, load_rules
 from boardwatch.eligibility.facts import Facts, Policy
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import current_posting_versions, save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions
 from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = utcnow()
@@ -73,14 +74,14 @@ def _seed(
         for offset, title in enumerate(titles):
             body = (bodies or {}).get(title, SAFE_BODY)
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-            posting_id = int(conn.execute(insert(postings).values(
+            posting_id = int(insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
                 title=title, normalized_title=title.casefold(),
                 locations_json=["Remote"], remote_policy="remote",
                 posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"hh-{offset}",
                 body_text=body,
-            )).inserted_primary_key[0])
+            ))
             posting_ids[title] = posting_id
             conn.execute(insert(posting_versions).values(
                 posting_id=posting_id, content_hash=f"hh-{offset}", body_text=body,

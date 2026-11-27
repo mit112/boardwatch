@@ -29,6 +29,7 @@ from boardwatch.lanes.dereference import requisition_key
 from boardwatch.store.applications import mark_job_applied
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.posting_blobs import insert_posting, update_posting
 from boardwatch.store.queries import save_profile
 from boardwatch.store.queue_state import mark_job_reported
 from boardwatch.store.tables import (
@@ -72,14 +73,14 @@ def _seed(data_dir: Path, rows: Sequence[Row]) -> tuple[Engine, list[int]]:
             )).inserted_primary_key[0])
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
             body = f"JD {offset}. " + "detail " * (offset + 1)
-            posting_id = int(conn.execute(insert(postings).values(
+            posting_id = int(insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
                 title=title, normalized_title=title.lower(), url=url,
                 locations_json=[f"City {offset}, TX"], remote_policy="onsite",
                 posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"hash-{offset}",
                 body_text=body,
-            )).inserted_primary_key[0])
+            ))
             conn.execute(insert(posting_versions).values(
                 posting_id=posting_id, content_hash=f"hash-{offset}", body_text=body,
                 captured_at=NOW, capture_reason="new",
@@ -438,9 +439,7 @@ def test_resolved_jobright_candidate_and_holders_use_employer_evidence(
     ])
     evidenced = copy if enriched == "candidate" else holder
     with engine.begin() as conn:
-        conn.execute(update(postings).where(postings.c.id == evidenced).values(
-            raw_json={"jobapps": {"employer_url": url}},
-        ))
+        update_posting(conn, evidenced, {"raw_json": {"jobapps": {"employer_url": url}}})
         if enriched == "applied":
             mark_job_applied(conn, posting_id=holder, source="test")
     if enriched != "applied":
@@ -451,9 +450,7 @@ def test_resolved_jobright_candidate_and_holders_use_employer_evidence(
         conn.execute(update(postings).where(postings.c.id == evidenced).values(url=url))
     for invalid in ("https://[broken/", "https://unknown.invalid/no-key", None, 7, {}):
         with engine.begin() as conn:
-            conn.execute(update(postings).where(postings.c.id == evidenced).values(
-                raw_json={"jobapps": {"employer_url": invalid}},
-            ))
+            update_posting(conn, evidenced, {"raw_json": {"jobapps": {"employer_url": invalid}}})
         assert _visible(_rank(engine, data_dir)) == []
 
 
@@ -470,9 +467,7 @@ def test_non_jobapps_requisition_ignores_incidental_employer_evidence(
     ])
     evidenced = copy if enriched == "candidate" else holder
     with engine.begin() as conn:
-        conn.execute(update(postings).where(postings.c.id == evidenced).values(
-            raw_json={"jobapps": {"employer_url": url}},
-        ))
+        update_posting(conn, evidenced, {"raw_json": {"jobapps": {"employer_url": url}}})
         if enriched == "applied":
             mark_job_applied(conn, posting_id=holder, source="test")
     if enriched != "applied":
@@ -498,9 +493,9 @@ def test_verified_destinations_key_candidates_and_holders(data_dir: Path, enrich
     evidenced = copy if candidate_side else holder
     with engine.begin() as conn:
         # Stale legacy evidence must not override the explicit verified destination.
-        conn.execute(update(postings).where(postings.c.id == evidenced).values(
-            raw_json={"jobapps": {"employer_url": WD.format(site="Global", req="R-999999")}},
-        ))
+        update_posting(conn, evidenced, {
+            "raw_json": {"jobapps": {"employer_url": WD.format(site="Global", req="R-999999")}},
+        })
         record_application_destination(
             conn, posting_id=evidenced, url=url, source_url=source,
             evidence_ref="fixture#verified", verified_at=NOW,

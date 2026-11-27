@@ -79,6 +79,7 @@ from boardwatch.store import company_hiring_queries as chq
 from boardwatch.store import db as store_db
 from boardwatch.store.applications import create_application
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine, schema_revision
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run, save_eligibility, save_profile
 from boardwatch.store.queue_state import followup_job_dates, skipped_job_ids
 from boardwatch.store.tables import (
@@ -322,8 +323,7 @@ def _deliver(
     if job is None:
         job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting_id = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -340,7 +340,6 @@ def _deliver(
                 content_hash=f"hash-{key}",
                 body_text=body,
             )
-        ).inserted_primary_key[0]
     )
     version_id = int(
         conn.execute(
@@ -505,8 +504,7 @@ def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") ->
     )
     _complete_scan(conn, company_id)
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    conn.execute(
-        insert(postings).values(
+    insert_posting(conn,
             company_id=company_id,
             job_id=job,
             provider_posting_id=key,
@@ -523,7 +521,6 @@ def _undelivered(conn: Connection, key: str, *, title: str = "Data Engineer") ->
             content_hash=f"hash-{key}",
             body_text=JD_ELIGIBLE,
         )
-    )
     return job
 
 

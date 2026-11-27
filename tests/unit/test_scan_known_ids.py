@@ -22,6 +22,7 @@ from boardwatch.scan import coordinator
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 
 
 def test_a_provider_declares_reads_known_ids_exactly_when_it_reads_them() -> None:
@@ -62,13 +63,13 @@ def _board(conn, provider: str, slug: str, postings: dict[str, str]) -> None:  #
     )).inserted_primary_key[0]
     for posting_id, status in postings.items():
         job_id = conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
-        conn.execute(insert(tables.postings).values(
+        insert_posting(conn,
             company_id=company_id, provider_posting_id=posting_id, title="Engineer",
             normalized_title="engineer", url="https://example.test/j", locations_json=[],
             remote_policy="unknown", first_seen_at=now, last_seen_at=now, status=status,
             consecutive_missing=0, content_hash=f"h-{slug}-{posting_id}", body_text="",
             job_id=job_id, closed_at=now if status == "closed" else None,
-        ))
+        )
 
 
 @pytest.mark.usefixtures("no_real_sleep")

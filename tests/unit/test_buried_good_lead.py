@@ -22,6 +22,7 @@ from boardwatch.notify.buried_good_lead import check_buried_good_lead
 from boardwatch.store.buried_queries import buried_good_leads
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import (
     RUN_OK,
     current_posting_versions,
@@ -33,7 +34,6 @@ from boardwatch.store.tables import (
     job_dispositions,
     jobs,
     posting_versions,
-    postings,
     profile,
     runs,
 )
@@ -109,12 +109,12 @@ def _posting(
             name=f"Co{n}", provider="greenhouse", slug=f"co{n}", source="user", watched=True,
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        posting_id = int(conn.execute(insert(postings).values(
+        posting_id = int(insert_posting(conn,
             company_id=company_id, job_id=job_id, provider_posting_id=f"p{n}", title="Eng",
             normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW,
             status="open" if closed_at is None else "closed", closed_at=closed_at,
             consecutive_missing=0, content_hash=f"h{n}", body_text=JD,
-        )).inserted_primary_key[0])
+        ))
         conn.execute(insert(posting_versions).values(
             posting_id=posting_id, content_hash=f"h{n}", body_text=JD, captured_at=NOW,
             run_id=None, capture_reason="new",

@@ -948,10 +948,10 @@ def rank_open_postings(
         # rather than re-derived, and it is the precise condition — an empty `normalized_title`
         # (2 open postings) would collide the same way, so it is excluded too.
         # `content_hash != EMPTY_BODY_HASH` and NOT `not row.body_empty`, and the two are not the
-        # same test. `body_is_empty()` is SQLite `trim(body_text, " \t\n\r\f\v")`, which does NOT
-        # strip U+00A0; `content_hash` normalises with Python's Unicode-aware `\s`, which does. So a
-        # JD that is only `&nbsp;` after extraction passes `body_empty` and hashes to the empty
-        # digest that 245 body-less postings share — two unrelated requisitions at one company and
+        # same test. `body_is_empty()` strips only " \t\n\r\f\v", which does NOT strip U+00A0;
+        # `content_hash` normalises with Python's Unicode-aware `\s`, which does. So a JD that is
+        # only `&nbsp;` after extraction passes `body_empty` and hashes to the empty digest that
+        # 245 body-less postings share — two unrelated requisitions at one company and
         # title would then be "byte-identical" to each other. Keying on the digest is the guard;
         # `body_empty` stays for the zero-signal rule, which asks a different question.
         if row.normalized_title and row.content_hash != EMPTY_BODY_HASH:

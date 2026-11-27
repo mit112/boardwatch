@@ -25,6 +25,7 @@ from boardwatch.scan.board_moves import DeadBoard, follow_board_moves
 from boardwatch.scan.coordinator import run_scan
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import upsert_watch
 
 pytestmark = pytest.mark.usefixtures("no_real_sleep")
@@ -155,12 +156,12 @@ def test_opt_in_moves_are_reversible_and_fail_open(
             tables.companies.c.provider == "greenhouse"
         )).scalar_one()
         job_id = conn.execute(insert(tables.jobs).values(created_at=utcnow())).inserted_primary_key[0]
-        conn.execute(insert(tables.postings).values(
+        insert_posting(conn,
             job_id=job_id, company_id=company_id, provider_posting_id="old", title="Old job",
             normalized_title="old job", url="https://test/old", locations_json=[],
             remote_policy="unknown", first_seen_at=utcnow(), last_seen_at=utcnow(),
             status="open", consecutive_missing=0, content_hash="old", body_text="Old job",
-        ))
+        )
     with respx.mock as routes:
         routes.get(_PROVIDERS["greenhouse"].board_url("acme")).respond(404)
         routes.get(_PROVIDERS["lever"].board_url("acme")).respond(200, json=[])

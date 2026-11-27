@@ -29,6 +29,7 @@ from boardwatch.providers.registry import PROVIDER_NAMES
 from boardwatch.registry.validate import CompanyEntry, validate_entries
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 
 runner = CliRunner()
 
@@ -75,8 +76,7 @@ def _seed_postings(tmp_path: Path, company_id: int, count: int, *, first: dateti
             job_id = conn.execute(
                 insert(tables.jobs).values(created_at=first)
             ).inserted_primary_key[0]
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     job_id=job_id,
                     provider_posting_id=f"p{n}",
@@ -89,7 +89,6 @@ def _seed_postings(tmp_path: Path, company_id: int, count: int, *, first: dateti
                     content_hash=f"h{n}",
                     body_text="",
                 )
-            )
     engine.dispose()
 
 

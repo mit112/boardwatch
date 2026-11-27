@@ -7,6 +7,7 @@ from sqlalchemy import Engine, event, insert, select
 from boardwatch.core.clock import utcnow
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import (
     _JSON_INSERT_PAIRS,
     RUN_FAILED,
@@ -390,7 +391,7 @@ def test_current_posting_versions_returns_the_newest_version_per_posting(tmp_pat
     from boardwatch.core.clock import utcnow
     from boardwatch.store.db import ensure_schema, get_engine
     from boardwatch.store.queries import current_posting_versions
-    from boardwatch.store.tables import companies, jobs, posting_versions, postings
+    from boardwatch.store.tables import companies, jobs, posting_versions
 
     engine = get_engine(tmp_path)
     ensure_schema(engine)
@@ -402,11 +403,11 @@ def test_current_posting_versions_returns_the_newest_version_per_posting(tmp_pat
         ids = []
         for n, status in ((1, "open"), (2, "open"), (3, "closed")):
             jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-            pid = int(conn.execute(insert(postings).values(
+            pid = int(insert_posting(conn,
                 company_id=cid, job_id=jid, provider_posting_id=f"p-{n}", title="Eng",
                 normalized_title="eng", first_seen_at=now, last_seen_at=now, status=status,
                 consecutive_missing=0, content_hash=f"h{n}", body_text="current body",
-            )).inserted_primary_key[0])
+            ))
             ids.append(pid)
             conn.execute(insert(posting_versions).values(
                 posting_id=pid, content_hash=f"h{n}a", body_text=f"first body {n}",
@@ -450,7 +451,7 @@ def test_current_posting_versions_tie_breaks_on_id_when_captured_at_is_equal(tmp
     from boardwatch.core.clock import utcnow
     from boardwatch.store.db import ensure_schema, get_engine
     from boardwatch.store.queries import current_posting_versions
-    from boardwatch.store.tables import companies, jobs, posting_versions, postings
+    from boardwatch.store.tables import companies, jobs, posting_versions
 
     engine = get_engine(tmp_path)
     ensure_schema(engine)
@@ -460,11 +461,11 @@ def test_current_posting_versions_tie_breaks_on_id_when_captured_at_is_equal(tmp
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        pid = int(conn.execute(insert(postings).values(
+        pid = int(insert_posting(conn,
             company_id=cid, job_id=jid, provider_posting_id="p-tie", title="Eng",
             normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
             consecutive_missing=0, content_hash="ht", body_text="current body",
-        )).inserted_primary_key[0])
+        ))
         first = int(conn.execute(insert(posting_versions).values(
             posting_id=pid, content_hash="hta", body_text="same instant, earlier row",
             captured_at=now, run_id=None, capture_reason="new",
@@ -490,7 +491,7 @@ def test_current_posting_versions_ignores_postings_body_text(tmp_path) -> None:
     from boardwatch.core.clock import utcnow
     from boardwatch.store.db import ensure_schema, get_engine
     from boardwatch.store.queries import current_posting_versions
-    from boardwatch.store.tables import companies, jobs, posting_versions, postings
+    from boardwatch.store.tables import companies, jobs, posting_versions
 
     engine = get_engine(tmp_path)
     ensure_schema(engine)
@@ -500,12 +501,12 @@ def test_current_posting_versions_ignores_postings_body_text(tmp_path) -> None:
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        pid = int(conn.execute(insert(postings).values(
+        pid = int(insert_posting(conn,
             company_id=cid, job_id=jid, provider_posting_id="p-src", title="Eng",
             normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
             consecutive_missing=0, content_hash="hs",
             body_text="MUTABLE posting body, must not be read",
-        )).inserted_primary_key[0])
+        ))
         conn.execute(insert(posting_versions).values(
             posting_id=pid, content_hash="hsa", body_text="IMMUTABLE version body",
             captured_at=now, run_id=None, capture_reason="new",
@@ -524,7 +525,7 @@ def test_current_posting_versions_skips_a_posting_with_no_versions(tmp_path) -> 
     from boardwatch.core.clock import utcnow
     from boardwatch.store.db import ensure_schema, get_engine
     from boardwatch.store.queries import current_posting_versions
-    from boardwatch.store.tables import companies, jobs, postings
+    from boardwatch.store.tables import companies, jobs
 
     engine = get_engine(tmp_path)
     ensure_schema(engine)
@@ -534,11 +535,11 @@ def test_current_posting_versions_skips_a_posting_with_no_versions(tmp_path) -> 
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        pid = int(conn.execute(insert(postings).values(
+        pid = int(insert_posting(conn,
             company_id=cid, job_id=jid, provider_posting_id="p-bare", title="Eng",
             normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
             consecutive_missing=0, content_hash="hb", body_text="body",
-        )).inserted_primary_key[0])
+        ))
 
     with engine.connect() as conn:
         assert current_posting_versions(conn) == {}

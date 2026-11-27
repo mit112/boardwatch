@@ -18,6 +18,7 @@ from boardwatch.store.ledger_queries import (
     load_dispositions,
     record_disposition,
 )
+from boardwatch.store.posting_blobs import insert_posting
 
 NOW = datetime(2026, 8, 10, 12, 0, 0)
 runner = CliRunner()
@@ -48,14 +49,12 @@ def _seed_job_with_posting(engine: Engine, n: int) -> int:
         job_id = int(
             conn.execute(insert(tables.jobs).values(created_at=NOW)).inserted_primary_key[0]
         )
-        conn.execute(
-            insert(tables.postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=str(n),
                 title=f"Engineer {n}", normalized_title="engineer",
                 url="https://example.test/j", first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"h{n}", body_text="b",
             )
-        )
     return job_id
 
 

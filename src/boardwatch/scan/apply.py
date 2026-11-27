@@ -40,6 +40,7 @@ from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.db import write_connection
 from boardwatch.store.events import append_event
 from boardwatch.store.identity_queries import write_identities
+from boardwatch.store.posting_blobs import insert_posting, update_posting
 from boardwatch.store.queries import open_as_filter
 from boardwatch.store.sources import record_version_source
 from boardwatch.store.tables import (
@@ -47,6 +48,7 @@ from boardwatch.store.tables import (
     companies,
     http_cache,
     jobs,
+    posting_blobs,
     posting_versions,
     postings,
 )
@@ -251,20 +253,18 @@ def _apply_listed(
         if row is None:
             job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])  # type: ignore[index]
             fields = _inserted_fields(raw, now)
-            inserted = conn.execute(
-                insert(postings).values(
-                    company_id=company_id,
-                    job_id=job_id,
-                    provider_posting_id=raw.provider_posting_id,
-                    first_seen_at=now,
-                    status="open",
-                    consecutive_missing=0,
-                    content_hash=new_hash,
-                    body_text=raw.body_text,
-                    **fields,
-                )
+            posting_id = insert_posting(
+                conn,
+                company_id=company_id,
+                job_id=job_id,
+                provider_posting_id=raw.provider_posting_id,
+                first_seen_at=now,
+                status="open",
+                consecutive_missing=0,
+                content_hash=new_hash,
+                body_text=raw.body_text,
+                **fields,
             )
-            posting_id = int(inserted.inserted_primary_key[0])  # type: ignore[index]
             vid = _insert_version(conn, posting_id, new_hash, raw.body_text, now, run_id, "new")
             record_version_source(
                 conn, posting_version_id=vid, run_id=run_id, source_url=source_url,
@@ -322,13 +322,11 @@ def _apply_listed(
                 append_event(conn, row.id, "revised", run_id)
             result.revised += 1
         # A jobapps tier-1 record declares every column AND `"liveness"`, which leaves NOTHING
-        # to write. An empty `values` is not a no-op: SQLAlchemy emits `UPDATE postings SET
-        # WHERE id = ?` and SQLite answers `OperationalError: near "WHERE": syntax error`, which
-        # would abort the whole board's transaction. The identity write below still runs — it
+        # to write; `update_posting` then writes nothing (an empty UPDATE is a syntax error that
+        # would abort the whole board's transaction). The identity write below still runs — it
         # recomputes from the ROW, which is the point of passing those values rather than reading
         # them off `raw`.
-        if values:
-            conn.execute(update(postings).where(postings.c.id == row.id).values(**values))
+        update_posting(conn, row.id, values)
         # AFTER the update, so the identity is computed from what was just persisted. The
         # observation may have moved title or locations without producing a revision (the D25
         # rule above refreshes them regardless of content_hash), which moves an identity key.
@@ -347,7 +345,7 @@ def _apply_listed(
                 values["body_text"]
                 if "body_text" in values
                 else conn.execute(
-                    select(postings.c.body_text).where(postings.c.id == row.id)
+                    select(posting_blobs.c.body).where(posting_blobs.c.posting_id == row.id)
                 ).scalar_one()
             ),
             first_seen_at=row.first_seen_at, now=now,

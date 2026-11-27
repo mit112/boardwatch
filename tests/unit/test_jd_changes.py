@@ -35,6 +35,7 @@ from sqlalchemy import Connection, Engine, insert, text
 from boardwatch.store import jd_change_queries
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.jd_change_queries import jd_changes, version_diff
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 from boardwatch.store.tables import (
     application_events,
@@ -42,7 +43,6 @@ from boardwatch.store.tables import (
     companies,
     jobs,
     posting_versions,
-    postings,
 )
 
 D0 = datetime(2026, 11, 1, 12, 0, 0)
@@ -64,8 +64,7 @@ def engine(tmp_path: Path) -> Engine:
 def _posting(conn: Connection, company: int, key: str) -> int:
     job = int(conn.execute(insert(jobs).values(created_at=D0)).inserted_primary_key[0])
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company,
                 job_id=job,
                 provider_posting_id=key,
@@ -80,7 +79,6 @@ def _posting(conn: Connection, company: int, key: str) -> int:
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
 
 

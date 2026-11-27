@@ -18,6 +18,7 @@ from boardwatch.store.ledger_queries import (
     load_dispositions,
     record_disposition,
 )
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queue_state import (
     followup_job_dates,
     manual_job_ids,
@@ -171,15 +172,13 @@ def _seed(engine: Engine, count: int) -> list[tuple[int, int]]:
                 conn.execute(insert(tables.jobs).values(created_at=NOW)).inserted_primary_key[0]
             )
             posting_id = int(
-                conn.execute(
-                    insert(tables.postings).values(
+                insert_posting(conn,
                         company_id=company_id, job_id=job_id, provider_posting_id=str(n),
                         title="Engineer", normalized_title="engineer",
                         url=f"https://boards.greenhouse.io/acme/jobs/{n}",
                         first_seen_at=NOW, last_seen_at=NOW, status="open",
                         consecutive_missing=0, content_hash="h", body_text="b",
                     )
-                ).inserted_primary_key[0]
             )
             out.append((posting_id, job_id))
     return out

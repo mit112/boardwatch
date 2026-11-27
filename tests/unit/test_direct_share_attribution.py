@@ -34,6 +34,7 @@ from boardwatch.store.applications import mark_job_applied
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.posting_blobs import insert_posting
 
 NOW = utcnow()
 _INIT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
@@ -154,14 +155,14 @@ def _seed(data_dir: Path, rows: tuple[Row, ...] = WIDE) -> dict[str, int]:
                          .inserted_primary_key[0])
             body = f"Backend services in Python and Go. Opening {row.content_hash or n}."
             seen = NOW - timedelta(days=30) if row.older else NOW
-            ids[row.name] = int(conn.execute(insert(tables.postings).values(
+            ids[row.name] = int(insert_posting(conn,
                 company_id=companies[key], job_id=job_id, provider_posting_id=f"pp-{n}",
                 title=row.title, normalized_title=row.title.lower(), url=_url(row, n),
                 locations_json=[row.location or f"City {n}, NV"], remote_policy="onsite",
                 posted_at=NOW - timedelta(hours=n), first_seen_at=seen, last_seen_at=NOW,
                 status="open", consecutive_missing=0,
                 content_hash=row.content_hash or f"hash-{n}", body_text=body,
-            )).inserted_primary_key[0])
+            ))
             conn.execute(insert(tables.posting_versions).values(
                 posting_id=ids[row.name], content_hash=row.content_hash or f"hash-{n}",
                 body_text=body, captured_at=NOW, capture_reason="new",

@@ -37,6 +37,7 @@ from boardwatch.pipeline.runner import _collect_lane
 from boardwatch.reports.run_funnel import _lane_cross_checks
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.queries import insert_run, posting_slugs
 from boardwatch.store.run_funnel_queries import count_lane_captures
 from tests.unit.test_jobapps_linkedin_slice import PLAIN_JD, PLAIN_PAGE
@@ -169,7 +170,7 @@ def _rows(engine: Engine) -> list[tuple[str, str, str, str]]:
                 select(
                     tables.companies.c.slug,
                     tables.postings.c.provider_posting_id,
-                    tables.postings.c.body_text,
+                    posting_body().label("body_text"),
                     tables.postings.c.locations_json,
                 )
                 .join(tables.companies, tables.companies.c.id == tables.postings.c.company_id)

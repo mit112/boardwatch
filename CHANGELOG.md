@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A posting's body and raw payload move out of `postings` into a compressed side table (T364 step 1).** `postings`
+  held both inline, about 17 KB of a row's 17.4 KB, so every corpus-wide read (the ranker, the run funnel, the scan's
+  board read) walked about one 4 KiB page per posting over 25 GB. A new `posting_blobs` table holds the two,
+  zlib-compressed, one row per posting; `postings` keeps three facts read from them as plain columns
+  (`body_trimmed_len`, which the empty-body check and `ix_postings_corpus` now read, and `employment_type` and
+  `jobapps_employer_url`, the two values the queue and the ranker read out of the payload). Nothing a user sees
+  changes. On a clone of the live store (#765) the table and its indexes went from 25.09 GB to 1.04 GB and the blobs
+  from 22.88 GB to 9.41 GB, and the reads fell cold from 134 to 16 s (the ranker's), 243 to 62 s (the funnel's) and
+  285 to 85 s (the scan's board read). The migration copies every row with its id, compresses on all cores, checks
+  every row (each column, each blob's bytes, the empty-body reading and both payload values) against the old table
+  before it drops it, and runs in one transaction with the revision stamp. **It runs on the first command that opens a
+  store, so it ships with T363 in one owner-scheduled no-run window after a fresh backup; the file shrinks only after
+  the `VACUUM INTO` that window already takes.**
 - **Each eligibility snapshot is stored once, not on every input row (T363).** `eligibility_inputs` carried a copy of its
   profile snapshot and its rules snapshot on every row: 6.2M rows over 3 profile and 14 rules identities, 5.3 GB of the
   table's 8.46 GB. A new append-only `eligibility_snapshots(kind, hash, snapshot_json)` table holds each one once, and the

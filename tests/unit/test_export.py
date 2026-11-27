@@ -23,8 +23,9 @@ from boardwatch.core.clock import utcnow
 from boardwatch.reports.export import CSV_COLUMNS
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 runner = CliRunner()
 
@@ -290,8 +291,7 @@ def _seed_grouped_job(data_dir: Path) -> tuple[int, int]:
         job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
         for title, status in (("A Role", "open"), ("B Role", "closed")):
             posting_id = int(
-                conn.execute(
-                    insert(postings).values(
+                insert_posting(conn,
                         company_id=company_id, job_id=job_id,
                         provider_posting_id=f"gp-{title[0].lower()}", title=title,
                         normalized_title=title.lower(), url=f"https://example.test/{title.lower()}",
@@ -301,7 +301,6 @@ def _seed_grouped_job(data_dir: Path) -> tuple[int, int]:
                         consecutive_missing=0, content_hash=f"gh-{title.lower()}",
                         body_text=f"We are hiring a {title}.",
                     )
-                ).inserted_primary_key[0]
             )
             conn.execute(
                 insert(posting_versions).values(

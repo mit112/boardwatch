@@ -41,8 +41,9 @@ from boardwatch.projection.pool import projection_candidate
 from boardwatch.projection.scoring import SCORERS
 from boardwatch.projection.stamp import write_stamp
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, extractions, jobs, posting_versions
 from boardwatch.tailor.load import load_resume
 from tests.conftest import write_test_resume_template
 from tests.profile_bundle.conftest import (
@@ -106,8 +107,7 @@ def _seed_posting(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     job_id=job_id,
                     provider_posting_id="pp-acme",
@@ -124,7 +124,6 @@ def _seed_posting(
                     content_hash="h1",
                     body_text="Python JavaScript backend services",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

@@ -27,9 +27,10 @@ from boardwatch.pipeline.on_disk_links import (
 )
 from boardwatch.store.application_destinations import read_application_destinations
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 from boardwatch.store.seed_queries import record_seeds, unresolved_seed_count
-from boardwatch.store.tables import companies, jobs, lane_seeds, postings
+from boardwatch.store.tables import companies, jobs, lane_seeds
 
 NOW = datetime(2026, 11, 10, 12, 0, 0)
 LATER = datetime(2026, 11, 11, 12, 0, 0)
@@ -69,8 +70,7 @@ def _posting(
 ) -> int:
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -86,7 +86,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
 
 

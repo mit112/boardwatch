@@ -19,7 +19,8 @@ from boardwatch.cli.app import app
 from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, extractions, jobs, posting_versions
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.safety import TierASafetyError
@@ -75,8 +76,7 @@ def _seed_open_posting(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=provider_posting_id,
                     title="Backend Engineer", normalized_title="backend engineer",
                     url="https://example.test/acme", locations_json=["Remote"],
@@ -84,7 +84,6 @@ def _seed_open_posting(
                     status="open", consecutive_missing=0, content_hash="h1",
                     body_text="Python JavaScript backend services",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

@@ -17,7 +17,8 @@ from boardwatch.core.clock import utcnow
 from boardwatch.store.applications import create_application, set_application_status
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.funnel_queries import job_id_for_posting, list_funnel
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 # Naive UTC, matching boardwatch.core.clock.utcnow() (A2).
 NOW = utcnow()
@@ -43,8 +44,7 @@ def _posting(conn, title: str) -> tuple[int, int]:
     )
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting_id = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=title,
                 title=title, normalized_title=title, url=f"https://example.test/{title}",
                 locations_json=["Remote"], remote_policy="remote",
@@ -52,7 +52,6 @@ def _posting(conn, title: str) -> tuple[int, int]:
                 consecutive_missing=0, content_hash=title,
                 body_text=f"We are hiring a {title} engineer.",
             )
-        ).inserted_primary_key[0]
     )
     return posting_id, job_id
 
@@ -112,8 +111,7 @@ def test_list_funnel_shows_the_tracked_posting_when_one_job_anchors_two(
         version_ids: list[int] = []
         for title in ("first", "second"):
             posting_id = int(
-                conn.execute(
-                    insert(postings).values(
+                insert_posting(conn,
                         company_id=company_id, job_id=job_id,
                         provider_posting_id=f"p-{title}", title=title,
                         normalized_title=title, url=f"https://example.test/{title}",
@@ -122,7 +120,6 @@ def test_list_funnel_shows_the_tracked_posting_when_one_job_anchors_two(
                         consecutive_missing=0, content_hash=f"h-{title}",
                         body_text=f"We are hiring a {title} engineer.",
                     )
-                ).inserted_primary_key[0]
             )
             posting_ids.append(posting_id)
             version_ids.append(

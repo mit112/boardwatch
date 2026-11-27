@@ -43,6 +43,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import body_trimmed_len
 
 #: Ceiling on the median-of-5, in seconds. Derived from the measured bimodal distribution in this
 #: module's docstring: above the loaded mode's observed maximum with headroom, far below anything a
@@ -103,6 +104,7 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
         )
         job_rows = []
         posting_rows = []
+        blob_rows = []
         extraction_rows = []
         for i in range(10_000):
             body = f"{BODY_TEMPLATES[i % 4]} Posting {i}."
@@ -118,9 +120,11 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
                     "remote_policy": "remote",
                     "posted_at": now - timedelta(days=i % 60),
                     "first_seen_at": now, "last_seen_at": now, "status": "open",
-                    "consecutive_missing": 0, "content_hash": body_hash, "body_text": body,
+                    "consecutive_missing": 0, "content_hash": body_hash,
+                    "body_trimmed_len": body_trimmed_len(body),
                 }
             )
+            blob_rows.append({"posting_id": i + 1, "body": body})
             hits = template_hits[i % 4]
             extraction_rows.append(
                 {
@@ -131,6 +135,7 @@ def test_top_path_median_under_one_second(tmp_path: Path) -> None:
             )
         conn.execute(insert(tables.jobs), job_rows)
         conn.execute(insert(tables.postings), posting_rows)
+        conn.execute(insert(tables.posting_blobs), blob_rows)
         conn.execute(insert(tables.extractions), extraction_rows)
         conn.execute(
             insert(tables.profile).values(

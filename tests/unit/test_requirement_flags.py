@@ -36,7 +36,8 @@ from boardwatch.eligibility.engine import engine_version
 from boardwatch.eligibility.read import NO_REQUIREMENT_FLAGS, current_requirement_flags
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import RequirementItem, record_evaluation
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 NOW = utcnow()
 #: DERIVED, never pinned: `engine_version` is a digest that moves on any edit to a digested
@@ -58,11 +59,11 @@ def _version(conn, slug: str) -> tuple[int, int]:
         name="Acme", provider="greenhouse", slug=f"acme-{slug}", source="user", watched=True,
     )).inserted_primary_key[0])
     jid = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    pid = int(conn.execute(insert(postings).values(
+    pid = int(insert_posting(conn,
         company_id=cid, job_id=jid, provider_posting_id=slug, title="Eng",
         normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status="open",
         consecutive_missing=0, content_hash=slug, body_text="b",
-    )).inserted_primary_key[0])
+    ))
     vid = int(conn.execute(insert(posting_versions).values(
         posting_id=pid, content_hash=slug, body_text="b", captured_at=NOW,
         run_id=None, capture_reason="new",

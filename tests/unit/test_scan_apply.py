@@ -27,6 +27,7 @@ from boardwatch.core.normalize import content_hash
 from boardwatch.scan.apply import ApplyResult, apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 from boardwatch.store.tables import board_scans
 
@@ -174,8 +175,7 @@ def _insert_posting(engine: Engine, company_id: int, *, status: str = "open") ->
             conn.execute(insert(tables.jobs).values(created_at=SEEDED)).inserted_primary_key[0]
         )
         return int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     job_id=job_id,
                     provider_posting_id="p-1",
@@ -193,7 +193,6 @@ def _insert_posting(engine: Engine, company_id: int, *, status: str = "open") ->
                     content_hash=content_hash(LANE_BODY),
                     body_text=LANE_BODY,
                 )
-            ).inserted_primary_key[0]
         )
 
 

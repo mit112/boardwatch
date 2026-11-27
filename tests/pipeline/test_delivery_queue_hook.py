@@ -58,6 +58,7 @@ from boardwatch.pipeline.runner import PipelineSummary, run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.applications import MarkOutcome, mark_job_applied
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from tests.conftest import write_test_resume_template
 
 # `init` answers: 3 = skip the board wizard, then the profile prompts.
@@ -109,8 +110,7 @@ def _seed_posting(data_dir: Path, n: int, *, url: str | None = None) -> int:
             conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
         )
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     provider_posting_id=f"p-{n}",
                     job_id=job_id,
@@ -126,7 +126,6 @@ def _seed_posting(data_dir: Path, n: int, *, url: str | None = None) -> int:
                     content_hash=f"h-{n}",
                     body_text=BODY,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(

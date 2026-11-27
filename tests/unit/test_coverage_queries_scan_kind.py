@@ -25,7 +25,8 @@ from boardwatch.core.clock import utcnow
 from boardwatch.reports.board_coverage import build_report
 from boardwatch.store.coverage_queries import load_board_coverage
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import board_scans, companies, jobs, postings, runs
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import board_scans, companies, jobs, runs
 
 
 @pytest.fixture()
@@ -72,14 +73,12 @@ def _hold(conn: Connection, company_id: int, count: int) -> None:
     now = utcnow()
     for i in range(count):
         job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=f"p-{company_id}-{i}",
                 title="Software Engineer", normalized_title="software engineer",
                 remote_policy="unknown", first_seen_at=now, last_seen_at=now, status="open",
                 consecutive_missing=0, content_hash=f"h-{company_id}-{i}", body_text="body",
             )
-        )
 
 
 def test_a_lane_row_does_not_double_count_an_already_watched_board(conn: Connection) -> None:

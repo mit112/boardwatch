@@ -20,13 +20,13 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store.artifacts import get_derivations
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     artifacts,
     companies,
     extractions,
     jobs,
     posting_versions,
-    postings,
 )
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from boardwatch.tailor.rewrite.agent_io import (
@@ -89,8 +89,7 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     job_id=job_id,
                     provider_posting_id="pp-acme",
@@ -107,7 +106,6 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
                     content_hash="h1",
                     body_text="Python JavaScript backend services",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

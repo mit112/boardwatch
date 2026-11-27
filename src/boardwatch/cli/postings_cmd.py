@@ -58,6 +58,7 @@ from boardwatch.store.body_revision import record_body_revision
 from boardwatch.store.db import ensure_schema, write_connection
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.owner_close import OwnerClose, close_postings, plan, reopen_postings
+from boardwatch.store.posting_blobs import posting_raw
 from boardwatch.store.queries import RUN_RUNNING, ensure_run, finish_run
 from boardwatch.store.tables import companies, postings, runs
 
@@ -98,14 +99,14 @@ def reparse_bodies(
 
     with write_connection(engine) as conn, conn.begin():  # T134: read-then-write
         rows = conn.execute(
-            select(postings.c.id, postings.c.content_hash, postings.c.raw_json)
+            select(postings.c.id, postings.c.content_hash, posting_raw())
             .join(companies, companies.c.id == postings.c.company_id)
             .where(companies.c.provider == provider)
         ).all()
         for posting_id, old_hash, raw_json in rows:
             scanned += 1
-            # `postings.raw_json` is a JSON column, so the driver hands back the decoded object,
-            # not a string. Anything other than a mapping is a payload this drain cannot read.
+            # The stored payload (`posting_blobs.raw`) comes back as the decoded object, not a
+            # string. Anything other than a mapping is a payload this drain cannot read.
             if not isinstance(raw_json, dict):
                 skipped += 1
                 continue

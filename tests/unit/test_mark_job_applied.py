@@ -35,13 +35,13 @@ from boardwatch.store.applications import (
     set_application_status,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     application_events,
     applications,
     companies,
     jobs,
     posting_versions,
-    postings,
 )
 
 # Naive UTC, matching boardwatch.core.clock.utcnow() (A2).
@@ -92,15 +92,13 @@ def _posting(
     if company_id is None:
         company_id = _company(conn, slug=f"acme-{key}")
     posting_id = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=key,
                 title="Software Engineer", normalized_title="software engineer",
                 url=f"https://example.test/{key}", locations_json=["Remote"],
                 remote_policy="remote", first_seen_at=NOW, last_seen_at=NOW, status="open",
                 consecutive_missing=0, content_hash=key, body_text=f"body {key}",
             )
-        ).inserted_primary_key[0]
     )
     version_id = _version(conn, posting_id, captured_at=NOW, tag=key) if with_version else None
     return posting_id, version_id

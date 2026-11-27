@@ -21,8 +21,9 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.projection.errors import ProjectionError, ProjectionIssue
 from boardwatch.projection.posting import PostingContext, posting_context
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, extractions, jobs, posting_versions
 
 NOW = datetime(2026, 8, 2, 12, 0, 0)
 
@@ -62,15 +63,13 @@ def _seed(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
                     title="Backend Engineer", normalized_title="backend engineer",
                     url=f"https://example.test/{slug}", locations_json=["Remote"],
                     remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                     status=status, consecutive_missing=0, content_hash=content_hash, body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
         if with_version:
             conn.execute(

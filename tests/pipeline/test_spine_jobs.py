@@ -2,12 +2,13 @@ from sqlalchemy import func, select
 
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 
 
 def test_new_posting_creates_and_anchors_a_job(engine, case, company_id, run_id):
     apply_board(engine, case.snapshot_for(case.jobs()[:1]), company_id, run_id)
     with engine.connect() as conn:
-        posting = conn.execute(select(tables.postings)).one()
+        posting = conn.execute(select(tables.postings, posting_body().label("body_text"), posting_raw().label("raw_json"))).one()
         jobs = conn.execute(select(func.count()).select_from(tables.jobs)).scalar_one()
     assert posting.job_id is not None
     assert jobs == 1
