@@ -59,7 +59,7 @@ jobs:
               if (open) {
                 await github.rest.issues.createComment({
                   owner, repo, issue_number: open.number,
-                  body: `Registry health recovered: every catalog entry passed in ${runUrl}. Closing.`,
+                  body: `Registry health recovered: no catalog entry answered dead, error or unreachable in ${runUrl} (an empty board passes; the run summary lists any). Closing.`,
                 });
                 await github.rest.issues.update({
                   owner, repo, issue_number: open.number, state: 'closed',
