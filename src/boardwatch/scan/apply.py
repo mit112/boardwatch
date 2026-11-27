@@ -227,10 +227,18 @@ def _apply_listed(
         deduped.append(raw)
     raw_postings = deduped
     result = ApplyResult(status="", listed=len(raw_postings))
+    # The columns the loop below reads off a stored row, and no more. `select(postings)` carried
+    # `body_text` and `raw_json` of every row of the board, closed history included, though the
+    # body is needed only for the rows this snapshot lists (read by id where used) and the raw
+    # payload never is. The two blobs are about 17 KB of a posting's 17.4 KB.
     existing = {
         row.provider_posting_id: row
         for row in conn.execute(
-            select(postings).where(postings.c.company_id == company_id)
+            select(
+                postings.c.id, postings.c.provider_posting_id, postings.c.status,
+                postings.c.content_hash, postings.c.title, postings.c.locations_json,
+                postings.c.first_seen_at,
+            ).where(postings.c.company_id == company_id)
         ).all()
     }
     # One query per board, for the `cross_host` identity component (P6 slice 2 §4).
@@ -335,7 +343,13 @@ def _apply_listed(
             title=values.get("title", row.title),
             locations=values.get("locations_json", row.locations_json),
             content_hash=values.get("content_hash", row.content_hash),
-            body_text=values.get("body_text", row.body_text),
+            body_text=(
+                values["body_text"]
+                if "body_text" in values
+                else conn.execute(
+                    select(postings.c.body_text).where(postings.c.id == row.id)
+                ).scalar_one()
+            ),
             first_seen_at=row.first_seen_at, now=now,
         )
     return result

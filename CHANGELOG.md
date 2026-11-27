@@ -8,6 +8,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A scan no longer reads the body and raw payload of every stored posting on a board it lists (T362).** Applying a
+  board used to load every column of every posting the board holds, open and closed, once per board that listed. A
+  posting row averages 17.4 KB, 17 KB of it `body_text` and `raw_json`, so a nightly read most of the 24.6 GB table
+  through that one query. It now reads the seven columns the apply loop uses, and fetches a body, by id, only for a
+  posting the snapshot lists again (its identity needs the body). A closed posting the board no longer lists, and every
+  raw payload, are not read. Nothing a scan writes changes: on a clone of the live store, the real apply over 14 boards
+  (1,916 postings, with revised, retitled, reopened and secondhand-declared rows) wrote byte-identical postings,
+  versions and identities before and after. Measured over the 8,973 boards that listed in run 2910 (1,266,798 stored
+  rows), cold, on fresh clones of one store: the board reads took 456 s before and about 304 s after (an estimate: it counts
+  every open row as listed and omits closed rows a board lists again). The other whole-corpus reads (the ranker, the run funnel, the duplicate sweep, the death probe's order)
+  were measured in the same pass and already read only the columns they use, so they are unchanged.
 - **A bound company's bare trailing level number is read, and a new command proposes the bindings (T369).** The
   seniority gate now reads a number that ends a title's first segment ("Software Engineer 5", "Engineer 5 - Payments",
   "Engineer 5, Platform"; not "Engineer, Python 3") through the company's bound scheme, in a new `bound_only` grammar kind (`trailing_n` in `leveling.yaml`).
