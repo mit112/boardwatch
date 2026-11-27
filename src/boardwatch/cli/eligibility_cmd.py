@@ -29,7 +29,7 @@ from boardwatch.cli._profile_row import (
     refuse_unusable_profile_row,
 )
 from boardwatch.cli.context import build_context
-from boardwatch.core.settings import Settings
+from boardwatch.core.settings import Settings, load_settings
 from boardwatch.eligibility.catalog import FamilySpec, FieldSpec, RulesCatalog, load_rules
 from boardwatch.eligibility.engine import not_applicable_field_families
 from boardwatch.eligibility.extract_llm import extract_and_record
@@ -57,7 +57,9 @@ from boardwatch.llm.payload import preview_text
 from boardwatch.pipeline.runner import DEFAULT_TOP_N
 from boardwatch.rank.role_taxonomy import ROLE_TAXONOMY_FILE
 from boardwatch.reports.abstain import build_abstain_report
+from boardwatch.reports.leveling_bindings import DEFAULT_MIN_N, LevelingReportError, leveling_report
 from boardwatch.store.abstain_queries import count_requirement_dispositions
+from boardwatch.store.db import get_readonly_engine
 from boardwatch.store.queries import (
     RUN_FAILED,
     RUN_OK,
@@ -874,6 +876,31 @@ def gate_apply_cmd(
             f"[yellow]WARNING: demoted to ineligible: "
             f"{', '.join(result.demoted_labels)}[/yellow]"
         )
+
+
+@eligibility_app.command("leveling")
+def leveling_cmd(
+    ctx: typer.Context,
+    min_n: int = typer.Option(  # noqa: B008
+        DEFAULT_MIN_N, "--min-n", min=1,
+        help="Smallest number of postings a (board, level token) group needs to be listed.",
+    ),
+) -> None:
+    """Propose leveling bindings from the judge's own seniority answers. Read-only.
+
+    Groups the current judge identity's `seniority_fit` readings by board and trailing level
+    token ("Software Engineer 5"), and prints the shipped scheme that agrees with the judge for
+    every token a board shows, as a `leveling-bindings.yaml` block to review and paste. A group
+    no scheme agrees with is listed UNMATCHED, never forced. Opens the store read-only and writes
+    nothing.
+    """
+    settings = load_settings(data_dir=ctx.obj)
+    try:
+        engine = get_readonly_engine(settings.data_dir, busy_timeout_ms=settings.busy_timeout_ms)
+        typer.echo(leveling_report(engine, settings, min_n))
+    except (FileNotFoundError, LevelingReportError) as exc:
+        console.print(f"cannot build the report: {exc}", markup=False)
+        raise typer.Exit(code=1) from exc
 
 
 @eligibility_app.command("score")

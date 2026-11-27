@@ -30,12 +30,15 @@ LEVELING_VERSION = 1
 SeniorityBand = Literal["entry", "mid", "senior", "staff_plus"]
 
 _BANDS: frozenset[str] = frozenset({"entry", "mid", "senior", "staff_plus"})
-_GRAMMAR_KINDS: frozenset[str] = frozenset({"self_describing", "ambiguous"})
+# `bound_only` (T369): a shape that is a level ONLY for a company bound to a scheme and is
+# ignored for every other ("Software Engineer 5"). `self_describing` would make every unbound
+# "Engineer 2" an `uncertain_band`; `ambiguous` never resolves, even when bound.
+_GRAMMAR_KINDS: frozenset[str] = frozenset({"self_describing", "ambiguous", "bound_only"})
 # Closed vocabulary of grammar NAMES. `seniority_gate` owns the matching regex for each
 # and asserts at import that it covers exactly this set, so the catalog can never declare
 # a grammar nothing can match -- which would be declared data that silently does nothing.
 KNOWN_GRAMMARS: frozenset[str] = frozenset(
-    {"level_n", "l_prefix", "e_prefix", "ic_prefix", "t_prefix"}
+    {"level_n", "l_prefix", "e_prefix", "ic_prefix", "t_prefix", "trailing_n"}
 )
 # YAML 1.1 turns these into bools when unquoted, which would silently become a token.
 _YAML_BOOLISH = "unquoted no/yes/on/off/true/false are YAML booleans"
@@ -127,6 +130,7 @@ class LevelingCatalog:
     # `digest`, which is what the run identity consumes.
     ambiguous_grammars: frozenset[str]
     self_describing_grammars: frozenset[str]
+    bound_only_grammars: frozenset[str]
     schemes: Mapping[str, LevelScheme]
     fields: Mapping[str, FieldTier]
     digest: str
@@ -219,6 +223,7 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
 
     ambiguous: set[str] = set()
     self_describing: set[str] = set()
+    bound_only: set[str] = set()
     for name, body in (raw.get("grammars") or {}).items():
         gname = _key(name, "grammars")
         if gname not in KNOWN_GRAMMARS:
@@ -229,7 +234,12 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
         kind = (body or {}).get("kind")
         if kind not in _GRAMMAR_KINDS:
             raise LevelingError(f"grammar {gname!r}: unknown kind {kind!r}")
-        (ambiguous if kind == "ambiguous" else self_describing).add(gname)
+        if kind == "ambiguous":
+            ambiguous.add(gname)
+        elif kind == "bound_only":
+            bound_only.add(gname)
+        else:
+            self_describing.add(gname)
 
     schemes: dict[str, LevelScheme] = {}
     for name, body in (raw.get("schemes") or {}).items():
@@ -282,6 +292,7 @@ def load_leveling(config_dir: Path) -> LevelingCatalog:
     return LevelingCatalog(
         ambiguous_grammars=frozenset(ambiguous),
         self_describing_grammars=frozenset(self_describing),
+        bound_only_grammars=frozenset(bound_only),
         schemes=schemes,
         fields=fields,
         digest=digest,

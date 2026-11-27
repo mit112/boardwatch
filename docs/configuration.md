@@ -263,6 +263,15 @@ The schemes themselves ship with boardwatch and name no companies — which comp
 is yours to declare, exactly like your board list. With no bindings file, every level token abstains,
 which is the honest default.
 
+A bound company's bare trailing number ("Software Engineer 5", "Software Engineer 5 - Payments", but not "Software Engineer, Python 3") is read
+through its scheme too. For an unbound company it is ignored, so a title like "Engineer 2" is neither
+abstained nor read as a level.
+
+`boardwatch eligibility leveling` proposes bindings from the judge's own `seniority_fit` answers: per board and
+trailing level token, the shipped scheme that agrees with the judge for every token the board shows, as a block
+to review and paste. A board no scheme agrees with is listed as unmatched and never forced. It needs a target
+band other than `any` and the gate judge's readings, opens the store read-only and writes nothing.
+
 ## Apply routes
 
 `<config_dir>/apply-routes.toml` sorts the Jobs page by how each job gets applied to. It is optional and has no

@@ -41,6 +41,15 @@ SeniorityVerdict = Literal["in_band", "above_band", "uncertain"]
 
 BAND_ORDER: dict[str, int] = dict(entry=0, mid=1, senior=2, staff_plus=3)
 
+# A bare level after a role word that ENDS THE TITLE'S FIRST SEGMENT: a letter, one space, the
+# token, then the end of the title, a spaced dash, bar or slash, a comma, a colon or an open
+# bracket ("Software Engineer 5", "Engineer 5 - Ads", "Engineer 5, Platform"). The token has to
+# come before the title's first such separator, so a number inside a later clause ("Engineer,
+# Python 3", "Engineer, Req 5") is not a level. A number glued to a dash ("1-2 years") or a
+# slash ("3/4"), followed by a word ("2 Days") or after a dash ("- 2 Days") is not a level shape.
+_SEPARATOR = r"\s+[-\u2013\u2014|/]\s|\s*[,:(|]"
+_TRAILING_SHAPE = r"(?<=[A-Za-z])\s(%s)(?=\s*$|" + _SEPARATOR + ")"
+
 # The regexes are CODE; which of them are live is CATALOG. Keyed by grammar name so the
 # catalog's `grammars:` section actually decides behaviour — otherwise it is declared data
 # nothing reads, and editing it would silently change nothing.
@@ -55,7 +64,23 @@ _PATTERNS: dict[str, re.Pattern[str]] = dict(
     e_prefix=re.compile(r"\b(E\s?-?\d{1,2})\b"),
     ic_prefix=re.compile(r"\b(IC\s?-?\d{1,2})\b"),
     t_prefix=re.compile(r"\b(T\s?-?\d{1,3})\b"),
+    # A bare trailing number. `bound_only`: read only through a company's bound scheme (T369).
+    trailing_n=re.compile(
+        r"\A(?:(?!" + _SEPARATOR + r").)*?" + _TRAILING_SHAPE % r"\d{1,2}"
+    ),
 )
+
+# The same shape for the roman numeral `I` (entry by design, so `_ROMAN` skips it): no scheme names
+# it. `trailing_level_token` reports it so a reader of the judge's answers sees it beside the
+# numbers, but nothing here reads it as a level.
+_TRAILING_ROMAN = re.compile(_TRAILING_SHAPE % r"I")
+
+
+def trailing_level_token(title: str) -> str | None:
+    """The bare trailing level token of `title` (`"5"`, `"I"`), or `None`: the token the
+    `trailing_n` grammar would read, and the roman numerals that sit in the same place."""
+    found = _PATTERNS["trailing_n"].search(title) or _TRAILING_ROMAN.search(title)
+    return None if found is None else found.group(1)
 
 # Closed vocabulary, enforced at import: a grammar this module cannot match must never be
 # declarable, or the catalog could name one and it would silently do nothing.
@@ -210,7 +235,16 @@ def parse_seniority(
         if band is not None:
             return band, f'roman numeral "{roman.group(1)}"'
 
-    # 5. Nothing found. Absence of signal is never seniority.
+    # 5. A bare trailing number, read ONLY through the company's bound scheme. Unbound, or a
+    #    number the scheme does not cover ("Java 8"), it is ignored — never `uncertain` — so a
+    #    company with no binding reads exactly as it did before this grammar existed.
+    if scheme is not None:
+        for name in sorted(catalog.bound_only_grammars):
+            bare = _PATTERNS[name].search(title)
+            if bare is not None and bare.group(1) in scheme.levels:
+                return scheme.levels[bare.group(1)], f'{scheme.name} bare "{bare.group(1)}"'
+
+    # 6. Nothing found. Absence of signal is never seniority.
     return "entry", "no seniority signal in title"
 
 
