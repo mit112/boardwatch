@@ -1864,6 +1864,19 @@ class StageDuration:
 
 
 @dataclass(frozen=True)
+class SectionTiming:
+    """What collecting one funnel section cost, in seconds (T361).
+
+    The store reads that build each section, timed with `perf_counter` by the collector. It is
+    NOT `StageDuration`: that is the pipeline's stage clock, closed before the funnel is built,
+    and a tail cost must not leak into it (D-343, D-656).
+    """
+
+    name: str
+    seconds: float
+
+
+@dataclass(frozen=True)
 class ProviderFetchCost:
     """One provider's FETCH wall clock this run — the run-cost unit that was missing.
 
@@ -2087,6 +2100,11 @@ class RunFunnel:
     # T317. `None` means NOT RECORDED -- a funnel built outside `run_pipeline`, or written before
     # this existed -- never a store of 0 bytes.
     store_size: StoreSize | None = None
+    # T361. Collection cost per funnel section, in the order collected. `None` means NOT
+    # MEASURED (a funnel built outside the collector, or stored before this existed), which is a
+    # different statement from `()`. The writing of the artifact itself cannot be in here for
+    # the reason `stage_durations` leaves out its own file: it happens after this is fixed.
+    section_timings: tuple[SectionTiming, ...] | None = None
 
     @property
     def instrumented_stages(self) -> tuple[Stage, ...]:
@@ -3232,6 +3250,25 @@ def _host_cost_markdown(rows: tuple[HostFetchCost, ...] | None) -> list[str]:
     return out
 
 
+def _section_timings_markdown(rows: tuple[SectionTiming, ...] | None) -> list[str]:
+    """What collecting each funnel section cost; nothing when the funnel was not timed."""
+    if rows is None:
+        return []  # the JSON says `null`; a direct builder's markdown has nothing to tabulate
+    out = [
+        "",
+        "**Collection cost by funnel section.** The store reads and recounts that build "
+        "each section, in the order they ran. Not part of the wall-clock table above: the funnel "
+        "is built after that clock closed. The time spent rendering and writing this file is "
+        "outside every number here.",
+        "",
+        "| section | seconds |",
+        "|---|---:|",
+    ]
+    out += [f"| `{row.name}` | {row.seconds:.1f} |" for row in rows]
+    out.append(f"| **total** | **{sum(row.seconds for row in rows):.1f}** |")
+    return out
+
+
 def _stage_durations_markdown(rows: tuple[StageDuration, ...] | None) -> list[str]:
     """Where the run's wall clock went, or an explicit statement that it was not timed."""
     if rows is None:
@@ -3484,6 +3521,12 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
         "stage_durations": None if funnel.stage_durations is None else [
             {"name": row.name, "seconds": round(row.seconds, 3)}
             for row in funnel.stage_durations
+        ],
+        # T361. Additive, like `stage_durations`: `artifact_version` stays 9, no existing key
+        # moved. What collecting each funnel section cost.
+        "section_timings": None if funnel.section_timings is None else [
+            {"name": row.name, "seconds": round(row.seconds, 3)}
+            for row in funnel.section_timings
         ],
         # Board DISCOVERY coverage (D-274), deliberately adjacent to `scan` because it is
         # the denominator `scan` never had. Not to be read as the `coverage` key above,
@@ -3920,6 +3963,7 @@ def funnel_to_markdown(funnel: RunFunnel) -> str:
     # scan cost is the reader who needs to know what the other 40% was.
     lines += ["", "## Wall clock", ""]
     lines += _stage_durations_markdown(funnel.stage_durations)[1:]
+    lines += _section_timings_markdown(funnel.section_timings)
 
     # The denominator the section above never had: how much of each board we can actually
     # see. Rendered here rather than at the end because a reader who has just been told

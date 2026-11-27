@@ -15,10 +15,12 @@ from __future__ import annotations
 
 import os
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from time import perf_counter
+from typing import Any, TypeVar
 
 from sqlalchemy import Connection, Engine, Row, select
 
@@ -56,6 +58,7 @@ from boardwatch.reports.run_funnel import (
     RunIdentity,
     RunManifest,
     ScanContext,
+    SectionTiming,
     ShortlistCounts,
     StageDuration,
     StoreSize,
@@ -277,6 +280,48 @@ def read_store_size(engine: Engine) -> StoreSize | None:
     return StoreSize(db_bytes=size(path, absent=None), wal_bytes=size(wal, absent=0))
 
 
+T = TypeVar("T")
+
+
+class SectionClock:
+    """Times each funnel section's collection (T361), in the order the sections run.
+
+    `perf_counter`, for the reason `StageClock` uses it. `on_close` is called as each section
+    closes, so a caller can print it while a 600 s funnel is still running; a section that
+    raises is recorded and the exception propagates, so the cost of the failing read is not lost.
+
+    Reporting is best effort: `on_close` raising loses that one line, never the row, the
+    section's own exception or the collection.
+    """
+
+    def __init__(self, on_close: Callable[[SectionTiming], None] | None = None) -> None:
+        self.rows: list[SectionTiming] = []
+        self._on_close = on_close
+
+    def add(self, name: str, seconds: float) -> None:
+        """Record a section timed elsewhere (the board-coverage load runs before the funnel)."""
+        row = SectionTiming(name=name, seconds=seconds)
+        self.rows.append(row)
+        if self._on_close is not None:
+            try:
+                self._on_close(row)
+            except Exception:  # noqa: BLE001 - a failed progress line must not cost the funnel
+                pass
+
+    def call(self, name: str, fn: Callable[..., T], *args: Any) -> T:
+        """`fn(*args)`, timed as one section. For a read made inside another call's arguments."""
+        with self.time(name):
+            return fn(*args)
+
+    @contextmanager
+    def time(self, name: str) -> Iterator[None]:
+        start = perf_counter()
+        try:
+            yield
+        finally:
+            self.add(name, perf_counter() - start)
+
+
 def collect_run_funnel(
     engine: Engine,
     settings: Settings,
@@ -350,6 +395,9 @@ def collect_run_funnel(
     errors: list[str],
     board_moves: Sequence[str] = (),
     fatal: str | None,
+    # T361. Times each section's collection. The caller passes its own to print as sections close
+    # and to add the sections it timed itself; omitted, the funnel is still timed.
+    sections: SectionClock | None = None,
 ) -> RunFunnel:
     """Read every count this run's funnel needs, then hand them to the pure builder.
 
@@ -358,73 +406,86 @@ def collect_run_funnel(
     -> pipeline a cycle. `coverages` is one per-lead coverage report in the SAME order (P4 item
     6), passed separately from the tuple exactly as `rewrite_rows` is.
     """
+    clock = sections if sections is not None else SectionClock()
     catalog = load_rules(settings.config_dir)
     posting_ids = [posting_id for posting_id, _, _, _, _, _ in tailored]
 
     with engine.connect() as conn:
-        identity = current_identity(conn, settings)
-        profile_row = get_profile(conn)
+        with clock.time("identity"):
+            identity = current_identity(conn, settings)
+            profile_row = get_profile(conn)
         if identity is None:
-            corpus = _corpus_without_profile(count_open_postings(conn))
+            with clock.time("corpus"):
+                corpus = _corpus_without_profile(count_open_postings(conn))
             abstain: AbstainReport = build_abstain_report(
                 catalog, {}, not_applicable_families=frozenset()
             )
         else:
             profile_hash, rules_hash = identity
-            corpus = count_corpus(
-                conn,
-                profile_hash=profile_hash,
-                rules_hash=rules_hash,
-                engine_kind=ENGINE_KIND,
-                engine_version=engine_version(),
-                run_id=run_id,
-            )
-            # Same scope as `eligibility abstain`: the CURRENT evaluation of every OPEN
-            # posting. Keeping the scopes identical is what lets the two be compared at all.
-            versions = current_posting_version_ids(conn, None)
-            evals = current_evaluations_chunked(
-                conn, list(versions.values()), *identity
-            )
-            counts = count_requirement_dispositions(conn, [eid for eid, _ in evals.values()])
-            # `identity` came from `current_identity`, which only returns non-None when a
-            # profile row exists — so the profile is guaranteed here.
-            assert profile_row is not None
-            na = not_applicable_field_families(
-                engine_facts(profile_row.eligibility_facts_json, settings.config_dir), catalog
-            )
-            abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
+            with clock.time("corpus"):
+                corpus = count_corpus(
+                    conn,
+                    profile_hash=profile_hash,
+                    rules_hash=rules_hash,
+                    engine_kind=ENGINE_KIND,
+                    engine_version=engine_version(),
+                    run_id=run_id,
+                )
+            with clock.time("abstain"):
+                # Same scope as `eligibility abstain`: the CURRENT evaluation of every OPEN
+                # posting. Keeping the scopes identical is what lets the two be compared at all.
+                versions = current_posting_version_ids(conn, None)
+                evals = current_evaluations_chunked(
+                    conn, list(versions.values()), *identity
+                )
+                counts = count_requirement_dispositions(
+                    conn, [eid for eid, _ in evals.values()]
+                )
+                # `identity` came from `current_identity`, which only returns non-None when a
+                # profile row exists — so the profile is guaranteed here.
+                assert profile_row is not None
+                na = not_applicable_field_families(
+                    engine_facts(profile_row.eligibility_facts_json, settings.config_dir),
+                    catalog,
+                )
+                abstain = build_abstain_report(catalog, counts, not_applicable_families=na)
 
         # ONE corpus-wide duplicate sweep, read by two consumers: the per-source `unique`
         # column and the funnel's `dedup` stage. Run here rather than inside `count_by_source`
         # so the stage and the column cannot disagree about a corpus that moved between them.
-        dedup: DedupSweep = sweep_duplicates(conn)
+        with clock.time("dedup"):
+            dedup: DedupSweep = sweep_duplicates(conn)
         # Per board (P0 item 3). Passed the identity rather than the two hashes so a run with
         # no profile reports every board's `eligible` as 0 without a second code path.
-        sources: tuple[SourceOutcome, ...] = count_by_source(
-            conn,
-            identity=identity,
-            engine_kind=ENGINE_KIND,
-            engine_version=engine_version(),
-            run_id=run_id,
-            posting_ids=posting_ids,
-            dedup=dedup,
-        )
-        tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
+        with clock.time("sources"):
+            sources: tuple[SourceOutcome, ...] = count_by_source(
+                conn,
+                identity=identity,
+                engine_kind=ENGINE_KIND,
+                engine_version=engine_version(),
+                run_id=run_id,
+                posting_ids=posting_ids,
+                dedup=dedup,
+            )
+        with clock.time("tailored_artifacts"):
+            tailored_artifacts: TailoredArtifactCounts = count_tailored_artifacts(conn, run_id)
         # An INDEPENDENT recount of the projected leads: artifact rows whose meta carries the
         # projection lineage, read here rather than derived from the counter the loop incremented.
         # Read only on a projected run — on an authored one the answer is 0 by construction and
         # there is nothing to compare it with.
-        projected_lineage_rows = (
-            count_projected_tailored_artifacts(conn, run_id) if projection_ran else 0
-        )
+        with clock.time("projected_lineage"):
+            projected_lineage_rows = (
+                count_projected_tailored_artifacts(conn, run_id) if projection_ran else 0
+            )
         # T191. Every lane number is the lane's own tally, so its new reach and applied snapshots
         # are recounted here from `board_scans`/`posting_events`. Read only when a lane reported:
         # a lane that did not run gets no row, never a store count of zero.
-        lane_captures: LaneCaptureCounts | None = (
-            count_lane_captures(conn, run_id, {lane.name: lane.admitted for lane in lanes})
-            if lanes
-            else None
-        )
+        with clock.time("lane_captures"):
+            lane_captures: LaneCaptureCounts | None = (
+                count_lane_captures(conn, run_id, {lane.name: lane.admitted for lane in lanes})
+                if lanes
+                else None
+            )
         # T110. B8's volume cohort, read HERE and not from the leads this function was handed.
         # The two answer different questions and the ordering is what separates them: a lead's
         # `pending_tailor` flag — which the `pdf` stage enters at — was stamped before the tailor
@@ -436,9 +497,10 @@ def collect_run_funnel(
         # every other count in this block is read back out of the store: the funnel must count
         # the deliverable through a different path than the one that produced it, and this one
         # re-runs the real `review_gate.lane` over the state the run actually left behind.
-        apply_lane = ApplyLaneCohort(
-            placements=apply_lane_cohort(conn, run_ids={run_id}).get(run_id, ())
-        )
+        with clock.time("apply_lane"):
+            apply_lane = ApplyLaneCohort(
+                placements=apply_lane_cohort(conn, run_ids={run_id}).get(run_id, ())
+            )
         # F7. The config that read — and the queue sync after this artifact — actually used:
         # `delivered_unapplied` calls `load_settings()` itself rather than taking the run's
         # `Settings`, so a `config.toml` edit mid-run moves every lead's final lane while
@@ -448,20 +510,26 @@ def collect_run_funnel(
         # Judge-cleared, never delivered. A standing population reported beside the funnel,
         # never a drop within it, so nothing below reconciles against it.
         # Read ONCE per run: `_emit_funnel` hands this same result to the buried alert.
-        buried = buried_good_leads(conn, settings)
-        marked_applied = count_applied_for_postings(conn, posting_ids)
-        unattributed = count_unattributed_evaluations(conn)
-        provenance = lead_provenance(conn, posting_ids)
-        stub_postings = count_stub_postings(conn)
+        with clock.time("buried"):
+            buried = buried_good_leads(conn, settings)
+        with clock.time("marked_applied"):
+            marked_applied = count_applied_for_postings(conn, posting_ids)
+        with clock.time("unattributed_evaluations"):
+            unattributed = count_unattributed_evaluations(conn)
+        with clock.time("lead_provenance"):
+            provenance = lead_provenance(conn, posting_ids)
+        with clock.time("stub_postings"):
+            stub_postings = count_stub_postings(conn)
         # D-683. The delivered leads' stored links routed afresh, not the ranking-time
         # classification the attribution was built from, through the routes the ranker read (a
         # mid-run edit of the file must not move the count). Only when the attribution measured
         # something: a share that was inert or off classified nothing to compare against.
         delivered_direct_from_store: tuple[int, int] | None = None
         if direct_share is not None and direct_share.measured and direct_routes is not None:
-            urls = delivered_apply_urls(conn, posting_ids)
-            direct_count = sum(direct_routes.is_direct_auto(url) for url in urls.values())
-            delivered_direct_from_store = (direct_count, len(urls) - direct_count)
+            with clock.time("delivered_direct"):
+                urls = delivered_apply_urls(conn, posting_ids)
+                direct_count = sum(direct_routes.is_direct_auto(url) for url in urls.values())
+                delivered_direct_from_store = (direct_count, len(urls) - direct_count)
         row = conn.execute(
             select(runs.c.started_at, runs.c.finished_at, runs.c.status).where(
                 runs.c.id == run_id
@@ -483,17 +551,21 @@ def collect_run_funnel(
     # `candidates` folds the two DELIVERABLE verdicts. `ineligible` cannot become a lead, so
     # it is not a candidate; the fold is a monitoring numerator, and the funnel's own verdict
     # stage keeps the split unfolded for every reader.
-    record_corpus_counts(
-        engine,
-        run_id,
-        open_postings=corpus.open_postings,
-        evaluated=corpus.evaluated,
-        candidates=corpus.by_verdict.get("eligible", 0) + corpus.by_verdict.get("uncertain", 0),
-    )
+    with clock.time("record_corpus_counts"):
+        record_corpus_counts(
+            engine,
+            run_id,
+            open_postings=corpus.open_postings,
+            evaluated=corpus.evaluated,
+            candidates=(
+                corpus.by_verdict.get("eligible", 0) + corpus.by_verdict.get("uncertain", 0)
+            ),
+        )
 
     # T137. The END reading, through the function the start reading used — see
     # `manifest_identity`.
-    end_identity = manifest_identity(settings, identity=identity, profile_row=profile_row)
+    with clock.time("manifest"):
+        end_identity = manifest_identity(settings, identity=identity, profile_row=profile_row)
     manifest = RunManifest(
         code_fingerprint=end_identity.code_fingerprint,
         config_hash=end_identity.config_hash,
@@ -540,7 +612,8 @@ def collect_run_funnel(
         for posting_id, company, title, out_dir, pdf_built, pending_tailor in tailored
     ]
 
-    return build_run_funnel(
+    build_start = perf_counter()
+    funnel = build_run_funnel(
         run_id=run_id,
         started_at=row.started_at if row is not None else None,
         finished_at=row.finished_at if row is not None else None,
@@ -594,8 +667,15 @@ def collect_run_funnel(
         tenant_assumptions=tenant_assumptions,
         direct_share=direct_share,
         delivered_direct_from_store=delivered_direct_from_store,
-        store_size=read_store_size(engine),
+        # Read where it always was, after the projection counters and the identity drift: the WAL
+        # moves with checkpoint timing, so the sample point is part of what the number means.
+        store_size=clock.call("store_size", read_store_size, engine),
         errors=errors,
         board_moves=board_moves,
         fatal=fatal,
     )
+    # `store_size` is read inside the builder's arguments and has its own row, so it is taken out
+    # of this one: the rows must add up without counting it twice.
+    in_build = sum(row.seconds for row in clock.rows if row.name == "store_size")
+    clock.add("build", perf_counter() - build_start - in_build)
+    return replace(funnel, section_timings=tuple(clock.rows))
