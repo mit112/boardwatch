@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The scan dispatches hosts by how long each held the last complete scan, not by how many boards it has (T360).**
+  A host's boards run one after another, so the longest host chain sets the scan's finish time. Sorting by board count
+  cannot see a one-board host whose chain is its detail fetches: on run 2910 `jobs.apple.com` (one board, 489 requests,
+  1,705 s) started at about 33 minutes among ~1,100 single-board Workday hosts, and the scan ended at 61.6 minutes
+  instead of near the 36.7 at which every other board was done. A complete pipeline scan (finished, whole fleet, not
+  resumed, not a systemic outage) now records each host's service plus pacing seconds in `app_state`
+  (`scan.host_busy.v1`, replaced each night), and the next scan puts the host with the longest expected chain first. A
+  host with no record, or one whose boards now need more than its record, is priced at its boards times the per-host
+  delay, and equal estimates fall back to the old deepest-first order, so with no record the order is the old one exactly. The
+  same boards are scanned in the same per-host sets; an outcome that depends on timing, such as a board that runs into its
+  deadline, can move, as under any order. The record only orders the scan: if it cannot be read or written the scan says
+  so in one log line and carries on, and a host with a request still running when the scan ended keeps the larger of its
+  measure and its previous record. The run log gains a line saying where the order came from (`scan: host order by busy time of run N
+  (k of H hosts recorded, m new)`), and the funnel's host table gains `first request s`, when the host's first request
+  asked for its lock, in seconds from the start of dispatch.
 - **The run funnel's `death_probe` section records what each host and kind of probe cost (T344).** A new `cost`
   block holds the sweep's probe seconds, asked, gone, alive, unknown and closed: per kind (`url`, `linkedin_guest`,
   `listing`) in full, and per host for the 20 costliest, with the rest summed as `other` so the rows still add up to

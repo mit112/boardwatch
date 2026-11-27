@@ -14,7 +14,7 @@ import os
 import socket
 import time
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -52,6 +52,7 @@ from boardwatch.scan.resume import (
     settled_event_counts,
 )
 from boardwatch.scan.workers import board_deadline_snapshot, fetch_board_job
+from boardwatch.store.app_state import HostBusy, get_host_busy, set_host_busy
 from boardwatch.store.db import ensure_schema
 from boardwatch.store.queries import (
     RUN_FAILED,
@@ -205,6 +206,9 @@ class ScanSummary:
     fetch_cost: dict[str, ProviderFetchCost] = field(default_factory=dict)
     #: T343. What each host cost this scan's `Fetcher`, keyed by `host_key`.
     host_cost: dict[str, HostCost] = field(default_factory=dict)
+    #: T360. `time.monotonic()` when dispatch began, the clock `HostCost.first_at` is read on, so
+    #: a host's first request can be told as seconds into the scan. None until dispatch.
+    dispatch_started: float | None = None
     #: Listings ruled out by the listing gate, by veto. Empty when the gate is not armed.
     listing_gated: Counter[str] = field(default_factory=Counter)
     errors: list[str] = field(default_factory=list)
@@ -275,8 +279,10 @@ def _returned(future: Future[BoardSnapshot]) -> BoardSnapshot | None:
 
 def host_queues(
     work: list[tuple[Any, Provider, BoardRequest]],
+    busy_seconds: Mapping[str, float] | None = None,
+    request_floor_seconds: float = 1.0,
 ) -> list[list[tuple[Any, Provider, BoardRequest]]]:
-    """Split the boards into ONE QUEUE PER HOST, deepest queue first.
+    """Split the boards into ONE QUEUE PER HOST, the longest expected chain first.
 
     `Fetcher` serializes same-host requests for their full duration, so two boards on one host
     can never overlap however many workers are running. Every worker that picks up the second
@@ -295,25 +301,101 @@ def host_queues(
     which would put Workday's 135 distinct hosts in one bucket and serialize what already runs
     in parallel.
 
-    Deepest queue first, because the deepest queue is the longest SERIAL chain and therefore the
-    run's critical path: run 3's ten smartrecruiters boards are 2,309 requests on one host, ≥ 38
-    minutes end to end at the 1.0 s pacing floor, so any slot they do not get is a slot the run
-    ends late by. `sorted` is stable, so equal-depth hosts keep their stored order and a fleet
-    with no host collision at all is untouched.
+    The longest chain goes first, because a host's chain is serial and therefore the run's
+    critical path: any slot it does not get is a slot the run ends late by. Its length is
+    ESTIMATED in seconds as `max(busy_seconds[host], boards × request_floor_seconds)`:
+
+    - `busy_seconds` is what the host cost the last complete pipeline scan (service plus pacing
+      seconds, `HostCost`, kept by `store.app_state.set_host_busy`). Depth alone cannot see a
+      one-board host whose chain is its detail fetches: `jobs.apple.com` is one board, 489
+      requests and 1,705 s on run 2910, and sorted among ~1,100 single-board Workday hosts it
+      started at 33 min and ended the scan at 61.6 min. The record is busy time and not span,
+      because a span also counts the gaps a host sat idle waiting for a worker.
+    - `boards × request_floor_seconds` is the least the chain can take: every board is at least
+      one request and `Fetcher` paces each by the per-host delay. It is the estimate for a host
+      with no record (a first scan, a new host) and a floor under a recorded one that has grown
+      since. With no record at all every key is depth × a constant, so the order is the old
+      deepest-queue-first order exactly: five boards on `api.lever.co` sort ahead of three on
+      Greenhouse, as before. An unrecorded host therefore interleaves with recorded ones by its
+      floor, never by a guess at its detail fetches.
+
+    Equal estimates fall back to the old order: more boards first, then stored order, since
+    `sorted` is stable. A fleet with no host collision at all is untouched.
 
     **The split cannot change what a completed run persists.** `detail_budget` is built for every
     board before this runs, and `known_posting_ids` is a board's own open set, which only its own
     apply changes (T350 loads it at dispatch); the queues partition the work, so the set of boards
-    and their per-board closure sets are identical. Suppression is unaffected
-    because `exact_quad` — the only suppressing kind — keys on `company_id`, and two boards are
-    two `companies` rows, so no cross-host pair can ever collide. What DOES move is which
-    boards a run killed midway got through: each apply commits on its own, so an interrupted
+    and their per-board closure sets are identical, whatever order the estimates give; an outcome
+    that depends on timing, such as a board that runs into its deadline, can move, as under any
+    order. Suppression
+    is unaffected because `exact_quad` — the only suppressing kind — keys on `company_id`, and two
+    boards are two `companies` rows, so no cross-host pair can ever collide. What DOES move is
+    which boards a run killed midway got through: each apply commits on its own, so an interrupted
     run now leaves a different subset applied. Every one of them is still individually correct.
     """
     buckets: dict[str, list[tuple[Any, Provider, BoardRequest]]] = defaultdict(list)
     for item in work:
         buckets[host_key(item[2].url)].append(item)
-    return sorted(buckets.values(), key=len, reverse=True)
+    recorded = busy_seconds or {}
+
+    def longest_first(host: str) -> tuple[float, int]:
+        depth = len(buckets[host])
+        return max(recorded.get(host, 0.0), depth * request_floor_seconds), depth
+
+    return [buckets[host] for host in sorted(buckets, key=longest_first, reverse=True)]
+
+
+def _read_host_busy(engine: Engine, console: Console | None) -> HostBusy | None:
+    """The last host busy record, or None. It only orders the scan, so a store that cannot be
+    read for it means today's depth order, never a scan that does not start (T360)."""
+    try:
+        with engine.connect() as conn:
+            return get_host_busy(conn)
+    except Exception as exc:
+        if console is not None:
+            console.print(f"scan: host busy-time record not read ({exc!r}); host order by depth",
+                          markup=False)
+        return None
+
+
+def _write_host_busy(
+    engine: Engine, run_id: int, costs: Mapping[str, HostCost], console: Console | None
+) -> None:
+    """Replace the host busy record with this scan's, or leave the prior one (T360).
+
+    The record only orders the next scan, so a failure of the read, the write or its commit (a
+    peer holding the writer lock past the busy timeout) is one log line and not a failed scan.
+    A host with a request still in flight at the measurement (a board abandoned at its deadline)
+    has an unfinished chain, so it keeps the larger of this measure and the prior record.
+    """
+    try:
+        with engine.begin() as conn:
+            prior = get_host_busy(conn)
+            before = {} if prior is None else prior.seconds
+            seconds = {
+                host: max(cost.service_seconds + cost.pace_seconds, before.get(host, 0.0))
+                if cost.in_flight else cost.service_seconds + cost.pace_seconds
+                for host, cost in costs.items()
+            }
+            set_host_busy(conn, run_id, seconds)
+    except Exception as exc:
+        if console is not None:
+            console.print(f"scan: host busy-time record not written ({exc!r}); prior record kept",
+                          markup=False)
+
+
+def _host_order_note(
+    last_busy: HostBusy | None, queues: list[list[tuple[Any, Provider, BoardRequest]]]
+) -> str:
+    """The run-log line that says where this scan's host order came from (T360)."""
+    hosts = [host_key(queue[0][2].url) for queue in queues]
+    if last_busy is None:
+        return f"scan: host order by boards per host (no busy-time record; {len(hosts)} hosts)"
+    known = sum(host in last_busy.seconds for host in hosts)
+    return (
+        f"scan: host order by busy time of run {last_busy.run_id} "
+        f"({known} of {len(hosts)} hosts recorded, {len(hosts) - known} new)"
+    )
 
 
 def take_ready(
@@ -349,7 +431,7 @@ def take_ready(
 
     Mutates `queues` (pops the boards it hands out), `busy` (adds the hosts it commits) and
     `in_flight` (counts them), because the caller's next call must not re-offer any of them; the
-    caller releases a host and its provider's count when its future is collected. Deepest-queue-
+    caller releases a host and its provider's count when its future is collected. Longest-chain-
     first is `host_queues`' order and is preserved by the scan, which is what keeps the critical
     path from being starved by 130 singletons.
     """
@@ -731,7 +813,13 @@ def _scan_body(
     # to wait on is recorded then, without them — waiting on it is the stall the cap exists to end.
     unrecorded: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, float]] = {}
     try:
-        queues = host_queues(work)
+        last_busy = _read_host_busy(engine, console)
+        queues = host_queues(
+            work, None if last_busy is None else last_busy.seconds, settings.per_host_delay_seconds
+        )
+        if console is not None:
+            console.print(_host_order_note(last_busy, queues), markup=False)
+        summary.dispatch_started = time.monotonic()
         busy: set[str] = set()
         in_flight: Counter[str] = Counter()  # boards per provider, for `max_boards_in_flight`
         future_map: dict[Future[BoardSnapshot], tuple[Any, BoardRequest, str, float]] = {}
@@ -962,4 +1050,11 @@ def _scan_body(
         # and `failed` under `boardwatch run`.
         status=RUN_FAILED if outage else RUN_OK,
     )
+    # T360. A COMPLETE pipeline scan is one that reached its counts (`finalize_run`, the point
+    # `scan_manifests.scan_finalized_at` marks) and measured the whole fleet: not a standalone
+    # scan (`finish`), not a scoped one, not a continued one (its `Fetcher` saw only the boards
+    # after the kill) and not a systemic outage (every request failed fast, so the costs say
+    # nothing about a normal night). Anything else leaves the earlier record to order the next.
+    if not finish and resume is None and company is None and provider is None and not outage:
+        _write_host_busy(engine, active_run_id, summary.host_cost, console)
     return summary
