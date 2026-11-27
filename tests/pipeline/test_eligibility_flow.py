@@ -223,6 +223,39 @@ def test_version_gated_labels_fall_back_to_the_raw_rule_id(env: Path) -> None:
     assert "A bachelor's degree is required" not in label  # no current-catalog label
 
 
+def test_the_audit_reads_the_rules_snapshot_through_its_hash(env: Path) -> None:
+    """The positive half of the version gate: the stored snapshot, taken from the snapshot table by
+    the input's `rules_hash`, carries the catalog version, so a current catalog matches and labels
+    its rows with the catalog's own text. A join that found no snapshot would read False here."""
+    posting_id = _evaluate_open(env, DEGREE_BODY)
+    engine = get_engine(env)
+    catalog = load_rules(env.parent / "cfg")
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+        stored = conn.execute(
+            select(tables.eligibility_snapshots.c.snapshot_json).where(
+                tables.eligibility_snapshots.c.kind == "rules")
+        ).scalar_one()
+    assert stored["catalog_version"] == catalog.version  # premise: it is the snapshot that says so
+    assert view is not None
+    assert view.catalog_version_matches is True
+    assert "A bachelor's degree is required" in view.requirements[0].label
+
+
+def test_the_audit_still_returns_an_evaluation_whose_rules_snapshot_is_missing(env: Path) -> None:
+    posting_id = _evaluate_open(env, DEGREE_BODY)
+    engine = get_engine(env)
+    catalog = load_rules(env.parent / "cfg")
+    with engine.begin() as conn:  # the append-only trigger is dropped only to plant the state
+        conn.exec_driver_sql("DROP TRIGGER eligibility_snapshots_no_delete")
+        conn.exec_driver_sql("DELETE FROM eligibility_snapshots WHERE kind = 'rules'")
+    with engine.connect() as conn:
+        view = load_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.verdict == "ineligible"
+    assert view.catalog_version_matches is False
+
+
 def test_support_resolves_from_the_frozen_snapshot(env: Path) -> None:
     posting_id = _evaluate_open(env, DEGREE_BODY, degree="bachelor")
     # the live profile changes AFTER the evaluation was recorded

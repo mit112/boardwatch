@@ -391,9 +391,9 @@ def test_the_fast_schema_path_produces_the_same_schema_as_the_migration_chain(
     """T16. The shortcut is only safe if it produces the SAME schema, and
     `test_migrations_match_metadata` cannot establish that: alembic's `compare_metadata`
     compares tables, columns, indexes and types, and does not see TRIGGERS at all. This schema
-    has 20 of them — the ten append-only `RAISE(ABORT)` pairs the eligibility keystone rests on,
+    has 22 of them — the eleven append-only `RAISE(ABORT)` pairs the eligibility keystone rests on,
     and both `postings_job_required_*`. That gap is why the shortcut replays the migrated
-    schema's own DDL rather than `metadata.create_all`, which was measured to emit zero of the 20.
+    schema's own DDL rather than `metadata.create_all`, which was measured to emit zero of the 22.
 
     Triggers and indexes are compared as EXACT DDL TEXT, because that text is the whole of their
     behaviour and there is no PRAGMA that reflects a trigger body. Tables are compared through
@@ -462,7 +462,7 @@ def test_the_fast_schema_path_produces_the_same_schema_as_the_migration_chain(
     fast = _schema(tmp_path / "fast", fast=True)
 
     triggers = {name for kind, name in migrated["names"] if kind == "trigger"}  # type: ignore[union-attr]
-    assert len(triggers) == 20, sorted(triggers)
+    assert len(triggers) == 22, sorted(triggers)
     assert fast["names"] == migrated["names"]
     assert fast["ddl"] == migrated["ddl"]  # every trigger BODY and every index, verbatim
     assert fast["constraints"] == migrated["constraints"]

@@ -116,9 +116,7 @@ def _verdict(conn: Connection, version: int, verdict: str) -> None:
             insert(eligibility_inputs).values(
                 posting_version_id=version,
                 profile_hash=IDENTITY[0],
-                profile_snapshot_json={},
                 rules_hash=IDENTITY[1],
-                rules_snapshot_json={},
                 input_fingerprint=f"fp-{version}",
                 created_at=T0,
             )

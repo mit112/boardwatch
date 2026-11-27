@@ -99,9 +99,7 @@ def test_an_llm_row_with_no_deterministic_partner_is_its_own_cell(engine: Engine
             insert(eligibility_inputs).values(
                 posting_version_id=src.posting_version_id,
                 profile_hash="other-profile",
-                profile_snapshot_json=src.profile_snapshot_json,
                 rules_hash=src.rules_hash,
-                rules_snapshot_json=src.rules_snapshot_json,
                 input_fingerprint="lone-input",
                 created_at=datetime(2026, 11, 17),
             )
@@ -172,9 +170,7 @@ def test_a_newer_input_agreeing_clears_the_postings_old_split(engine: Engine) ->
                 insert(eligibility_inputs).values(
                     posting_version_id=src.posting_version_id,
                     profile_hash="new-profile",
-                    profile_snapshot_json=src.profile_snapshot_json,
                     rules_hash=src.rules_hash,
-                    rules_snapshot_json=src.rules_snapshot_json,
                     input_fingerprint="new-profile-input",
                     created_at=datetime(2026, 11, 18),
                 )

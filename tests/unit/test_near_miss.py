@@ -110,9 +110,7 @@ def _evaluate(
             insert(eligibility_inputs).values(
                 posting_version_id=version_id,
                 profile_hash=profile,
-                profile_snapshot_json={},
                 rules_hash=RULES,
-                rules_snapshot_json={},
                 input_fingerprint=f"fp-{version_id}-{profile}",
                 created_at=NOW,
             )
