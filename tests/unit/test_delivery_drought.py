@@ -51,8 +51,8 @@ def _seed_input(engine: Engine) -> int:
         ).inserted_primary_key[0]
         input_id = conn.execute(
             insert(tables.eligibility_inputs).values(
-                posting_version_id=pv_id, profile_hash="ph", profile_snapshot_json={},
-                rules_hash="rh", rules_snapshot_json={}, input_fingerprint="fp", created_at=now,
+                posting_version_id=pv_id, profile_hash="ph",
+                rules_hash="rh", input_fingerprint="fp", created_at=now,
             )
         ).inserted_primary_key[0]
     return int(input_id)

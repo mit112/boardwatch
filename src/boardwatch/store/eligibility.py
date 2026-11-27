@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from sqlalchemy import Connection, Row, insert, select, text
+from sqlalchemy import Connection, Row, bindparam, insert, select, text
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from boardwatch.core.clock import utcnow
@@ -22,6 +22,7 @@ from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
     eligibility_requirements,
+    eligibility_snapshots,
     eligibility_support,
 )
 
@@ -49,6 +50,14 @@ class RequirementItem:
     support: Sequence[SupportItem] = field(default_factory=tuple)
 
 
+#: Built once: constructing it on every call added about 60 us to each input (T363).
+_INSERT_SNAPSHOT = (
+    sqlite_insert(eligibility_snapshots)
+    .values(kind=bindparam("kind"), hash=bindparam("hash"), snapshot_json=bindparam("snapshot"))
+    .on_conflict_do_nothing(index_elements=["kind", "hash"])
+)
+
+
 def _get_or_create_input(
     conn: Connection, *, posting_version_id: int, profile_hash: str,
     profile_snapshot: dict[str, Any], rules_hash: str, rules_snapshot: dict[str, Any],
@@ -61,12 +70,20 @@ def _get_or_create_input(
     on conflict, which is safe now only because P2 DERIVES input_fingerprint from the
     snapshots: two different snapshots can no longer share a fingerprint.
     """
+    # Each snapshot is stored once, before any input names it. The first copy wins, as the first
+    # input did: the hash covers canonical JSON, so a later copy can differ only in key order.
+    conn.execute(
+        _INSERT_SNAPSHOT,
+        [
+            {"kind": "profile", "hash": profile_hash, "snapshot": profile_snapshot},
+            {"kind": "rules", "hash": rules_hash, "snapshot": rules_snapshot},
+        ],
+    )
     conn.execute(
         sqlite_insert(eligibility_inputs)
         .values(
             posting_version_id=posting_version_id, profile_hash=profile_hash,
-            profile_snapshot_json=profile_snapshot, rules_hash=rules_hash,
-            rules_snapshot_json=rules_snapshot, input_fingerprint=input_fingerprint,
+            rules_hash=rules_hash, input_fingerprint=input_fingerprint,
             created_at=utcnow(),
         )
         .on_conflict_do_nothing(index_elements=[eligibility_inputs.c.input_fingerprint])

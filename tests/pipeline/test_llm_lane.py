@@ -457,6 +457,50 @@ def test_llm_audit_label_uses_requirement_text_on_catalog_mismatch(
     assert "None (catalog version" not in view.requirements[0].label
 
 
+def test_llm_audit_reads_the_rules_snapshot_through_its_hash(
+    engine: Engine, catalog_and_policy, cache: ResponseCache
+) -> None:
+    """The positive half of the label test above: under the catalog that wrote the row, the
+    stored rules snapshot (read from the snapshot table by hash) matches its version."""
+    catalog, policy = catalog_and_policy
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="acme-llm-audit-match")
+    posting_id = _posting_id_for_version(engine, pv_id)
+    body = json.dumps([{"family": "experience_years", "span_quote": EXPERIENCE_QUOTE}])
+    with engine.begin() as conn:
+        assert extract_and_record(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=Facts(), policy=policy,
+            catalog=catalog, client=FakeClient(body), cache=cache,
+        ) is not None
+    with engine.connect() as conn:
+        view = load_llm_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.catalog_version_matches is True
+
+
+def test_llm_audit_still_returns_an_evaluation_whose_rules_snapshot_is_missing(
+    engine: Engine, catalog_and_policy, cache: ResponseCache
+) -> None:
+    """The snapshot join is an outer join: a missing snapshot row must read as a catalog-version
+    mismatch, not make the evaluation vanish from `show`. (The append-only trigger is dropped only
+    to plant the state; nothing deletes a snapshot in production.)"""
+    catalog, policy = catalog_and_policy
+    pv_id = _seed_posting_version(engine, JD_5YR, slug="acme-llm-audit-nosnap")
+    posting_id = _posting_id_for_version(engine, pv_id)
+    body = json.dumps([{"family": "experience_years", "span_quote": EXPERIENCE_QUOTE}])
+    with engine.begin() as conn:
+        assert extract_and_record(
+            conn, posting_version_id=pv_id, jd_text=JD_5YR, facts=Facts(), policy=policy,
+            catalog=catalog, client=FakeClient(body), cache=cache,
+        ) is not None
+        conn.exec_driver_sql("DROP TRIGGER eligibility_snapshots_no_delete")
+        conn.exec_driver_sql("DELETE FROM eligibility_snapshots WHERE kind = 'rules'")
+    with engine.connect() as conn:
+        view = load_llm_audit(conn, posting_id, catalog)
+    assert view is not None
+    assert view.catalog_version_matches is False
+    assert view.requirements[0].label == EXPERIENCE_QUOTE
+
+
 def test_load_llm_audit_ignores_final_gate_rows(
     engine: Engine, catalog_and_policy, cache: ResponseCache
 ) -> None:

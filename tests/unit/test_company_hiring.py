@@ -123,8 +123,6 @@ def _judge(
                 posting_version_id=version,
                 profile_hash=profile,
                 rules_hash=IDENTITY[1],
-                profile_snapshot_json={},
-                rules_snapshot_json={},
                 input_fingerprint=f"fp-{version}-{profile}-{engine_ver}-{verdict}",
                 created_at=NOW,
             )

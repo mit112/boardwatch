@@ -22,7 +22,7 @@ from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import _get_or_create_input
 from boardwatch.store.tables import (
     companies,
-    eligibility_inputs,
+    eligibility_snapshots,
     jobs,
     posting_versions,
     postings,
@@ -343,7 +343,8 @@ def test_two_career_fields_persist_as_two_distinct_input_rows(tmp_path: Path) ->
             ))
     assert ids[0] != ids[1]
     with engine.connect() as conn:
-        rows = conn.execute(select(eligibility_inputs.c.profile_snapshot_json)).all()
+        rows = conn.execute(select(eligibility_snapshots.c.snapshot_json).where(
+            eligibility_snapshots.c.kind == "profile")).all()
     assert len(rows) == 2
     assert sorted(r[0]["fields"]["career_field"] for r in rows) == ["data", "software"]
 

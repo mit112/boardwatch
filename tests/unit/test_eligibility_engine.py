@@ -27,6 +27,7 @@ from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
     eligibility_inputs,
+    eligibility_snapshots,
     jobs,
     posting_versions,
     postings,
@@ -918,8 +919,11 @@ def test_the_persisted_snapshot_reproduces_its_own_hashes(catalog, db, version_i
     _write(db, catalog, version_id, facts, BLOCK_ALL, "Bachelor's degree required.")
     with db.connect() as conn:
         row = conn.execute(select(eligibility_inputs)).one()
-    assert digest(row.profile_snapshot_json) == row.profile_hash
-    assert digest(row.rules_snapshot_json) == row.rules_hash
+        snapshots = dict(conn.execute(
+            select(eligibility_snapshots.c.hash, eligibility_snapshots.c.snapshot_json)
+        ).all())
+    assert digest(snapshots[row.profile_hash]) == row.profile_hash
+    assert digest(snapshots[row.rules_hash]) == row.rules_hash
 
 
 def test_a_fingerprint_snapshot_mismatch_is_rejected(catalog, db, version_id: int) -> None:
@@ -979,8 +983,7 @@ def test_an_input_row_that_is_already_there_is_reused(catalog, db, version_id: i
     with db.begin() as conn:
         conn.execute(sqlite_insert(inputs_table).values(
             posting_version_id=version_id, profile_hash=identity.profile_hash,
-            profile_snapshot_json=identity.profile_snapshot, rules_hash=identity.rules_hash,
-            rules_snapshot_json=identity.rules_snapshot,
+            rules_hash=identity.rules_hash,
             input_fingerprint=identity.input_fingerprint, created_at=utcnow(),
         ))
     result = evaluate("Bachelor's degree required.", Facts(), BLOCK_ALL, catalog)
@@ -1032,8 +1035,7 @@ def test_a_writer_that_loses_the_race_is_still_idempotent(catalog, db, version_i
         with db.begin() as racer:  # a SECOND connection, exactly as a second `top` run
             racer.execute(sqlite_insert(inputs_table).values(
                 posting_version_id=version_id, profile_hash=identity.profile_hash,
-                profile_snapshot_json=identity.profile_snapshot,
-                rules_hash=identity.rules_hash, rules_snapshot_json=identity.rules_snapshot,
+                rules_hash=identity.rules_hash,
                 input_fingerprint=identity.input_fingerprint, created_at=utcnow(),
             ))
 

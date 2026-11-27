@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     MetaData,
     Numeric,
+    PrimaryKeyConstraint,
     Table,
     Text,
     UniqueConstraint,
@@ -340,9 +341,7 @@ eligibility_inputs = Table(
     Column("id", Integer, primary_key=True),
     Column("posting_version_id", Integer, ForeignKey("posting_versions.id"), nullable=False),
     Column("profile_hash", Text, nullable=False),
-    Column("profile_snapshot_json", JSON, nullable=False),
     Column("rules_hash", Text, nullable=False),
-    Column("rules_snapshot_json", JSON, nullable=False),
     Column("input_fingerprint", Text, nullable=False),
     Column("created_at", DateTime, nullable=False),
     UniqueConstraint("input_fingerprint"),
@@ -355,6 +354,22 @@ eligibility_inputs = Table(
     # two identity hashes.
     Index("ix_eligibility_inputs_version_identity",
           "posting_version_id", "profile_hash", "rules_hash"),
+)
+
+# Each profile and each rules snapshot, once. `eligibility_inputs` keeps only the two hashes: a
+# store of 6.2M inputs held 3 distinct profile snapshots and 14 distinct rules snapshots, each
+# copied onto every row (5.3 GB, T363). A reader takes the snapshot by joining on (kind, hash).
+# There is no foreign key: an input names a snapshot through one of two columns, and a foreign key
+# cannot choose its table by `kind`. `record_evaluation` writes the snapshot before the input that
+# names it. Append-only, like the table that refers to it.
+eligibility_snapshots = Table(
+    "eligibility_snapshots",
+    metadata,
+    Column("kind", Text, nullable=False),
+    Column("hash", Text, nullable=False),
+    Column("snapshot_json", JSON, nullable=False),
+    PrimaryKeyConstraint("kind", "hash"),
+    CheckConstraint("kind IN ('profile', 'rules')", name="kind_enum"),
 )
 
 eligibility_evaluations = Table(

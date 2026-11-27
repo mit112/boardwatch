@@ -23,8 +23,8 @@ from boardwatch.store.db import get_engine
 from boardwatch.store.queries import save_eligibility, save_profile
 from boardwatch.store.tables import (
     eligibility_evaluations,
-    eligibility_inputs,
     eligibility_requirements,
+    eligibility_snapshots,
 )
 from tests.conftest import write_bundled_role_taxonomy
 from tests.pipeline.test_eligibility_flow import DEGREE_BODY, _seed_posting
@@ -69,7 +69,9 @@ def _evaluate(data_dir: Path, **kwargs: int) -> tuple[object, list[str | None]]:
     stats = run_eligibility(engine, load_settings(data_dir=data_dir), Console(), **kwargs)
     assert stats.evaluated == 1
     with engine.connect() as conn:
-        snapshot = conn.execute(select(eligibility_inputs.c.profile_snapshot_json)).scalar_one()
+        snapshot = conn.execute(
+            select(eligibility_snapshots.c.snapshot_json).where(eligibility_snapshots.c.kind == "profile")
+        ).scalar_one()
         rationales = list(
             conn.execute(
                 select(eligibility_requirements.c.rationale)

@@ -28,7 +28,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import Connection, Select, select
+from sqlalchemy import Connection, Select, and_, select
 
 from boardwatch.eligibility.catalog import RulesCatalog
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
@@ -37,8 +37,16 @@ from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import (
     eligibility_evaluations,
     eligibility_inputs,
+    eligibility_snapshots,
     posting_versions,
     postings,
+)
+
+#: The input's rules snapshot, by hash. An outer join: an input whose snapshot row is missing still
+#: renders its evaluation, with the catalog-mismatch label, rather than vanishing from `show`.
+_rules_snapshot = eligibility_snapshots.alias("rules_snapshot")
+_RULES_SNAPSHOT_ON = and_(
+    _rules_snapshot.c.kind == "rules", _rules_snapshot.c.hash == eligibility_inputs.c.rules_hash
 )
 
 
@@ -139,7 +147,7 @@ def load_audit(
                 eligibility_evaluations.c.verdict,
                 eligibility_evaluations.c.engine_version,
                 eligibility_inputs.c.posting_version_id,
-                eligibility_inputs.c.rules_snapshot_json,
+                _rules_snapshot.c.snapshot_json.label("rules_snapshot_json"),
             )
             .join(
                 eligibility_inputs,
@@ -149,6 +157,7 @@ def load_audit(
                 posting_versions,
                 eligibility_inputs.c.posting_version_id == posting_versions.c.id,
             )
+            .outerjoin(_rules_snapshot, _RULES_SNAPSHOT_ON)
         )
 
     newest = None
@@ -252,12 +261,13 @@ def load_llm_audit(conn: Connection, posting_id: int, catalog: RulesCatalog) -> 
         select(
             eligibility_evaluations.c.id,
             eligibility_evaluations.c.verdict,
-            eligibility_inputs.c.rules_snapshot_json,
+            _rules_snapshot.c.snapshot_json.label("rules_snapshot_json"),
         )
         .join(
             eligibility_inputs,
             eligibility_evaluations.c.input_id == eligibility_inputs.c.id,
         )
+        .outerjoin(_rules_snapshot, _RULES_SNAPSHOT_ON)
         .where(
             eligibility_inputs.c.posting_version_id == current.posting_version_id,
             eligibility_evaluations.c.engine_kind == "llm",

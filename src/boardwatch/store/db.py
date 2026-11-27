@@ -172,7 +172,7 @@ def ensure_schema(engine: Engine) -> None:
     # produces a BYTE-IDENTICAL schema.
     #
     # `metadata.create_all` — the shape the ticket proposed — is NOT used, and the reason is
-    # measured rather than argued: it emits ZERO of the schema's 20 triggers, including the ten
+    # measured rather than argued: it emits ZERO of the schema's 22 triggers, including the eleven
     # append-only `RAISE(ABORT)` pairs the eligibility keystone rests on and both
     # `postings_job_required_*` triggers. `test_migrations_match_metadata` cannot catch that:
     # alembic's `compare_metadata` compares tables, columns, indexes and types, and does not

@@ -8,6 +8,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **Each eligibility snapshot is stored once, not on every input row (T363).** `eligibility_inputs` carried a copy of its
+  profile snapshot and its rules snapshot on every row: 6.2M rows over 3 profile and 14 rules identities, 5.3 GB of the
+  table's 8.46 GB. A new append-only `eligibility_snapshots(kind, hash, snapshot_json)` table holds each one once, and the
+  inputs keep only the two hashes; the audit readers behind `boardwatch show` and the delivery queue take the rules snapshot
+  through the hash. Nothing a user sees changes: on a clone of the live store, the audit of 51 real postings and a hash over
+  every input row (ids, hashes, both snapshots as stored text) were identical before, after, after a downgrade and after a
+  second upgrade. The migration refuses if two rows with one hash carry different stored bytes, checks every input against
+  its original bytes before it drops the old table, and runs in one transaction, so a failed check leaves the store as it
+  was. On the clone it took 7.5 to 8.5 minutes and 200 MiB, grew the write-ahead log to 3 GB, and cut the table and its two
+  indexes from 9.99 GB to 2.93 GB; the freed space stays in the file as reusable pages until a `VACUUM INTO` returns it (45
+  GB written, 19 minutes). Every new evaluation writes two more rows to the snapshot table (about 26 microseconds per
+  input). **This migration runs on the first command that opens a store, so merge it only when the owner has scheduled
+  the no-run window and backup in the T363 ticket's live procedure (its baseline is taken from the previous checkout, because any command
+  on the new one migrates first).** The rebuild and the revision stamp commit in one transaction, so a kill leaves the old schema
+  under the old revision.
 - **A scan no longer reads the body and raw payload of every stored posting on a board it lists (T362).** Applying a
   board used to load every column of every posting the board holds, open and closed, once per board that listed. A
   posting row averages 17.4 KB, 17 KB of it `body_text` and `raw_json`, so a nightly read most of the 24.6 GB table
