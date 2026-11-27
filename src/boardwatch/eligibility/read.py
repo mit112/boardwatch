@@ -561,6 +561,18 @@ def ever_gate_eligible(conn: Connection, posting_ids: list[int]) -> set[int]:
     return out
 
 
+def gate_judge_identity(
+    facts: Facts, *, model: str, effort: str, target_band: str
+) -> list[ColumnElement[bool]]:
+    """The row filter for "read by THIS judge, at THIS level, on these exact inputs": the
+    freshness key `fresh_gate_verdicts` applies, as a public scope so a reader of the judge's
+    own readings (T366's value model) selects exactly the rows the gate counts as current."""
+    return [
+        *_judge_inputs(facts, model, target_band),
+        func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort,
+    ]
+
+
 def fresh_gate_verdicts(
     conn: Connection, posting_version_ids: list[int], facts: Facts, *, model: str, effort: str,
     target_band: str,
@@ -592,10 +604,7 @@ def fresh_gate_verdicts(
     """
     if not posting_version_ids:
         return {}
-    scope = [
-        *_judge_inputs(facts, model, target_band),
-        func.json_extract(eligibility_evaluations.c.raw_output_json, "$.effort") == effort,
-    ]
+    scope = gate_judge_identity(facts, model=model, effort=effort, target_band=target_band)
     return {
         posting_id: verdict
         for posting_id, (verdict, _) in _latest_gate_rows(conn, posting_version_ids, scope).items()

@@ -212,6 +212,9 @@ _GATE_IRRELEVANT: frozenset[str] = frozenset(
         # `depth`'s reasoning, applied below the judged slate: it decides how many unjudged
         # postings are judged this run, under the same judge and identity, and delivers none.
         "backlog_budget",
+        # T366. Decides only whether the shadow value model exists: its score orders nothing and
+        # reaches no verdict, lane or hash, so no lead is created, moved or re-judged by it.
+        "value_model_min_readings",
         # Changes which LANE a delivered lead lands in, never whether it is a lead. The rule
         # above is "can change which postings become leads"; a held lead is still delivered,
         # still carries a disposition, and still reaches the owner — it lands in `_review`
@@ -356,6 +359,9 @@ _ROUTING_IRRELEVANT: frozenset[str] = frozenset(
         "data_dir",
         "config_dir",
         "gate.claude_config_dir",
+        # T366. The shadow value model's training floor. Its score is recorded beside the gate's
+        # candidates and read by nothing that routes, so no lead lands anywhere differently.
+        "gate.value_model_min_readings",
         # Throughput and bookkeeping: they change WHEN and HOW FAST something is fetched or
         # re-asked, never which lane a lead lands in once it is delivered.
         "per_host_delay_seconds",

@@ -292,6 +292,10 @@ _GATE_KEYS: dict[str, str] = {
         "unjudged in-field postings below the judged slate sent to the judge per run; 0 = off; "
         "next run"
     ),
+    "value_model_min_readings": (
+        "readings the judge must have under its current identity before the shadow value model "
+        "trains (it orders nothing); next run"
+    ),
     "seniority_hold": (
         "hold a lead for review when the judge reads its BODY as above the target band; "
         "off = the reading is still recorded, just not acted on; next run"

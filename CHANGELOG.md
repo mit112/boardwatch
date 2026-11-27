@@ -65,6 +65,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **The run records what a value model learned from the judge's own readings thinks of each gate candidate, and orders
+  nothing by it (T366, shadow).** At the start of each gate run, `rank/value_model.py` trains a pure-Python logistic
+  regression (hashed title, company, provider and job-description features, 2^20 buckets, fixed seed) on the readings
+  the judge has already written under its current identity (engine version, model, effort, facts and target band; the
+  same key the gate's freshness test uses) before this run began, on at most the newest 8,000 of them so the cost
+  stops growing with the store. The label is a gate `eligible` with seniority `yes`,
+  or `eligible` alone under target band `any`. The run then writes `value-shadow-<run>.json` beside the funnel:
+  for every slate, refresh and backlog candidate its position in the existing order, whether the judge actually
+  received it (the send boundary withholds some bodies, so the sent items are not a prefix), P(good) and its rank by
+  P(good), plus the next four budgets of the backlog's own order, scored but not sent; every posting first seen this run, scored
+  and summed per board (the rate T341's amendment reads); and, on the run's own judged items, the model's AUC, top-half
+  precision by model against the existing order, and the backlog batch's realized good rate against the model's
+  predicted rate for its own top picks of the same size as the requests sent (items the gate passed over are not
+  picks). A `summary_line` in the file is the text the morning reader prints. Replayed on
+  the maintainer's store, the oldest 80% of readings predict the newest 20% at AUC 0.878 (employers never seen in
+  training: 0.816; shuffled labels over five seeds: 0.488-0.527). The score never becomes, changes or counts as a verdict
+  or an abstain, and no rule, lane, disposition, ledger row or hash reads it; a test runs the same store and judge with
+  the model on and off and finds the slate, its order, every verdict and the lead folders identical. A new setting,
+  `gate.value_model_min_readings` (default 1000), is the fewest readings a model needs: below it the file says so and
+  carries no scores. A failure writing the file is recorded like the near-miss report's and never fails the run.
 - **ByteDance's careers site is a second board of the `tiktok` provider (D-713).** joinbytedance.com is served by
   the same search API as TikTok's, as its `en` site: `tiktok:bytedance`, or paste a joinbytedance.com/search URL
   (1,405 postings when measured, 600 in the US). The job-apps lane now files a joinbytedance.com link under that
