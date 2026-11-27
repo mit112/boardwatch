@@ -65,6 +65,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **Each gated run records every post-gate survivor as the slate cut saw it, so the cut's order can be replayed (T368,
+  step 1; no behaviour change).** The run writes `slate-cut-<run>.json` beside the funnel: for every survivor, in
+  ranker order, its ranker position, shortlist rank, tier, the gate's decision and `seniority_fit` as they stood at
+  the cut, whether that reading was judged by this run's request (`judged`), was already current and got no new gate
+  row (`cached`) or does not exist (`absent`), whether the lead made the slate or sat beyond it, and, for a delivered
+  lead, its lane (`apply` or `review`). The header carries `top_n`, `slate_ceiling`, the computed slate size and `scan_ran` (a nightly scans; an intraday pass does not). Gate
+  rows alone cannot rebuild this: a survivor with a current reading is not re-judged and has no row from the run.
+  `python -m tools.slate_cut_replay <folder>` reads any number of these files (nightlies only; `--all-runs` adds the
+  intraday passes) and prints, per run, the survivors, the slots the slate filled, how many ELIGIBLE in-band (decision
+  `eligible`, seniority `yes`) survivors sat beyond the cut, how many above-band (`no`) survivors took slate slots, and
+  what a seniority-first stable cut would have put in the same slots: eligible and `yes`, then eligible and `unclear`
+  or absent, then everything else (a `yes` with no current or an `uncertain` decision is not an opportunity). Nothing reads the file back, and a test runs the same store and judge with the
+  recording stubbed out and finds the delivered slate, its order, every verdict, the `seen` ledger and the lane
+  folders identical. A failure writing the file is recorded like the near-miss report's and never fails the run; a
+  run with the gate off writes none. The ordering change itself waits for a 7-night replay.
 - **The run records what a value model learned from the judge's own readings thinks of each gate candidate, and orders
   nothing by it (T366, shadow).** At the start of each gate run, `rank/value_model.py` trains a pure-Python logistic
   regression (hashed title, company, provider and job-description features, 2^20 buckets, fixed seed) on the readings

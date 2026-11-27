@@ -123,6 +123,7 @@ from boardwatch.pipeline.local_twin import find_closed_twin_wrappers, record_loc
 from boardwatch.pipeline.on_disk_links import drain_grnh_seeds, record_on_disk_links
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.pipeline.progress import StageProgress
+from boardwatch.pipeline.slate_cut import SlateCutRecord
 from boardwatch.pipeline.value_shadow import ValueShadow
 from boardwatch.profile_bundle.paths import resolve_bundle_root
 from boardwatch.projection.errors import ProjectionError
@@ -2714,6 +2715,8 @@ def _run_pipeline_leased(
     stage_errors: list[str] = []
     # T366: the value model's shadow. Created at the gate, written in the finalize block.
     value_shadow: ValueShadow | None = None
+    # T368: the post-gate survivor list. Created at the cut, written in the finalize block.
+    slate_cut: SlateCutRecord | None = None
     try:
         if first_seen_since is not None:
             summary.gate_refresh_candidates = summary.gate_refresh_sent = None
@@ -3224,10 +3227,20 @@ def _run_pipeline_leased(
         # With `slate_ceiling` above `top_n` the slate is not a constant: every tier 0-1 survivor
         # is kept up to the ceiling, and undecided leads fill up to `top_n` (`_slate_size`).
         slate_size = _slate_size(leads, top_n=top_n, ceiling=settings.slate_ceiling)
+        survivors = leads
         beyond_slate = leads[slate_size:] if rank_limit > top_n else []
         if beyond_slate:
             leads = leads[:slate_size]
         beyond_slate_ids = frozenset(posting.posting_id for posting in beyond_slate)
+        # T368: every post-gate survivor as the cut saw it, so the cut's order can be replayed.
+        # Recorded only; `survivors` is the list the cut sliced, which it never mutates.
+        if settings.gate.enabled:
+            slate_cut = SlateCutRecord(run_id)
+            slate_cut.capture(
+                engine, settings, survivors, shortlist_ranks=shortlist_ranks,
+                sent_ids=gate_result.sent_ids, beyond_slate_ids=beyond_slate_ids,
+                top_n=top_n, slate_size=slate_size, scan_ran=not skip_scan,
+            )
         summary.gate_beyond_slate = len(beyond_slate)
         summary.beyond_slate_ids = sorted(beyond_slate_ids)
         beyond_slate_job_ids: set[int] = set()
@@ -3337,6 +3350,8 @@ def _run_pipeline_leased(
         lane_of, summary.gate_readings_absent, summary.tenant_review = _lead_lanes(
             engine, settings, leads
         )
+        if slate_cut is not None:
+            slate_cut.set_lanes(lane_of)
 
         # Names the résumé source in the log, so a projected run is distinguishable from an
         # authored one after the fact. Byte-identical to the plain header when `--project` was not
@@ -4061,6 +4076,17 @@ def _run_pipeline_leased(
                 summary.errors.append(note)
                 _record_run_error(engine, run_id, note)
             clock.mark("value_shadow", console=console)
+        # T368: the slate cut's survivor list, recorded like the value shadow above and for the same
+        # reason above `_emit_morning`. Marked only when the cut was reached with the gate on.
+        if slate_cut is not None:
+            try:
+                slate_cut.finish(day_dir)
+            except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                note = f"slate cut record not written: {exc}"
+                console.print(f"  ! {note}", markup=False)
+                summary.errors.append(note)
+                _record_run_error(engine, run_id, note)
+            clock.mark("slate_cut", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
         # file the owner actually reads. The queue holds COPIES of what the run already
