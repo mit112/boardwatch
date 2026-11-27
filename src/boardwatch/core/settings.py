@@ -110,6 +110,12 @@ class GateTier(BaseModel):
     #: 2 forever; with this, each run judges a bounded slice and a lead the judge clears ranks in
     #: tier 1 on the next run. The stage delivers none of them — `depth`'s class exactly.
     backlog_budget: int = Field(default=0, ge=0)
+    #: T366. The fewest readings the judge must already have written under its CURRENT identity
+    #: (engine version, model, effort, facts, target band) before the value model trains on them.
+    #: Below it the shadow records no scores at all — never zeros — so a new user, or one whose
+    #: judge identity just changed, has no model until the readings exist. The model orders
+    #: nothing; this only decides whether it exists.
+    value_model_min_readings: int = Field(default=1000, ge=1)
     #: Whether the judge's `seniority_fit` reading HOLDS a lead for review (2026-09-13).
     #:
     #: **Off by default, and the default is a measurement, not caution.** The reading is always

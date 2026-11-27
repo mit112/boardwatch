@@ -179,6 +179,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
         "depth": 0,
         "refresh_budget": 0,
         "backlog_budget": 0,
+        "value_model_min_readings": 1000,
         "seniority_hold": False,
     },
     "GateTier.enabled": False,
@@ -190,6 +191,7 @@ EXPECTED_SETTINGS_DEFAULTS: dict[str, object] = {
     "GateTier.depth": 0,
     "GateTier.refresh_budget": 0,
     "GateTier.backlog_budget": 0,
+    "GateTier.value_model_min_readings": 1000,
     "GateTier.seniority_hold": False,
 }
 
@@ -259,6 +261,7 @@ SETTINGS_FIELD_CLASS: dict[str, str] = {
     "GateTier.depth": "operational",
     "GateTier.refresh_budget": "operational",
     "GateTier.backlog_budget": "operational",
+    "GateTier.value_model_min_readings": "operational",
     "GateTier.seniority_hold": "capability",
 }
 

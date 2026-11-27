@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol, TypeVar
 
@@ -131,6 +131,11 @@ class GateStageResult:
     # because already current) stays exactly where the ranker put it.
     excluded_ids: tuple[int, ...] = ()
     errors: tuple[str, ...] = ()
+    # T366. The posting ids the request actually carried, in send order: what `sent` counts. A
+    # reader that must know WHICH items the judge received (the value model's shadow) reads it
+    # here rather than assuming a prefix of the candidates, because `build_gate_request` drops
+    # a lead with no current version and one whose body it withholds (D-406).
+    sent_ids: tuple[int, ...] = ()
 
 
 def _chunks(items: list[dict[str, object]], size: int) -> list[list[dict[str, object]]]:
@@ -612,6 +617,7 @@ def run_gate_stage(
         candidates=candidates,
         cached=len(already_gated),
         sent=len(items),
+        sent_ids=tuple(int(str(item["label"])) for item in items),
         withheld=len(to_judge) - len(items),
         missing_items=missing_items,
         refused_items=len(refused),
@@ -700,6 +706,8 @@ def _stale(engine: Engine, settings: Settings, leads: Sequence[_T]) -> list[_T] 
 def run_gate_refresh(
     engine: Engine, settings: Settings, leads: Sequence[_T], *, run_id: int | None,
     console: Console | None = None,
+    observe: Callable[[Sequence[int]], None] | None = None,
+    observe_sent: Callable[[Sequence[int], int], None] | None = None,
 ) -> GateRefreshResult:
     """T113: re-judge up to `gate.refresh_budget` of `leads` — the standing queue, in the order
     the caller wants them healed, released holds first (`_stale`) — whose gate reading is not
@@ -719,6 +727,14 @@ def run_gate_refresh(
     The slate the stage hands back is discarded — a standing lead is already delivered, and a
     fresh `ineligible` holds it for review through the lane read (T109) rather than dropping it
     here. No shortlist rank is recorded: these leads were not ranked this run.
+
+    `observe` is handed the stale leads' posting ids in the order they will be sent, before the
+    first request (T366's shadow), and `observe_sent` the ids each call's request actually
+    carried, after that call, with how many candidates the walk has consumed so far: the send
+    boundary withholds some, so the sent ids are not a prefix of the candidates, and a candidate
+    inside the consumed prefix that was not sent was refused. Both are read-only taps handed a
+    fresh list: they must not raise, and what they do with the ids can change neither the order
+    nor the set that is sent.
     """
     budget = settings.gate.refresh_budget
     if not settings.gate.enabled or budget == 0 or not leads:
@@ -726,8 +742,11 @@ def run_gate_refresh(
     stale = _stale(engine, settings, leads)
     if stale is None:
         return GateRefreshResult()
+    if observe is not None:
+        observe([lead.posting_id for lead in stale])
     results, errors, _ = _send_in_batches(
-        engine, settings, stale, budget, run_id=run_id, name="gate refresh", console=console
+        engine, settings, stale, budget, run_id=run_id, name="gate refresh", console=console,
+        observe_sent=observe_sent,
     )
     after = _stale(engine, settings, leads)
     return GateRefreshResult(
@@ -743,6 +762,7 @@ def _send_in_batches(
     engine: Engine, settings: Settings, stale: Sequence[_T], budget: int, *,
     run_id: int | None, name: str, breaker: int | None = None,
     console: Console | None = None,
+    observe_sent: Callable[[Sequence[int], int], None] | None = None,
 ) -> tuple[list[GateStageResult], list[str], int]:
     """Walk `stale` through `run_gate_stage` ONE BATCH PER CALL until `budget` items were SENT —
     `run_gate_refresh`'s docstring says why each half of that matters. One result per call, and
@@ -772,6 +792,8 @@ def _send_in_batches(
         position += len(chunk)
         _, result = run_gate_stage(engine, settings, chunk, run_id=run_id, console=console)
         results.append(result)
+        if observe_sent is not None:
+            observe_sent(list(result.sent_ids), position)
         sent += result.sent
         progress.advance(result.sent)  # run_gate_stage has committed before returning
         errors.extend(f"{name} batch {len(results)}: {note}" for note in result.errors)
@@ -857,6 +879,8 @@ def run_gate_backlog(
     engine: Engine, settings: Settings, candidates: Sequence[tuple[int, int]], *,
     run_id: int | None,
     console: Console | None = None,
+    observe: Callable[[Sequence[int]], None] | None = None,
+    observe_sent: Callable[[Sequence[int], int], None] | None = None,
 ) -> GateBacklogResult:
     """Judge up to `gate.backlog_budget` of `candidates` — `(posting_id, current
     posting_version_id)` for the in-field postings that ranked below the judged slate — that carry
@@ -869,6 +893,9 @@ def run_gate_backlog(
     rank is recorded: these leads were ranked below the slate the rank band is read on.
 
     Unlike the refresh, it stops after `BACKLOG_BREAKER` consecutive failed-open batches.
+
+    `observe` and `observe_sent` are `run_gate_refresh`'s taps: the candidates' posting ids in
+    `_backlog`'s order, then the ids each call actually sent.
     """
     budget = settings.gate.backlog_budget
     if not settings.gate.enabled or budget == 0 or not candidates:
@@ -876,9 +903,11 @@ def run_gate_backlog(
     stale = _backlog(engine, settings, candidates)
     if stale is None:
         return GateBacklogResult()
+    if observe is not None:
+        observe([lead.posting_id for lead in stale])
     results, errors, breaker_skipped = _send_in_batches(
         engine, settings, stale, budget, run_id=run_id, name="gate backlog",
-        breaker=BACKLOG_BREAKER, console=console,
+        breaker=BACKLOG_BREAKER, console=console, observe_sent=observe_sent,
     )
     return GateBacklogResult(
         candidates=len(stale),

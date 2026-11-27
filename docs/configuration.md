@@ -131,6 +131,7 @@ success.
 | `gate.depth` | int, ≥ 0 | 0 | Leads judged, counted against `--top` delivered; 0 = only the shortlist | next run |
 | `gate.refresh_budget` | int, ≥ 0 | 0 (off) | Standing-queue leads re-judged per run when their reading is stale | next run |
 | `gate.backlog_budget` | int, ≥ 0 | 0 (off) | Unjudged in-field postings below the judged slate sent to the judge per run | next run |
+| `gate.value_model_min_readings` | int, ≥ 1 | 1000 | Readings the judge must already hold under its current identity before the shadow value model trains on them; the model orders nothing | next run |
 | `gate.seniority_hold` | bool | `false` | Hold a lead for review when the judge reads its body as above your target band; off, the reading is still recorded | next run |
 
 For example, `model = "codex:gpt-6.1-sol"` and `effort = "high"` use that model through

@@ -123,6 +123,7 @@ from boardwatch.pipeline.local_twin import find_closed_twin_wrappers, record_loc
 from boardwatch.pipeline.on_disk_links import drain_grnh_seeds, record_on_disk_links
 from boardwatch.pipeline.policy import run_policy_version
 from boardwatch.pipeline.progress import StageProgress
+from boardwatch.pipeline.value_shadow import ValueShadow
 from boardwatch.profile_bundle.paths import resolve_bundle_root
 from boardwatch.projection.errors import ProjectionError
 from boardwatch.projection.run import (
@@ -2711,6 +2712,8 @@ def _run_pipeline_leased(
     # reported by `doctor` as still in progress forever, and accretes one more row per retry.
     # Ctrl-C during the multi-minute tailor loop is the likeliest way to hit this.
     stage_errors: list[str] = []
+    # T366: the value model's shadow. Created at the gate, written in the finalize block.
+    value_shadow: ValueShadow | None = None
     try:
         if first_seen_since is not None:
             summary.gate_refresh_candidates = summary.gate_refresh_sent = None
@@ -3196,9 +3199,17 @@ def _run_pipeline_leased(
         # rather than ever dropping a real job, and is counted rather than silently swallowed.
         if settings.gate.enabled:
             console.print("[bold]gate[/bold]")
+            # T366: train on the readings written before this run, ahead of every judge call, and
+            # note the slate in the order the gate will see it. Shadow only: `leads` is not
+            # touched, and `start` and `observe_slate` never raise.
+            value_shadow = ValueShadow(settings, run_id)
+            value_shadow.start(engine)
+            value_shadow.observe_slate([lead.posting_id for lead in leads])
         leads, gate_result = run_gate_stage(
             engine, settings, leads, run_id=run_id, shortlist_ranks=shortlist_ranks, console=console
         )
+        if value_shadow is not None:
+            value_shadow.sent_slate(gate_result.sent_ids)
         # T63 — THE CUT, and it is the last line at which `leads` is the depth slate. Everything
         # below sees only the delivered slate: the lane split, projection, the tailor loop, the
         # cohort guard and the `seen` write. Taken in RANKER order off the post-gate survivors,
@@ -3266,7 +3277,9 @@ def _run_pipeline_leased(
                 with engine.connect() as refresh_conn:
                     standing = _refresh_order(standing_queue_rows(refresh_conn))
                 refresh = run_gate_refresh(
-                    engine, settings, standing, run_id=run_id, console=console
+                    engine, settings, standing, run_id=run_id, console=console,
+                    observe=value_shadow.observe_refresh if value_shadow else None,
+                    observe_sent=value_shadow.sent_refresh if value_shadow else None,
                 )
                 summary.gate_refresh_candidates = refresh.candidates
                 summary.gate_refresh_sent = refresh.sent
@@ -3766,7 +3779,9 @@ def _run_pipeline_leased(
         if fresh_hours is None and settings.gate.enabled and settings.gate.backlog_budget:
             try:
                 backlog = run_gate_backlog(
-                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id, console=console
+                    engine, settings, ranked.below_cutoff_in_field, run_id=run_id, console=console,
+                    observe=value_shadow.observe_backlog if value_shadow else None,
+                    observe_sent=value_shadow.sent_backlog if value_shadow else None,
                 )
                 summary.gate_backlog_candidates = backlog.candidates
                 summary.gate_backlog_sent = backlog.sent
@@ -4034,6 +4049,18 @@ def _run_pipeline_leased(
                 summary.errors.append(note)
                 _record_run_error(engine, run_id, note)
             clock.mark("near_miss", console=console)
+        # T366: the value model's shadow file, beside the funnel. Reporting only: a failure is
+        # recorded like the near-miss report's, and this sits above `_emit_morning` like every
+        # soft alert. Marked only when a shadow ran, so a run with the gate off keeps its stages.
+        if value_shadow is not None:
+            try:
+                value_shadow.finish(engine, day_dir)
+            except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
+                note = f"value shadow not written: {exc}"
+                console.print(f"  ! {note}", markup=False)
+                summary.errors.append(note)
+                _record_run_error(engine, run_id, note)
+            clock.mark("value_shadow", console=console)
         # The delivery queue (design §4.3), guarded exactly as the two artifact writes are. It
         # sits BETWEEN them so a failure here reaches the morning digest below, which is the
         # file the owner actually reads. The queue holds COPIES of what the run already
