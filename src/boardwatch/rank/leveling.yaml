@@ -15,6 +15,11 @@ grammars:
   e_prefix: {kind: ambiguous}
   ic_prefix: {kind: ambiguous}
   t_prefix: {kind: ambiguous}
+  # "Software Engineer 5": a bare number after a role word, then the end of the title or a
+  # separator. Not a level for everyone ("Engineer 2" is usually just a team or a version), so
+  # it counts ONLY for a company bound to a scheme and is ignored for every other: an unbound
+  # company reads exactly as if this line were absent.
+  trailing_n: {kind: bound_only}
 
 # Named, company-free rung ladders. An operator binds a company to one of these by name.
 schemes:

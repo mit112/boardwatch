@@ -524,6 +524,16 @@ nothing.""",
         ("reads store",),
         "Precision against the human-verified labeled set in `--worksheet`.",
     ),
+    "eligibility leveling": Entry(
+        ("reads store",),
+        """Proposes `leveling-bindings.yaml` lines from the final-gate judge's `seniority_fit`
+answers under the current judge identity: per board and trailing level token
+("Software Engineer 5"), the shipped scheme that agrees with the judge for every token the
+board shows. A group no scheme agrees with is UNMATCHED and never forced. Review each line
+before pasting. `--min-n` sets the smallest group listed. It opens the store read-only
+(`get_readonly_engine`) and writes nothing, which nothing in its own body would tell you.""",
+        migrates=False,
+    ),
     "eligibility label request": Entry(
         ("reads store", "writes files"),
         """Writes an oracle-judge label request for every unlabeled worksheet row. The judging is

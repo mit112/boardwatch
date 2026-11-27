@@ -368,3 +368,116 @@ class TestLevelSeparator:
         assert _PATTERNS["l_prefix"].search("Network Engineer L-2") is not None
         assert _PATTERNS["l_prefix"].search("Network Engineer l-2") is None
         assert V("Network Engineer l-2", cat, tier)[0] == "in_band"
+
+
+class TestBareTrailingNumber:
+    """T369: "Software Engineer 5" is a level only through a company's binding."""
+
+    TITLES = [
+        "Software Engineer 5",
+        "Software Engineer 1",
+        "Software Engineer 5 - Ads Pricing",
+        "Software Engineer 5, AI Observability",
+        "Software Engineer 3 (Mainframe)",
+        "Software Engineer 2",
+        "Software Engineer 7",
+        "Backend C++ Software Engineer - 2 Days ONSITE - Reston, VA",
+        "Software Engineer, Java 8",
+        "Software Engineer 1-2 years",
+        "Engineer 2026",
+    ]
+
+    @pytest.fixture
+    def before(self, tmp_path):
+        """The catalog as it stood without the grammar: the bundled file minus its one line."""
+        from importlib.resources import files
+
+        text = (files("boardwatch.rank") / "leveling.yaml").read_text(encoding="utf-8")
+        kept = [ln for ln in text.splitlines() if not ln.lstrip().startswith("trailing_n:")]
+        assert len(kept) == len(text.splitlines()) - 1
+        (tmp_path / "leveling.yaml").write_text("\n".join(kept), encoding="utf-8")
+        return load_leveling(tmp_path)
+
+    def test_a_bound_company_reads_its_scheme(self, cat, tier):
+        scheme = cat.schemes["ic_1_to_7"]
+        assert V("Software Engineer 5", cat, tier, scheme=scheme)[0] == "above_band"
+        assert V("Software Engineer 1", cat, tier, scheme=scheme)[0] == "in_band"
+        assert V("Software Engineer 5 - Ads Pricing", cat, tier, scheme=scheme)[0] == "above_band"
+        assert V("Software Engineer 5, AI", cat, tier, scheme=scheme)[0] == "above_band"
+
+    def test_the_reason_quotes_the_scheme_and_the_token(self, cat, tier):
+        _, reason = V("Software Engineer 5", cat, tier, scheme=cat.schemes["ic_1_to_7"])
+        assert "ic_1_to_7" in reason and '"5"' in reason
+
+    @pytest.mark.parametrize("title", TITLES)
+    def test_an_unbound_company_reads_exactly_as_before(self, title, cat, tier, before):
+        old = seniority_verdict(title, None, "entry", before.fields["software"], before)
+        new = V(title, cat, tier)
+        assert new == old
+        assert new[0] == "in_band"  # never `uncertain`, never a verdict
+
+    @pytest.mark.parametrize("title", [
+        "Backend C++ Software Engineer - 2 Days ONSITE - Reston, VA",
+        "Software Engineer 1-2 years",
+        "Engineer 2026",
+    ])
+    def test_a_number_outside_the_trailing_shape_is_not_read_even_when_bound(
+        self, title, cat, tier
+    ):
+        scheme = cat.schemes["ic_1_to_7"]
+        assert V(title, cat, tier, scheme=scheme) == V(title, cat, tier)
+
+    @pytest.mark.parametrize("title", [
+        "Software Engineer, Python 3",
+        "Software Engineer, Req 5",
+        "Software Engineer (Team 6)",
+        "Software Engineer - Region 5",
+        "Software Engineer 3/4",
+    ])
+    def test_a_number_after_the_first_segment_is_not_a_level_even_when_bound(
+        self, title, cat, tier
+    ):
+        for name in ("ic_1_to_6", "ic_1_to_7"):
+            assert V(title, cat, tier, scheme=cat.schemes[name])[0] == "in_band"
+
+    def test_the_first_segment_still_reads_when_later_text_has_a_number(self, cat, tier):
+        scheme = cat.schemes["ic_1_to_7"]
+        assert V("Software Engineer 5, Team 2", cat, tier, scheme=scheme)[0] == "above_band"
+
+    def test_a_number_the_scheme_does_not_cover_is_ignored_not_uncertain(self, cat, tier):
+        verdict, _ = V("Software Engineer, Java 8", cat, tier, scheme=cat.schemes["ic_1_to_7"])
+        assert verdict == "in_band"
+
+    def test_a_catalog_without_the_grammar_ignores_it_even_when_bound(self, before):
+        verdict, _ = seniority_verdict(
+            "Software Engineer 5", before.schemes["ic_1_to_7"], "entry",
+            before.fields["software"], before,
+        )
+        assert verdict == "in_band"
+
+    def test_a_seniority_word_still_decides_first(self, cat, tier):
+        scheme = cat.schemes["ic_1_to_6"]  # "1" is entry here
+        assert V("Senior Software Engineer 1", cat, tier, scheme=scheme)[0] == "above_band"
+
+    def test_level_n_still_wins_over_the_bare_number(self, cat, tier):
+        scheme = cat.schemes["ic_1_to_7"]
+        assert V("Software Engineer 1, Level 5", cat, tier, scheme=scheme)[0] == "above_band"
+
+    def test_the_grammar_is_declared_bound_only_and_cannot_be_a_scheme_grammar(self, cat, tmp_path):
+        from boardwatch.rank.leveling import LevelingError
+
+        assert cat.bound_only_grammars == {"trailing_n"}
+        assert "trailing_n" not in cat.self_describing_grammars | cat.ambiguous_grammars
+        (tmp_path / "leveling.yaml").write_text("""
+leveling_version: 1
+grammars: {trailing_n: {kind: bound_only}}
+schemes: {s: {grammar: trailing_n, levels: {"5": senior}}}
+fields: {software: {words: {}, roman: {}}}
+""", encoding="utf-8")
+        with pytest.raises(LevelingError, match="trailing_n"):
+            load_leveling(tmp_path)
+
+    def test_the_inert_probe_does_not_count_a_bare_number(self, cat, tier):
+        from boardwatch.rank.seniority_gate import build_token_probe
+
+        assert build_token_probe(tier, cat)("Software Engineer 5") is False

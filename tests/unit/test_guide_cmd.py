@@ -47,6 +47,7 @@ OVERRIDE_EVIDENCE = {
         "opens the store read-only through `get_readonly_engine`, never migrating; the four "
         "mark routes write"
     ),
+    "eligibility leveling": "It opens the store read-only (`get_readonly_engine`) and writes nothing",
 }
 
 #: Every effect label this branch's review corrected after reading the command's source:

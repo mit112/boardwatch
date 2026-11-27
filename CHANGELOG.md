@@ -8,6 +8,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **A bound company's bare trailing level number is read, and a new command proposes the bindings (T369).** The
+  seniority gate now reads a number that ends a title's first segment ("Software Engineer 5", "Engineer 5 - Payments",
+  "Engineer 5, Platform"; not "Engineer, Python 3") through the company's bound scheme, in a new `bound_only` grammar kind (`trailing_n` in `leveling.yaml`).
+  An unbound company reads exactly as before: the number is ignored, never `uncertain_band` and never a verdict, and so
+  is a number its scheme does not cover. A seniority word or `Level N` still decides first. `boardwatch eligibility
+  leveling [--min-n 7]` lists, per company and trailing level token, how the current judge identity answered
+  `seniority_fit` (n, the majority answer, a 95% Wilson lower bound), per board (`provider` and `slug`, the key a
+  binding uses), and prints the shipped scheme that agrees with the judge for every token the board shows, however few
+  readings it has, as a quoted `leveling-bindings.yaml` block to review. Only readings of a posting's current version
+  count. A board no scheme agrees with is listed as unmatched and never forced; when several schemes agree the first is proposed and the rest are named. It
+  opens the store read-only and writes nothing. Upgrade effect: the bundled `leveling.yaml` changed, so the leveling
+  digest moves, and with it `profile_row_hash` and `policy_version`: stored ledger stamps read stale until
+  `ledger reopen --stale` (nothing reopens by itself). `engine_version` and `routing_hash` do not move
+  (`seniority_gate.py` is in neither). A company you had already bound now also reads its bare trailing numbers, which
+  can send a lead above your band to the review lane. A user `leveling.yaml` override with no `trailing_n` line is
+  unchanged.
 - **The run funnel times each of its sections, and the run log times the parts of the delivery-queue sync (T361).** The
   funnel artifact gains an additive `section_timings` key (`artifact_version` stays 9): the seconds each store read
   that builds a section cost (board coverage, corpus, abstain, dedup, per-source outcomes, buried leads, apply lane and
