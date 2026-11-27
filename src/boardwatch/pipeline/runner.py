@@ -4708,6 +4708,14 @@ def _relinked_routes(
     return {posting_id: routes.is_direct_auto(url) for posting_id, url in urls.items()}
 
 
+def _first_request_offset(first_at: float | None, dispatch_started: float | None) -> float | None:
+    """Seconds from the start of dispatch to a host's first request, both `time.monotonic()`
+    readings, or None when either was not measured (T360)."""
+    if first_at is None or dispatch_started is None:
+        return None
+    return max(0.0, first_at - dispatch_started)
+
+
 def _emit_funnel(
     engine: Engine,
     settings: Settings,
@@ -4774,6 +4782,9 @@ def _emit_funnel(
                     span_seconds=cost.span_seconds, service_seconds=cost.service_seconds,
                     pace_seconds=cost.pace_seconds, lock_wait_seconds=cost.lock_wait_seconds,
                     in_flight=cost.in_flight,
+                    first_request_seconds=_first_request_offset(
+                        cost.first_at, scan_summary.dispatch_started
+                    ),
                 )
                 for host, cost in scan_summary.host_cost.items()
             ),

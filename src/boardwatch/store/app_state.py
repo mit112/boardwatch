@@ -14,6 +14,11 @@ rendering is not achievable transactionally, and claiming it would be false.
 
 from __future__ import annotations
 
+import json
+import math
+from collections.abc import Mapping
+from typing import NamedTuple
+
 from sqlalchemy import Connection, delete, insert, select
 
 from boardwatch.store.tables import app_state
@@ -61,3 +66,41 @@ def set_notify_cursor(conn: Connection, event_id: int) -> None:
     if event_id <= current:
         return
     set_state(conn, NOTIFY_CURSOR_KEY, str(event_id))
+
+
+HOST_BUSY_KEY = "scan.host_busy.v1"
+
+
+class HostBusy(NamedTuple):
+    """What each host cost the last complete pipeline scan (T360): that run's id and, per
+    `politeness.host_key`, the seconds its requests held the host (service plus pacing)."""
+
+    run_id: int
+    seconds: dict[str, float]
+
+
+def get_host_busy(conn: Connection) -> HostBusy | None:
+    """The last recorded host busy times, or None: never recorded, or not readable.
+
+    It only orders the scan, so a value that does not parse is no record, never a failed scan.
+    """
+    raw = get_state(conn, HOST_BUSY_KEY)
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+        seconds = {str(h): float(s) for h, s in data["seconds"].items()}
+        if not all(math.isfinite(s) and s >= 0 for s in seconds.values()):
+            return None  # one bad value makes the whole record untrusted, as an unparsable one is
+        return HostBusy(int(data["run_id"]), seconds)
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def set_host_busy(conn: Connection, run_id: int, seconds: Mapping[str, float]) -> None:
+    """Replace the record with `run_id`'s. One value, not one row per run: the next scan reads
+    only the last one, and a record that outlived its scan would be older than it claims."""
+    set_state(
+        conn, HOST_BUSY_KEY,
+        json.dumps({"run_id": run_id, "seconds": {h: round(s, 3) for h, s in seconds.items()}}),
+    )

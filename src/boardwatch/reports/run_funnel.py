@@ -1907,6 +1907,9 @@ class HostFetchCost:
     `lock_wait_seconds` is summed over threads, so it can exceed the span. `attempts` counts
     physical sends (retries and redirect hops included). `in_flight` is requests not yet ended
     when the scan finished (a board abandoned at its deadline): their time is in no sum here.
+    `first_request_seconds` is when the first request asked for the host's lock, in seconds from
+    the start of dispatch (T360): a host ordered by its busy time starts early, and this is where
+    that shows. None when not measured.
     """
 
     host: str
@@ -1917,6 +1920,7 @@ class HostFetchCost:
     pace_seconds: float
     lock_wait_seconds: float
     in_flight: int = 0
+    first_request_seconds: float | None = None
 
 
 #: The artifact keeps the longest chains only: a nightly reaches ~1,500 hosts, nearly all of them
@@ -3214,14 +3218,16 @@ def _host_cost_markdown(rows: tuple[HostFetchCost, ...] | None) -> list[str]:
         "Sends are physical (retries and redirects included); a request still in flight when "
         "the scan ended is in no sum, so its chain is unfinished.",
         "",
-        "| host | requests | sends | in flight | span s | service s | pacing s | lock wait s |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| host | requests | sends | in flight | span s | service s | pacing s | lock wait s "
+        "| first request s |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for row in shown:
+        first = "" if row.first_request_seconds is None else f"{row.first_request_seconds:.0f}"
         out.append(
             f"| `{row.host}` | {row.requests} | {row.attempts} | {row.in_flight} | "
             f"{row.span_seconds:.1f} | {row.service_seconds:.1f} | {row.pace_seconds:.1f} | "
-            f"{row.lock_wait_seconds:.1f} |"
+            f"{row.lock_wait_seconds:.1f} | {first} |"
         )
     return out
 
@@ -3465,6 +3471,8 @@ def funnel_to_dict(funnel: RunFunnel) -> dict[str, object]:
                         "pace_seconds": round(row.pace_seconds, 3),
                         "lock_wait_seconds": round(row.lock_wait_seconds, 3),
                         "in_flight": row.in_flight,
+                        "first_request_seconds": None if row.first_request_seconds is None
+                        else round(row.first_request_seconds, 1),
                     }
                     for row in _longest_chains(funnel.scan.host_cost)
                 ],
