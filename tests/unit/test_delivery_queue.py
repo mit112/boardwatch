@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path, PurePath
 from types import SimpleNamespace
-from typing import get_args
+from typing import Any, get_args
 
 import pytest
 from filelock import FileLock
@@ -3780,6 +3780,29 @@ def test_the_lane_copy_returns_when_the_board_twin_stops_holding(
     assert len(_folders(root)) == 1
 
 
+def test_a_raising_timing_callback_never_interrupts_the_queue_pass(
+    engine: Engine, root: Path, apps: Path
+) -> None:
+    """T361. `on_part` is reporting. Raised from inside the lock hold it must not stop the
+    reconcile or the sync, and must not read as contention."""
+    with engine.begin() as conn:
+        _deliver(conn, apps, "one")
+    seen: list[str] = []
+
+    def failing(part: str, seconds: float) -> None:
+        seen.append(part)
+        raise OSError("log closed")
+
+    drained, synced = queue.refresh_queue(
+        engine, root=root, owner_name=OWNER, on_part=failing
+    )
+
+    assert seen == ["reconcile", "rows", "sync"], "the callback was never reached"
+    assert (drained.contended, synced.contended) == (False, False)
+    assert (synced.created, synced.failures) == (1, ())
+    assert len(_folders(root)) == 1
+
+
 def test_a_lane_copy_stays_drained_across_refresh_queue(
     engine: Engine, root: Path, apps: Path
 ) -> None:
@@ -5049,9 +5072,11 @@ def _between_passes(mp: pytest.MonkeyPatch, hook: Callable[[], None]) -> dict[st
         with real_lock(root) as path:
             yield path
 
-    def sync_locked(conn: Connection, *, root: Path, owner_name: str) -> queue.SyncReport:
+    def sync_locked(
+        conn: Connection, *, root: Path, owner_name: str, on_part: Any = None
+    ) -> queue.SyncReport:
         fire()
-        return real_sync(conn, root=root, owner_name=owner_name)
+        return real_sync(conn, root=root, owner_name=owner_name, on_part=on_part)
 
     mp.setattr(queue, "_reconcile_locked", reconcile_locked)
     mp.setattr(queue, "_queue_lock", lock)

@@ -112,6 +112,7 @@ from boardwatch.pipeline.death_probe import (
 )
 from boardwatch.pipeline.freshness import folders_reconcile
 from boardwatch.pipeline.funnel_writer import (
+    SectionClock,
     collect_run_funnel,
     read_code_provenance,
     read_execution_provenance,
@@ -566,6 +567,10 @@ class PipelineSummary:
     # both artifacts. `None` means the load failed (reported to the console), never that
     # coverage is zero.
     board_coverage: BoardCoverageReport | None = None
+    # T361. What that load cost, in seconds. It runs before the funnel (so the funnel and the
+    # morning file share one object) and inside the `finalize` mark; the funnel's section table
+    # carries it so every section's cost sits in one place. `None` when it was not timed.
+    board_coverage_seconds: float | None = None
     # P6 slice 2: postings moved onto a canonical job this run, and the groups left ungrouped.
     # Refusals are carried rather than dropped — a refusal that is invisible is a leak in the
     # same way an unlistable suppression is.
@@ -3916,7 +3921,9 @@ def _run_pipeline_leased(
         # posting closed in between. Its own failure costs the SECTION, not the artifact:
         # this returns None and the renderers say so, where an escaping exception would take
         # the whole funnel down with it through the except below.
+        coverage_start = perf_counter()
         summary.board_coverage = _load_board_coverage(engine, run_id, console)
+        summary.board_coverage_seconds = perf_counter() - coverage_start
         # Last FUNNEL mark, inside the `finally` so it fires on crash and early-return paths
         # too — those are exactly the runs whose cost breakdown is worth having. On a clean run
         # it covers `finish_run` and the coverage load above and nothing else: the late guards
@@ -3976,7 +3983,9 @@ def _run_pipeline_leased(
             )
         clock.mark("form_sweep", console=console)
         try:
-            summary.funnel = _emit_funnel(engine, settings, summary, scan_summary, day_dir)
+            summary.funnel = _emit_funnel(
+                engine, settings, summary, scan_summary, day_dir, console
+            )
         except Exception as exc:  # noqa: BLE001 - never mask the run's own outcome
             # Recorded, not just printed (D-287, open question 1). Still fail-open — a
             # reporting failure must never discard a run that produced real leads — but
@@ -4722,8 +4731,17 @@ def _emit_funnel(
     summary: PipelineSummary,
     scan_summary: ScanSummary | None,
     day_dir: Path,
+    console: Console,
 ) -> WrittenArtifact:
-    """Collect the funnel from the store and write both halves beside the day's leads."""
+    """Collect the funnel from the store and write both halves beside the day's leads.
+
+    T361: each section's collection is timed and printed as it closes, one line per section
+    under the `funnel` tail line, and kept in the artifact (`section_timings`). The final write
+    is printed but cannot be in the file it writes.
+    """
+    sections = SectionClock(lambda row: _print_part(console, "funnel", row.name, row.seconds))
+    if summary.board_coverage_seconds is not None:
+        sections.add("board_coverage", summary.board_coverage_seconds)
     # T117. Read from the STORE, not from `scan_summary`: this is a STANDING population over
     # the whole scan history, and a board in it may not have been attempted this run at all.
     # `None` on a `--no-scan` run, on the `fetch_cost` rule below — the history is then a run
@@ -4736,8 +4754,10 @@ def _emit_funnel(
     watched_stale_complete = None
     if scan_summary is not None:
         with engine.connect() as conn:
-            watched_never_complete = watched_boards_never_complete(conn)
-            watched_stale_complete = watched_boards_stale_complete(conn, now=utcnow())
+            with sections.time("watched_never_complete"):
+                watched_never_complete = watched_boards_never_complete(conn)
+            with sections.time("watched_stale_complete"):
+                watched_stale_complete = watched_boards_stale_complete(conn, now=utcnow())
     funnel = collect_run_funnel(
         engine,
         settings,
@@ -4907,6 +4927,7 @@ def _emit_funnel(
         errors=summary.errors,
         board_moves=summary.board_moves,
         fatal=summary.fatal,
+        sections=sections,
     )
     # Before the write, so a failure to render the artifact still leaves the volume alert its
     # number — the funnel is the only place this cohort is built, and losing both to one
@@ -4919,7 +4940,20 @@ def _emit_funnel(
     summary.cross_check_disagreements = funnel.disagreements
     # Same placement, same reason: the buried alert reads the population the funnel read.
     summary.buried = funnel.buried
-    return write_run_funnel(funnel, day_dir)
+    write_start = perf_counter()
+    written = write_run_funnel(funnel, day_dir)
+    _print_part(console, "funnel", "write", perf_counter() - write_start)
+    return written
+
+
+def _print_part(console: Console, tail: str, part: str, seconds: float) -> None:
+    """T361. One timed part of a tail stage, indented under that stage's own `tail` line."""
+    try:
+        console.print(
+            f"    tail {tail}.{part} → {utcnow().isoformat()} UTC · {seconds:.3f}s", markup=False
+        )
+    except Exception:  # noqa: BLE001 - a timing line must never fail the artifact or the queue
+        pass
 
 
 def _strongest_evidence(audit: AuditView | None) -> tuple[str | None, str | None]:
@@ -5090,19 +5124,26 @@ def _sync_queue(
     add four separately gated registration sites for a path no config file needs to carry.
     """
     root = queue_root if queue_root is not None else DEFAULT_QUEUE_ROOT
+    # T361. Each part prints under the `queue_sync` tail line as it closes, so a slow sync names
+    # where its time went. Log only: the funnel is written before this runs.
+    started = perf_counter()
     with engine.connect() as conn:
         # The owner's name for the résumé filename, resolved by the one function that already
         # owns that question (`answers.yaml` first, the authored résumé's header second). On its
         # OWN connection, closed before the queue pass: a connection that has read holds its
         # snapshot, and the plan must read one taken after the queue lock is held (T135).
         owner_name = resolve_owner_name(conn, settings.config_dir)
+    _print_part(console, "queue_sync", "owner_name", perf_counter() - started)
     # Contention used to change only the console line below, so a run that lost the lock to the
     # web server delivered leads with no folder and said so nowhere else (F5). Asked a bounded
     # number of times; still held after that, it RAISES the queue's own typed error, which the
     # call site's handler records in `summary.errors` and `runs.errors_json` above
     # `_emit_morning` like every other queue failure — and, like them, never fails the run.
     for attempt in range(1, QUEUE_LOCK_ATTEMPTS + 1):
-        drained, synced = refresh_queue(engine, root=root, owner_name=owner_name)
+        drained, synced = refresh_queue(
+            engine, root=root, owner_name=owner_name,
+            on_part=lambda part, seconds: _print_part(console, "queue_sync", part, seconds),
+        )
         if not (synced.contended or drained.contended):
             break
         if attempt == QUEUE_LOCK_ATTEMPTS:

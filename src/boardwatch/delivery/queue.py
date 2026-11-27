@@ -62,7 +62,7 @@ import shutil
 import sys
 import time
 from collections import Counter
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -335,7 +335,11 @@ def sync_queue(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
 
 
 def refresh_queue(
-    engine: Engine, *, root: Path, owner_name: str
+    engine: Engine,
+    *,
+    root: Path,
+    owner_name: str,
+    on_part: Callable[[str, float], None] | None = None,
 ) -> tuple[ReconcileReport, SyncReport]:
     """Reconcile and then sync under ONE lock hold, on ONE snapshot taken after the lock is held.
 
@@ -349,15 +353,35 @@ def refresh_queue(
     files the folder.
 
     On contention both reports say `contended=True` and nothing is read or written.
+
+    `on_part(name, seconds)`, when given, is called for the parts that run (T361): `reconcile`,
+    `sync`, and inside it `rows`, the store read that decides which leads the queue holds. It
+    changes nothing the queue reads or writes.
     """
     resolved = root.resolve()
     try:
         with _queue_lock(resolved), engine.connect() as conn:
+            started = time.perf_counter()
             drained = _reconcile_locked(conn, root=resolved, owner_name=owner_name)
-            synced = _sync_locked(conn, root=resolved, owner_name=owner_name)
+            _report_part(on_part, "reconcile", time.perf_counter() - started)
+            started = time.perf_counter()
+            synced = _sync_locked(conn, root=resolved, owner_name=owner_name, on_part=on_part)
+            _report_part(on_part, "sync", time.perf_counter() - started)
     except QueueLockHeldError:
         return ReconcileReport(contended=True), SyncReport(contended=True)
     return drained, synced
+
+
+def _report_part(
+    on_part: Callable[[str, float], None] | None, name: str, seconds: float
+) -> None:
+    """Best effort: a callback that raises must not interrupt a pass that holds the queue lock."""
+    if on_part is None:
+        return
+    try:
+        on_part(name, seconds)
+    except Exception:  # noqa: BLE001 - timing is reporting; the queue's work is not its to stop
+        pass
 
 
 def standing_queue_rows(conn: Connection) -> list[QueueRow]:
@@ -488,7 +512,13 @@ def _dest(root: Path, lane_dir: str, folder: str) -> Path:
     return (root / lane_dir / folder) if lane_dir else root / folder
 
 
-def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport:
+def _sync_locked(
+    conn: Connection,
+    *,
+    root: Path,
+    owner_name: str,
+    on_part: Callable[[str, float], None] | None = None,
+) -> SyncReport:
     """Two passes, and the order is load-bearing.
 
     Every folder that has to move, moves before any folder is created. A lead that is renaming
@@ -518,7 +548,9 @@ def _sync_locked(conn: Connection, *, root: Path, owner_name: str) -> SyncReport
     # A LANE COPY is excluded for the same reason and had the same bug (T189): `refresh_queue`'s
     # reconcile filed it under `_lane_copy/` and this pass moved it straight back out, every run.
     # A MANUAL lead is withheld for the same reason, or `_manual/` would be emptied every run.
+    rows_started = time.perf_counter()
     rows = standing_queue_rows(conn)
+    _report_part(on_part, "rows", time.perf_counter() - rows_started)
     # `lane_decision`, which is `classify` over the WHOLE row: the folder a lead lands in and the
     # reason `details.json` publishes for it are ONE decision here, so neither can be re-derived
     # into disagreement with the other (D-332, and the same call `delivery/api.py` makes for the

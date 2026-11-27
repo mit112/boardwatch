@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The run funnel times each of its sections, and the run log times the parts of the delivery-queue sync (T361).** The
+  funnel artifact gains an additive `section_timings` key (`artifact_version` stays 9): the seconds each store read
+  that builds a section cost (board coverage, corpus, abstain, dedup, per-source outcomes, buried leads, apply lane and
+  the rest), in the order they ran, plus a markdown table. The log prints each one as `    tail funnel.<section> → <time>
+  UTC · <seconds>s`, and `queue_sync` prints `owner_name`, `reconcile`, `rows` and `sync` the same way. The funnel
+  took 598 s on the 2026-11-26 nightly and 354-678 s on every intraday pass, and nothing said which section took it.
+  On a read-only clone of that store the collection took 276 s (nightly) and 336 s (intraday pass that did not
+  scan), 97% of it in seven row-reading sections; the scan-only sections cost 0.3 s on the nightly and are already
+  skipped on a pass that did not scan. Nothing in what the funnel counts changed.
 - **The scan dispatches hosts by how long each held the last complete scan, not by how many boards it has (T360).**
   A host's boards run one after another, so the longest host chain sets the scan's finish time. Sorting by board count
   cannot see a one-board host whose chain is its detail fetches: on run 2910 `jobs.apple.com` (one board, 489 requests,

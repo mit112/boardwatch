@@ -88,7 +88,8 @@ def test_tail_boundaries_charge_the_work_before_them(
     assert actual == expected_costs, "tail durations must include each operation's own cost"
     cumulative = 0.0
     lines = output.getvalue().splitlines()
-    timing_lines = [line.strip() for line in lines if line.strip().startswith("tail ")]
+    # Two-space indent only: T361's per-part lines sit under a stage at four spaces.
+    timing_lines = [line.strip() for line in lines if line.startswith("  tail ")]
     expected_lines = []
     for name, seconds in expected_costs.items():
         cumulative += seconds

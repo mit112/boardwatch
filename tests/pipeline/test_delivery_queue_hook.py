@@ -32,6 +32,7 @@ import json
 import os
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pytest
 from filelock import FileLock
@@ -355,9 +356,9 @@ def test_a_sync_that_stays_contended_is_recorded_and_never_fails_the_run(
     real = runner_module.refresh_queue
 
     def counting(
-        engine: Engine, *, root: Path, owner_name: str
+        engine: Engine, *, root: Path, owner_name: str, on_part: Any = None
     ) -> tuple[ReconcileReport, SyncReport]:
-        drained, synced = real(engine, root=root, owner_name=owner_name)
+        drained, synced = real(engine, root=root, owner_name=owner_name, on_part=on_part)
         calls.append(synced.contended)
         return drained, synced
 
@@ -394,9 +395,9 @@ def test_a_sync_retries_a_contended_lock_and_then_fills_the_queue(
     real = runner_module.refresh_queue
 
     def release_after_first(
-        engine: Engine, *, root: Path, owner_name: str
+        engine: Engine, *, root: Path, owner_name: str, on_part: Any = None
     ) -> tuple[ReconcileReport, SyncReport]:
-        drained, synced = real(engine, root=root, owner_name=owner_name)
+        drained, synced = real(engine, root=root, owner_name=owner_name, on_part=on_part)
         calls.append(synced.contended)
         if holder.is_locked:
             holder.release()
@@ -475,10 +476,10 @@ def test_the_owner_name_comes_from_the_profile(
     real = queue_module.refresh_queue
 
     def spy(
-        engine: Engine, *, root: Path, owner_name: str
+        engine: Engine, *, root: Path, owner_name: str, on_part: Any = None
     ) -> tuple[ReconcileReport, SyncReport]:
         seen.append(owner_name)
-        return real(engine, root=root, owner_name=owner_name)
+        return real(engine, root=root, owner_name=owner_name, on_part=on_part)
 
     with pytest.MonkeyPatch.context() as patched:
         patched.setattr(runner_module, "refresh_queue", spy)
@@ -522,9 +523,9 @@ def test_a_drain_failure_is_escalated_too(env: Path, tmp_path: Path, queue_root:
     real = runner_module.refresh_queue
 
     def with_a_drain_failure(
-        engine: Engine, *, root: Path, owner_name: str
+        engine: Engine, *, root: Path, owner_name: str, on_part: Any = None
     ) -> tuple[ReconcileReport, SyncReport]:
-        report, synced = real(engine, root=root, owner_name=owner_name)
+        report, synced = real(engine, root=root, owner_name=owner_name, on_part=on_part)
         return replace(
             report, failures=(*report.failures, FolderFailure("acme0-backend", "drain broke"))
         ), synced
