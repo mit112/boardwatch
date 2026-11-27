@@ -21,7 +21,8 @@ from boardwatch.cli.profile_cmd import persist_profile
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, jobs, postings, profile
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, jobs, profile
 
 NOW = utcnow()
 runner = CliRunner()
@@ -63,8 +64,7 @@ def store(empty_store: Path) -> tuple[Path, int]:
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company,
                     job_id=job_id,
                     provider_posting_id="p1",
@@ -81,7 +81,6 @@ def store(empty_store: Path) -> tuple[Path, int]:
                     content_hash="p1",
                     body_text="We hire python engineers.",
                 )
-            ).inserted_primary_key[0]
         )
     eng.dispose()
     added = _cli(empty_store, ["track", "add", str(posting_id)])

@@ -53,6 +53,7 @@ from boardwatch.store.delivery_queries import (
 )
 from boardwatch.store.ledger_queries import record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
 from boardwatch.store.tables import (
     artifacts,
@@ -60,7 +61,6 @@ from boardwatch.store.tables import (
     companies,
     jobs,
     posting_versions,
-    postings,
     runs,
 )
 from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
@@ -159,8 +159,7 @@ def _posting(
     body: str = JD,
 ) -> int:
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=key,
                 title="Software Engineer", normalized_title="software engineer", url=url,
                 locations_json=["Boston, MA"] if locations is None else locations,
@@ -169,7 +168,6 @@ def _posting(
                 closed_at=NOW if status == "closed" else None,
                 consecutive_missing=0, content_hash=f"hash-{key}", body_text=body,
             )
-        ).inserted_primary_key[0]
     )
 
 
@@ -942,15 +940,13 @@ def test_a_delivered_posting_with_no_canonical_job_is_dropped(engine: Engine) ->
         conn.execute(text("DROP TRIGGER postings_job_required_insert"))
         company_id = _company(conn, "orphan")
         orphan = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=None, provider_posting_id="orphan",
                     title="Software Engineer", normalized_title="software engineer",
                     url=None, locations_json=["Boston, MA"], remote_policy="remote",
                     posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW, status="open",
                     consecutive_missing=0, content_hash="orphan", body_text=JD,
                 )
-            ).inserted_primary_key[0]
         )
         _artifact(conn, version_id=_version(conn, posting_id=orphan), uri="/out/orphan.typ")
         kept, _ = _deliver(conn, "kept")

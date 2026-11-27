@@ -30,6 +30,7 @@ from boardwatch.pipeline import value_shadow as vs
 from boardwatch.pipeline.value_shadow import ValueShadow, load_readings
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import current_posting_versions, get_profile, insert_run
 from tests.pipeline.test_gate_stage import (
     _candidates,
@@ -82,12 +83,12 @@ def _post(
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0])
         key = f"{slug}-{title}-{job_id}"
-        posting_id = int(conn.execute(insert(tables.postings).values(
+        posting_id = int(insert_posting(conn,
             company_id=company_id, provider_posting_id=key, title=title,
             normalized_title=title.lower(), url="https://example.test/j", locations_json=["Remote"],
             remote_policy="remote", first_seen_at=first_seen or now, last_seen_at=now,
             status=status, consecutive_missing=0, content_hash=key, body_text=body, job_id=job_id,
-        )).inserted_primary_key[0])
+        ))
         conn.execute(insert(tables.posting_versions).values(
             posting_id=posting_id, content_hash=key, body_text=body, captured_at=now,
             capture_reason="new",

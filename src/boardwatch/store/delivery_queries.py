@@ -382,15 +382,14 @@ def _delivered_select() -> Select[Any]:
             jobapps_employer_url().label("employer_url"),
             companies.c.name.label("company"),
             companies.c.provider,
-            # T92. Read out of `raw_json` rather than a `postings` column, deliberately.
-            # `posting_versions` carries only `body_text` + `content_hash` and that hash covers
-            # the BODY, so a provider flipping `employmentType` mints no new posting version
-            # while `build_identity` keys on `{posting_version_id, profile_hash, rules_hash}` --
-            # a column would therefore create a stale-verdict class the identity cannot see.
+            # T92. The provider payload's `employmentType`, read at queue time and never folded
+            # into a verdict: `posting_versions`' hash covers the BODY, so a provider flipping it
+            # mints no new posting version while `build_identity` keys on
+            # `{posting_version_id, profile_hash, rules_hash}`. `postings.employment_type` is
+            # `json_extract(raw_json, '$.employmentType')`, rewritten with the payload on every
+            # sighting (T364), so it is as fresh as the payload itself.
             # Selected here, in the one shared select, for the reason `closed_at` above is.
-            func.json_extract(postings.c.raw_json, "$.employmentType").label(
-                "provider_employment_type"
-            ),
+            postings.c.employment_type.label("provider_employment_type"),
             # T109. `resolve_schemes` keys its per-company level schemes on (provider, slug), so
             # the title band is read against the company's OWN ladder where it has one. Selected
             # here rather than in a second query for the reason `closed_at` above is: one join.

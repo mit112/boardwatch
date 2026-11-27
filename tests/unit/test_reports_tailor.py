@@ -28,6 +28,7 @@ from boardwatch.reports.tailor import (
     run_tailor,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 from boardwatch.store.tables import (
     artifact_derivations,
@@ -36,7 +37,6 @@ from boardwatch.store.tables import (
     extractions,
     jobs,
     posting_versions,
-    postings,
 )
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.plan import MAX_BULLETS_PER_ENTRY
@@ -181,15 +181,13 @@ def _seed(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
                     title="Backend Engineer", normalized_title="backend engineer",
                     url=f"https://example.test/{slug}", locations_json=["Remote"],
                     remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                     status=status, consecutive_missing=0, content_hash=content_hash, body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
         if with_version:
             conn.execute(

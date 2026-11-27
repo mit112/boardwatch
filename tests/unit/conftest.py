@@ -10,8 +10,9 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 # Naive UTC, matching boardwatch.core.clock.utcnow() (A2).
 NOW = datetime(2026, 7, 30, 12, 0, 0)
@@ -62,8 +63,7 @@ def seeded_events() -> Callable[[Path], Seed]:
                     conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0]
                 )
                 posting_id = int(
-                    conn.execute(
-                        insert(postings).values(
+                    insert_posting(conn,
                             company_id=company_id, job_id=job_id,
                             provider_posting_id=f"p-{title}", title=title,
                             normalized_title=title, url=f"https://example.test/{title}",
@@ -74,7 +74,6 @@ def seeded_events() -> Callable[[Path], Seed]:
                             consecutive_missing=0, content_hash=f"h-{title}",
                             body_text=BODY.format(title=title),
                         )
-                    ).inserted_primary_key[0]
                 )
                 conn.execute(
                     insert(posting_versions).values(

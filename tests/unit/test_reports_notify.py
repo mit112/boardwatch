@@ -30,6 +30,7 @@ from boardwatch.rank.heuristic import profile_view_from_row
 from boardwatch.reports.notify import select_new_matches
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import get_profile, insert_run, save_eligibility, save_profile
 from boardwatch.store.tables import companies, jobs, posting_events, posting_versions, postings
 from tests.conftest import write_bundled_role_taxonomy
@@ -93,8 +94,7 @@ def _seed_posting(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
                     title=title, normalized_title=title.lower(),
                     url=f"https://example.test/{slug}",
@@ -103,7 +103,6 @@ def _seed_posting(
                     status="open", consecutive_missing=0, content_hash=f"h-{slug}",
                     body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(
@@ -344,14 +343,12 @@ def test_select_new_matches_survives_more_new_ids_than_the_bound_parameter_cap(
             "remote_policy": "unknown", "first_seen_at": NOW, "last_seen_at": NOW,
             "consecutive_missing": 0, "body_text": PLAIN_BODY, "title": "Software Engineer",
         }
-        conn.execute(insert(postings), [
-            {**common, "provider_posting_id": f"pp-{n}", "content_hash": f"h{n}",
-             "status": "closed"}
-            for n in range(filler)
-        ])
-        open_id = int(conn.execute(insert(postings).values(
+        for n in range(filler):
+            insert_posting(conn, **common, provider_posting_id=f"pp-{n}", content_hash=f"h{n}",
+                           status="closed")
+        open_id = int(insert_posting(conn,
             **common, provider_posting_id="pp-open", content_hash="h-open", status="open",
-        )).inserted_primary_key[0])
+        ))
         all_ids = [int(row[0]) for row in conn.execute(select(postings.c.id)).all()]
         assert len(all_ids) == filler + 1
         assert open_id == max(all_ids), "the open posting must land in the LAST chunk"

@@ -26,13 +26,13 @@ from sqlalchemy import Connection, Engine, insert, text
 from boardwatch.eligibility.engine import ENGINE_KIND, engine_version
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.form_question_bank_queries import TOP_QUESTIONS, form_question_bank
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     companies,
     eligibility_evaluations,
     eligibility_inputs,
     jobs,
     posting_form_questions,
-    postings,
 )
 
 T0 = datetime(2026, 11, 1, 12, 0, 0)
@@ -65,8 +65,7 @@ def _company(conn: Connection) -> int:
 def _posting(conn: Connection, company: int, key: str, status: str = "open") -> int:
     job = int(conn.execute(insert(jobs).values(created_at=T0)).inserted_primary_key[0])
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company,
                 job_id=job,
                 provider_posting_id=key,
@@ -80,7 +79,6 @@ def _posting(conn: Connection, company: int, key: str, status: str = "open") -> 
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
 
 

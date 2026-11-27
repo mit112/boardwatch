@@ -72,10 +72,6 @@ def _unsliced_slug(slug: ColumnElement[str]) -> ColumnElement[str]:
     return case((fragment_at > 0, func.substr(slug, 1, fragment_at - 1)), else_=slug)
 
 
-#: The strip set of `body_is_empty`, shared with the index that answers it.
-BODY_STRIP_SET = "char(32, 9, 10, 13, 12, 11)"
-
-
 def open_as_filter() -> ColumnElement[bool]:
     """`status = 'open'` as a filter on rows already found, never as an index key.
 
@@ -104,29 +100,15 @@ def body_is_empty() -> ColumnElement[bool]:
     stop describing the same postings — and the fail-open exists precisely so that a lane
     landing empty bodies raises the alarm instead of reading as clean noise removal.
 
-    Evaluated in SQLite, never in Python: `body_text` is the largest column in the schema and
-    the ranker reads every open posting, so the flag is computed where the row already is.
-    `show <id>` is the one caller that does not use this predicate — it reads a single posting
-    and already has the body in hand — and it repeats the strip set below verbatim for the same
-    agreement reason.
-
-    The two-arg `trim` names the strip set explicitly — SQLite's one-arg `trim` removes spaces
-    ONLY, so a body of tabs or newlines would otherwise read as non-empty.
-
-    Written with literals, not bound parameters, because SQLite only answers an expression from
-    `ix_postings_corpus` when the query's text matches the index's, and a parameter never does.
-    Without that index this predicate reads every open body in full (~200 s per statement on the
-    measured store). `char(32, 9, 10, 13, 12, 11)` is the same set: space, tab, LF, CR, FF, VT.
+    Read from `postings.body_trimmed_len` (T364), which `store.posting_blobs` writes with every
+    body, so the predicate never reads a body and `ix_postings_corpus` answers it. `show <id>`
+    reads one body and strips the same `BODY_STRIP_CHARS` in Python, for the same agreement reason.
     """
-    return func.trim(postings.c.body_text, literal_column(BODY_STRIP_SET)) == literal_column("''")
+    return postings.c.body_trimmed_len == literal_column("0")
 
 
 def open_empty_body_posting_ids(conn: Connection) -> set[int]:
-    """Open postings whose body is empty, from `ix_postings_corpus` without reading a body.
-
-    The predicate is selected, not filtered on, because SQLite answers it from the index only there:
-    in a WHERE clause the same expression reads every open row (~190 s on the measured store).
-    """
+    """Open postings whose body is empty, from `ix_postings_corpus` without reading a body."""
     rows = conn.execute(
         select(postings.c.id, body_is_empty().label("empty")).where(postings.c.status == "open")
     )
@@ -136,15 +118,13 @@ def open_empty_body_posting_ids(conn: Connection) -> set[int]:
 def jobapps_employer_url() -> ColumnElement[Any]:
     """Employer URL evidence for postings filed under job-apps' own identity (D-655).
 
-    Converged records already carry the employer URL in `postings.url`. SQLite's lazy CASE
-    keeps the corpus-wide ranker from reading `raw_json` for every other provider. Callers
-    already join `companies`; ranking and both holder reads must use the same guard.
+    Converged records already carry the employer URL in `postings.url`. The value is
+    `raw_json`'s `$.jobapps.employer_url`, kept on `postings` by `store.posting_blobs` (T364), and
+    read for job-apps rows only. Callers already join `companies`; ranking and both holder reads
+    must use the same guard.
     """
     return case(
-        (
-            companies.c.provider == "jobapps",
-            func.json_extract(postings.c.raw_json, "$.jobapps.employer_url"),
-        ),
+        (companies.c.provider == "jobapps", postings.c.jobapps_employer_url),
         else_=None,
     )
 

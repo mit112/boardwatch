@@ -22,6 +22,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.llm.client import LaneDeathReason, LLMLaneDeadError
 from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store.db import DB_FILENAME, ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import RUN_FAILED, RUN_OK
 from boardwatch.store.tables import (
     artifacts,
@@ -29,7 +30,6 @@ from boardwatch.store.tables import (
     extractions,
     jobs,
     posting_versions,
-    postings,
     runs,
 )
 from tests.conftest import write_test_resume_template
@@ -78,8 +78,7 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id="pp-acme",
                     title="Backend Engineer", normalized_title="backend engineer",
                     url="https://example.test/acme", locations_json=["Remote"],
@@ -87,7 +86,6 @@ def _seed_open_posting(env: Env, *, skills: tuple[str, ...] = ("Python", "JavaSc
                     status="open", consecutive_missing=0, content_hash="h1",
                     body_text="Python JavaScript backend services",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

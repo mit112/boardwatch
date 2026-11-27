@@ -33,6 +33,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import PipelineSummary, run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from tests.conftest import write_test_resume_template
 
 runner_input = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
@@ -75,8 +76,7 @@ def _seed_posting(
             conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
         )
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, provider_posting_id=f"p-{n}", job_id=job_id,
                     title="Backend Engineer", normalized_title="backend engineer",
                     url=f"https://example.test/j/{n}",
@@ -84,7 +84,6 @@ def _seed_posting(
                     first_seen_at=now, last_seen_at=now, status="open",
                     consecutive_missing=0, content_hash=content_hash(BODY), body_text=BODY,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(

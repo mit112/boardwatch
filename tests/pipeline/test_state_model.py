@@ -14,6 +14,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.scan.apply import CLOSE_AFTER_MISSES, apply_board
 from boardwatch.store import tables
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 from boardwatch.store.queries import get_validators
 
 V1 = ("W/\"v1\"", "Mon, 01 Jun 2026 00:00:00 GMT")
@@ -47,7 +48,7 @@ def _scan_statuses(engine: Engine) -> list[str]:
 def _posting_by_pid(engine: Engine, pid: str) -> Any:
     with engine.connect() as conn:
         return conn.execute(
-            select(tables.postings).where(tables.postings.c.provider_posting_id == pid)
+            select(tables.postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(tables.postings.c.provider_posting_id == pid)
         ).one()
 
 
@@ -256,7 +257,7 @@ def test_f_identical_bodies_two_provider_ids_stay_two_postings(
     twin = case.clone_with_id(base, 987654321)
     apply_board(engine, case.snapshot_for([base, twin]), company_id, run_id)
     with engine.connect() as conn:
-        rows = conn.execute(select(tables.postings)).all()
+        rows = conn.execute(select(tables.postings, posting_body().label("body_text"), posting_raw().label("raw_json"))).all()
     assert len(rows) == 2  # D10: identity never merges on content
     assert rows[0].content_hash == rows[1].content_hash
     assert _event_kinds(engine) == ["new", "new"]

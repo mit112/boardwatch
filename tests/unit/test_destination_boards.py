@@ -25,7 +25,8 @@ from boardwatch.lanes.destination_boards import (
 )
 from boardwatch.registry.validate import CompanyEntry
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import application_destinations, companies, jobs, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import application_destinations, companies, jobs
 
 TODAY = date(2026, 11, 10)
 NOW = datetime(2026, 11, 10, 12, 0, 0)
@@ -173,8 +174,7 @@ def _company(conn: Connection, name: str, provider: str, slug: str, *, watched: 
 def _destination(conn: Connection, company_id: int, url: str, key: str) -> None:
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -190,7 +190,6 @@ def _destination(conn: Connection, company_id: int, url: str, key: str) -> None:
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
     conn.execute(
         insert(application_destinations).values(

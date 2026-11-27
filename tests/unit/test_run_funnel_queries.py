@@ -20,6 +20,7 @@ from boardwatch.core.clock import utcnow
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import RequirementItem, record_evaluation
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.run_funnel_queries import (
     count_applied_for_postings,
     count_by_source,
@@ -71,11 +72,11 @@ def _posting(
         name="Acme", provider="greenhouse", slug=f"board-{slug}", source=source, watched=True,
     )).inserted_primary_key[0])
     jid = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    return int(conn.execute(insert(postings).values(
+    return int(insert_posting(conn,
         company_id=cid, job_id=jid, provider_posting_id=slug, title="Eng",
         normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status=status,
         consecutive_missing=0, content_hash=slug, body_text=body_text,
-    )).inserted_primary_key[0])
+    ))
 
 
 def _version(conn: Connection, posting_id: int, tag: str) -> int:
@@ -439,11 +440,11 @@ def _posting_on(
 ) -> int:
     """A posting on an EXISTING board, so several can share one company row."""
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    return int(conn.execute(insert(postings).values(
+    return int(insert_posting(conn,
         company_id=company_id, job_id=job_id, provider_posting_id=tag, title="Eng",
         normalized_title="eng", first_seen_at=NOW, last_seen_at=NOW, status=status,
         consecutive_missing=0, content_hash=tag, body_text=body_text,
-    )).inserted_primary_key[0])
+    ))
 
 
 def _by_source(engine: Engine, run_id: int, posting_ids: list[int] | None = None):

@@ -16,8 +16,9 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.eligibility.facts import Facts
 from boardwatch.store.db import FAST_SCHEMA_ENV, ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import companies, jobs, posting_versions, runs
 from boardwatch.tailor.render.latex import resolve_template
 
 # ---------------------------------------------------------------------------------------
@@ -370,8 +371,7 @@ def seed_dedup(dedup_env: Path) -> Callable[..., DedupSeed]:
                     conn.execute(insert(jobs).values(created_at=P6_NOW)).inserted_primary_key[0]
                 )
                 posting_id = int(
-                    conn.execute(
-                        insert(postings).values(
+                    insert_posting(conn,
                             company_id=company_id,
                             job_id=job_id,
                             provider_posting_id=f"pp-{offset}",
@@ -392,7 +392,6 @@ def seed_dedup(dedup_env: Path) -> Callable[..., DedupSeed]:
                             content_hash=content_hash,
                             body_text=text,
                         )
-                    ).inserted_primary_key[0]
                 )
                 conn.execute(
                     insert(posting_versions).values(

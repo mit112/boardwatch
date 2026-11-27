@@ -15,8 +15,9 @@ from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run, save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 runner = CliRunner()
 
@@ -139,8 +140,7 @@ def _seed_two_with_new_events(data_dir: Path) -> tuple[int, int]:
                 conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0]
             )
             posting_id = int(
-                conn.execute(
-                    insert(postings).values(
+                insert_posting(conn,
                         company_id=company_id, job_id=job_id,
                         provider_posting_id=f"pp-{title.lower()}", title=title,
                         normalized_title=title.lower(), url=f"https://example.test/{title.lower()}",
@@ -149,7 +149,6 @@ def _seed_two_with_new_events(data_dir: Path) -> tuple[int, int]:
                         status="open", consecutive_missing=0, content_hash=f"hh-{title.lower()}",
                         body_text=body,
                     )
-                ).inserted_primary_key[0]
             )
             conn.execute(
                 insert(posting_versions).values(

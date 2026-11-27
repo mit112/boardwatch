@@ -7,12 +7,12 @@ from sqlalchemy import insert, text
 from boardwatch.core.clock import utcnow
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import _get_or_create_input
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import (
     companies,
     eligibility_inputs,
     jobs,
     posting_versions,
-    postings,
 )
 
 #: What the JSON column type writes for these dicts (json.dumps defaults), spelled out.
@@ -28,11 +28,11 @@ def _version(conn) -> int:  # type: ignore[no-untyped-def]
         name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
     )).inserted_primary_key[0])
     job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-    posting_id = int(conn.execute(insert(postings).values(
+    posting_id = int(insert_posting(conn,
         company_id=company_id, job_id=job_id, provider_posting_id="p-1", title="Eng",
         normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
         consecutive_missing=0, content_hash="h1", body_text="b",
-    )).inserted_primary_key[0])
+    ))
     return int(conn.execute(insert(posting_versions).values(
         posting_id=posting_id, content_hash="h1", body_text="b", captured_at=now,
         run_id=None, capture_reason="new",

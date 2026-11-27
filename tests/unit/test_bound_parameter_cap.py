@@ -50,6 +50,7 @@ from boardwatch.store.identity_queries import (
 )
 from boardwatch.store.ledger_queries import load_dispositions, record_disposition, reopen_jobs
 from boardwatch.store.param_chunks import ID_CHUNK_SIZE
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.quarantine_queries import drain_quarantine, live_quarantine
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.regroup import apply_merges, job_anchors
@@ -57,7 +58,6 @@ from boardwatch.store.tables import (
     companies,
     jobs,
     posting_versions,
-    postings,
     quarantined_bodies,
 )
 
@@ -144,11 +144,11 @@ def seeded(db: Engine) -> tuple[int, int]:
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        pid = int(conn.execute(insert(postings).values(
+        pid = int(insert_posting(conn,
             company_id=cid, job_id=jid, provider_posting_id="p-1", title="Eng",
             normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
             consecutive_missing=0, content_hash="h1", body_text=JD,
-        )).inserted_primary_key[0])
+        ))
         vid = int(conn.execute(insert(posting_versions).values(
             posting_id=pid, content_hash="h1", body_text=JD,
             captured_at=now, run_id=None, capture_reason="new",
@@ -292,11 +292,11 @@ def two_evaluations(db: Engine, catalog) -> tuple[int, int]:
         )).inserted_primary_key[0])
         for n in (1, 2):
             jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-            pid = int(conn.execute(insert(postings).values(
+            pid = int(insert_posting(conn,
                 company_id=cid, job_id=jid, provider_posting_id=f"pp-{n}", title="Eng",
                 normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
                 consecutive_missing=0, content_hash=f"hh{n}", body_text=JD,
-            )).inserted_primary_key[0])
+            ))
             vid = int(conn.execute(insert(posting_versions).values(
                 posting_id=pid, content_hash=f"hh{n}", body_text=JD,
                 captured_at=now, run_id=None, capture_reason="new",
@@ -385,11 +385,11 @@ def two_postings(db: Engine) -> tuple[int, int, int, int, int]:
         made: list[int] = []
         for n in (1, 2):
             jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-            pid = int(conn.execute(insert(postings).values(
+            pid = int(insert_posting(conn,
                 company_id=cid, job_id=jid, provider_posting_id=f"drain-{n}", title="Eng",
                 normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
                 consecutive_missing=0, content_hash=f"dh{n}", body_text=JD,
-            )).inserted_primary_key[0])
+            ))
             made += [jid, pid]
     return (survivor, made[0], made[1], made[2], made[3])
 

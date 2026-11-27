@@ -19,6 +19,7 @@ from boardwatch.cli.app import app
 from boardwatch.core.normalize import content_hash
 from boardwatch.core.posting_identity import IdentityInputs, compute_identities
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting, posting_body
 from boardwatch.store.tables import (
     companies,
     jobs,
@@ -58,8 +59,7 @@ def _seed(data_dir: Path, *, status: str = "open", with_detail: bool = True) -> 
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id="sr-1",
                     title="Software Engineer", normalized_title="software engineer",
                     url="https://jobs.smartrecruiters.com/Acme/1",
@@ -72,7 +72,6 @@ def _seed(data_dir: Path, *, status: str = "open", with_detail: bool = True) -> 
                     # against a drain that called `json.loads` and crashed on the live store.
                     raw_json=raw if with_detail else {"listed": {}},
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(
@@ -91,7 +90,7 @@ def test_apply_converts_body_hash_version_and_identities_together(tmp_path: Path
 
     with engine.begin() as conn:
         body, stored_hash = conn.execute(
-            select(postings.c.body_text, postings.c.content_hash)
+            select(posting_body().label("body_text"), postings.c.content_hash)
             .where(postings.c.id == posting_id)
         ).one()
         # The body is text now, and the words survived in order.
@@ -163,7 +162,7 @@ def test_without_apply_nothing_is_written(tmp_path: Path) -> None:
 
     with engine.begin() as conn:
         body = conn.execute(
-            select(postings.c.body_text).where(postings.c.id == posting_id)
+            select(posting_body().label("body_text")).where(postings.c.id == posting_id)
         ).scalar_one()
         assert body == old_body, "reporting mode must not write"
         assert conn.execute(
@@ -194,7 +193,7 @@ def test_closed_postings_are_repaired_too(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     with engine.begin() as conn:
         body = conn.execute(
-            select(postings.c.body_text).where(postings.c.id == posting_id)
+            select(posting_body().label("body_text")).where(postings.c.id == posting_id)
         ).scalar_one()
     assert "<p>" not in body, "a closed posting reopens without ever being re-fetched"
     assert body != old_body
@@ -208,7 +207,7 @@ def test_a_posting_without_a_stored_payload_is_left_alone(tmp_path: Path) -> Non
     assert "1 without a usable stored payload" in result.output
     with engine.begin() as conn:
         body = conn.execute(
-            select(postings.c.body_text).where(postings.c.id == posting_id)
+            select(posting_body().label("body_text")).where(postings.c.id == posting_id)
         ).scalar_one()
     assert body == old_body, "an empty body would collide on content_hash('')"
 

@@ -5,8 +5,9 @@ from sqlalchemy import Engine, insert
 
 from boardwatch.core.clock import utcnow
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.stats_queries import count_open_postings, count_tracked_submitted
-from boardwatch.store.tables import applications, companies, jobs, postings
+from boardwatch.store.tables import applications, companies, jobs
 
 NOW = utcnow()
 
@@ -26,13 +27,13 @@ def _company(conn) -> int:
 
 def _posting(conn, company_id: int, slug: str, status: str) -> int:
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    return int(conn.execute(insert(postings).values(
+    return int(insert_posting(conn,
         company_id=company_id, job_id=job_id, provider_posting_id=slug,
         title=slug, normalized_title=slug, url=f"https://example.test/{slug}",
         locations_json=["Remote"], remote_policy="remote", posted_at=NOW,
         first_seen_at=NOW, last_seen_at=NOW, status=status, consecutive_missing=0,
         content_hash=slug, body_text="body",
-    )).inserted_primary_key[0])
+    ))
 
 
 def test_count_open_postings_counts_only_open(engine: Engine) -> None:

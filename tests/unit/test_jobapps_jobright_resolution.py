@@ -18,6 +18,7 @@ from boardwatch.core.politeness import Fetcher
 from boardwatch.core.settings import Settings
 from boardwatch.lanes.base import LaneResult
 from boardwatch.lanes.jobapps import JobAppsLane
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 
 JOBRIGHT_ID = "6a95ed6fcabc9f6703e1b085"
 JOBRIGHT_URL = f"https://jobright.ai/jobs/info/{JOBRIGHT_ID}"
@@ -242,6 +243,6 @@ def test_repeat_ingestion_updates_and_keeps_resolution_evidence(tmp_path: Path) 
         result, _ = _collect(root, tmp_path, stored_own={"pst_cboe"})
         apply_board(engine, result.snapshots[0].snapshot, company_id, run_id, scan_kind="lane")
         with engine.connect() as conn:
-            row = conn.execute(select(postings)).one()
+            row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json"))).one()
         assert row.raw_json["jobapps"].get("employer_url") == employer_url
         assert (row.id, row.job_id, row.url) == tuple(before)

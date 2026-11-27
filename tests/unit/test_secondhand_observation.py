@@ -53,6 +53,7 @@ from boardwatch.scan.apply import (
 )
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 from boardwatch.store.queries import (
     current_posting_versions,
     get_watched_companies,
@@ -156,7 +157,7 @@ def _apply(engine: Engine, company_id: int, raw: RawPosting, *, status: str = "p
 
 def _posting(engine: Engine) -> Any:
     with engine.connect() as conn:
-        return conn.execute(select(tables.postings)).one()
+        return conn.execute(select(tables.postings, posting_body().label("body_text"), posting_raw().label("raw_json"))).one()
 
 
 def _age_the_row(engine: Engine) -> datetime:

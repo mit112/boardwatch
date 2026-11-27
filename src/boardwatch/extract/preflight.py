@@ -24,7 +24,7 @@ from boardwatch.pipeline.progress import StageProgress
 from boardwatch.store.db import write_connection
 from boardwatch.store.param_chunks import id_chunks
 from boardwatch.store.queries import first_seen_since_clause
-from boardwatch.store.tables import extractions, postings, profile
+from boardwatch.store.tables import extractions, posting_blobs, postings, profile
 
 BATCH_SIZE = 200
 
@@ -151,9 +151,11 @@ def _open_postings_missing_extraction(
         bodies: dict[int, str] = {}
         for chunk in id_chunks([post_id for post_id, _ in due]):
             bodies.update(
-                (int(r.id), str(r.body_text))
+                (int(r.posting_id), str(r.body))
                 for r in conn.execute(
-                    select(postings.c.id, postings.c.body_text).where(postings.c.id.in_(chunk))
+                    select(posting_blobs.c.posting_id, posting_blobs.c.body).where(
+                        posting_blobs.c.posting_id.in_(chunk)
+                    )
                 )
             )
     return [(post_id, body_hash, bodies[post_id]) for post_id, body_hash in due]

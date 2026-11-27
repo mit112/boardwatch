@@ -49,6 +49,7 @@ from boardwatch.rank.value_model import (
     train,
 )
 from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.queries import current_posting_versions, first_seen_since_clause, get_profile
 from boardwatch.store.tables import (
     companies,
@@ -441,7 +442,7 @@ class ValueShadow:
         stmt = (
             select(
                 postings.c.company_id, companies.c.provider, companies.c.slug, postings.c.title,
-                companies.c.name, func.substr(postings.c.body_text, 1, BODY_CHARS).label("body"),
+                companies.c.name, posting_body().label("body"),
             )
             .join(companies, postings.c.company_id == companies.c.id)
             .where(first_seen_since_clause(started))
@@ -455,7 +456,9 @@ class ValueShadow:
                 complete = False
                 break
             p = model.score(
-                feature_indices(Document(row.title or "", row.name or "", row.provider, row.body))
+                feature_indices(
+                    Document(row.title or "", row.name or "", row.provider, row.body[:BODY_CHARS])
+                )
             )
             board = boards[int(row.company_id)]
             if not board:

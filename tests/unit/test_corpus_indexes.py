@@ -20,6 +20,7 @@ from boardwatch.eligibility.read import _REVERSE_MAP_SCAN_ABOVE, _posting_by_ver
 from boardwatch.extract.preflight import _open_postings_missing_extraction
 from boardwatch.pipeline.death_probe import unreachable_by_the_scanner
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import open_empty_body_posting_ids
 from boardwatch.store.run_funnel_queries import (
     _colliding_open_posting_ids,
@@ -129,14 +130,12 @@ def test_the_reverse_map_returns_only_the_ids_asked_for_on_both_paths(
         ).inserted_primary_key[0]
         for version_id, posting_id in ((1, 10), (2, 20), (3, 30)):
             job_id = conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0]
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     id=posting_id, company_id=company_id, provider_posting_id=str(posting_id),
                     title="t", normalized_title="t", remote_policy="unknown", first_seen_at=now,
                     last_seen_at=now, status="open", consecutive_missing=0, content_hash="h",
                     body_text="b", job_id=job_id,
                 )
-            )
             conn.execute(
                 insert(posting_versions).values(
                     id=version_id, posting_id=posting_id, content_hash="h", body_text="b",

@@ -22,6 +22,7 @@ from boardwatch.core.normalize import normalize_title
 from boardwatch.core.settings import load_settings
 from boardwatch.scan.coordinator import scan_lease
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting, posting_body, posting_raw
 from boardwatch.store.tables import app_state, companies, jobs, posting_events, postings, runs
 
 NOW = datetime(2026, 10, 1, 12, 0, 0)
@@ -50,8 +51,7 @@ def _seed(data_dir: Path) -> tuple[Engine, int, int, int]:
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
             ids.append(
                 int(
-                    conn.execute(
-                        insert(postings).values(
+                    insert_posting(conn,
                             company_id=company_id, job_id=job_id, provider_posting_id=f"li{n}",
                             title="Engineer", normalized_title=normalize_title("Engineer"),
                             url=f"https://www.linkedin.com/jobs/view/{n}", locations_json=[],
@@ -60,7 +60,6 @@ def _seed(data_dir: Path) -> tuple[Engine, int, int, int]:
                             consecutive_missing=0, death_strikes=0, content_hash="h",
                             body_text="Engineer", raw_json={},
                         )
-                    ).inserted_primary_key[0]
                 )
             )
         daily = int(
@@ -102,7 +101,7 @@ def test_apply_closes_in_the_native_shape_under_a_run_of_its_own(tmp_path: Path)
 
     assert result.exit_code == 0, result.output
     with engine.connect() as conn:
-        row = conn.execute(select(postings).where(postings.c.id == open_id)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == open_id)).one()
         assert (row.status, row.closed_at is not None) == ("closed", True)
         events = conn.execute(select(posting_events)).all()
         # Exactly one event: the already-closed posting is not re-stamped.
@@ -147,7 +146,7 @@ def test_reopen_is_the_undo_and_drops_the_evidence(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert f"{open_id}\treopened" in result.output
     with engine.connect() as conn:
-        row = conn.execute(select(postings).where(postings.c.id == open_id)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == open_id)).one()
         assert (row.status, row.closed_at) == ("open", None)
         kinds = [e.kind for e in conn.execute(select(posting_events).order_by(posting_events.c.id))]
         assert kinds == ["closed", "reopened"]

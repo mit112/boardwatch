@@ -42,6 +42,7 @@ from boardwatch.eligibility.read import current_verdicts
 from boardwatch.store import company_hiring_queries as chq
 from boardwatch.store.company_hiring_queries import company_hiring
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import current_posting_version_ids
 from boardwatch.store.tables import (
     companies,
@@ -49,7 +50,6 @@ from boardwatch.store.tables import (
     eligibility_inputs,
     jobs,
     posting_versions,
-    postings,
     runs,
 )
 
@@ -156,8 +156,7 @@ def _posting(
     if job is None:
         job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company,
                 job_id=job,
                 provider_posting_id=key,
@@ -171,7 +170,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
     if new is not None:
         _event(conn, posting, new, run)

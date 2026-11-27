@@ -17,6 +17,7 @@ from sqlalchemy import update
 from boardwatch.core.dedup import resolve_duplicates
 from boardwatch.reports.run_funnel import _dedup_stage
 from boardwatch.store.identity_queries import load_identities, load_identity_inputs
+from boardwatch.store.posting_blobs import update_posting
 from boardwatch.store.run_funnel_queries import (
     _colliding_open_posting_ids,
     sweep_duplicates,
@@ -89,11 +90,9 @@ def test_the_audit_only_bound_is_reported_beside_the_drop_and_never_inside_it(
     """
     seed = seed_dedup(count=2, identical=True)
     with seed.engine.begin() as conn:
-        conn.execute(
-            update(postings)
-            .where(postings.c.id == seed.posting_ids[0])
-            .values(body_text="A completely different body.", content_hash="hh-different")
-        )
+        update_posting(conn, seed.posting_ids[0], {
+            "body_text": "A completely different body.", "content_hash": "hh-different",
+        })
     backfill_identities(seed)
 
     stage = _dedup_stage(_sweep(seed))

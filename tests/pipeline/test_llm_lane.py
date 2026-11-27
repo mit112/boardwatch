@@ -26,6 +26,7 @@ from boardwatch.llm.run_client import RunScopedClient
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.eligibility import get_evaluations, get_requirements
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import RUN_FAILED, RUN_OK
 
 CLI_INIT_INPUT = "3\nacme\nBackend engineer: Python, Go, PostgreSQL.\n\n\n\nn\nn\nsoftware\n"
@@ -73,15 +74,13 @@ def _seed_posting_version(engine: Engine, body: str, *, slug: str = "acme-llm") 
         )
         job_id = int(conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, provider_posting_id=f"p-{slug}", title="Backend Engineer",
                     normalized_title="backend engineer", url="https://example.test/j",
                     locations_json=["Remote"], remote_policy="remote", first_seen_at=now,
                     last_seen_at=now, status="open", consecutive_missing=0,
                     content_hash=f"h-{slug}", body_text=body, job_id=job_id,
                 )
-            ).inserted_primary_key[0]
         )
         pv_id = int(
             conn.execute(

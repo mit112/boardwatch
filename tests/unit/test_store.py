@@ -18,6 +18,7 @@ from boardwatch.store.db import (
     schema_revision,
     write_connection,
 )
+from boardwatch.store.posting_blobs import insert_posting
 
 
 @pytest.fixture()
@@ -44,8 +45,7 @@ def _seed_posting(engine: Engine, company_id: int) -> int:
                 insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
             ).inserted_primary_key[0]
         )
-        result = conn.execute(
-            insert(tables.postings).values(
+        return insert_posting(conn,
                 company_id=company_id,
                 job_id=job_id,
                 provider_posting_id="1",
@@ -59,8 +59,6 @@ def _seed_posting(engine: Engine, company_id: int) -> int:
                 content_hash="h1",
                 body_text="b",
             )
-        )
-        return int(result.inserted_primary_key[0])
 
 
 def test_pragmas_active_on_new_connections(engine: Engine) -> None:
@@ -146,7 +144,7 @@ def test_named_check_constraints_reject_out_of_enum(
             "last_seen_at": datetime(2026, 1, 1),
             "consecutive_missing": 0,
             "content_hash": "h",
-            "body_text": "b",
+            "body_trimmed_len": 1,
         },
         "board_scans": {
             "run_id": run_id,
@@ -194,8 +192,7 @@ def test_posting_events_id_is_monotonic_autoincrement(engine: Engine) -> None:
                     insert(tables.jobs).values(created_at=datetime(2026, 1, 1))
                 ).inserted_primary_key[0]
             )
-            r = conn.execute(
-                insert(tables.postings).values(
+            return insert_posting(conn,
                     company_id=cid,
                     job_id=job_id,
                     provider_posting_id=pid,
@@ -207,8 +204,6 @@ def test_posting_events_id_is_monotonic_autoincrement(engine: Engine) -> None:
                     content_hash="h",
                     body_text="b",
                 )
-            )
-            return int(r.inserted_primary_key[0])
 
     pid1 = _make("p1")
     pid2 = _make("p2")

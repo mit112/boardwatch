@@ -100,6 +100,7 @@ from boardwatch.store.delivery_queries import (
     lane_decision,
 )
 from boardwatch.store.form_question_queries import cached_form_questions
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.quarantine_queries import record_quarantine
 from boardwatch.store.queries import (
     current_posting_versions,
@@ -375,8 +376,7 @@ def _deliver(
         else job_id
     )
     posting_id = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -394,7 +394,6 @@ def _deliver(
                 content_hash=f"hash-{key}",
                 body_text=body,
             )
-        ).inserted_primary_key[0]
     )
     version_id = int(
         conn.execute(

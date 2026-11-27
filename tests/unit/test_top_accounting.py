@@ -37,6 +37,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import current_posting_versions, save_profile
 from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
 from tests.conftest import write_bundled_role_taxonomy
@@ -85,7 +86,7 @@ def _seed(data_dir: Path, titles: list[str], *, bodies: list[str] | None = None)
         for offset, title in enumerate(titles):
             body = bodies[offset] if bodies else "b"
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-            posting_id = int(conn.execute(insert(postings).values(
+            posting_id = int(insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
                 title=title, normalized_title=title.casefold(),
                 locations_json=["Remote"], remote_policy="remote",
@@ -94,7 +95,7 @@ def _seed(data_dir: Path, titles: list[str], *, bodies: list[str] | None = None)
                 posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=f"hh-{offset}",
                 body_text=body,
-            )).inserted_primary_key[0])
+            ))
             conn.execute(insert(posting_versions).values(
                 posting_id=posting_id, content_hash=f"hh-{offset}", body_text=body,
                 captured_at=NOW, capture_reason="new",
@@ -261,8 +262,7 @@ def _posting_with_job(
     with engine.begin() as conn:
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{tag}",
                     title="Backend Engineer", normalized_title="backend engineer",
                     locations_json=["Remote"], remote_policy="remote",
@@ -270,7 +270,6 @@ def _posting_with_job(
                     status="open", consecutive_missing=0, content_hash=content_hash,
                     body_text="We are hiring a backend engineer.",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

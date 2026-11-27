@@ -37,6 +37,7 @@ from boardwatch.rank.leveling import field_tier, load_leveling, resolve_schemes
 from boardwatch.rank.role_gate import taxonomy_role_verdict, zero_signal_verdict
 from boardwatch.rank.role_taxonomy import declared_field, load_role_taxonomy
 from boardwatch.rank.seniority_gate import TargetBand, seniority_verdict
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.queries import get_profile
 from boardwatch.store.tables import companies, extractions, postings
 
@@ -109,6 +110,7 @@ def show(
         row = conn.execute(
             select(
                 postings,
+                posting_body().label("body_text"),
                 companies.c.name.label("company_name"),
                 companies.c.provider,
                 companies.c.slug,

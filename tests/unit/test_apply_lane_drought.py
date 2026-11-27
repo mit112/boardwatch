@@ -42,8 +42,9 @@ from boardwatch.notify.apply_lane_drought import (
     check_apply_lane_drought,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import RUN_KIND_PREFIX, RUN_OK, save_profile, set_state
-from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import artifacts, companies, jobs, posting_versions, runs
 from tests.conftest import as_engine_reads, write_bundled_role_taxonomy
 
 NOW = datetime(2026, 8, 31, 4, 0, 0)
@@ -110,8 +111,7 @@ def _lead(
     )
     job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     posting_id = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id=key,
                 title="Software Engineer", normalized_title="software engineer",
                 url="https://boards.test/apply", locations_json=locations,
@@ -120,7 +120,6 @@ def _lead(
                 closed_at=NOW if status == "closed" else None,
                 consecutive_missing=0, content_hash=f"hash-{key}", body_text=body,
             )
-        ).inserted_primary_key[0]
     )
     version_id = int(
         conn.execute(

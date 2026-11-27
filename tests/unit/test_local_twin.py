@@ -18,6 +18,7 @@ from boardwatch.store.application_destinations import (
     record_application_destination,
 )
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import application_destinations, companies, jobs, postings
 
 NOW = datetime(2026, 11, 10, 12, 0, 0)
@@ -60,8 +61,7 @@ def _posting(
 ) -> int:
     job = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
     return int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job,
                 provider_posting_id=key,
@@ -78,7 +78,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
 
 

@@ -47,6 +47,7 @@ from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.delivery_queries import delivered_unapplied, standing_lead_job_ids
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 from boardwatch.store.run_funnel_queries import TAILORED_KIND
 
@@ -143,8 +144,7 @@ def _posting(
                 conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
             )
         return int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id,
                     job_id=job_id,
                     provider_posting_id=pid,
@@ -163,7 +163,6 @@ def _posting(
                     content_hash=content_hash(BODY),
                     body_text=BODY,
                 )
-            ).inserted_primary_key[0]
         )
 
 

@@ -34,6 +34,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.pipeline.runner import run_pipeline
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from tests.conftest import write_test_resume_template
 from tests.pipeline.test_pipeline_run import INIT_INPUT, _cli
 
@@ -187,14 +188,14 @@ def _seed(data_dir: Path, *, slug: str = "acme-gate1", body: str = BODY) -> int:
             name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0])
-        posting_id = int(conn.execute(insert(tables.postings).values(
+        posting_id = int(insert_posting(conn,
             company_id=company_id, provider_posting_id=f"p-{slug}",
             title="Backend Engineer", normalized_title="backend engineer",
             url="https://example.test/j", locations_json=["Remote"],
             remote_policy="remote", first_seen_at=now, last_seen_at=now,
             status="open", consecutive_missing=0, content_hash=f"h-{slug}",
             body_text=body, job_id=job_id,
-        )).inserted_primary_key[0])
+        ))
         conn.execute(insert(tables.posting_versions).values(
             posting_id=posting_id, content_hash=f"h-{slug}", body_text=body,
             captured_at=now, capture_reason="new",

@@ -15,6 +15,7 @@ from boardwatch.store.identity_queries import (
     load_job_memberships,
 )
 from boardwatch.store.ledger_queries import record_disposition, reopen_jobs
+from boardwatch.store.posting_blobs import update_posting
 from boardwatch.store.regroup import apply_merges, job_anchors
 from boardwatch.store.tables import posting_identities, postings
 
@@ -49,11 +50,7 @@ def _memberships(seed, now: datetime = NOW):
 def _revise_body(seed, posting_id: int, body: str, content_hash: str) -> None:
     """A real revision: the body changed, so `content_hash` moved with it."""
     with seed.engine.begin() as conn:
-        conn.execute(
-            update(postings)
-            .where(postings.c.id == posting_id)
-            .values(body_text=body, content_hash=content_hash)
-        )
+        update_posting(conn, posting_id, {"body_text": body, "content_hash": content_hash})
 
 
 def _retitle(seed, posting_id: int, title: str) -> None:

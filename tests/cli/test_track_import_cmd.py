@@ -17,7 +17,8 @@ from typer.testing import CliRunner
 from boardwatch.cli.app import app
 from boardwatch.core.clock import utcnow
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import applications, companies, jobs, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import applications, companies, jobs
 
 NOW = utcnow()
 URL = "https://boards.example.test/acme/1"
@@ -35,15 +36,13 @@ def _seed(data_dir: Path) -> None:
             ).inserted_primary_key[0]
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id="a",
                 title="Software Engineer", normalized_title="software engineer", url=URL,
                 locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW,
                 last_seen_at=NOW, status="open", consecutive_missing=0, content_hash="a",
                 body_text="body a",
             )
-        )
 
 
 def _seed_twin(data_dir: Path) -> None:
@@ -54,15 +53,13 @@ def _seed_twin(data_dir: Path) -> None:
             conn.execute(select(companies.c.id).where(companies.c.name == "Acme")).scalar_one()
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id, job_id=job_id, provider_posting_id="b",
                 title="Software Engineer", normalized_title="software engineer", url=None,
                 locations_json=["Remote"], remote_policy="remote", first_seen_at=NOW,
                 last_seen_at=NOW, status="open", consecutive_missing=0, content_hash="b",
                 body_text="body b",
             )
-        )
 
 
 def _applications(data_dir: Path) -> int:

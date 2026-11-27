@@ -21,6 +21,7 @@ from boardwatch.core.ledger import is_live
 from boardwatch.core.near_duplicate import PostingEvidence
 from boardwatch.core.posting_identity import IdentityInputs, PostingIdentity
 from boardwatch.store.param_chunks import id_chunks
+from boardwatch.store.posting_blobs import posting_body
 from boardwatch.store.tables import (
     applications,
     companies,
@@ -59,7 +60,7 @@ def load_identity_inputs(
         postings.c.title,
         postings.c.locations_json,
         postings.c.content_hash,
-        postings.c.body_text,
+        posting_body().label("body_text"),
         postings.c.url,
         postings.c.first_seen_at,
     ).join(companies, postings.c.company_id == companies.c.id)
@@ -487,7 +488,7 @@ def load_near_duplicate_evidence(
     stmt = select(
         postings.c.id,
         postings.c.url,
-        postings.c.body_text,
+        posting_body().label("body_text"),
         postings.c.salary_min,
         postings.c.salary_max,
         postings.c.salary_currency,

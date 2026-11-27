@@ -34,6 +34,7 @@ from boardwatch.core.normalize import content_hash
 from boardwatch.lanes.jobapps import unescape_markdown
 from boardwatch.store.body_revision import record_body_revision
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting, posting_body
 from boardwatch.store.queries import current_posting_versions
 from boardwatch.store.tables import companies, jobs, posting_versions, postings
 
@@ -72,8 +73,7 @@ def _seed(data_dir: Path) -> tuple[Engine, int, int]:
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id="pst_abc",
                     title="Software Engineer", normalized_title="software engineer",
                     url="https://example.com/jobs/1", locations_json=["Durham, NC"],
@@ -81,7 +81,6 @@ def _seed(data_dir: Path) -> tuple[Engine, int, int]:
                     status="open", consecutive_missing=0,
                     content_hash=content_hash(HARVESTED), body_text=HARVESTED,
                 )
-            ).inserted_primary_key[0]
         )
         version_id = int(
             conn.execute(
@@ -175,7 +174,7 @@ def test_the_postings_row_and_the_new_version_cannot_disagree_on_the_hash(tmp_pa
 
     with engine.connect() as conn:
         row = conn.execute(
-            select(postings.c.body_text, postings.c.content_hash).where(
+            select(posting_body().label("body_text"), postings.c.content_hash).where(
                 postings.c.id == posting_id
             )
         ).one()

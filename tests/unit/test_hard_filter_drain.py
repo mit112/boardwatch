@@ -103,8 +103,9 @@ from boardwatch.cli.top_cmd import rank_open_postings  # noqa: E402
 from boardwatch.core.clock import utcnow  # noqa: E402
 from boardwatch.core.settings import Settings  # noqa: E402
 from boardwatch.store.db import ensure_schema, get_engine  # noqa: E402
+from boardwatch.store.posting_blobs import insert_posting  # noqa: E402
 from boardwatch.store.queries import save_profile  # noqa: E402
-from boardwatch.store.tables import companies, jobs, posting_versions, postings  # noqa: E402
+from boardwatch.store.tables import companies, jobs, posting_versions  # noqa: E402
 
 NOW = utcnow()
 
@@ -155,14 +156,14 @@ def seed(engine: Engine) -> Callable[[list[str]], None]:
                 job_id = int(
                     conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0]
                 )
-                posting_id = int(conn.execute(insert(postings).values(
+                posting_id = int(insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{offset}",
                     title=title, normalized_title=title.casefold(),
                     locations_json=["Remote"], remote_policy="remote",
                     posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
                     status="open", consecutive_missing=0, content_hash=f"hh-{offset}",
                     body_text="b",
-                )).inserted_primary_key[0])
+                ))
                 conn.execute(insert(posting_versions).values(
                     posting_id=posting_id, content_hash=f"hh-{offset}", body_text="b",
                     captured_at=NOW, capture_reason="new",

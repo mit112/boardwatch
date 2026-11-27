@@ -15,8 +15,9 @@ from sqlalchemy import Connection, Engine, insert
 from boardwatch.core.clock import utcnow
 from boardwatch.store.artifacts import record_artifact
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.reconcile_queries import db_counts_for_run, tailored_file_rows
-from boardwatch.store.tables import companies, jobs, posting_versions, postings, runs
+from boardwatch.store.tables import companies, jobs, posting_versions, runs
 
 NOW = utcnow()
 
@@ -39,11 +40,11 @@ def _version(conn: Connection, tag: str) -> int:
         name="Acme", provider="greenhouse", slug=f"b-{tag}", source="user", watched=True,
     )).inserted_primary_key[0])
     jid = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-    pid = int(conn.execute(insert(postings).values(
+    pid = int(insert_posting(conn,
         company_id=cid, job_id=jid, provider_posting_id=tag, title="Eng", normalized_title="eng",
         first_seen_at=NOW, last_seen_at=NOW, status="open", consecutive_missing=0,
         content_hash=tag, body_text="b",
-    )).inserted_primary_key[0])
+    ))
     return int(conn.execute(insert(posting_versions).values(
         posting_id=pid, content_hash=tag, body_text="b", captured_at=NOW, run_id=None,
         capture_reason="new",

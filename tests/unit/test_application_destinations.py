@@ -9,6 +9,7 @@ from sqlalchemy import select, update
 from boardwatch.core.models import BoardSnapshot, RawPosting
 from boardwatch.scan.apply import apply_board
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import posting_body, posting_raw
 from boardwatch.store.tables import postings, runs
 from tests.unit.test_delivery_queries import _deliver
 
@@ -28,7 +29,7 @@ def test_destination_survives_import_close_reopen_and_explicit_clear(tmp_path: P
     ensure_schema(engine)
     with engine.begin() as conn:
         pid, _ = _deliver(conn, "one", url=SOURCE)
-        row = conn.execute(select(postings).where(postings.c.id == pid)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == pid)).one()
         run_id = conn.execute(select(runs.c.id).limit(1)).scalar_one()
         record_application_destination(
             conn,
@@ -61,7 +62,7 @@ def test_destination_survives_import_close_reopen_and_explicit_clear(tmp_path: P
                 conn.execute(select(effective_apply_url()).where(postings.c.id == pid)).scalar_one()
                 == TARGET
             )
-        after = conn.execute(select(postings).where(postings.c.id == pid)).one()
+        after = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == pid)).one()
         assert (after.id, after.job_id, after.url) == (row.id, row.job_id, SOURCE + "?refresh=1")
         clear_application_destination(conn, posting_id=pid)
         assert (

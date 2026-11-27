@@ -1567,7 +1567,7 @@ def test_the_jobapps_lane_ingests_through_the_real_stage_and_lands_postings(
         titles = {
             row.title for row in conn.execute(select(tables.postings.c.title)).all()
         }
-        bodies = [row.body_text for row in conn.execute(select(tables.postings.c.body_text)).all()]
+        bodies = [row.body_text for row in conn.execute(select(tables.posting_blobs.c.body.label("body_text"))).all()]
     assert titles == {"Software Engineer 0", "Software Engineer 1"}
     assert all("Fit:" not in (body or "") for body in bodies), (
         "job-apps' authored header must not reach the stored body"

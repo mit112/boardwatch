@@ -22,6 +22,7 @@ from boardwatch.pipeline.death_probe import (
 )
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 
 TTL = 24
@@ -70,8 +71,7 @@ def _posting(
         ).inserted_primary_key[0]
         job = conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0]
         return int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company,
                     job_id=job,
                     provider_posting_id=f"p-{serial}",
@@ -93,7 +93,6 @@ def _posting(
                     content_hash="h",
                     body_text="body",
                 )
-            ).inserted_primary_key[0]
         )
 
 

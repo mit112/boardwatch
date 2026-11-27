@@ -31,6 +31,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.scan.coordinator import ScanLockHeldError, scan_lease
 from boardwatch.store.db import db_revision, ensure_schema, get_engine, schema_revision
 from boardwatch.store.identity_queries import write_identities
+from boardwatch.store.posting_blobs import insert_posting, posting_body, posting_raw
 from boardwatch.store.tables import (
     board_scans,
     companies,
@@ -133,8 +134,7 @@ def _seed(data_dir: Path, *, status: str = "open") -> tuple[Engine, int, int]:
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=PID,
                     title="GRC Engineer", normalized_title=normalize_title("GRC Engineer"),
                     url=f"https://job-boards.greenhouse.io/acme/jobs/{PID}",
@@ -144,7 +144,6 @@ def _seed(data_dir: Path, *, status: str = "open") -> tuple[Engine, int, int]:
                     consecutive_missing=1, death_strikes=1,
                     content_hash=content_hash(LANE_BODY), body_text=LANE_BODY, raw_json=LANE_RAW,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(
@@ -200,7 +199,7 @@ def test_apply_revises_through_the_scan_writer(
     assert board.calls == [("acme", PID)]
 
     with engine.connect() as conn:
-        row = conn.execute(select(postings).where(postings.c.id == posting_id)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == posting_id)).one()
         versions = conn.execute(
             select(posting_versions).where(posting_versions.c.posting_id == posting_id)
             .order_by(posting_versions.c.id)
@@ -250,7 +249,7 @@ def test_a_refetch_is_not_a_sighting(tmp_path: Path, monkeypatch: pytest.MonkeyP
     result = _invoke(tmp_path, "--ids", str(posting_id), "--apply")
     assert result.exit_code == 0, result.output
     with engine.connect() as conn:
-        row = conn.execute(select(postings).where(postings.c.id == posting_id)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == posting_id)).one()
     assert row.body_text == BOARD_BODY
     assert (row.status, row.closed_at, row.last_seen_at) == ("closed", NOW, NOW)
     assert (row.consecutive_missing, row.death_strikes) == (1, 1)
@@ -266,7 +265,7 @@ def test_same_body_refreshes_raw_json_without_a_version(
     assert result.exit_code == 0, result.output
     assert f"{posting_id}\trefreshed" in result.output
     with engine.connect() as conn:
-        row = conn.execute(select(postings).where(postings.c.id == posting_id)).one()
+        row = conn.execute(select(postings, posting_body().label("body_text"), posting_raw().label("raw_json")).where(postings.c.id == posting_id)).one()
         n_versions = conn.execute(
             select(func.count()).select_from(posting_versions)
         ).scalar_one()

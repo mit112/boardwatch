@@ -14,7 +14,8 @@ from boardwatch.store.eligibility import (
     get_support,
     record_evaluation,
 )
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 
 @pytest.fixture()
@@ -32,11 +33,11 @@ def version_id(engine: Engine) -> int:
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         jid = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        pid = int(conn.execute(insert(postings).values(
+        pid = int(insert_posting(conn,
             company_id=cid, job_id=jid, provider_posting_id="p-1", title="Eng",
             normalized_title="eng", first_seen_at=now, last_seen_at=now, status="open",
             consecutive_missing=0, content_hash="h1", body_text="b",
-        )).inserted_primary_key[0])
+        ))
         return int(conn.execute(insert(posting_versions).values(
             posting_id=pid, content_hash="h1", body_text="b", captured_at=now,
             run_id=None, capture_reason="new",

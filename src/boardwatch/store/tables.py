@@ -7,6 +7,10 @@ CHECK constraints are named for stable Alembic autogenerate diffs.
 
 from __future__ import annotations
 
+import json
+import zlib
+from typing import Any
+
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -16,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     Numeric,
     PrimaryKeyConstraint,
@@ -24,6 +29,8 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
+from sqlalchemy.engine import Dialect
+from sqlalchemy.types import TypeDecorator
 
 from boardwatch.core.identity_kinds import IDENTITY_KIND_NAMES
 from boardwatch.core.ledger import DISPOSITIONS, PERMANENT_DISPOSITIONS, REASON_NAMES
@@ -91,8 +98,6 @@ postings = Table(
     # least-recently-probed order so the sweep works the corpus front to back.
     Column("last_death_probe_at", DateTime, nullable=True),
     Column("content_hash", Text, nullable=False),
-    Column("body_text", Text, nullable=False),
-    Column("raw_json", JSON, nullable=True),
     Column("salary_min", Numeric, nullable=True),
     Column("salary_max", Numeric, nullable=True),
     Column("salary_currency", Text, nullable=True),
@@ -100,22 +105,76 @@ postings = Table(
     # Canonical-job annotation link (D28). Real FK; NOT-NULL enforced by trigger
     # (SQLite ALTER cannot add a NOT NULL column without a rebuild).
     Column("job_id", Integer, ForeignKey("jobs.id"), nullable=True),
+    # T364. The body and the provider payload live in `posting_blobs`, so a row here is a few
+    # hundred bytes and a page holds about nine: the corpus-wide reads walk 1 GB, not 25 GB. Three
+    # facts the corpus reads need from those blobs are kept here instead, written with them by
+    # `store.posting_blobs` and nowhere else.
+    # `len(body_text.strip(BODY_STRIP_CHARS))`: `queries.body_is_empty` reads `= 0` from the index.
+    Column("body_trimmed_len", Integer, nullable=False),
+    # `raw_json`'s `$.employmentType` and `$.jobapps.employer_url`, as `json_extract` read them.
+    Column("employment_type", Text, nullable=True),
+    Column("jobapps_employer_url", Text, nullable=True),
     UniqueConstraint("company_id", "provider_posting_id"),
     Index("ix_postings_status_posted_at", "status", "posted_at"),
     Index("ix_postings_content_hash", "content_hash"),
     Index("ix_postings_job_id", "job_id"),
-    # Answers the corpus-wide reads from the index, because reading one posting's row costs a disk
-    # page per posting: 100 s per statement at 830k open postings, however few columns it wants.
-    # The expression must stay textually equal to `queries.body_is_empty`, or it stops matching.
+    # Answers the corpus-wide reads from the index alone. Named in `INDEXED BY` clauses, so the name
+    # is load-bearing.
     Index(
-        "ix_postings_corpus", "status", "company_id", "provider_posting_id",
-        text("(trim(body_text, char(32, 9, 10, 13, 12, 11)) = '')"), "content_hash",
+        "ix_postings_corpus", "status", "company_id", "provider_posting_id", "body_trimmed_len",
+        "content_hash",
     ),
     Index("ix_postings_id_status", "id", "status"),
     CheckConstraint(
         "remote_policy IN ('remote', 'hybrid', 'onsite', 'unknown')", name="remote_policy_enum"
     ),
     CheckConstraint("status IN ('open', 'closed')", name="status_enum"),
+)
+
+class ZlibText(TypeDecorator[str]):
+    """Text stored as `zlib.compress(utf-8, 6)`; a reader gets the `str` back (T364)."""
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: str | None, dialect: Dialect) -> bytes | None:
+        return None if value is None else zlib.compress(value.encode("utf-8"), BLOB_LEVEL)
+
+    def process_result_value(self, value: bytes | None, dialect: Dialect) -> str | None:
+        return None if value is None else zlib.decompress(value).decode("utf-8")
+
+
+class ZlibJSON(TypeDecorator[Any]):
+    """A JSON value stored as its JSON text, zlib-compressed (T364).
+
+    Python `None` is stored as SQL NULL. The migration compresses the text the old `JSON` column
+    held, byte for byte, so a value decodes to what `JSON` returned before.
+    """
+
+    impl = LargeBinary
+    cache_ok = True
+
+    def process_bind_param(self, value: Any, dialect: Dialect) -> bytes | None:
+        if value is None:
+            return None
+        return zlib.compress(json.dumps(value).encode("utf-8"), BLOB_LEVEL)
+
+    def process_result_value(self, value: bytes | None, dialect: Dialect) -> Any:
+        return None if value is None else json.loads(zlib.decompress(value))
+
+
+#: zlib level for both blob columns. 6 is zlib's default; the T364 proof measured 2.74x with it.
+BLOB_LEVEL = 6
+
+# T364. One row per posting, written in the transaction that writes the posting, by
+# `store.posting_blobs` only. `body` is the posting's current body (the bytes of its current
+# `posting_versions` row), `raw` the provider payload of its last sighting.
+posting_blobs = Table(
+    "posting_blobs",
+    metadata,
+    Column("posting_id", Integer, ForeignKey("postings.id"), primary_key=True),
+    Column("body", ZlibText, nullable=False),
+    Column("raw", ZlibJSON, nullable=True),
 )
 
 application_destinations = Table(

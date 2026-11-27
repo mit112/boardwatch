@@ -20,8 +20,9 @@ from boardwatch.cli.app import app
 from boardwatch.store.app_state import get_notify_cursor
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.events import append_event
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run, save_profile
-from boardwatch.store.tables import companies, jobs, posting_versions, postings
+from boardwatch.store.tables import companies, jobs, posting_versions
 
 runner = CliRunner()
 NOW = datetime(2026, 7, 30, 12, 0, 0)
@@ -89,8 +90,7 @@ def _seed_posting(env: Env, *, title: str, slug: str, kind: str = "new") -> int:
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
                     title=title, normalized_title=title.lower(),
                     url=f"https://example.test/{slug}",
@@ -99,7 +99,6 @@ def _seed_posting(env: Env, *, title: str, slug: str, kind: str = "new") -> int:
                     status="open", consecutive_missing=0, content_hash=f"h-{slug}",
                     body_text="We are hiring.",
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

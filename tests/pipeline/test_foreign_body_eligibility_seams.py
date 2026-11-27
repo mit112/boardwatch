@@ -29,6 +29,7 @@ from boardwatch.eligibility.gate_handshake import apply_gate_verdicts, build_gat
 from boardwatch.eligibility.oracle import OracleVerdict
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import CurrentVersion
 from tests.unit.test_lane_body_precondition import JOBRIGHT_PAGE
 
@@ -77,15 +78,13 @@ def _seed(engine: Engine, pid: str, body: str) -> CurrentVersion:
             conn.execute(insert(tables.jobs).values(created_at=_T0)).inserted_primary_key[0]
         )
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=1, job_id=job_id, provider_posting_id=pid,
                     title="Backend Engineer", normalized_title="backend engineer",
                     url="https://example.test/j", locations_json=["Remote"],
                     remote_policy="remote", first_seen_at=_T0, last_seen_at=_T0, status="open",
                     consecutive_missing=0, content_hash=f"h-{pid}", body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
         version_id = int(
             conn.execute(

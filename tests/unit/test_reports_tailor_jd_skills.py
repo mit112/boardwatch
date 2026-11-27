@@ -19,7 +19,8 @@ from boardwatch.core.settings import Settings
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.reports.tailor import jd_skills_for, run_tailor
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, extractions, jobs, posting_versions, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, extractions, jobs, posting_versions
 from boardwatch.tailor.load import scaffold_template
 from boardwatch.tailor.render.outcome import CompileOutcome, CompileReason
 from tests.conftest import write_test_resume_template
@@ -63,15 +64,13 @@ def _seed_posting(
         )
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"pp-{slug}",
                     title="Backend Engineer", normalized_title="backend engineer",
                     url=f"https://example.test/{slug}", locations_json=["Remote"],
                     remote_policy="remote", posted_at=NOW, first_seen_at=NOW, last_seen_at=NOW,
                     status="open", consecutive_missing=0, content_hash=content_hash, body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(posting_versions).values(

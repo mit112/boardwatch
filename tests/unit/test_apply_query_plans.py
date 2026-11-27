@@ -26,6 +26,7 @@ from boardwatch.pipeline.death_probe import (
 )
 from boardwatch.scan.apply import apply_board
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.tables import board_scans, companies, jobs, postings, runs
 
 WALK = "ix_postings_status_posted_at"
@@ -46,12 +47,12 @@ def _store(tmp_path: Path) -> tuple[Engine, int, int]:
             ids.append(company_id)
             for i in range(3):
                 job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-                conn.execute(insert(postings).values(
+                insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=f"{slug}-{i}", title="Engineer",
                     normalized_title="engineer", locations_json=["Austin, TX"],
                     remote_policy="onsite", first_seen_at=now, last_seen_at=now, status="open",
                     consecutive_missing=0, content_hash=f"h-{slug}-{i}", body_text="JD",
-                ))
+                )
     return engine, ids[0], run_id
 
 

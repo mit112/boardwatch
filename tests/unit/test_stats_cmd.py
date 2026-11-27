@@ -11,7 +11,8 @@ from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import load_settings
 from boardwatch.reports.stats import StatsReport, compute_stats
 from boardwatch.store.db import ensure_schema, get_engine
-from boardwatch.store.tables import companies, jobs, postings
+from boardwatch.store.posting_blobs import insert_posting
+from boardwatch.store.tables import companies, jobs
 from tests.conftest import write_bundled_role_taxonomy
 
 NOW = utcnow()
@@ -45,13 +46,13 @@ def test_stats_with_profile_but_no_evals_reports_unevaluated(data_dir: Path) -> 
             name="Acme", provider="greenhouse", slug="acme", source="user", watched=True,
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        conn.execute(insert(postings).values(
+        insert_posting(conn,
             company_id=c, job_id=job_id, provider_posting_id="p1", title="Python Engineer",
             normalized_title="python engineer", url="https://example.test/p1",
             locations_json=["Remote"], remote_policy="remote", posted_at=NOW,
             first_seen_at=NOW, last_seen_at=NOW, status="open", consecutive_missing=0,
             content_hash="p1", body_text="We hire python engineers.",
-        ))
+        )
     result = runner.invoke(app, ["--data-dir", str(data_dir), "stats"])
     assert result.exit_code == 0
     out = result.stdout.lower()
@@ -99,13 +100,13 @@ def _seed_one_posting(
             name="Acme", provider="greenhouse", slug=slug, source="user", watched=True,
         )).inserted_primary_key[0])
         job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-        conn.execute(insert(postings).values(
+        insert_posting(conn,
             company_id=c, job_id=job_id, provider_posting_id=f"p1-{slug}", title=title,
             normalized_title=title.lower(), url=f"https://example.test/{slug}",
             locations_json=["Remote"], remote_policy="remote", posted_at=NOW,
             first_seen_at=NOW, last_seen_at=NOW, status="open", consecutive_missing=0,
             content_hash=f"p1-{slug}", body_text=body,
-        ))
+        )
 
 
 def _report(data_dir: Path) -> StatsReport | None:

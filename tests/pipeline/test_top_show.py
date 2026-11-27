@@ -16,6 +16,7 @@ from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.scan.apply import apply_board
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting, update_posting
 from boardwatch.store.queries import save_profile
 from tests.conftest import write_bundled_role_taxonomy
 
@@ -251,11 +252,7 @@ def test_show_names_an_empty_body_rather_than_claiming_zero_terms(
     ids = _seed_postings(engine, company_id, run_id)
     _seed_profile(engine, env / "cfg")
     with engine.begin() as conn:
-        conn.execute(
-            update(tables.postings)
-            .where(tables.postings.c.id == ids["222"])
-            .values(body_text="  \t\n ", content_hash="stub-222")
-        )
+        update_posting(conn, ids["222"], {"body_text": "  \t\n ", "content_hash": "stub-222"})
     result = _invoke(tmp_path, ["show", str(ids["222"])])
     assert result.exit_code == 0
     out = " ".join(result.stdout.split())
@@ -366,15 +363,13 @@ def _seed_one(data_dir: Path, *, title: str, body: str, slug: str) -> int:
         )
         job_id = int(conn.execute(insert(tables.jobs).values(created_at=now)).inserted_primary_key[0])
         posting_id = int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, provider_posting_id=f"pp-{slug}", title=title,
                     normalized_title=title.lower(), url="https://x.example/y",
                     locations_json=["Remote"], remote_policy="remote", first_seen_at=now,
                     last_seen_at=now, status="open", consecutive_missing=0,
                     content_hash=f"hh-{slug}", body_text=body, job_id=job_id,
                 )
-            ).inserted_primary_key[0]
         )
         conn.execute(
             insert(tables.posting_versions).values(

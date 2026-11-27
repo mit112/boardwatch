@@ -18,8 +18,9 @@ from sqlalchemy import Connection, Engine, func, insert, select, text, update
 
 from boardwatch.store import posting_lifetime_queries as plq
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.posting_lifetime_queries import posting_lifetime
-from boardwatch.store.tables import companies, jobs, posting_events, postings, runs
+from boardwatch.store.tables import companies, jobs, posting_events, runs
 
 D0 = datetime(2026, 11, 1, 12, 0, 0)
 
@@ -64,8 +65,7 @@ def _posting(
     """A posting with its own job and a `new` event on `new_at` (None: no event at all)."""
     job = int(conn.execute(insert(jobs).values(created_at=D0)).inserted_primary_key[0])
     posting = int(
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company,
                 job_id=job,
                 provider_posting_id=key,
@@ -79,7 +79,6 @@ def _posting(
                 content_hash=f"hash-{key}",
                 body_text="body",
             )
-        ).inserted_primary_key[0]
     )
     if isinstance(first_seen, str):  # an offset-carrying stamp, written as text
         conn.execute(

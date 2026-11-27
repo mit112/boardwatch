@@ -19,8 +19,9 @@ from boardwatch.core.clock import utcnow
 from boardwatch.reports.board_coverage import UnknownCensorFlag
 from boardwatch.store.coverage_queries import _resolve_censored
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
-from boardwatch.store.tables import board_scans, companies, jobs, postings
+from boardwatch.store.tables import board_scans, companies, jobs
 
 
 def _cli(data_dir: Path, args: list[str], env: dict[str, str] | None = None):
@@ -72,8 +73,7 @@ def _add_posting(engine: Engine, *, company_id: int, provider_posting_id: str) -
     with engine.begin() as conn:
         # job_id is a real FK, NOT-NULL by trigger (D28) — every posting needs its own job row.
         job_id = int(conn.execute(insert(jobs).values(created_at=now)).inserted_primary_key[0])
-        conn.execute(
-            insert(postings).values(
+        insert_posting(conn,
                 company_id=company_id,
                 job_id=job_id,
                 provider_posting_id=provider_posting_id,
@@ -87,7 +87,6 @@ def _add_posting(engine: Engine, *, company_id: int, provider_posting_id: str) -
                 content_hash=f"h-{provider_posting_id}",
                 body_text="body",
             )
-        )
 
 
 @pytest.fixture()

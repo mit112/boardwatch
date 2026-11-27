@@ -25,6 +25,7 @@ from boardwatch.delivery.apply_routes import ApplyRoute, ApplyRoutes, ApplyRoute
 from boardwatch.rank.heuristic import Score
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 
 
 def _lead(name: str, tier: int) -> RankedPosting:
@@ -254,13 +255,13 @@ def _seed(data_dir: Path) -> dict[str, int]:
                 source="user", watched=False,
             )))
             job_id = _pk(conn.execute(insert(tables.jobs).values(created_at=now)))
-            posting_id = _pk(conn.execute(insert(tables.postings).values(
+            posting_id = (insert_posting(conn,
                 company_id=company_id, provider_posting_id=f"p-{n}", job_id=job_id,
                 title="Backend Engineer", normalized_title="backend engineer", url=url,
                 locations_json=["Remote"], remote_policy="remote", first_seen_at=now,
                 last_seen_at=now, status="open", consecutive_missing=0,
                 content_hash=f"h-{n}", body_text=body,
-            )))
+            ))
             conn.execute(insert(tables.posting_versions).values(
                 posting_id=posting_id, content_hash=f"h-{n}", body_text=body,
                 captured_at=now, capture_reason="new",

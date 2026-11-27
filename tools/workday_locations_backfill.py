@@ -46,6 +46,7 @@ from boardwatch.store.db import (
     write_connection,
 )
 from boardwatch.store.identity_queries import load_identity_inputs, write_identities
+from boardwatch.store.posting_blobs import posting_raw
 from boardwatch.store.tables import companies, postings
 
 
@@ -82,7 +83,8 @@ def plan(conn: Connection) -> Plan:
     changes: list[Change] = []
     rows = conn.execute(
         select(
-            postings.c.id, postings.c.status, postings.c.locations_json, postings.c.raw_json,
+            postings.c.id, postings.c.status, postings.c.locations_json,
+            posting_raw().label("raw_json"),
             companies.c.slug,
         )
         .join(companies, postings.c.company_id == companies.c.id)

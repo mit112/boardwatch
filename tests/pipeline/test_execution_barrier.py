@@ -17,6 +17,7 @@ from boardwatch.core.settings import load_settings
 from boardwatch.pipeline import runner
 from boardwatch.store import tables
 from boardwatch.store.db import get_engine
+from boardwatch.store.posting_blobs import insert_posting, posting_body, posting_raw
 from boardwatch.store.queue_state import mark_job_reported, mark_job_skipped
 from tests.pipeline.test_lane_split_before_tailor import _fake_ok, _seed_review_posting
 from tests.pipeline.test_ledger_advances_the_queue import _ready
@@ -55,13 +56,17 @@ def change(engine: Engine, pid: int, kind: str) -> None:
         elif kind == "report":
             mark_job_reported(conn, job_id=job, at=utcnow())
         elif kind == "applied_twin":
-            copied = dict(conn.execute(select(tables.postings).where(
-                tables.postings.c.id == pid)).mappings().one())
-            copied.pop("id")
+            copied = dict(conn.execute(select(
+                tables.postings, posting_body().label("body_text"),
+                posting_raw().label("raw_json"),
+            ).where(tables.postings.c.id == pid)).mappings().one())
+            # `insert_posting` derives these three from the body and the payload.
+            for derived in ("id", "body_trimmed_len", "employment_type", "jobapps_employer_url"):
+                copied.pop(derived)
             copied.update(job_id=int(conn.execute(insert(tables.jobs).values(
                 created_at=utcnow())).inserted_primary_key[0]), status="closed",
                 provider_posting_id=f"closed-twin-{pid}")
-            conn.execute(insert(tables.postings).values(**copied))
+            insert_posting(conn, **copied)
             conn.execute(insert(tables.applications).values(
                 job_id=copied["job_id"], attempt_no=1, status="applied", created_at=utcnow(),
                 updated_at=utcnow(), submitted_at=utcnow(),

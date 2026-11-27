@@ -13,6 +13,7 @@ from boardwatch.extract.preflight import run_preflight
 from boardwatch.extract.taxonomy import load_taxonomy
 from boardwatch.store import tables
 from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import insert_run
 
 
@@ -54,8 +55,7 @@ def _seed_posting(engine: Engine, company_id: int, pid: str, body: str, status: 
             ).inserted_primary_key[0]
         )
         return int(
-            conn.execute(
-                insert(tables.postings).values(
+            insert_posting(conn,
                     company_id=company_id, job_id=job_id, provider_posting_id=pid,
                     title=f"SWE {pid}",
                     normalized_title=f"swe {pid}", first_seen_at=datetime(2026, 1, 1),
@@ -63,7 +63,6 @@ def _seed_posting(engine: Engine, company_id: int, pid: str, body: str, status: 
                     closed_at=datetime(2026, 2, 1) if status == "closed" else None,
                     consecutive_missing=0, content_hash=content_hash(body), body_text=body,
                 )
-            ).inserted_primary_key[0]
         )
 
 

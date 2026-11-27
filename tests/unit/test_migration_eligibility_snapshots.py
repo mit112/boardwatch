@@ -24,7 +24,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import NullPool
 
-from boardwatch.store.db import ensure_schema, get_engine
+from boardwatch.store.db import ensure_schema, get_engine, schema_revision
 
 BASE = "p_listing_runs"
 HEAD = "p_eligibility_snapshots"
@@ -338,7 +338,7 @@ def test_a_failed_version_stamp_undoes_the_rebuild_and_a_retry_succeeds(tmp_path
         ensure_schema(app_engine)  # the retry
     finally:
         app_engine.dispose()
-    assert _revision(engine) == HEAD
+    assert _revision(engine) == schema_revision()  # the retry runs the rest of the chain too
     assert _resolved_rows(engine) == rows_before
 
 

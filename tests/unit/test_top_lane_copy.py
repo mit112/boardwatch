@@ -38,6 +38,7 @@ from boardwatch.core.settings import Settings
 from boardwatch.store.applications import mark_job_applied
 from boardwatch.store.db import ensure_schema, get_engine
 from boardwatch.store.ledger_queries import record_disposition
+from boardwatch.store.posting_blobs import insert_posting
 from boardwatch.store.queries import save_profile
 from boardwatch.store.queue_state import mark_job_reported
 from boardwatch.store.tables import (
@@ -109,14 +110,14 @@ def _seed(data_dir: Path, rows: Sequence[Row]) -> Engine:
                     source="user", watched=True,
                 )).inserted_primary_key[0])
             job_id = int(conn.execute(insert(jobs).values(created_at=NOW)).inserted_primary_key[0])
-            posting_id = int(conn.execute(insert(postings).values(
+            posting_id = int(insert_posting(conn,
                 company_id=company_ids[slug], job_id=job_id,
                 provider_posting_id=f"pp-{offset}",
                 title=title, normalized_title=normalized,
                 locations_json=["Austin, TX"], remote_policy="onsite",
                 posted_at=NOW - timedelta(days=offset), first_seen_at=NOW, last_seen_at=NOW,
                 status="open", consecutive_missing=0, content_hash=hashed, body_text=body,
-            )).inserted_primary_key[0])
+            ))
             conn.execute(insert(posting_versions).values(
                 posting_id=posting_id, content_hash=hashed, body_text=body,
                 captured_at=NOW, capture_reason="new",
