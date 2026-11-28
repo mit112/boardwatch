@@ -585,6 +585,15 @@ caveat (D-294) is what makes 0.00% a structural reading rather than a clean one.
 
 ## The live store
 
+- **A local-stage change is checked on clones the same day, not on the next nightly (T371, D-717).**
+  `python -m tools.replay clone|run|diff` (the module docstring is the manual). An offline `--no-scan` replay of the
+  maintainer's store takes about 12 min an arm and 2.3 GB, and covers eligibility, ranking, tailoring, the funnel and
+  queue sync; the scan, lanes, liveness and the death probe stay the nightly's. Two arms of the same bytes give an
+  identical funnel once lists of plain ids are compared as sets (ties reorder), so any other difference is the
+  change. A replay previews the NEXT slate from the standing pool, so its B1-style net-new count is not last
+  night's. The judge is off unless `--with-llm` (about a nightly's 14 batches an arm). Tailor seconds vary 25%
+  between serial null arms: not an A/B metric without repeats.
+
 - **A 5 s `busy_timeout` can be STARVED by a competitor that commits in a tight loop (D-501, measured
   2026-09-12 on windows-latest).** SQLite's busy handler is sleep-and-retry on a fixed back-off; it does not
   interleave two writers, so the loser waits until the winner has run ALL of its commits (~1.1 s for 200

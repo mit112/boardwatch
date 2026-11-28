@@ -140,6 +140,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- **`python -m tools.replay` checks a local-stage change on clones of the store the same afternoon (T371, D-717).**
+  Development tooling, not part of the package. `clone` makes isolated arms from the same store bytes (an APFS clone
+  on macOS, 10.5 s for three arms of a 30 GB store), refuses while a run holds `scan.lock`, and discards its arms if
+  the store or its WAL changed during the copy. Each arm's `config.toml` is rewritten so the run stays in the arm and
+  off the network (`data_dir`, `jobapps_queue_dir`, `lanes_enabled = []`, `form_question_fetch_budget = 0`, the
+  judge and `[llm]` tiers off unless `--with-llm`), then checked through `load_settings`; a symlink into a source
+  dir is pointed at the arm's copy and any other is removed and named. `run` adds `--no-scan --no-check-liveness`
+  and the arm's queue and output roots, drops every `BOARDWATCH_*` variable, and fails if the source store holds the
+  arm's run row. `diff` compares two funnels with clocks, run ids and arm paths left out and lists of plain ids
+  compared as sets, and exits 1 on any difference. On the maintainer's store two arms of the same bytes matched
+  exactly (98 leads in the same order, 0 differing paths) and an arm without the `last_hosts` entry was told apart
+  (apply lane 63 → 62, the slate's order from its first lead). POSIX only.
 - **Each gated run records every post-gate survivor as the slate cut saw it, so the cut's order can be replayed (T368,
   step 1; no behaviour change).** The run writes `slate-cut-<run>.json` beside the funnel: for every survivor, in
   ranker order, its ranker position, shortlist rank, tier, the gate's decision and `seniority_fit` as they stood at
