@@ -1570,6 +1570,34 @@ def test_verified_destination_is_shared_by_queue_detail_and_applied(engine: Engi
         assert delivery_queries.applied_rows(conn)[0].apply_url == target
 
 
+def test_the_queue_lists_last_host_leads_after_the_rest(engine: Engine, tmp_path: Path) -> None:
+    """D-716. Delivered most recently, the Indeed lead would be listed first with no score to
+    rank by; `last_hosts` puts it after the older lead, in the apply lane and on the page."""
+    from boardwatch.delivery.api import ApiContext, queue_payload
+
+    config = tmp_path / "config"
+    config.mkdir(exist_ok=True)
+    routes = 'auto_hosts = ["ashbyhq.com"]\nunresolved_hosts = ["indeed.com"]\n'
+    ctx = ApiContext(settings=load_settings(), out_root=tmp_path, queue_root=tmp_path,
+                     owner_name="Example", platform="darwin")
+    with engine.begin() as conn:
+        older, _ = _deliver(conn, "older", url="https://boards.test/apply",
+                            delivered_at=NOW - timedelta(days=2))
+        indeed, _ = _deliver(conn, "indeed", url="https://www.indeed.com/viewjob?jk=1",
+                             delivered_at=NOW)
+
+    def order() -> list[int]:
+        with engine.connect() as conn:
+            payload = queue_payload(conn, ctx)
+        listed = [r["posting_id"] for r in payload["rows"] + payload["review"]]
+        return [pid for pid in listed if pid in (older, indeed)]
+
+    (config / "apply-routes.toml").write_text(routes)
+    assert order() == [indeed, older]  # the precondition: without the list, Indeed is first
+    (config / "apply-routes.toml").write_text(routes + 'last_hosts = ["indeed.com"]\n')
+    assert order() == [older, indeed]
+
+
 def test_destination_drives_web_route_without_mutating_source(engine: Engine, tmp_path: Path) -> None:
     from boardwatch.delivery.api import ApiContext, queue_payload
     from boardwatch.store.application_destinations import record_application_destination

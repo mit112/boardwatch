@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **`last_hosts` in `apply-routes.toml` ranks a listed board's leads after every other lead in their tier (D-716).**
+  The ranker and the queue page both apply it, after the direct share, so a board whose own form the owner fills one
+  job at a time no longer takes slate places from the boards the fill tool handles in batches. It reorders within
+  a tier only, and drops nothing. A lead whose link has moved to the employer's site is ranked like any other. Empty
+  by default: nothing changes until a host is listed. At `slate_direct_share` 0 the ranker now reads the routes file
+  once a run.
 - **The ranker's read of the final gate's verdicts uses an index of the gate rows: 66 s to 3.6 s.** The read joins
   every eligibility input of the open corpus's 748,661 versions to its evaluations under `engine_kind = 'llm'`, and
   each probe landed in the index over all 6.5M evaluations. A new partial index (`ix_eligibility_evaluations_llm`)

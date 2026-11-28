@@ -18,7 +18,7 @@ from rich.console import Console
 from sqlalchemy import CursorResult, insert
 
 from boardwatch.cli import top_cmd
-from boardwatch.cli.top_cmd import RankedPosting, interleave_direct, rank_open_postings
+from boardwatch.cli.top_cmd import RankedPosting, interleave_direct, move_last, rank_open_postings
 from boardwatch.core.clock import utcnow
 from boardwatch.core.settings import Settings, load_settings
 from boardwatch.delivery.apply_routes import ApplyRoute, ApplyRoutes, ApplyRoutesConfig
@@ -348,15 +348,75 @@ def test_an_unreadable_routes_file_leaves_the_order_alone_and_says_so(env: Path)
     assert "apply-routes.toml" in out
 
 
-def test_at_zero_the_routes_file_is_never_read(env: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_at_zero_the_routes_file_is_read_once_for_last_hosts(
+    env: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At share 0 the share reads nothing; `last_hosts` (D-716) is the one reader, once a run."""
     _seed(env)
+    calls: list[Path] = []
+    real = top_cmd.load_apply_routes
 
-    def boom(_config_dir: Path) -> ApplyRoutes:
-        raise AssertionError("load_apply_routes must not run at share 0")
+    def counted(config_dir: Path) -> ApplyRoutes:
+        calls.append(config_dir)
+        return real(config_dir)
 
-    monkeypatch.setattr(top_cmd, "load_apply_routes", boom)
-    ranked, _ = _rank(env, 0.0, limit=2)
+    monkeypatch.setattr(top_cmd, "load_apply_routes", counted)
+    ranked, out = _rank(env, 0.0, limit=2)
     assert len(ranked.visible) == 2
+    assert len(calls) == 1
+    assert "last_hosts" not in out and "slate_direct_share" not in out
+
+
+# ---------------------------------------------------------------------------------------------
+# last_hosts (D-716): leads on a listed host go after every other lead in their tier
+# ---------------------------------------------------------------------------------------------
+
+
+def _is_last(r: RankedPosting) -> bool:
+    return r.title.startswith("I")
+
+
+def test_last_leads_go_to_the_end_of_their_tier_and_each_part_keeps_its_order() -> None:
+    rows = _tier3("I1", "D1", "O1", "I2", "D2", "O2")
+    assert _names(move_last(rows, _is_last)) == ["D1", "O1", "D2", "O2", "I1", "I2"]
+
+
+def test_a_last_lead_never_falls_below_a_lower_tier() -> None:
+    rows = [_lead("I1", 1), _lead("O1", 1), _lead("O2", 2), _lead("I2", 2)]
+    assert _names(move_last(rows, _is_last)) == ["O1", "I1", "O2", "I2"]
+
+
+def test_no_last_lead_is_a_no_op() -> None:
+    rows = _tier3("O1", "D1", "O2")
+    assert _names(move_last(rows, _is_last)) == ["O1", "D1", "O2"]
+
+
+def test_is_last_reads_the_host_and_its_subdomains_only() -> None:
+    routes = ApplyRoutes(
+        config=ApplyRoutesConfig(auto_hosts=("ashbyhq.com",), last_hosts=("indeed.com",)),
+        link_status={}, problem=None,
+    )
+    assert routes.is_last("https://www.indeed.com/viewjob?jk=1")
+    assert routes.is_last("https://smartapply.indeed.com/x")
+    assert not routes.is_last("https://jobs.ashbyhq.com/acme/1?src=indeed.com")
+    assert not routes.is_last("https://notindeed.com/1")
+    assert not routes.is_last(None)
+    unconfigured = ApplyRoutes(config=None, link_status={}, problem="none")
+    assert not unconfigured.is_last("https://www.indeed.com/viewjob?jk=1")
+
+
+@pytest.mark.parametrize("share", [0.0, 0.5])
+def test_last_hosts_give_the_slate_to_the_other_leads_at_any_share(env: Path, share: float) -> None:
+    """The aggregator copies outscore the direct ones (the off-share precondition above), so the
+    slate holds the direct leads only because the aggregator host is listed last."""
+    ids = _seed(env)
+    (env.parent / "cfg").mkdir(exist_ok=True)
+    (env.parent / "cfg" / "apply-routes.toml").write_text(_ROUTES_TOML + 'last_hosts = ["linkedin.com"]\n')
+    ranked, out = _rank(env, share, limit=2)
+    assert {p.posting_id for p in ranked.visible} == {ids["dir1"], ids["dir2"]}
+    assert "last_hosts: 2 lead(s) last in their tier" in out
+    assert ranked.considered == 4
+    assert _reconciles(ranked)
 
 
 def test_the_share_does_not_move_config_hash_so_no_disposition_goes_stale(tmp_path: Path) -> None:
