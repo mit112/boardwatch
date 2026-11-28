@@ -335,6 +335,13 @@ def _apply_listed(
         # declaration (D-414(a)) leaves title and locations on the row, so reading them from `raw`
         # would key the posting on a value NO row holds, and dedup would suppress against evidence
         # that exists nowhere.
+        #
+        # The body reaches the identity only through `body_evidence`, i.e. `normalize_body`, and
+        # `content_hash` is the digest of that same normalisation. So when the stored hash equals
+        # this observation's, the observed body yields the stored body's identities and the
+        # stored body is not read (T362 follow-up: 636,778 one-row reads on a nightly clone). The
+        # stored hash names the stored body on every row (checked on all 1,425,019, 2026-11-27).
+        # Only a secondhand body that differs still needs the stored one.
         _write_posting_identity(
             conn, raw, posting_id=int(row.id), company_id=company_id,
             company_name=company_name,
@@ -344,6 +351,8 @@ def _apply_listed(
             body_text=(
                 values["body_text"]
                 if "body_text" in values
+                else raw.body_text
+                if row.content_hash == new_hash
                 else conn.execute(
                     select(posting_blobs.c.body).where(posting_blobs.c.posting_id == row.id)
                 ).scalar_one()

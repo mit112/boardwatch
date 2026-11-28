@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The scan no longer reads a listed posting's stored body when its hash is unchanged (T362 follow-up).** Each
+  posting a board lists again rewrites its identities, and the scan read the stored body by id for that, one statement
+  per row: 636,778 of them on a clone of a nightly, 76 s. The body reaches an identity only through the same
+  normalisation `content_hash` digests, so an equal hash means the observed body gives the same identities, and the
+  scan now passes it instead. The stored body is still read for a secondhand body that differs from it, since that
+  observation does not revise the row. The stored hash matched its stored body on every one of the live store's
+  1,425,019 postings (checked 2026-11-27). Nothing stored changes.
 - **A posting's body and raw payload move out of `postings` into a compressed side table (T364 step 1).** `postings`
   held both inline, about 17 KB of a row's 17.4 KB, so every corpus-wide read (the ranker, the run funnel, the scan's
   board read) walked about one 4 KiB page per posting over 25 GB. A new `posting_blobs` table holds the two,

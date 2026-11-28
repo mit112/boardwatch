@@ -2,8 +2,9 @@
 
 A `postings` row averages 17.4 KB, 17 KB of it `body_text` and `raw_json`. `_apply_listed` used to
 `select(postings)` for the whole board, closed history included, on every scan of a board that
-listed. It now reads the columns its loop consumes, and fetches a body by id only for a row the
-snapshot lists. The stored result must not move. Since T364 the two blobs are `posting_blobs`' columns.
+listed. It now reads the columns its loop consumes, and fetches a stored body by id only for a listed
+row whose secondhand body differs from it: an unchanged hash means the observed body earns the same
+identities. The stored result must not move. Since T364 the two blobs are `posting_blobs`' columns.
 """
 
 from __future__ import annotations
@@ -64,8 +65,9 @@ def _blob_selects(engine: Engine) -> list[str]:
 
 
 def test_the_board_read_leaves_the_blobs_of_unlisted_rows_unread(tmp_path: Path) -> None:
-    """Three stored rows, one listed again. Nothing may read a blob except by id, and only the
-    listed row's body is read (its identity needs it): never `raw_json`, never a closed row's."""
+    """Three stored rows, one listed again with its body unchanged. No blob is read: not
+    `raw_json`, not a closed or unlisted row's, and not the listed row's body either, because an
+    equal hash means the observed body gives the same identities."""
     engine = get_engine(tmp_path)
     ensure_schema(engine)
     company_id = _company(engine)
@@ -91,9 +93,36 @@ def test_the_board_read_leaves_the_blobs_of_unlisted_rows_unread(tmp_path: Path)
         company_id, insert_run(engine),
     )
 
-    assert len(seen) == 1, seen  # A's body, once
+    assert seen == []
+
+
+def test_a_differing_secondhand_body_keeps_the_stored_bodys_identity(tmp_path: Path) -> None:
+    """A stub stored, then listed again with a secondhand body that is not empty. The revision is
+    skipped (D-414(a)), so the row keeps its empty body, and its identity has to come from that
+    stored body, read once by id: the observed body would give it an `exact_quad` no stored row
+    can reproduce."""
+    engine = get_engine(tmp_path)
+    ensure_schema(engine)
+    company_id = _company(engine)
+    apply_board(engine, _snapshot([_posting("S", "")]), company_id, insert_run(engine))
+
+    seen = _blob_selects(engine)
+    secondhand = RawPosting(
+        provider_posting_id="S", title="Job S", url="https://x/S", locations=["Austin, TX"],
+        body_text="an aggregator's copy of the JD", raw_json={"id": "S"},
+        secondhand=frozenset({"body_text"}),
+    )
+    apply_board(engine, _snapshot([secondhand]), company_id, insert_run(engine))
+
+    assert len(seen) == 1, seen  # S's stored body, once
     assert "posting_blobs.body" in seen[0] and "posting_blobs.raw" not in seen[0]
     assert re.search(r"posting_blobs\.posting_id = \?", seen[0]), seen[0]  # by id, not the board
+    with engine.connect() as conn:
+        row_id = int(conn.execute(select(tables.postings.c.id)).scalar_one())
+        body = conn.execute(select(posting_body())).scalar_one()
+        kinds = {i.kind for i in load_identities(conn)[row_id]}
+    assert body == ""
+    assert "exact_quad" not in kinds and "company_title_location" in kinds
 
 
 def test_the_result_is_what_it_was(tmp_path: Path) -> None:
@@ -153,8 +182,8 @@ def test_the_result_is_what_it_was(tmp_path: Path) -> None:
 
 def test_each_listed_row_gets_the_identity_its_own_body_earns(tmp_path: Path) -> None:
     """A stub (empty body) carries no `exact_quad`; a posting with a body does. Both are listed
-    again unchanged, so the stored body is the only source of that fact, and it has to be the
-    row's OWN body: a lookup bound to another posting's id gives a stub a quad or takes one away."""
+    again unchanged, and each re-list has to keep the identity its OWN body earns: a body taken
+    from another row gives a stub a quad or takes one away."""
     engine = get_engine(tmp_path)
     ensure_schema(engine)
     company_id = _company(engine)
