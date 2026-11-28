@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- **The ranker's read of the final gate's verdicts uses an index of the gate rows: 66 s to 3.6 s.** The read joins
+  every eligibility input of the open corpus's 748,661 versions to its evaluations under `engine_kind = 'llm'`, and
+  each probe landed in the index over all 6.5M evaluations. A new partial index (`ix_eligibility_evaluations_llm`)
+  holds only the gate rows, about 19.5k. On a clone of the live store the ranker's call fell from 66.2 s to 3.6 s
+  with the same 9,885 verdicts. The delivery queue and the run's lane split call the same read, on far fewer
+  versions. Nothing a user sees changes. **The index is a migration: it builds on the first command that
+  opens the store (1.9 s on the warm clone; it reads the whole table once).**
 - **The scan no longer reads a listed posting's stored body when its hash is unchanged (T362 follow-up).** Each
   posting a board lists again rewrites its identities, and the scan read the stored body by id for that, one statement
   per row: 636,778 of them on a clone of a nightly, 76 s. The body reaches an identity only through the same
