@@ -292,6 +292,10 @@ native_fill_hosts = ["linkedin.com"]
 # the row a reason: "needs an account on <host>". A host listed here must not also be in
 # auto_hosts or unresolved_hosts (that includes a subdomain of one), or the file is refused.
 account_wall_hosts = ["example.wd5.myworkdayjobs.com"]
+# Hosts whose leads go after every other lead in their rank tier, on the slate and on the queue
+# page: a board whose own form you can only fill one job at a time. Once a lead's link moves to the
+# employer's site, it is ranked like any other.
+last_hosts = ["jobs.example-board.com"]
 # JSON files of link checks: {"<posting_id>": {"company_status": "..."}}. On Windows, quote a path with
 # single quotes ('D:\boardwatch\link_checks.json'): inside double quotes a backslash starts an escape.
 link_ledgers = ["/path/to/link_checks.json"]

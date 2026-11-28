@@ -332,10 +332,13 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
     kept = [row for row in open_rows if row.posting_id not in lane_copy]
     drained = len(rest) - len(open_rows)
     facts = _live_facts(conn, ctx, [*kept, *manual_rows])
+    # Read per request like the rest of this payload: job-apps rewrites these ledgers during a pass.
+    routes = load_apply_routes(ctx.settings.config_dir)
 
-    def rank_key(row: QueueRow) -> tuple[int, bool, float]:
+    def rank_key(row: QueueRow) -> tuple[int, bool, bool, float]:
+        # A `last_hosts` lead goes after every other lead in its tier, as on the slate (D-716).
         fact = facts[row.posting_id]
-        return (fact.tier, fact.score is None, -(fact.score or 0.0))
+        return (fact.tier, routes.is_last(row.apply_url), fact.score is None, -(fact.score or 0.0))
 
     # The SAME split the folder tree uses, from the SAME call (D-332). Calling `lane_decision`
     # rather than re-deriving "is this appliable" here is the whole point: a second opinion in
@@ -406,8 +409,6 @@ def queue_payload(conn: Connection, ctx: ApiContext) -> dict[str, Any]:
         # file-manager handler, because a control that can only fail is worse than no control.
         "meta": {"reveal_supported": reveal_supported(ctx.platform)},
     }
-    # Read per request like the rest of this payload: job-apps rewrites these ledgers during a pass.
-    routes = load_apply_routes(ctx.settings.config_dir)
     for lane in ("rows", "review"):
         for served in payload[lane]:
             served["apply_route"] = routes.route(

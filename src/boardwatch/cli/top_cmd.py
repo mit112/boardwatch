@@ -594,6 +594,26 @@ def interleave_direct(
     return out
 
 
+def move_last(
+    ranked: Sequence[RankedPosting], is_last: Callable[[RankedPosting], bool]
+) -> list[RankedPosting]:
+    """Move the `is_last` leads to the end of their own tier, by REORDERING only (D-716).
+
+    Each part keeps its order, so the direct share's interleave survives among the rest. Like
+    `interleave_direct`, it never moves a lead across a tier and never drops one.
+    """
+    out: list[RankedPosting] = []
+    start = 0
+    while start < len(ranked):
+        stop = start
+        while stop < len(ranked) and ranked[stop].tier == ranked[start].tier:
+            stop += 1
+        tier = ranked[start:stop]
+        out += [r for r in tier if not is_last(r)] + [r for r in tier if is_last(r)]
+        start = stop
+    return out
+
+
 def _active_sponsor_index(
     settings: Settings, facts: Facts, output_console: Console
 ) -> SponsorIndex | None:
@@ -1110,6 +1130,22 @@ def rank_open_postings(
                 f"slate_direct_share {settings.slate_direct_share:g} is inert: " + inert_reason,
                 markup=False,
             )
+    # After the share, on the list it produced: leads on a `last_hosts` host go after every other
+    # lead in their tier, so a board the owner fills one job at a time never takes a direct lead's
+    # place on the slate (D-716). The file is read once when the share already read it.
+    last_routes = direct_routes or load_apply_routes(settings.config_dir)
+    last_ids = frozenset(
+        r.posting_id for r in eligible if last_routes.is_last(application_urls[r.posting_id])
+    )
+    if last_ids:
+        reordered = move_last(eligible, lambda r: r.posting_id in last_ids)
+        moved = sum(a is not b for a, b in zip(eligible, reordered, strict=True))
+        output_console.print(
+            f"last_hosts: {len(last_ids)} lead(s) last in their tier, {moved} of {len(eligible)} "
+            "positions moved",
+            markup=False,
+        )
+        eligible = reordered
     # `None` unless armed, so a run with the share off pays nothing at the drop sites below.
     trace = direct_share if direct_share.state == "measured" else None
 

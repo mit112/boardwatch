@@ -54,6 +54,10 @@ class ApplyRoutesConfig(BaseModel):
     link_ledgers: tuple[Path, ...] = ()
     # The `company_status` values meaning the check finished and found no employer link.
     no_employer_statuses: tuple[str, ...] = ()
+    # Hosts whose leads rank after every other lead in their rank tier, in the slate and on the
+    # queue page: a board whose own form the owner can only fill one job at a time (D-716). Once
+    # a lead's link moves to the employer's site it is ranked like any other.
+    last_hosts: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _one_answer_per_host(self) -> ApplyRoutesConfig:
@@ -149,6 +153,12 @@ class ApplyRoutes:
         """Why this lead is by hand, when the config knows a reason. `None` is "no reason known"."""
         wall = self.account_wall_host(apply_url=apply_url)
         return None if wall is None else f"needs an account on {wall}"
+
+    def is_last(self, apply_url: str | None) -> bool:
+        """True when the link is on a `last_hosts` host. No config or no link answers False."""
+        config = self.config
+        host = _host(apply_url)
+        return config is not None and host is not None and _matches(host, config.last_hosts)
 
     def is_direct_auto(self, apply_url: str | None) -> bool:
         """True only when the link itself goes straight to a form the fill tool handles.
