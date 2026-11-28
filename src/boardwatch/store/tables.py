@@ -457,6 +457,11 @@ eligibility_evaluations = Table(
     # — see p0_eligibility.py). UniqueConstraint cannot express a partial predicate; Index can.
     Index("uq_eligibility_deterministic", "input_id", "engine_version", unique=True,
           sqlite_where=text("engine_kind = 'deterministic'")),
+    # The final gate's rows, a few thousandths of the table, which the reads keyed on the judge's
+    # inputs probe per input (`eligibility.read._latest_gate_rows`). Created by
+    # `perf_eligibility_evaluations_llm`, declared here for the schema-drift check.
+    Index("ix_eligibility_evaluations_llm", "input_id", "id",
+          sqlite_where=text("engine_kind = 'llm'")),
     CheckConstraint("engine_kind IN ('deterministic', 'llm')", name="engine_kind_enum"),
     CheckConstraint("verdict IN ('eligible', 'ineligible', 'uncertain')", name="verdict_enum"),
     CheckConstraint("score IS NULL OR (score >= 0 AND score <= 1)", name="score_range"),
